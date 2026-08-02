@@ -1,4 +1,5 @@
 .agents/
+.openai/
 .vscode/
 .workbuddy/
 node_modules/
