@@ -1,0 +1,43 @@
+<style>
+  @import url("/public/static/css/webs.css");
+</style>
+<main class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brandmark">{{brandMark}}</span>
+      <span>{{brandName}}<strong>{{brandSuffix}}</strong></span>
+    </div>
+    <p class="section-label">{{workspaceLabel}}</p>
+    <nav aria-label="应用导航">
+      <button class="{{currentPath === item.path ? 'active' : ''}}" kniu:for="{{navigation}}" kniu:key="path" kniu:[nav]="{{item.path}}" kniu@click="handleNavigation" type="button">
+        <i kniu:style="{{'background-color:' + item.color}}">{{item.icon}}</i>
+        <span>{{item.name}}</span>
+        <template kniu:if="{{item.badge}}"><em>{{item.badge}}</em></template>
+      </button>
+    </nav>
+    <div class="sidebar-foot">
+      <button kniu@click="handleHelpRequest" type="button"><i class="neutral">?</i><span>{{helpLabel}}</span></button>
+      <div class="user">
+        <span class="avatar">{{user.avatar}}</span>
+        <div><b>{{user.name}}</b><small>{{user.role}}</small></div>
+        <span>•••</span>
+      </div>
+    </div>
+  </aside>
+  <section class="workspace">
+    <include src="./header.html" />
+    <nav class="mobile-nav" aria-label="移动端应用导航">
+      <button kniu:for="{{navigation}}" kniu:key="path" kniu:[nav]="{{item.path}}" class="{{currentPath === item.path ? 'active' : ''}}" kniu@click="handleNavigation" type="button">
+        {{item.icon}}<span>{{item.name}}</span>
+      </button>
+    </nav>
+    <article>
+      <div class="app-meta">
+        <span><i kniu:style="{{'background-color:' + currentApp.color}}">{{currentApp.icon}}</i><b>{{currentApp.name}}</b></span>
+        <!-- <span class="isolated">Shadow DOM · 已隔离</span> -->
+      </div>
+      <section id="micro-app-outlet"></section>
+    </article>
+  </section>
+  <div class="toast" role="status" aria-live="polite"></div>
+</main>

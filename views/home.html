@@ -1,0 +1,158 @@
+<style>
+  :host {
+    display: block;
+    color: #17213b;
+    font: 14px/1.5 Arial, "PingFang SC", "Microsoft YaHei", sans-serif
+  }
+
+  * {
+    box-sizing: border-box
+  }
+
+  button {
+    font: inherit;
+    cursor: pointer
+  }
+
+  h2 {
+    font-size: 22px;
+    margin: 0 0 7px
+  }
+
+  .muted {
+    color: #7b8498
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid #e6e9ef;
+    border-radius: 17px;
+    padding: 20px
+  }
+
+  .hero {
+    background: linear-gradient(135deg, #fff1eb, #fff 62%);
+    border: 1px solid #f1e4de;
+    border-radius: 20px;
+    padding: 28px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 24px
+  }
+
+  .primary {
+    background: #17213b;
+    color: white;
+    border: 0;
+    border-radius: 12px;
+    height: 42px;
+    padding: 0 18px;
+    font-weight: 700
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 17px
+  }
+
+  .value {
+    font-size: 28px;
+    font-weight: 800;
+    margin: 7px 0
+  }
+
+  .up {
+    color: #15966a;
+    font-size: 12px
+  }
+
+  .split {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin-top: 14px
+  }
+
+  .chart {
+    height: 120px;
+    display: flex;
+    align-items: end;
+    gap: 9px;
+    padding-top: 20px
+  }
+
+  .bar {
+    flex: 1;
+    background: #ffd8cc;
+    border-radius: 6px 6px 2px 2px
+  }
+
+  .bar.hot {
+    background: #ff5c35
+  }
+
+  .activity {
+    display: flex;
+    gap: 11px;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #edf0f4
+  }
+
+  .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #ff5c35
+  }
+
+  @media(min-width:761px) {
+    h2 {
+      font-size: 26px
+    }
+
+    .stats {
+      grid-template-columns: repeat(4, 1fr)
+    }
+
+    .split {
+      grid-template-columns: 1.55fr 1fr
+    }
+
+    .hero {
+      flex-direction: row
+    }
+
+    .primary {
+      height: auto
+    }
+  }
+</style>
+<section class="hero">
+  <div>
+    <h2>{{greeting}}，{{userName}} 👋</h2>
+    <div class="muted">你的业务运行平稳，今天已有 {{todayOrders}} 笔新订单。</div>
+  </div><button class="primary" kniu@click="handleCreateOrder" type="button">＋ 新建订单</button>
+</section>
+<div class="stats">
+  <template kniu:for="{{stats}}" kniu:key="*this">
+    <div class="card"><span class="muted">{{item.label}}</span>
+      <div class="value">{{item.value}}</div><span class="up">{{item.tip}}</span>
+    </div>
+  </template>
+</div>
+<div class="split">
+  <div class="card"><b>近十二时段订单趋势</b>
+    <div class="chart">
+      <template kniu:for="{{orderTrend}}" kniu:key="*this">
+        <i class="{{item.hot ? 'bar hot' : 'bar'}}" kniu:style="{{'height:' + item.height + 'px'}}"></i>
+      </template>
+    </div>
+  </div>
+  <div class="card"><b>实时动态</b>
+    <div class="activity" kniu:for="{{activities}}"><i class="dot"></i>{{item}}</div>
+  </div>
+</div>

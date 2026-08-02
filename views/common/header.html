@@ -1,0 +1,15 @@
+<header>
+  <button class="mobile-brand" aria-label="返回总览" kniu@click="handleHomeNavigation" type="button">{{brandMark}}</button>
+  <div>
+    <span class="crumb">{{workspaceLabel}} / </span>
+    <b>{{currentApp.name}}</b>
+  </div>
+  <div class="header-actions">
+    <label>
+      <span>⌕</span>
+      <input aria-label="全局搜索" kniu:model="{{searchQuery}}" placeholder="搜索应用、订单、客户..." />
+      <kbd>⌘ K</kbd>
+    </label>
+    <button aria-label="通知" class="icon-button" kniu@click="handleNotificationRequest" type="button">♢<span></span></button>
+  </div>
+</header>

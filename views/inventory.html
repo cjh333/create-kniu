@@ -1,0 +1,103 @@
+<style>
+  :host {
+    display: block;
+    color: #17213b;
+    font: 14px/1.5 Arial, "PingFang SC", "Microsoft YaHei", sans-serif
+  }
+
+  * {
+    box-sizing: border-box
+  }
+
+  h2 {
+    font-size: 22px;
+    margin: 0 0 7px
+  }
+
+  .muted {
+    color: #7b8498
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid #e6e9ef;
+    border-radius: 17px;
+    padding: 20px
+  }
+
+  .head {
+    display: flex;
+    justify-content: space-between
+  }
+
+  .pill {
+    background: #e8f8f1;
+    color: #14835b;
+    border-radius: 20px;
+    padding: 8px 12px
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin-top: 22px
+  }
+
+  .pic {
+    height: 120px;
+    border-radius: 14px;
+    background: linear-gradient(145deg, #d9f5e8, #f4fffa);
+    display: grid;
+    place-items: center;
+    font-size: 42px
+  }
+
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center
+  }
+
+  .stock {
+    height: 6px;
+    background: #edf0ef;
+    border-radius: 8px;
+    overflow: hidden
+  }
+
+  .stock i {
+    display: block;
+    height: 100%;
+    background: #19a974
+  }
+
+  .low i {
+    background: #ff7b54
+  }
+
+  @media(min-width:700px) {
+    h2 {
+      font-size: 26px
+    }
+
+    .grid {
+      grid-template-columns: repeat(3, 1fr)
+    }
+  }
+</style>
+<div class="head">
+  <div>
+    <h2>{{title}}</h2><span class="muted">{{warehouseCount}} 个仓库 · {{stockTotal}} 件在库</span>
+  </div><span class="pill">● 实时同步</span>
+</div>
+<div class="grid">
+  <div class="card" kniu:for="{{products}}" kniu:key="name">
+    <div class="pic">{{item.icon}}</div>
+    <div class="row">
+      <h3>{{item.name}}</h3><b>{{item.quantity}} 件</b>
+    </div>
+    <div kniu:class="{{item.low ? 'stock low' : 'stock'}}"><i kniu:style="{{'width:' + item.stockRate + '%;'}}"></i></div>
+    <p class="muted">{{item.low ? '低于安全库存' : '安全库存'}} {{item.safeStock}} 件</p>
+  </div>
+</div>

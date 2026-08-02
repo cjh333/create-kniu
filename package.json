@@ -1,0 +1,14 @@
+{
+  "name": "shadowhub-native",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cross-env PROCESS_ENV=development node client/core/server.mjs",
+    "build": "cross-env PROCESS_ENV=production node client/core/build.mjs"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "esbuild": "^0.28.1"
+  }
+}
