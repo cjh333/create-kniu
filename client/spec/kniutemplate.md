@@ -65,7 +65,7 @@ export const exampleController = {
 路由通过 `ROUTER.addRoute(path, templateUrl, controller)` 将三层装配起来：
 
 ```js
-ROUTER.addRoute('/example', '/client/views/example.html', exampleController);
+ROUTER.addRoute('/example', '/views/example.html', exampleController);
 ```
 
 框架仍兼容模板内 `<script>`，其内容会通过 `AsyncFunction('root', 'kniusystem', script)` 执行；该能力适合原型或兼容旧模板，不建议用于正式页面业务逻辑。
@@ -87,7 +87,7 @@ ROUTER.addRoute('/example', '/client/views/example.html', exampleController);
 
 > 选用建议：Model 只负责数据与派生规则；Controller 使用 `reactive`、`eventTo`、`navigateTo` 和 `openExternalUrl`；View 不写业务脚本。
 
-公共工作台由 `base.mjs` 在加载 `client/views/common/main.html` 后调用 `mountWorkspace()`。需要替换品牌或用户信息时，可在启动装配处传入配置；导航、当前应用状态、快捷键、Toast 和清理逻辑仍由核心模块接管：
+公共工作台由 `base.mjs` 在加载 `views/common/main.html` 后调用 `mountWorkspace()`。需要替换品牌或用户信息时，可在启动装配处传入配置；导航、当前应用状态、快捷键、Toast 和清理逻辑仍由核心模块接管：
 
 ```js
 return kniusystem.mountWorkspace({
@@ -568,13 +568,13 @@ return off; // 模板卸载时解绑
 
 ```html
 <div id="app">
-  <include src="/client/views/common/main.html" />
+  <include src="/views/common/main.html" />
 </div>
 ```
 
 要点：
 
-- `src` 支持相对路径（基于**当前模板 URL** 解析）与绝对路径（`/client/views/...`）。
+- `src` 支持相对路径（基于**当前模板 URL** 解析）与绝对路径（`/views/...`）。
 - `#app` 必须包含一个根 `<include src="...">`，启动器读取其 `src` 后加载入口模板。
 - 解析顺序与 `loadHtmlTemplate` 一致：先精确查找 `globalThis.__VIEW_TEMPLATES__` 清单，取不到再按完整路径 `fetch`。不按文件名模糊回退，避免同名模板被误加载。
 - 展开在**字符串层面**完成（先于 DOM 解析），因此自闭合写法 `<include src="x" />` 不会把后续兄弟节点误吞为它的子节点；显式闭合 `<include src="x"></include>` 同样支持。
@@ -585,7 +585,7 @@ return off; // 模板卸载时解绑
 
 ## 10. 完整示例
 
-下面是一段**合成演示**，集中覆盖文本插值 / `kniu:model` / `kniu:<attr>` / `kniu:[name]` / `kniu@事件` / XSS 防护 / `kniu:for` / `kniu:if` 等全部指令，便于一览写法。实际项目中的精简用法可参考 `client/views/orders.html`（`kniu:for` + `kniu:key` + `kniu:if` 分支链）与 `client/views/home.html`（`kniusystem.eventTo` / `kniusystem.navigateTo`）。
+下面是一段**合成演示**，集中覆盖文本插值 / `kniu:model` / `kniu:<attr>` / `kniu:[name]` / `kniu@事件` / XSS 防护 / `kniu:for` / `kniu:if` 等全部指令，便于一览写法。实际项目中的精简用法可参考 `views/orders.html`（`kniu:for` + `kniu:key` + `kniu:if` 分支链）与 `views/home.html`（`kniusystem.eventTo` / `kniusystem.navigateTo`）。
 
 ```html
 <div class="demo">

@@ -7,7 +7,7 @@ export { EventBus, MicroAppRuntime, ShadowAppHost } from './runtime.mjs';
 export const html = String.raw;
 
 // 递归扫描目录收集。
-export async function collectTemplates(directory = 'client/views') {
+export async function collectTemplates(directory = 'views') {
   const { readdir, readFile } = await import('node:fs/promises');
   const { join, relative } = await import('node:path');
   const templates = {};

@@ -31,12 +31,12 @@ npm run build
 **MVC 分层**：
 - `client/model/`：业务数据、派生统计与领域判断，不依赖 DOM
 - `client/controller/`：创建响应式状态、处理用户动作并协调导航和消息
-- `client/views/*.html`：只保留每个应用的 Shadow DOM 结构、样式和声明式绑定
-- `client/views/common/header.html`：公共顶部栏模板
-- `client/views/common/main.html`：侧边栏、工作区和挂载点等声明式公共布局
 - `client/core/workspace.mjs`：公共外壳状态、导航、路由同步、快捷键、Toast 与销毁逻辑
 - `client/controller/`：按应用拆分的页面交互控制器
 - `public/static/css/webs.css`：只作用于主应用外壳的全局样式
+- `views/*.html`：只保留每个应用的 Shadow DOM 结构、样式和声明式绑定
+- `views/common/header.html`：公共顶部栏模板
+- `views/common/main.html`：侧边栏、工作区和挂载点等声明式公共布局
 
 ## 构建产物
 

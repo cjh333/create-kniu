@@ -52,7 +52,7 @@ async function copySourceTree(sourcePath, destinationPath) {
   }
 }
 
-const templates = await collectTemplates('client/views');
+const templates = await collectTemplates('views');
 await writeFile(
   join(outputTemplateDir, 'templates.js'),
   `globalThis.__VIEW_TEMPLATES__ = ${JSON.stringify(templates)};\n`,

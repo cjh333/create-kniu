@@ -6,7 +6,7 @@ import { collectTemplates } from './base.mjs';
 const root = process.cwd();
 
 async function createTemplateManifest() {
-  const templates = await collectTemplates('client/views');
+  const templates = await collectTemplates('views');
   return `globalThis.__VIEW_TEMPLATES__ = ${JSON.stringify(templates)};`;
 }
 const types = {
