@@ -1,3 +1,14 @@
+<div class="hero"><span>{{sales.label}}</span>
+  <div class="metric">{{sales.value}}</div><b>{{sales.change}}</b>
+</div>
+<div class="grid">
+  <div class="card"><b>渠道表现</b>
+    <div class="bars"><i kniu:for="{{channelPerformance}}" kniu:style="{{'height:' + item + '%;'}}"></i></div>
+  </div>
+  <div class="card"><b>流量来源</b>
+    <div class="source" kniu:for="{{trafficSources}}"><b>{{item.name}}</b><span>{{item.rate}}</span></div>
+  </div>
+</div>
 <style>
   :host {
     display: block;
@@ -92,14 +103,3 @@
     }
   }
 </style>
-<div class="hero"><span>{{sales.label}}</span>
-  <div class="metric">{{sales.value}}</div><b>{{sales.change}}</b>
-</div>
-<div class="grid">
-  <div class="card"><b>渠道表现</b>
-    <div class="bars"><i kniu:for="{{channelPerformance}}" kniu:style="{{'height:' + item + '%;'}}"></i></div>
-  </div>
-  <div class="card"><b>流量来源</b>
-    <div class="source" kniu:for="{{trafficSources}}"><b>{{item.name}}</b><span>{{item.rate}}</span></div>
-  </div>
-</div>

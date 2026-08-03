@@ -1,3 +1,6 @@
+<nav class="mobile-nav" aria-label="移动端应用导航">
+  <button kniu:for="{{navigation}}" kniu:key="path" kniu:[nav]="{{item.path}}" class="{{currentPath === item.path ? 'active' : ''}}" kniu@click="handleNavigation" type="button">{{item.icon}}<span>{{item.name}}</span></button>
+</nav>
 <header>
   <button class="mobile-brand" aria-label="返回总览" kniu@click="handleHomeNavigation" type="button">{{brandMark}}</button>
   <div>

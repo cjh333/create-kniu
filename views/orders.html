@@ -1,3 +1,52 @@
+<div class="head">
+  <div>
+    <h2>订单中心</h2><span class="muted">统一管理所有渠道订单</span>
+  </div>
+  <button class="btn" kniu@click="handleExportOrders" type="button">导出订单</button>
+</div>
+<div class="filters">
+  <button class="{{currentFilter === 'all' ? 'active' : ''}}" data-filter="all" kniu@click="handleFilterOrders" type="button">全部 {{nopay + processing + completed}}</button>
+  <button class="{{currentFilter === '待付款' ? 'active' : ''}}" data-filter="待付款" kniu@click="handleFilterOrders" type="button">待付款 {{nopay}}</button>
+  <button class="{{currentFilter === '处理中' ? 'active' : ''}}" data-filter="处理中" kniu@click="handleFilterOrders" type="button">处理中 {{processing}}</button>
+  <button class="{{currentFilter === '已完成' ? 'active' : ''}}" data-filter="已完成" kniu@click="handleFilterOrders" type="button">已完成 {{completed}}</button>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>订单编号</th>
+      <th>客户</th>
+      <th>商品</th>
+      <th>金额</th>
+      <th>状态</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr kniu:for="{{orders}}" kniu:key="*this">
+      <td>{{item.number}}</td>
+      <td>{{item.title}}</td>
+      <td>{{item.content}}</td>
+      <td>¥ {{item.pay}}</td>
+      <td>
+        <template kniu:if="{{item.status === '待付款'}}">
+          <span class="status nopay">{{item.status}}</span>
+        </template>
+        <template kniu:elseif="{{item.status === '处理中'}}">
+          <span class="status wait">{{item.status}}</span>
+        </template>
+        <template kniu:else>
+          <span class="status">{{item.status}}</span>
+        </template>
+      </td>
+    </tr>
+  </tbody>
+</table>
+<div class="pagination">
+  <span>共 {{totalOrders}} 条，第 {{currentPage}} / {{totalPages}} 页</span>
+  <div class="pagination-actions">
+    <button disabled="{{currentPage === 1}}" kniu@click="handlePreviousPage" type="button">上一页</button>
+    <button disabled="{{currentPage === totalPages}}" kniu@click="handleNextPage" type="button">下一页</button>
+  </div>
+</div>
 <style>
   :host {
     display: block;
@@ -99,6 +148,34 @@
     color: #a76800
   }
 
+  .pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-top: 14px;
+    color: #7b8498
+  }
+
+  .pagination-actions {
+    display: flex;
+    gap: 8px
+  }
+
+  .pagination button {
+    padding: 8px 13px;
+    color: #34405c;
+    background: #fff;
+    border: 1px solid #e4e7ee;
+    border-radius: 8px
+  }
+
+  .pagination button:disabled {
+    cursor: not-allowed;
+    color: #aeb4c1;
+    background: #f5f6f8
+  }
+
   th:nth-child(3),
   td:nth-child(3) {
     display: none
@@ -114,42 +191,4 @@
       display: table-cell
     }
   }
-
 </style>
-<div class="head">
-  <div>
-    <h2>订单中心</h2><span class="muted">统一管理所有渠道订单</span>
-  </div>
-  <button class="btn" kniu@click="handleExportOrders" type="button">导出订单</button>
-</div>
-<div class="filters"><button class="active">全部 {{nopay + processing + completed}}</button><button>待付款 {{nopay}}</button><button>处理中 {{processing}}</button><button>已完成 {{completed}}</button></div>
-<table>
-  <thead>
-    <tr>
-      <th>订单编号</th>
-      <th>客户</th>
-      <th>商品</th>
-      <th>金额</th>
-      <th>状态</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr kniu:for="{{orders}}" kniu:key="*this">
-      <td>{{item.number}}</td>
-      <td>{{item.title}}</td>
-      <td>{{item.content}}</td>
-      <td>¥ {{item.pay}}</td>
-      <td>
-        <template kniu:if="{{item.status === '待付款'}}">
-          <span class="status nopay">{{item.status}}</span>
-        </template>
-        <template kniu:elseif="{{item.status === '处理中'}}">
-          <span class="status wait">{{item.status}}</span>
-        </template>
-        <template kniu:else>
-          <span class="status">{{item.status}}</span>
-        </template>
-      </td>
-    </tr>
-  </tbody>
-</table>

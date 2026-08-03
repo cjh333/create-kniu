@@ -6,7 +6,7 @@ export const inventoryController = {
     icon: '◇',
     color: '#19a974'
   },
-  mount(root, kniusystem) {
+  mount(kniusystem) {
     kniusystem.reactive(createInventoryModel());
   },
 };

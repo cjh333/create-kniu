@@ -45,12 +45,12 @@
 
 ## 1. 接入方式
 
-当前项目采用 **Model + Controller + 纯 View**。页面 HTML 只保留结构、样式和 `kniu:*` 绑定；Controller 通过 `mount(root, kniusystem)` 创建响应式状态：
+当前项目采用 **Model + Controller + 纯 View**。页面 HTML 只保留结构、样式和 `kniu:*` 绑定；Controller 通过 `mount(kniusystem, root)` 创建响应式状态：
 
 ```js
 export const exampleController = {
   data: { name: '示例应用', icon: '◇', color: '#635bff' },
-  mount(root, kniusystem) {
+  mount(kniusystem, root) {
     const { reactive, navigateTo } = kniusystem;
     reactive({
       title: '示例应用',
@@ -486,7 +486,7 @@ reactive({
 
 ```js
 export const exampleController = {
-  mount(root, kniusystem) {
+  mount(kniusystem, root) {
     kniusystem.reactive({
       count: 0,
       handleClick(event) {
@@ -640,7 +640,7 @@ return off; // 模板卸载时解绑
 
 ```js
 export const demoController = {
-  mount(root, kniusystem) {
+  mount(kniusystem, root) {
     kniusystem.reactive({
       nopay: 12,
       owner: { name: '江屿设计' },

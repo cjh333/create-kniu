@@ -65,5 +65,5 @@ if (typeof document !== 'undefined') {
     mountWorkspace(options) {
       return mountWorkspaceCore(this, options);
     },
-  }, (root, kniusystem) => kniusystem.mountWorkspace());
+  }, (kniusystem, root) => kniusystem.mountWorkspace());
 }

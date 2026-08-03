@@ -6,7 +6,7 @@ export const insightsController = {
     icon: '↗',
     color: '#e7a11a'
   },
-  mount(root, kniusystem) {
+  mount(kniusystem) {
     kniusystem.reactive(createInsightsModel());
-  },
+  }
 };

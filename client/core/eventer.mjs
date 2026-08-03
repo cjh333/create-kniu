@@ -1,5 +1,31 @@
 import { bind, reactive, beginBindingCollection, endBindingCollection } from './kniutemplate.mjs';
 
+// 同时兼容根路径（/views/...）和部署子目录下的相对路径（views/...）。
+function findBundledTemplate(templates, url) {
+  if (!templates || !url) return null;
+  const candidates = new Set([url]);
+  try {
+    const pathname = new URL(url, location.href).pathname;
+    candidates.add(pathname);
+    candidates.add(pathname.replace(/^\/+/, ''));
+  } catch {
+    candidates.add(String(url).replace(/^\/+/, ''));
+  }
+  for (const key of candidates) {
+    if (Object.prototype.hasOwnProperty.call(templates, key)) {
+      return { key, source: templates[key] };
+    }
+  }
+  const pathname = [...candidates][1] ?? String(url);
+  for (const key of Object.keys(templates)) {
+    const relativeKey = key.replace(/^\/+/, '');
+    if (pathname === relativeKey || pathname.endsWith(`/${relativeKey}`)) {
+      return { key, source: templates[key] };
+    }
+  }
+  return null;
+}
+
 // 把 include 的相对路径解析为基于当前模板的绝对 pathname。
 function resolveTemplateIncludeUrl(includePath, baseTemplateUrl) {
   if (!includePath) return includePath;
@@ -15,8 +41,9 @@ function resolveTemplateIncludeUrl(includePath, baseTemplateUrl) {
 // 从模板清单或网络取得源码（与 loadHtmlTemplate 同源解析逻辑）。
 async function loadTemplateSource(url, signal) {
   const templates = globalThis.__VIEW_TEMPLATES__;
-  let resolved = url;
-  let source = templates?.[url];
+  const bundledTemplate = findBundledTemplate(templates, url);
+  let resolved = bundledTemplate?.key ?? url;
+  let source = bundledTemplate?.source;
   if (!source) {
     const response = await fetch(resolved, { signal });
     if (!response.ok) {
@@ -56,8 +83,9 @@ async function resolveTemplateIncludes(source, baseTemplateUrl, signal, visitedU
 
 export async function loadHtmlTemplate(templateUrl, target, signal, kniusystem = {}, mountController) {
   const templates = globalThis.__VIEW_TEMPLATES__;
-  let resolved = templateUrl;
-  let source = templates?.[templateUrl];
+  const bundledTemplate = findBundledTemplate(templates, templateUrl);
+  let resolved = bundledTemplate?.key ?? templateUrl;
+  let source = bundledTemplate?.source;
   if (!source) {
     const response = await fetch(resolved, { signal });
     if (!response.ok) {
@@ -351,7 +379,7 @@ export async function loadHtmlTemplate(templateUrl, target, signal, kniusystem =
       await execute(() => new AsyncFunction('root', 'kniusystem', script.textContent)(target, templateKniuSystem));
     }
     if (typeof mountController === 'function') {
-      await execute(() => mountController(target, templateKniuSystem));
+      await execute(() => mountController(templateKniuSystem, target));
     }
   } catch (error) {
     cleanups.reverse().forEach((cleanup) => cleanup());
@@ -366,7 +394,7 @@ export async function loadHtmlTemplate(templateUrl, target, signal, kniusystem =
 }
 export function createTemplateApp(templateUrl, controller) {
   return {
-    async mount(root, kniusystem) {
+    async mount(kniusystem, root) {
       const abortController = new AbortController();
       const dispose = await loadHtmlTemplate(
         templateUrl,

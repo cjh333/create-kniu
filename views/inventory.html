@@ -1,3 +1,18 @@
+<div class="head">
+  <div>
+    <h2>{{title}}</h2><span class="muted">{{warehouseCount}} 个仓库 · {{stockTotal}} 件在库</span>
+  </div><span class="pill">● 实时同步</span>
+</div>
+<div class="grid">
+  <div class="card" kniu:for="{{products}}" kniu:key="name">
+    <div class="pic">{{item.icon}}</div>
+    <div class="row">
+      <h3>{{item.name}}</h3><b>{{item.quantity}} 件</b>
+    </div>
+    <div kniu:class="{{item.low ? 'stock low' : 'stock'}}"><i kniu:style="{{'width:' + item.stockRate + '%;'}}"></i></div>
+    <p class="muted">{{item.low ? '低于安全库存' : '安全库存'}} {{item.safeStock}} 件</p>
+  </div>
+</div>
 <style>
   :host {
     display: block;
@@ -86,18 +101,3 @@
     }
   }
 </style>
-<div class="head">
-  <div>
-    <h2>{{title}}</h2><span class="muted">{{warehouseCount}} 个仓库 · {{stockTotal}} 件在库</span>
-  </div><span class="pill">● 实时同步</span>
-</div>
-<div class="grid">
-  <div class="card" kniu:for="{{products}}" kniu:key="name">
-    <div class="pic">{{item.icon}}</div>
-    <div class="row">
-      <h3>{{item.name}}</h3><b>{{item.quantity}} 件</b>
-    </div>
-    <div kniu:class="{{item.low ? 'stock low' : 'stock'}}"><i kniu:style="{{'width:' + item.stockRate + '%;'}}"></i></div>
-    <p class="muted">{{item.low ? '低于安全库存' : '安全库存'}} {{item.safeStock}} 件</p>
-  </div>
-</div>

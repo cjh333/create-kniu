@@ -1,5 +1,5 @@
 <style>
-  @import url("/public/static/css/webs.css");
+  @import url("public/static/css/webs.min.css");
 </style>
 <main class="shell">
   <aside class="sidebar">
@@ -26,11 +26,6 @@
   </aside>
   <section class="workspace">
     <include src="./header.html" />
-    <nav class="mobile-nav" aria-label="移动端应用导航">
-      <button kniu:for="{{navigation}}" kniu:key="path" kniu:[nav]="{{item.path}}" class="{{currentPath === item.path ? 'active' : ''}}" kniu@click="handleNavigation" type="button">
-        {{item.icon}}<span>{{item.name}}</span>
-      </button>
-    </nav>
     <article>
       <div class="app-meta">
         <span><i kniu:style="{{'background-color:' + currentApp.color}}">{{currentApp.icon}}</i><b>{{currentApp.name}}</b></span>

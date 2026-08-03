@@ -31,7 +31,7 @@ export class ShadowAppHost extends BaseElement {
     const root = this.shadowRoot || this.attachShadow({ mode: 'open' });
     const generation = ++this.#generation;
     this.setAttribute('data-status', 'mounting');
-    this.#mountPromise = Promise.resolve(this.#definition.mount(root, this.#kniusystem))
+    this.#mountPromise = Promise.resolve(this.#definition.mount(this.#kniusystem, root))
       .then((cleanup) => {
         const dispose = typeof cleanup === 'function' ? cleanup : () => {};
         if (generation !== this.#generation) {

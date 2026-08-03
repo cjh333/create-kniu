@@ -1,20 +1,31 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="基于原生 JavaScript 的单页面多应用框架 Kniu System" />
+  <meta charset="UTF-8">
+  <meta name="renderer" content="webkit">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,shrink-to-fit=no,user-scalable=no,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="theme-color" content="#000000">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-touch-fullscreen" content="yes">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="screen-orientation" content="portrait">
+  <meta name="x5-orientation" content="portrait">
+  <meta name="description" content="基于原生 JavaScript 的单页面多应用框架 Kniu System">
+  <meta name="keywords" content="Kniu System, 原生多应用工作台, 多应用框架, 单页面应用">
+  <meta name="author" content="Kniu System Team">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,Chrome=130">
+  <link href="public/static/img/favicon.svg" rel="shortcut icon">
   <title>Kniu System｜原生多应用工作台</title>
-  <link rel="icon" href="/public/static/img/favicon.svg" />
 </head>
 
 <body>
   <div id="app">
-    <include src="/views/common/main.html" />
+    <include src="views/common/main.html" />
   </div>
   <noscript>请启用 JavaScript 以使用 Kniu System。</noscript>
-  <script src="/client/core/base.mjs" type="module"></script>
+  <script src="client/core/base.mjs" type="module"></script>
 </body>
 
 </html>

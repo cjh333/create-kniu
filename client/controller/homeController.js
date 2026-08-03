@@ -6,7 +6,7 @@ export const homeController = {
     icon: '⌂',
     color: '#ff5c35'
   },
-  mount(root, kniusystem) {
+  mount(kniusystem) {
     kniusystem.reactive({
       ...createHomeModel(),
       handleCreateOrder() {

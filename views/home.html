@@ -1,3 +1,28 @@
+<section class="hero">
+  <div>
+    <h2>{{greeting}}，{{userName}} 👋</h2>
+    <div class="muted">你的业务运行平稳，今天已有 {{todayOrders}} 笔新订单。</div>
+  </div><button class="primary" kniu@click="handleCreateOrder" type="button">＋ 新建订单</button>
+</section>
+<div class="stats">
+  <template kniu:for="{{stats}}" kniu:key="*this">
+    <div class="card"><span class="muted">{{item.label}}</span>
+      <div class="value">{{item.value}}</div><span class="up">{{item.tip}}</span>
+    </div>
+  </template>
+</div>
+<div class="split">
+  <div class="card"><b>近十二时段订单趋势</b>
+    <div class="chart">
+      <template kniu:for="{{orderTrend}}" kniu:key="*this">
+        <i class="{{item.hot ? 'bar hot' : 'bar'}}" kniu:style="{{'height:' + item.height + 'px'}}"></i>
+      </template>
+    </div>
+  </div>
+  <div class="card"><b>实时动态</b>
+    <div class="activity" kniu:for="{{activities}}"><i class="dot"></i>{{item}}</div>
+  </div>
+</div>
 <style>
   :host {
     display: block;
@@ -131,28 +156,3 @@
     }
   }
 </style>
-<section class="hero">
-  <div>
-    <h2>{{greeting}}，{{userName}} 👋</h2>
-    <div class="muted">你的业务运行平稳，今天已有 {{todayOrders}} 笔新订单。</div>
-  </div><button class="primary" kniu@click="handleCreateOrder" type="button">＋ 新建订单</button>
-</section>
-<div class="stats">
-  <template kniu:for="{{stats}}" kniu:key="*this">
-    <div class="card"><span class="muted">{{item.label}}</span>
-      <div class="value">{{item.value}}</div><span class="up">{{item.tip}}</span>
-    </div>
-  </template>
-</div>
-<div class="split">
-  <div class="card"><b>近十二时段订单趋势</b>
-    <div class="chart">
-      <template kniu:for="{{orderTrend}}" kniu:key="*this">
-        <i class="{{item.hot ? 'bar hot' : 'bar'}}" kniu:style="{{'height:' + item.height + 'px'}}"></i>
-      </template>
-    </div>
-  </div>
-  <div class="card"><b>实时动态</b>
-    <div class="activity" kniu:for="{{activities}}"><i class="dot"></i>{{item}}</div>
-  </div>
-</div>

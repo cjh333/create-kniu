@@ -53,5 +53,5 @@ npm run build
 - `npm run dev`：启动开发服务器（`client/core/server.mjs`），动态生成模版清单
 - `npm run build`：构建生产版本，使用 esbuild 打包并优化
 
-每个 Controller 暴露 `mount(root, kniusystem)`，并可返回清理函数。子应用样式写入
+每个 Controller 暴露 `mount(kniusystem, root)`，并可返回清理函数。子应用样式写入
 自己的 Shadow Root，不会泄漏到主应用或其他子应用。
