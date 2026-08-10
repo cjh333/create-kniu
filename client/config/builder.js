@@ -1,4 +1,4 @@
-export const BUILDER = {
+const BUILDER = {
   // 输出目录。
   OUTPUT_DIR: 'dist',
   // 输出模板目录。
@@ -10,6 +10,7 @@ export const BUILDER = {
   // 源目录。
   SOURCES: [
     'index.html',
-    'public',
+    'public'
   ]
 };
+export { BUILDER };

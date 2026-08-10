@@ -1,0 +1,24 @@
+<style>
+  @import url("@kniu/kniu.min.css");
+  @import url("@style/webs.min.css");
+
+  app-aside,
+  app-header,
+  app-home,
+  app-orders,
+  app-inventory,
+  app-insights {
+    display: block;
+  }
+</style>
+<include src="./aside.html" />
+<section class="kniu_web_aside_body">
+  <include src="./header.html" />
+  <article class="kniu_web_aside_view"></article>
+</section>
+<!-- loading -->
+<div class="loading_mask" kniu:if="{{ui.loading}}">
+  <span class="loading_spinner"></span>
+</div>
+<!-- Toast -->
+<div class="toast{{ui.toastShow ? ' show' : ''}}" role="status" aria-live="polite">{{ui.toast}}</div>

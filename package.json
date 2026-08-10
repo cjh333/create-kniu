@@ -1,12 +1,13 @@
 {
-  "name": "kniu-system",
+  "name": "KniuSystem",
   "version": "1.0.0",
   "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "cross-env PROCESS_ENV=development node client/core/server.mjs",
-    "build": "cross-env PROCESS_ENV=production node client/core/build.mjs"
+    "kill": "taskkill /F /IM node.exe",
+    "dev": "cross-env PROCESS_ENV=development node client/core/kniuserver.mjs",
+    "build": "cross-env PROCESS_ENV=production node client/core/kniubuilder.mjs"
   },
   "devDependencies": {
     "cross-env": "^10.1.0",

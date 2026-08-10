@@ -1,0 +1,107 @@
+<style>
+  :host {
+    display: block;
+    color: #17213b;
+    font: 14px/1.5 Arial, "PingFang SC", "Microsoft YaHei", sans-serif
+  }
+
+  * {
+    box-sizing: border-box
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid #e6e9ef;
+    border-radius: 17px;
+    padding: 20px
+  }
+
+  .hero {
+    background: #17182d;
+    color: #fff;
+    border-radius: 20px;
+    padding: 28px;
+    position: relative;
+    overflow: hidden
+  }
+
+  .hero:after {
+    content: "";
+    position: absolute;
+    width: 260px;
+    height: 260px;
+    border-radius: 50%;
+    background: #e7a11a;
+    filter: blur(90px);
+    opacity: .35;
+    right: -40px;
+    top: -100px
+  }
+
+  .metric {
+    font-size: 46px;
+    font-weight: 800;
+    margin: 15px 0
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin-top: 16px
+  }
+
+  .bars {
+    height: 190px;
+    display: flex;
+    align-items: end;
+    gap: 13px
+  }
+
+  .bars i {
+    flex: 1;
+    background: #ffe2a8;
+    border-radius: 8px 8px 2px 2px
+  }
+
+  .bars i:nth-child(4),
+  .bars i:nth-child(6) {
+    background: #e7a11a
+  }
+
+  .source {
+    display: flex;
+    justify-content: space-between;
+    padding: 15px 0;
+    border-bottom: 1px solid #eee
+  }
+
+  .source b:before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #e7a11a;
+    margin-right: 8px
+  }
+
+  @media(min-width:700px) {
+    .grid {
+      grid-template-columns: 1.4fr 1fr
+    }
+  }
+</style>
+<article>
+  <div class="hero"><span>{{sales.label}}</span>
+    <div class="metric">{{sales.value}}</div><b>{{sales.change}}</b>
+  </div>
+  <div class="grid">
+    <div class="card"><b>渠道表现</b>
+      <div class="bars"><i kniu:for="{{channelPerformance}}" kniu:style="{{'height:' + item + '%;'}}"></i></div>
+    </div>
+    <div class="card"><b>流量来源</b>
+      <div class="source" kniu:for="{{trafficSources}}"><b>{{item.name}}</b><span>{{item.rate}}</span></div>
+    </div>
+  </div>
+</article>

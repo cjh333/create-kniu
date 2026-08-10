@@ -1,0 +1,201 @@
+<style>
+  @import url("@kniu/kniu.min.css");
+  @import url("@style/admin/admin.min.css");
+  @import url("@style/admin/adminHome.min.css");
+
+  .index_cell2 {
+    background-color: #fff;
+  }
+</style>
+<section class="index_cells">
+  <div class="admin_content_body index_cell index_cell2">
+    <div class="kniu_row_group">
+      <ul class="kniu_row kniu_dd_cols_2 kniu_md_gap_10">
+        <li class="kniu_col">
+          <div class="kniu_table_group kniu_table_bordered kniu_table_border_row kniu_table_size_auto kniu_table_nohover">
+            <div class="kniu_table_main">
+              <table class="kniu_table">
+                <thead>
+                  <tr>
+                    <th>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">个人信息</p>
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">你好，{{ username }}</p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">所属角色：{{ role }}</p>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </li>
+        <li class="kniu_col">
+          <div class="kniu_table_group kniu_table_bordered kniu_table_border_row kniu_table_size_auto kniu_table_nohover">
+            <div class="kniu_table_main">
+              <table class="kniu_table">
+                <thead>
+                  <tr>
+                    <th colspan="2">
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">系统信息</p>
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">操作系统</p>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">{{ platform }}</p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">系统架构</p>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">{{ arch }}</p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">服务器IP</p>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">{{ server }} ({{ ip }})</p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">项目根目录</p>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">{{ rootDir }}</p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">MYSQL版本</p>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">{{ mysqlVersion }}</p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">上传文件大小</p>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">50M</p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">运行时间</p>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">{{ uptime }}</p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">总内存大小</p>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">{{ totalMemory }}</p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">可用内存</p>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">{{ currentMemory }}</p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">服务器时间</p>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">{{ currentTime }}</p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">北京时间</p>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="kniu_table_cell">
+                        <p class="table_text1">{{ utcTime }}</p>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>

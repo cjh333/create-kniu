@@ -1,0 +1,342 @@
+<style>
+  @import url("@kniu/kniu.min.css");
+
+  :host {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%)
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0
+  }
+
+  .login_group {
+    position: fixed;
+    top: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    overflow: hidden
+  }
+
+  .login_group::before {
+    content: "";
+    position: fixed;
+    top: -18%;
+    right: -8%;
+    width: 520px;
+    height: 520px;
+    background: radial-gradient(circle, rgba(255, 255, 255, .18), rgba(255, 255, 255, 0) 70%);
+    border-radius: 50%;
+    pointer-events: none
+  }
+
+  .login_group::after {
+    content: "";
+    position: fixed;
+    bottom: -16%;
+    left: -10%;
+    width: 460px;
+    height: 460px;
+    background: radial-gradient(circle, rgba(255, 255, 255, .12), rgba(255, 255, 255, 0) 70%);
+    border-radius: 50%;
+    pointer-events: none
+  }
+
+  .login_wrap {
+    width: 400px;
+    max-width: 92vw;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+    overflow: hidden
+  }
+
+  .login_header {
+    padding: 36px 40px 8px;
+    text-align: center
+  }
+
+  .login_brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-bottom: 8px
+  }
+
+  .login_brandmark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: #23262e;
+    color: #fff;
+    font-size: 20px;
+    font-weight: 700;
+    border-radius: 8px
+  }
+
+  .login_brandname {
+    font-size: 22px;
+    font-weight: 700;
+    color: #23262e
+  }
+
+  .login_brandname strong {
+    color: #667eea
+  }
+
+  .login_subtitle {
+    font-size: 13px;
+    color: #999;
+    margin-top: 4px
+  }
+
+  .login_body {
+    padding: 20px 40px 36px
+  }
+
+  .form_group {
+    margin-bottom: 20px
+  }
+
+  .form_label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 6px
+  }
+
+  .form_input {
+    display: block;
+    width: 100%;
+    height: 42px;
+    padding: 0 14px;
+    font-size: 14px;
+    color: #333;
+    background: #f7f8fa;
+    border: 1px solid #e4e7ed;
+    border-radius: 6px;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s
+  }
+
+  .form_input:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, .12);
+    background: #fff
+  }
+
+  .form_input::placeholder {
+    color: #c0c4cc
+  }
+
+  .captcha_row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start
+  }
+
+  .captcha_row .form_group {
+    flex: 1;
+    margin-bottom: 0
+  }
+
+  .captcha_img {
+    cursor: pointer;
+    flex-shrink: 0;
+    border-radius: 6px;
+    border: 1px solid #e4e7ed;
+    height: 42px;
+    transition: opacity .2s
+  }
+
+  .captcha_img:hover {
+    opacity: .85
+  }
+
+  .captcha_loading_tip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 110px;
+    font-size: 12px;
+    color: #999;
+    background: #f7f8fa
+  }
+
+  .captcha_tip {
+    font-size: 11px;
+    color: #999;
+    margin-top: 4px
+  }
+
+  .form_error {
+    display: none;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: #e6423a;
+    background: #fef0ef;
+    border: 1px solid #fde2e2;
+    border-radius: 6px;
+    line-height: 1.5
+  }
+
+  .form_error.show {
+    display: block
+  }
+
+  .login_btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 44px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background: #667eea;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background .2s, transform .1s
+  }
+
+  .login_btn:hover {
+    background: #5a6fd6
+  }
+
+  .login_btn:active {
+    transform: scale(.98)
+  }
+
+  .login_btn:disabled {
+    background: #a0aec0;
+    cursor: not-allowed;
+    transform: none
+  }
+
+  .login_btn .kniu_btn_loading_spinner {
+    display: none;
+    border: 2px solid rgba(255, 255, 255, .3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    margin-right: 8px;
+    width: 18px;
+    height: 18px;
+    animation: animate_spin .6s linear infinite;
+  }
+
+  .kniu_btn_loading .kniu_btn_loading_spinner {
+    display: inline-block;
+  }
+
+  .kniu_btn_loading .login_btn_text {
+    display: none;
+  }
+
+  @keyframes animate_spin {
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  .login_footer {
+    padding: 0 40px 28px;
+    text-align: center;
+    font-size: 12px;
+    color: #bbb
+  }
+</style>
+
+<div class="login_group">
+  <div class="login_wrap">
+    <div class="login_header">
+      <div class="login_brand">
+        <span class="login_brandmark">K</span>
+        <span class="login_brandname">Kniu<strong>System</strong></span>
+      </div>
+      <p class="login_subtitle">原生多应用工作台 · 管理后台</p>
+    </div>
+
+    <div class="login_body">
+      <div class="form_error {{showError ? 'show' : ''}}">{{error}}</div>
+
+      <form class="kniu_form" id="loginform" kniu@submit.prevent="onSubmit">
+
+        <div class="kniu_form_cell">
+          <div class="kniu_label kniu_md_form_yl">
+            <p class="kniu_input_text">用户名</p>
+            <div class="kniu_input_group">
+              <input class="kniu_input kniu_required" name="name" kniu:model="{{username}}" placeholder="请输入用户名" autocomplete="off" required type="text">
+              <div class="kniu_input_aftfix">
+                <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kniu_form_cell">
+          <div class="kniu_label kniu_label_password kniu_md_form_yl">
+            <p class="kniu_input_text">密码</p>
+            <div class="kniu_input_group">
+              <input class="kniu_input kniu_required" name="password" kniu:model="{{password}}" placeholder="请输入密码" autocomplete="off" required type="password">
+              <div class="kniu_input_beffix">
+                <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
+              </div>
+              <div class="kniu_input_aftfix">
+                <span class="kniu_icon kniu_icon_uneye kniu_icon_1d3x kniu_input_btn_showpassword"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kniu_form_cell">
+          <div class="kniu_label kniu_label_gvcode kniu_md_form_yl">
+            <p class="kniu_input_text">验证码</p>
+            <div class="kniu_input_group">
+              <div class="kniu_input_wrap">
+                <input class="kniu_input kniu_required" name="gvcode" kniu:model="{{verificationCode}}" placeholder="请输入验证码" maxlength="4" autocomplete="off" required type="text">
+                <div class="kniu_input_aftfix">
+                  <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
+                </div>
+              </div>
+              <div class="kniu_gvcode_img_group">
+                <template kniu:if="{{isCaptchaLoading}}">
+                  <span class="kniu_gvcode_img captcha_loading_tip">加载中…</span>
+                </template>
+                <template kniu:else>
+                  <img class="kniu_gvcode_img" kniu@click="refreshCaptcha" src="{{captchaImageUrl}}" title="点击刷新验证码">
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="kniu_form_cell">
+          <p class="captcha_tip">请输入图片中算术题的计算结果</p>
+        </div>
+
+        <div class="kniu_form_cell">
+          <button class="kniu_btn login_btn{{isSubmitting ? ' kniu_btn_loading' : ''}}" disabled="{{isSubmitting}}" type="submit">
+            <span class="kniu_btn_loading_spinner"></span>
+            <span class="login_btn_text">登 录</span>
+          </button>
+        </div>
+
+      </form>
+    </div>
+
+    <div class="login_footer">Kniu System &copy; 2026</div>
+  </div>
+</div>

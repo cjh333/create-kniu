@@ -1,0 +1,50 @@
+<style>
+  @import url("@kniu/kniu.min.css");
+  @import url("@style/webs.min.css");
+
+  :host {
+    display: block;
+  }
+
+  .kniu_web_aside_head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--line);
+    padding: 0 18px;
+    height: 72px;
+    background-color: #fff;
+  }
+</style>
+<nav class="kniu_web_aside_mdnav_wrap" aria-label="移动端应用导航">
+  <template kniu:for="{{navigation}}" kniu:key="path">
+    <button class="kniu_web_aside_mdnav{{currentPath === item.path ? ' active' : ''}}" kniu:[nav]="{{item.path}}" kniu@click="handleNavigation" type="button">
+      <span class="kniu_web_aside_mdnav_icon">{{item.icon}}</span>
+      <span class="kniu_web_aside_mdnav_title">{{item.name}}</span>
+    </button>
+  </template>
+</nav>
+<header class="kniu_web_aside_head">
+  <button class="kniu_web_aside_brand" kniu@click="handleHomeNavigation" aria-label="返回总览" type="button">{{brandMark}}</button>
+  <div class="kniu_web_aside_crumb_wrap">
+    <span class="kniu_web_aside_crumb">{{workspaceLabel}} / </span>
+    <strong>{{currentApp.name}}</strong>
+  </div>
+  <div class="kniu_web_aside_head_actions">
+    <form class="kniu_label kniu_label_fixs" id="searchform">
+      <div class="kniu_input_group">
+        <input class="kniu_input" kniu:model="{{searchQuery}}" aria-label="全局搜索" placeholder="搜索应用、订单、客户..." type="text">
+        <div class="kniu_input_beffix">
+          <span class="kniu_icon kniu_icon_search kniu_icon_1d2x kniu_input_btn_search"></span>
+        </div>
+        <div class="kniu_input_aftfix">
+          <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
+        </div>
+      </div>
+    </form>
+    <button class="kniu_web_aside_toast" kniu@click="handleNotificationRequest" aria-label="通知" type="button">♢<span></span></button>
+    <a class="admin_tab_refresh1" href="javascript:location.reload();">
+      <span class="kniu_icon kniu_icon_refresh kniu_icon_1d3x"></span>
+    </a>
+  </div>
+</header>

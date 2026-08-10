@@ -1,16 +1,15 @@
-import { ROUTER } from '../core/eventer.mjs';
-import { logger } from '../core/logger.mjs';
-import { homeController } from '../controller/homeController.js';
-import { ordersController } from '../controller/ordersController.js';
-import { inventoryController } from '../controller/inventoryController.js';
-import { insightsController } from '../controller/insightsController.js';
+import { ROUTER } from '../core/kniueventer.mjs';
+import { appLogger } from '../core/kniulogger.mjs';
 
-ROUTER
-  .addRoute('/', '/views/home.html', homeController)
-  .addRoute('/overview', '/views/home.html', homeController)
-  .addRoute('/orders', '/views/orders.html', ordersController)
-  .addRoute('/inventory', '/views/inventory.html', inventoryController)
-  .addRoute('/insights', '/views/insights.html', insightsController);
+// 需要登录鉴权的路由。
+ROUTER.auth(function (router) {
+  router.addRoute('seo', 'seoController');
+  router.addRoute('nav', 'navController');
+  router.addRoute('insights', 'insightsController');
+});
+
+// 无需登录鉴权的路由。
+ROUTER.addRoute('login', 'loginController');
 
 export { ROUTER };
-logger.info(`KniuSystem router loaded with ${ROUTER.length} routes`, ROUTER.map((r) => r.path));
+appLogger.info(`KniuSystem router loaded with ${ROUTER.length} routes`, ROUTER.map(function (r) { return r.path; }));

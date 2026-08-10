@@ -1,0 +1,46 @@
+<?php
+
+use Core\Router;
+
+Router::post('/getDaily', 'IndexController@getDaily');
+Router::post('/getArticle', 'IndexController@getArticle');
+Router::post('/getInfo', 'IndexController@getInfo');
+Router::post('/getDetail', 'IndexController@getDetail');
+// ------------------------------------------------------------------------------------------------
+// 登录。
+Router::post('/logup', 'AuthController@logup');
+Router::post('/logout', 'AuthController@logout');
+Router::post('/captcha', 'AuthController@captcha');
+Router::post('/admin', 'AdminController@admin');
+// 系统信息。
+Router::post('/system', 'AdminController@system');
+// SEO。
+Router::post('/seo_update', 'SeoController@seoUpdate');
+Router::post('/seo_list', 'SeoController@seoList');
+// 导航栏。
+Router::post('/nav_add', 'NavController@navAdd');
+Router::post('/nav_delete', 'NavController@navDelete');
+Router::post('/nav_update', 'NavController@navUpdate');
+Router::post('/nav_list', 'NavController@navList');
+Router::post('/nav_detail', 'NavController@navDetail');
+// 每日一句。
+Router::post('/daily_add', 'DailyController@dailyAdd');
+Router::post('/daily_delete', 'DailyController@dailyDelete');
+Router::post('/daily_update', 'DailyController@dailyUpdate');
+Router::post('/daily_list', 'DailyController@dailyList');
+Router::post('/daily_detail', 'DailyController@dailyDetail');
+// 文章。
+Router::post('/article_add', 'ArticleController@articleAdd');
+Router::post('/article_delete', 'ArticleController@articleDelete');
+Router::post('/article_update', 'ArticleController@articleUpdate');
+Router::post('/article_list', 'ArticleController@articleList');
+Router::post('/article_detail', 'ArticleController@articleDetail');
+Router::post('/article_cover_delete', 'ArticleController@articleCoverDelete');
+// 角色。
+Router::post('/role_add', 'RoleController@roleAdd');
+Router::post('/role_delete', 'RoleController@roleDelete');
+Router::post('/role_update', 'RoleController@roleUpdate');
+Router::post('/role_list', 'RoleController@roleList');
+Router::post('/role_detail', 'RoleController@roleDetail');
+// 清除缓存。
+Router::post('/clearCache', 'CacheController@clearCache');
