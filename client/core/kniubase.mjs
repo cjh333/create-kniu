@@ -7,7 +7,7 @@ import { SERVER } from '../config/server.js';
 var KniuBase = (function () {
   function toComponentTag(path) {
     const fileName = path.split('/').pop().replace('.html', '');
-    return 'app-' + fileName;
+    return 'client-' + fileName;
   }
 
   function toRoutePath(path) {
@@ -225,16 +225,16 @@ var KniuBase = (function () {
           UTIL.setLoading(true);
           try {
             if (isLoginRoute(hash)) {
-              if (state.currentViewTag === 'app-login') return;
-              state.host.innerHTML = '<app-login></app-login>';
+              if (state.currentViewTag === 'client-login') return;
+              state.host.innerHTML = '<client-login></client-login>';
               state.contentArea = null;
-              state.currentViewTag = 'app-login';
+              state.currentViewTag = 'client-login';
               return;
             }
             const firstChild = state.host.firstElementChild;
-            const hasMain = firstChild && firstChild.tagName.toLowerCase() === 'app-main';
+            const hasMain = firstChild && firstChild.tagName.toLowerCase() === 'client-main';
             if (!hasMain) {
-              state.host.innerHTML = '<app-main></app-main>';
+              state.host.innerHTML = '<client-main></client-main>';
             }
             const mainEl = state.host.firstElementChild;
             await mainEl.ready;

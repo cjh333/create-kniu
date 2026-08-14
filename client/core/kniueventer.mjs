@@ -340,7 +340,7 @@ var KniuEventer = (function () {
     }
   }
 
-  // 将 <include src="..."> 替换为对应的自定义元素标签 <app-xxx></app-xxx>。
+  // 将 <include src="..."> 替换为对应的自定义元素标签 <client-xxx></client-xxx>。
   // VIEWS 配置目录下的每个 .html 文件都注册为独立的 Shadow DOM 自定义元素，
   // include 不再在字符串层面内联，而是渲染为嵌套 Shadow DOM 自定义元素。
   // 各自定义元素在 connectedCallback 中自行加载模板并创建 Shadow Root，
@@ -350,7 +350,7 @@ var KniuEventer = (function () {
     return source.replace(re, function (full, includePath) {
       const url = resolveTemplateIncludeUrl(includePath, baseTemplateUrl);
       const fileName = url.split('/').pop().replace('.html', '');
-      const tag = 'app-' + fileName;
+      const tag = 'client-' + fileName;
       return '<' + tag + '></' + tag + '>';
     });
   }

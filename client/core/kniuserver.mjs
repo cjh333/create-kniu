@@ -97,7 +97,7 @@ const server = createServer(async function (request, response) {
     if ((await stat(file)).isDirectory()) file = join(file, 'index.html');
     if (extname(file) === '.html' && (PATH_NAME === '/' || PATH_NAME.endsWith('/index.html'))) {
       let html = resolveAliasReferences((await readFile(file)).toString(), SERVER.ALIAS);
-      const marker = '<script src="client/index.mjs" type="module"></script>';
+      const marker = '<script src="client/client.mjs" type="module"></script>';
       if (html.includes(marker)) {
         html = html.replace(marker, `<script src="/templates.js"></script>\n${marker}`);
       } else {
@@ -118,7 +118,7 @@ const server = createServer(async function (request, response) {
     if (err.code !== 'ENOENT') console.error('[Server Error]', err.message);
     try {
       const indexHtml = resolveAliasReferences((await readFile(VIEW_INDEX)).toString(), SERVER.ALIAS);
-      const marker = '<script src="client/index.mjs" type="module"></script>';
+      const marker = '<script src="client/client.mjs" type="module"></script>';
       const html = indexHtml.includes(marker)
         ? indexHtml.replace(marker, `<script src="/templates.js"></script>\n${marker}`)
         : indexHtml.replace('</head>', `<script src="/templates.js"></script></head>`);

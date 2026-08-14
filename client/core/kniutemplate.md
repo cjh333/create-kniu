@@ -64,7 +64,7 @@ export const exampleController = defineComponent({
 
 > 模块规范：本项目全部使用 **命名导出**（`export const X` / `export { X }`），禁用 `export default`；消费方一律具名导入 `import { X } from '...'`。
 
-路由通过 `ROUTER.addRoute(path, controller)` 将页面与控制器装配起来（视图按文件名约定解析为 `app-<filename>` 自定义元素）：
+路由通过 `ROUTER.addRoute(path, controller)` 将页面与控制器装配起来（视图按文件名约定解析为 `client-<filename>` 自定义元素）：
 
 ```js
 ROUTER.addRoute('/example', exampleController);
@@ -84,12 +84,12 @@ ROUTER.addRoute('/example', exampleController);
 | `eventTo` | 宿主注入 | 事件总线：`eventTo.emit(type, detail)` / `eventTo.on(type, fn)` |
 | `navigateTo` | 微应用运行时注入 | 路由跳转：`navigateTo('/orders')`，仅微应用模板内可用 |
 | `openExternalUrl` | 微应用运行时注入 | 在新标签页打开外部 HTTP/HTTPS 地址：`openExternalUrl('https://www.baidu.com')` |
-| `app-main` / `useViews` | `kniubase.mjs` | 公共工作台外壳由 `app.useViews({ main, aside })` 注册 `app-main` 持久渲染（侧边栏 + 顶栏 + 内容区 + Toast），导航、路由同步、快捷键、Toast 与清理逻辑由核心模块接管 |
+| `client-main` / `useViews` | `kniubase.mjs` | 公共工作台外壳由 `app.useViews({ main, aside })` 注册 `client-main` 持久渲染（侧边栏 + 顶栏 + 内容区 + Toast），导航、路由同步、快捷键、Toast 与清理逻辑由核心模块接管 |
 | `ROUTER` / `useToastNotifications` / `createAppRuntime` 等 | `kniubase.mjs` 透传 | 底层框架能力，需要自定义外壳运行时才按需使用 |
 
 > 选用建议：Model 只负责数据与派生规则；Controller 使用 `reactive`、`eventTo`、`navigateTo` 和 `openExternalUrl`；View 不写业务脚本。
 
-公共工作台（侧边栏 + 顶栏 + 内容区 + Toast）在应用入口处注册，由持久外壳 `app-main` 承载：
+公共工作台（侧边栏 + 顶栏 + 内容区 + Toast）在应用入口处注册，由持久外壳 `client-main` 承载：
 
 ```js
 import { createApp } from './core/kniubase.mjs';

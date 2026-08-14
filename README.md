@@ -1,85 +1,189 @@
-# KniuSystem
+# KniuSystem 技术说明
 
-一个零运行时依赖的单页面多应用框架示例，完全使用原生 JavaScript、Custom Elements、Shadow DOM、Location Hash 和 EventTarget 构建。
+KniuSystem 是一个前后端分离的单页面管理系统。前端使用原生 JavaScript、Custom Elements、Shadow DOM、Location Hash 和 EventTarget 构建，不依赖前端运行时框架；后端使用 PHP、Composer 与轻量路由/控制器结构提供 JSON API。
 
-## 启动
+## 技术栈
+
+| 层级 | 技术与职责 |
+| --- | --- |
+| 前端运行时 | 原生 ES Modules、Custom Elements、Shadow DOM、Hash Router、响应式模板绑定 |
+| 前端构建 | Node.js、esbuild；打包脚本、模板和带内容哈希的静态资源 |
+| 开发服务 | Node.js HTTP Server；托管前端资源、生成模板清单、代理 `/api` 请求 |
+| 后端接口 | PHP、Composer、控制器路由、Session 鉴权、JSON 响应 |
+| 数据访问 | `api/core/Db.php` 与 `api/config/database.php` |
+
+## 项目结构
+
+```text
+KniuSystem/
+├─ client/
+│  ├─ client.mjs             # 浏览器应用入口
+│  ├─ config/                # 构建、日志、路由、服务配置
+│  ├─ controller/            # 页面与公共布局的 ViewModel
+│  ├─ core/                  # SPA、MVVM、模板、请求、鉴权等核心模块
+│  └─ views/
+│     ├─ index.html          # HTML 外壳
+│     └─ admin/              # 页面模板与 common/ 公共布局模板
+├─ api/
+│  ├─ index.php              # PHP API 入口
+│  ├─ config/                # 路由、数据库、鉴权、日志等配置
+│  ├─ core/                  # Router、Controller、Db 等基础设施
+│  └─ app/                   # index/admin 业务控制器
+├─ public/                   # CSS、图片、字体和 Kniu 插件资源
+├─ dist/                     # 生产构建产物
+└─ package.json              # 前端开发与构建命令
+```
+
+## 前端架构
+
+### 启动与装配
+
+浏览器加载 `client/views/index.html`，其中的模块脚本指向 `client/client.mjs`。入口执行顺序为：
+
+1. 从 `client/config/router.js` 加载路由表。
+2. 调用 `createApp()` 创建应用实例和事件总线。
+3. 通过 `app.use(ROUTER)` 注入页面路由。
+4. 通过 `app.useViews({ main, aside, header })` 注入公共布局 Controller。
+5. 调用 `app.mount('#app')` 恢复会话、注册组件并渲染当前 Hash 路由。
+
+### 视图、路由与组件
+
+- `client/views/admin/*.html` 是可路由页面；文件名会映射为 `client-<文件名>` 自定义元素和 `/<文件名>` 路径。
+- `client/views/admin/common/*.html` 是公共布局组件，不直接进入页面路由。
+- `SERVER.HOME` 当前为 `home`，因此 `/` 默认渲染 `home.html`。
+- 路由使用 Location Hash，例如 `#/login`、`#/seo`、`#/nav`、`#/insights`。
+- 页面模板在独立 Shadow Root 内渲染，样式与 DOM 查询默认限制在组件作用域内。
+
+当前路由配置如下：
+
+| 路径 | Controller | 鉴权 |
+| --- | --- | --- |
+| `/`、`/home` | `homeController`（默认约定加载） | 需要登录 |
+| `/seo` | `seoController` | 需要登录 |
+| `/nav` | `navController` | 需要登录 |
+| `/insights` | `insightsController` | 需要登录 |
+| `/login` | `loginController` | 公开 |
+
+`mainController`、`asideController` 和 `headerController` 由公共布局装配；模板目录中存在但未注册到路由表的页面会被收集为组件，但不会成为显式业务路由。
+
+### MVVM 分层
+
+- Model：API 数据以及 `AUTH`、`UTIL` 等全局状态。
+- ViewModel：`client/controller/` 中的 Controller 使用 `defineComponent({ setup() {} })`；状态由 `reactive()` 创建，经 `toRefs()` 暴露给模板。
+- View：HTML 模板保留结构、样式与 `kniu:*` 声明式绑定。
+- 生命周期：`onMounted()`、`onUnmounted()` 和 `onScopeDispose()` 统一管理事件、定时器和清理函数。
+- 动态加载：路由与公共布局 Controller 由 `loadController()` 按名称动态导入。
+
+### 核心模块
+
+| 模块 | 职责 |
+| --- | --- |
+| `kniubase.mjs` | 创建应用、注册 Shadow DOM 组件、恢复会话、渲染路由与执行路由守卫 |
+| `kniumvvm.mjs` | Controller 动态加载、组件定义、ViewModel 创建、生命周期与 `watch()` |
+| `kniutemplate.mjs` | 响应式状态、依赖观察、`kniu:*` 声明式模板绑定与清理 |
+| `kniueventer.mjs` | 事件总线、作用域 DOM 工具、模板加载、模板嵌入和路由注册表 |
+| `kniuauth.mjs` | `AUTH` 登录状态、用户信息、会话恢复、退出和失效复位 |
+| `kniurequest.mjs` | `/api` 请求封装、响应归一化、并发去重和 401 处理 |
+| `kniutil.mjs` | 全局加载状态、Toast 与路径别名替换 |
+| `kniulogger.mjs` | 按环境配置的前端/构建日志 |
+| `kniuserver.mjs` | 开发静态服务、模板清单生成和 API 反向代理 |
+| `kniubuilder.mjs` | 生产打包、模板内联、内容哈希、资源引用改写和产物输出 |
+
+### 模板运行机制
+
+开发环境由服务器扫描 `SERVER.VIEWS`，将除 `index.html` 外的模板写入 `globalThis.__VIEW_TEMPLATES__`。生产构建执行相同的模板收集逻辑并输出独立的 `templates.<hash>.js`。组件挂载时优先从模板清单读取，随后解析路径别名和模板嵌入，执行模板脚本、Controller 绑定及清理注册。
+
+### 鉴权与请求链路
+
+1. `AUTH.restoreSession()` 根据 `sessionStorage.kniu_authed` 和 `kniu_user` 乐观恢复前端状态；缺少用户信息时请求 `/api/system`。
+2. `ROUTER.auth()` 内注册的路由标记为 `authRequired`，未登录访问时跳转 `#/login`。
+3. `REQUEST` 自动为相对接口添加 `/api` 前缀，默认携带 Cookie，并将响应归一为 `{ status, msg, data, httpStatus, request }`。
+4. 任意接口返回 HTTP 401 时，`AUTH.markLoggedOut()` 清理本地登录态并跳转登录页。
+5. 退出登录调用 `POST /api/logout`，销毁后端 Session 并复位前端状态。
+
+前端守卫只负责即时体验，后端 Session 与接口鉴权仍是最终权限边界。
+
+## 后端架构
+
+`api/index.php` 是统一入口：初始化 Composer 自动加载和 Session，读取应用/日志配置，处理 CORS，解析请求 URI，随后交给 `Core\Router` 分发。控制器按应用划分：
+
+- `api/app/index/Controllers/`：公开内容接口。
+- `api/app/admin/Controllers/`：登录、系统信息、SEO、导航、每日内容、文章、角色和缓存管理。
+- `api/core/AdminBaseController.php`：后台控制器的公共鉴权基础。
+- `api/core/Controller.php`：请求参数和 JSON 响应等控制器基础能力。
+
+接口统一在 `api/config/router.php` 注册，当前均使用 POST，包括：
+
+- 公共内容：`/getDaily`、`/getArticle`、`/getInfo`、`/getDetail`
+- 会话与系统：`/logup`、`/logout`、`/captcha`、`/admin`、`/system`
+- 后台业务：SEO、导航、每日内容、文章、角色的增删改查，以及 `/clearCache`
+
+## 配置说明
+
+| 配置文件 | 关键内容 |
+| --- | --- |
+| `client/config/server.js` | 环境、时区、主机、端口、首页、视图目录、路径别名与 API 代理 |
+| `client/config/router.js` | 页面路由、Controller 映射与鉴权分组 |
+| `client/config/builder.js` | 输出目录、资源访问前缀、产物子目录和待复制资源 |
+| `client/config/logger.js` | 日志级别与输出策略 |
+| `api/config/router.php` | 后端接口与控制器方法映射 |
+| `api/config/database.php` | 数据库连接 |
+| `api/config/auth.php`、`role.php` | 会话鉴权与角色权限 |
+| `api/config/log.php`、`upload.php` | 日志与上传配置 |
+
+开发环境默认前端地址为 `http://localhost:6173`，`/api` 请求代理到 `http://localhost:9900`。生产环境的 API 代理目标为空，前后端应由部署层配置为同源或配置反向代理。
+
+## 本地开发
+
+### 后端
 
 ```bash
+cd api
+composer install
+php -S localhost:9900 -t .
+```
+
+### 前端
+
+在项目根目录执行：
+
+```bash
+npm install
 npm run dev
 ```
 
-启动后运行 `client/core/kniuserver.mjs`（开发服务器）：静态托管页面与公共资源，并按需生成模板清单；以 `/api` 开头的请求会代理到后端（开发环境默认 `http://localhost:9900`）。
+然后访问 `http://localhost:6173`。Windows 下需要结束遗留 Node 进程时可执行 `npm run kill`。
 
-访问 `http://localhost:6173`。
-
-## 构建
+## 生产构建
 
 ```bash
 npm run build
 ```
 
-使用 esbuild 打包，产物输出到 `dist/` 目录。
+构建器会清空并重新生成 `dist/`：
 
-## 架构
+```text
+dist/
+├─ index.html
+├─ views/
+│  ├─ client.<hash>.js
+│  └─ templates.<hash>.js
+└─ public/
+   └─ ...带内容哈希的 CSS、JavaScript、图片和字体
+```
 
-**核心模块（`client/core/` 下的命名导出模块）**：
+- `index.html` 会注入模板清单和客户端模块脚本。
+- 客户端代码由 `client/client.mjs` 作为 esbuild 入口。
+- 模板和 CSS 内的资源路径会改写为哈希文件路径。
+- `BUILDER.PUBLIC_PATH` 可设置根路径或子目录部署前缀；空字符串表示相对产物路径。
 
-| 模块 | 职责 |
-| --- | --- |
-| `kniubase.mjs` | `createApp()` 应用创建、自定义元素注册、路由渲染与前端路由守卫 |
-| `kniumvvm.mjs` | 组合式 ViewModel：`setup`、`reactive`、`watch` 和组件生命周期 |
-| `kniutemplate.mjs` | `reactive()` 响应式状态、变更观察和声明式模板绑定 |
-| `kniueventer.mjs` | 事件总线、DOM 查询封装、模板加载和路由注册表 |
-| `kniuauth.mjs` | `AUTH` 登录态响应式单例（登录、登出、401 复位） |
-| `kniurequest.mjs` | `REQUEST` 请求封装、请求去重和 401 权威兜底 |
-| `kniutil.mjs` | 全局响应式 UI 状态（加载遮罩、Toast） |
-| `kniuserver.mjs` / `kniubuilder.mjs` | 开发服务器与生产构建 |
+## 开发约定
 
-**装配与入口**：
+- 前端模块统一使用命名导出与具名导入，不使用 `export default`。
+- 新增页面时，同时添加 `client/views/admin/<name>.html`、`client/controller/<name>Controller.js`，并在 `client/config/router.js` 注册路由。
+- 新增公共布局时，将模板放入 `client/views/admin/common/`，创建对应 Controller，并在 `client/client.mjs` 的 `useViews()` 中装配。
+- 页面和公共布局文件名必须唯一，因为自定义元素标签只根据文件名生成。
+- 后端新增接口时，在 `api/config/router.php` 注册，并将控制器放入对应应用的 `Controllers` 目录；部署到区分大小写的环境时必须保持目录名大小写正确。
+- `dist/` 是生成目录，不应直接编辑。
 
-- `client/index.mjs`：应用入口。`createApp()` → `app.use(ROUTER)` → `app.useViews({ main, aside, header })` → `app.mount('#app')`。
-- `client/config/`：`builder.js` / `logger.js` / `router.js` / `server.js`，按环境取值后命名导出。路由统一在 `router.js` 配置：`ROUTER.auth(fn)` 内注册的路由需要登录态，`ROUTER.addRoute(path, controller)` 注册单个页面。
-- `client/controller/`：按页面拆分的 ViewModel（`home` / `orders` / `inventory` / `insights` / `login` / `main` / `aside` / `header`）。
-- `SERVER.VIEWS` 目录下的 HTML：每个页面 / 布局都是独立的 Shadow DOM 自定义元素（标签名 `app-<filename>`），由模板引擎在加载时挂载到对应元素。
-
-**MVVM 分层**：
-
-- Model：接口数据与 `AUTH`、`UTIL` 等领域 / 全局状态。
-- ViewModel：Controller 使用 `defineComponent({ setup() {} })`；数据统一放在 `reactive()` 内，业务函数保持普通闭包，通过 `toRefs()` 按需暴露；生命周期使用 `onMounted()` / `onUnmounted()`。
-- View（`.html`）：只保留 Shadow DOM 结构、样式与 `kniu:*` 声明式绑定，不直接操作业务状态。
-- 子应用样式写入自己的 Shadow Root，不泄漏到主应用或其他子应用。
-
-## 模块导出规范（重要）
-
-全项目统一使用**命名导出**，禁止 `export default`：
-
-- 对外暴露 API 一律使用命名导出（例如 `createApp`、`defineComponent`、`reactive`、`ROUTER`、`AUTH`、`REQUEST`）。
-- 消费方一律具名导入 `import { X } from '...'`，不要用 `import X from`（会因找不到具名导出而报 `does not provide an export named`）。
-- 核心模块为 IIFE 单例：内部状态 / 辅助函数闭包私有，末尾 `export const X = Var.X` 原样重导出。
-
-## 鉴权与路由守卫
-
-采用**前端即时拦截 + 后端 401 权威兜底**的双保险：
-
-- **前端路由守卫**（位于 `kniubase.mjs` 的 `_renderRoute` 顶部）：`router.js` 中写在 `ROUTER.auth(fn)` 回调里的路由会被打上 `authRequired=true`；未登录访问这类路由时直接 `location.hash = '/login'` 并停止渲染，内页不会打开。`/login` 为公开路由。
-- **登录态真相 = `AUTH`**（`kniuauth.mjs` 的响应式单例）：`loginController` 登录成功后调 `AUTH.setUser(...)`；应用启动 `mount()` 时调 `AUTH.restoreSession()` 凭 `sessionStorage.kniu_authed` 乐观恢复，避免已登录用户刷新被误踢回登录页。
-- **后端 401 兜底**：`kniurequest.mjs` 收到任意接口 401 时调 `AUTH.markLoggedOut()` 清前端态并跳 `/login`。
-- **退出**：`asideController` 的 `logout` → `AUTH.logout()`（调后端 `POST /api/logout` 销毁会话 + 重置响应式状态）→ `sessionStorage.clear()` → `navigateTo('/login')`。退出后任何内页地址都会被守卫弹回登录页。
-
-## 构建产物
-
-构建使用 esbuild 打包，产物结构如下（文件名带内容哈希）：
-
-- `dist/index.html`：入口文件，自动注入脚本引用
-- `dist/views/client.<hash>.js`：打包后的客户端代码（含 `kniubase` / `kniutemplate` / `kniueventer` 等核心模块）
-- `dist/views/templates.<hash>.js`：收集所有 HTML 模板生成的模板清单（`globalThis.__VIEW_TEMPLATES__`）
-- `dist/public/`：静态资源（CSS、图片等）
-
-新增、删除或重命名应用页面后，只需同步修改 `client/config/router.js`。
-
-## 开发与生产
-
-- `npm run dev`：启动开发服务器（`client/core/kniuserver.mjs`），动态生成模板清单
-- `npm run build`：构建生产版本（`client/core/kniubuilder.mjs`），使用 esbuild 打包并优化
-
-每个 Controller 通过 `defineComponent()` 暴露标准 ViewModel，框架负责挂载和卸载。子应用样式写入自己的 Shadow Root，不会泄漏到主应用或其他子应用。
+更细的模板语法参见 `client/core/kniutemplate.md`，后端补充说明参见 `api/API.md`。

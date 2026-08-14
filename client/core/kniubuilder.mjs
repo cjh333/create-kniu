@@ -73,6 +73,13 @@ function rewriteCssAssetUrls(content, fileDir, manifest) {
   });
 }
 
+function minifyHtml(content) {
+  return content
+    .replace(/<!--(?!\[if)[\s\S]*?-->/g, '')
+    .replace(/>\s+</g, '><')
+    .trim();
+}
+
 async function clearOutputDirectory(directory) {
   let entries;
   try {
@@ -89,44 +96,41 @@ if (isMain) {
   appLogger.info('Start building', { OUTPUT_DIR: BUILDER.OUTPUT_DIR });
   await mkdir(BUILDER.OUTPUT_DIR, { recursive: true });
   await mkdir(outputTemplateDir, { recursive: true });
-  const { build } = await import('esbuild');
+  const { build, transform } = await import('esbuild');
   const result = await build({
-    entryPoints: ['client/index.mjs'],
+    entryPoints: ['client/client.mjs'],
     bundle: true,
     format: 'esm',
     platform: 'browser',
     external: ['node:*'],
     minify: IS_PROD,
+    legalComments: 'none',
+    supported: { 'template-literal': false },
     write: false,
   });
-  const clientSource = result.outputFiles[0].text;
+  const clientSource = result.outputFiles[0].text.trim();
   const clientFileName = `client.${contentHash(clientSource)}.js`;
   await writeFile(join(outputTemplateDir, clientFileName), clientSource);
   const assetManifest = new Map();
+  const deferredCssAssets = [];
   for (const source of BUILDER.SOURCES) {
     if (source === 'index.html') continue;
     await copyHashedSourceTree(source, join(BUILDER.OUTPUT_DIR, source), assetManifest);
   }
-  const cssFilePaths = [];
-  async function collectCssFiles(dir) {
-    let entries;
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const p = join(dir, entry.name);
-      if (entry.isDirectory()) await collectCssFiles(p);
-      else if (entry.name.endsWith('.css')) cssFilePaths.push(p);
-    }
-  }
-  await collectCssFiles(join(BUILDER.OUTPUT_DIR, 'public'));
-  for (const cssFile of cssFilePaths) {
-    const content = await readFile(cssFile, 'utf8');
-    const fileDir = relative(BUILDER.OUTPUT_DIR, dirname(cssFile));
-    const rewritten = rewriteCssAssetUrls(content, fileDir, assetManifest);
-    if (rewritten !== content) await writeFile(cssFile, rewritten);
+  for (const asset of deferredCssAssets) {
+    const fileDir = relative(BUILDER.OUTPUT_DIR, dirname(asset.destinationPath));
+    const rewritten = rewriteCssAssetUrls(asset.content, fileDir, assetManifest);
+    const transformed = await transform(rewritten, {
+      loader: 'css',
+      minify: IS_PROD,
+      legalComments: 'none',
+    });
+    const content = transformed.code.trim();
+    const hashedDestination = addContentHash(asset.destinationPath, contentHash(content));
+    const hashedUrl = relative(BUILDER.OUTPUT_DIR, hashedDestination).replaceAll('\\', '/');
+    assetManifest.set(asset.originalUrl, hashedUrl);
+    await mkdir(dirname(hashedDestination), { recursive: true });
+    await writeFile(hashedDestination, content);
   }
 
   async function copyHashedSourceTree(sourcePath, destinationPath, manifest) {
@@ -138,9 +142,28 @@ if (isMain) {
         await copyHashedSourceTree(join(sourcePath, name), join(destinationPath, name), manifest);
       }
     } else {
-      const content = await readFile(sourcePath);
-      const hashedDestination = addContentHash(destinationPath, contentHash(content));
+      const extension = extname(sourcePath).toLowerCase();
       const originalUrl = relative(process.cwd(), sourcePath).replaceAll('\\', '/');
+      if (extension === '.css') {
+        deferredCssAssets.push({
+          sourcePath,
+          destinationPath,
+          originalUrl,
+          content: await readFile(sourcePath, 'utf8'),
+        });
+        return;
+      }
+      let content = await readFile(sourcePath);
+      if (extension === '.js') {
+        const transformed = await transform(content.toString('utf8'), {
+          loader: 'js',
+          minify: IS_PROD,
+          legalComments: 'none',
+          supported: { 'template-literal': false },
+        });
+        content = transformed.code.trim();
+      }
+      const hashedDestination = addContentHash(destinationPath, contentHash(content));
       const hashedUrl = relative(BUILDER.OUTPUT_DIR, hashedDestination).replaceAll('\\', '/');
       manifest.set(originalUrl, hashedUrl);
       await mkdir(dirname(hashedDestination), { recursive: true });
@@ -159,7 +182,7 @@ if (isMain) {
         ];
       }),
   );
-  const templatesSource = `globalThis.__VIEW_TEMPLATES__ = ${JSON.stringify(rewrittenTemplates)};\n`;
+  const templatesSource = `globalThis.__VIEW_TEMPLATES__=${JSON.stringify(rewrittenTemplates)};`;
   const templatesFileName = `templates.${contentHash(templatesSource)}.js`;
   await writeFile(join(outputTemplateDir, templatesFileName), templatesSource);
   const outputIndex = join(BUILDER.OUTPUT_DIR, 'index.html');
@@ -169,12 +192,12 @@ if (isMain) {
   );
   const clientScriptUrl = `${outputTemplateUrl}/${clientFileName}`;
   const productionScripts =
-    `<script src="${outputTemplateUrl}/${templatesFileName}"></script>\n` +
+    `<script src="${outputTemplateUrl}/${templatesFileName}"></script>` +
     `<script type="module" src="${clientScriptUrl}"></script>`;
   await writeFile(
     outputIndex,
-    indexHtml
-      .replace(/<script\b(?=[^>]*\btype=["']module["'])(?=[^>]*\bsrc=["']client\/index\.(?:js|mjs)["'])[^>]*>\s*<\/script>/i, productionScripts),
+    minifyHtml(indexHtml
+      .replace(/<script\b(?=[^>]*\btype=["']module["'])(?=[^>]*\bsrc=["']client\/client\.(?:js|mjs)["'])[^>]*>\s*<\/script>/i, productionScripts)),
   );
   console.log(BUILDER.SUCCESS_MESSAGE);
   appLogger.info(BUILDER.SUCCESS_MESSAGE);
