@@ -1,12 +1,15 @@
 <?php
 require_once __DIR__ . '/vendor/autoload.php';
 
+use Core\Env;
+use Core\Router;
+
+Env::load(dirname(__DIR__) . '/.env');
+
 $runtimeEnv = getenv('APP_ENV') ?: 'development';
 ini_set('display_errors', $runtimeEnv === 'production' ? '0' : '1');
 ini_set('log_errors', 1);
 error_reporting(E_ALL);
-
-use Core\Router;
 
 // 指定项目内 session 存储目录，避免受全局 php.ini 的 save_path 权限影响。
 $sessionPath = __DIR__ . '/runtime/session';

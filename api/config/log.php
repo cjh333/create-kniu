@@ -1,6 +1,6 @@
 <?php
 
-$env = 'production';
+$env = getenv('APP_ENV') ?: 'development';
 $config = [
   'development' => [
     'ENABLE' => true,  // 开发环境默认开启日志。
@@ -13,4 +13,4 @@ $config = [
     'FILE_PATH' => __DIR__ . '/../runtime/log/api.log'  // 日志文件路径。
   ]
 ];
-return $config[$env];
+return $config[$env] ?? $config['development'];

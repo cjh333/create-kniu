@@ -15,7 +15,12 @@ function getApiTarget() {
   for (const [prefix, cfg] of Object.entries(proxy)) {
     if (prefix === '/api' && cfg.URL) {
       const u = new URL(cfg.URL);
-      return { host: u.hostname, port: u.port || 80 };
+      return {
+        host: u.hostname,
+        port: u.port || (u.protocol === 'https:' ? 443 : 80),
+        origin: u.origin,
+        changeOrigin: cfg.CHANGE_ORIGIN === true
+      };
     }
   }
   return null;
@@ -23,12 +28,14 @@ function getApiTarget() {
 const API_TARGET = getApiTarget();
 
 function proxyToApi(req, res) {
+  const headers = { ...req.headers, host: `${API_TARGET.host}:${API_TARGET.port}` };
+  if (API_TARGET.changeOrigin && headers.origin) headers.origin = API_TARGET.origin;
   const opts = {
     hostname: API_TARGET.host,
     port: API_TARGET.port,
     path: req.url.replace(/^\/api/, ''),
     method: req.method,
-    headers: { ...req.headers, host: `${API_TARGET.host}:${API_TARGET.port}` },
+    headers,
   };
   const proxy = httpRequest(opts, function (apiRes) {
     const headers = {};

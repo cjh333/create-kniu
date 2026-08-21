@@ -383,7 +383,7 @@ class Router
       $instance = new $controller();
       $instance->$action();
     } catch (\Throwable $e) {
-      $this->sendErrorResponse(500, 'Controller execution failed: ' . $e->getMessage(), [
+      $this->sendErrorResponse(500, '服务器处理失败', [
         'controller' => $controller,
         'action' => $action,
         'error' => $e->getMessage(),

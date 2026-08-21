@@ -84,6 +84,9 @@ var KniuUI = (function () {
       .kniu_sys_table{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;background:#fff}
       .kniu_sys_table th,.kniu_sys_table td{border-bottom:1px solid #ebeef5;padding:0 10px;height:48px;box-sizing:border-box;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#fff}
       .kniu_sys_table th{position:sticky;top:0;z-index:3;color:#909399;font-weight:600;background:#f5f7fa}
+      .kniu_sys_table_group[data-empty="true"] thead{pointer-events:none;user-select:none}
+      .kniu_sys_table_group[data-empty="true"] thead th{cursor:not-allowed!important}
+      .kniu_sys_table_group[data-empty="true"] .kniu_sys_table_sort,.kniu_sys_table_group[data-empty="true"] .kniu_sys_table_selection{cursor:not-allowed}
       .kniu_sys_table tbody tr:hover td{background:#f5f7fa}
       .kniu_sys_table_group[data-stripe="true"] tbody tr:nth-child(even) td{background:#fafafa}
       .kniu_sys_table_group[data-stripe="true"] tbody tr:hover td{background:#f5f7fa}
@@ -103,6 +106,7 @@ var KniuUI = (function () {
       .kniu_sys_table_editable:hover{background:#ecf5ff!important}
       .kniu_sys_table_edit_input{width:100%;height:32px;padding:0 8px;border:1px solid #409eff;border-radius:3px;outline:0;box-sizing:border-box;color:#606266;font:inherit}
       .kniu_sys_table_empty td{height:80px;text-align:center;color:#909399}
+      .kniu_sys_table_empty:hover td{background:#fff!important;cursor:default}
       .kniu_sys_table_empty td slot[name="empty"]{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
       .kniu_sys_table_sort{display:inline-flex;flex-direction:column;margin-left:6px;vertical-align:middle;color:#c0c4cc;font-size:9px;line-height:7px;cursor:pointer}.kniu_sys_table_sort[data-order="ascending"] .kniu_sys_table_sort_up,.kniu_sys_table_sort[data-order="descending"] .kniu_sys_table_sort_down{color:#409eff}
       .kniu_sys_table_selection{width:14px;height:14px;accent-color:#409eff;cursor:pointer}
@@ -455,6 +459,8 @@ var KniuUI = (function () {
     function render() {
       if (disposed || rendering) return;
       rendering = true;
+      const isEmpty = rows.length === 0;
+      group.dataset.empty = String(isEmpty);
       const offsets = fixedOffsets();
 
       // 表头只创建一次：列配置在 table 实例生命周期内固定，避免翻页/排序时反复重建 thead 造成抖动。
@@ -476,9 +482,11 @@ var KniuUI = (function () {
               const checkbox = documentRef.createElement('input');
               checkbox.type = 'checkbox';
               checkbox.className = 'kniu_sys_table_selection';
+              checkbox.disabled = isEmpty;
               checkbox.checked = getSelectableRows(column).length > 0 && getSelectableRows(column).every(function (row) { return selectedRows.has(row); });
               checkbox.indeterminate = !checkbox.checked && getSelectableRows(column).some(function (row) { return selectedRows.has(row); });
               checkbox.addEventListener('change', function () {
+                if (!rows.length) return;
                 // 不要用陈旧闭包，每次都按当前 rows 重新计算可选行集合
                 getSelectableRows(column).forEach(function (row) { checkbox.checked ? selectedRows.add(row) : selectedRows.delete(row); });
                 options.host?.dispatchEvent(new CustomEvent('selection-change', { detail: [...selectedRows], bubbles: true, composed: true }));
@@ -496,6 +504,7 @@ var KniuUI = (function () {
             cell.append(sorter);
             cell.style.cursor = 'pointer';
             cell.addEventListener('click', function () {
+              if (!rows.length) return;
               const nextOrder = sortState.field !== column.field || !sortState.order
                 ? 'ascending'
                 : (sortState.order === 'ascending' ? 'descending' : '');
@@ -515,10 +524,12 @@ var KniuUI = (function () {
           const column = columns[idx];
           if (!column) return;
           const selectableRows = rows.filter(function (row, rowIndex) { return typeof column.selectable !== 'function' || column.selectable(row, rowIndex); });
+          input.disabled = isEmpty;
           input.checked = selectableRows.length > 0 && selectableRows.every(function (row) { return selectedRows.has(row); });
           input.indeterminate = !input.checked && selectableRows.some(function (row) { return selectedRows.has(row); });
         });
       }
+      if (headElement) headElement.setAttribute('aria-disabled', String(isEmpty));
 
       const rowNodes = [];
       if (!rows.length) {
@@ -702,7 +713,7 @@ var KniuUI = (function () {
     return api;
   }
 
-  // Element 风格通用按钮：外观由属性驱动，内部始终使用原生 button。
+  // Kniu 通用按钮：外观由属性驱动，内部始终使用原生 button。
   function registerButtonComponent() {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-btn')) return;
@@ -811,7 +822,7 @@ var KniuUI = (function () {
     customElements.define('kniu-btn', KniuSysButton);
   }
 
-  // Element 风格 Switch 开关。
+  // Kniu Switch 开关。
   function registerSwitchComponent() {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-switch')) return;

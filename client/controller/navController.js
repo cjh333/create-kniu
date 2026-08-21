@@ -4,8 +4,7 @@ import { getResponseRecords, removeListRecord } from '../core/kniuutil.mjs';
 
 const { controller, reactive, onMounted } = KniuMvvm;
 
-const navController = controller(() => {
-    const self = this;
+const navController = controller(({ navigateTo }) => {
     const state = reactive({
       tableData: [],
       dialogVisible: false
@@ -72,7 +71,7 @@ const navController = controller(() => {
       if (!row) return false;
       const text = ((row.name || '') + ' ' + (row.url || '')).toLowerCase();
       const target = /文章|article/.test(text) ? '/articledetail' : '/dailydetail';
-      self.navigateTo(target);
+      navigateTo(target);
       return false;
     }
 
