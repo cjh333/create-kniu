@@ -1,5 +1,5 @@
-import { ROUTER } from './config/router.js';
-import { createApp } from './core/kniubase.mjs';
+import ROUTER from './config/router.js';
+import createApp from './core/kniubase.mjs';
 
 const app = createApp();
 app.use(ROUTER);

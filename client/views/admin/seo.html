@@ -9,120 +9,61 @@
 </style>
 <section class="seo_cells">
   <div class="admin_content_body index_cell index_cell2">
-    <form class="kniu_form" id="seoform" kniu@submit.prevent="onSubmit">
-      <ul class="kniu_form_inputs_group">
-        <li class="kniu_form_cell">
-          <div class="kniu_label kniu_label_pane">
-            <p class="kniu_input_text seo_form_text1">网站名称</p>
-            <div class="kniu_input_group">
-              <input class="kniu_input kniu_required seo_form_input1" kniu:model="{{title}}" name="title" placeholder="请输入网站名称" autocomplete="off" type="text">
-              <div class="kniu_input_aftfix">
-                <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
-              </div>
-            </div>
-          </div>
-        </li>
-        <li class="kniu_form_cell">
-          <div class="kniu_label kniu_label_pane">
-            <p class="kniu_input_text seo_form_text1">网站域名</p>
-            <div class="kniu_input_group">
-              <input class="kniu_input kniu_required seo_form_input1" kniu:model="{{url}}" name="url" placeholder="请输入网站域名" autocomplete="off" type="text">
-              <div class="kniu_input_aftfix">
-                <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
-              </div>
-            </div>
-          </div>
-        </li>
-        <li class="kniu_form_cell">
-          <div class="kniu_label kniu_label_pane">
-            <p class="kniu_input_text seo_form_text1">logo</p>
-            <div class="kniu_input_group">
-              <input class="kniu_input kniu_required seo_form_input1" kniu:model="{{logo}}" name="logo" placeholder="请选择网站logo" autocomplete="off" type="text">
-              <div class="kniu_input_aftfix">
-                <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
-              </div>
-            </div>
-          </div>
-        </li>
-        <li class="kniu_form_cell">
-          <div class="kniu_label kniu_label_pane">
-            <p class="kniu_input_text seo_form_text1">description</p>
-            <div class="kniu_input_group">
-              <input class="kniu_input kniu_required seo_form_input1" kniu:model="{{description}}" name="description" placeholder="请输入description" autocomplete="off" type="text">
-              <div class="kniu_input_aftfix">
-                <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
-              </div>
-            </div>
-          </div>
-        </li>
-        <li class="kniu_form_cell">
-          <div class="kniu_label kniu_label_pane">
-            <p class="kniu_input_text seo_form_text1">keywords</p>
-            <div class="kniu_input_group">
-              <input class="kniu_input kniu_required seo_form_input1" kniu:model="{{keywords}}" name="keywords" placeholder="请输入keywords" autocomplete="off" type="text">
-              <div class="kniu_input_aftfix">
-                <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
-              </div>
-            </div>
-          </div>
-        </li>
-        <li class="kniu_form_cell">
-          <div class="kniu_label kniu_label_pane">
-            <p class="kniu_input_text seo_form_text1">author</p>
-            <div class="kniu_input_group">
-              <input class="kniu_input kniu_required seo_form_input1" kniu:model="{{author}}" name="author" placeholder="请输入author" autocomplete="off" type="text">
-              <div class="kniu_input_aftfix">
-                <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
-              </div>
-            </div>
-          </div>
-        </li>
-        <li class="kniu_form_cell">
-          <div class="kniu_label kniu_label_pane">
-            <p class="kniu_input_text seo_form_text1">版权</p>
-            <div class="kniu_input_group">
-              <input class="kniu_input kniu_required seo_form_input1" kniu:model="{{copyright}}" name="copyright" placeholder="请输入版权" autocomplete="off" type="text">
-              <div class="kniu_input_aftfix">
-                <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
-              </div>
-            </div>
-          </div>
-        </li>
-        <li class="kniu_form_cell">
-          <div class="kniu_label kniu_label_pane">
-            <p class="kniu_input_text seo_form_text1">备案号</p>
-            <div class="kniu_input_group">
-              <input class="kniu_input kniu_required seo_form_input1" kniu:model="{{record}}" name="record" placeholder="请输入备案号" autocomplete="off" type="text">
-              <div class="kniu_input_aftfix">
-                <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
-              </div>
-            </div>
-          </div>
-        </li>
-        <li class="kniu_form_cell">
-          <div class="kniu_label kniu_label_pane">
-            <p class="kniu_input_text seo_form_text1">邮箱</p>
-            <div class="kniu_input_group">
-              <input class="kniu_input kniu_required seo_form_input1" kniu:model="{{email}}" name="email" placeholder="请输入邮箱" autocomplete="off" type="text">
-              <div class="kniu_input_aftfix">
-                <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
-              </div>
-            </div>
-          </div>
-        </li>
-        <li class="kniu_form_cell">
-          <div class="kniu_label kniu_label_pane">
-            <p class="kniu_space kniu_input_text seo_form_text1"></p>
-            <div class="kniu_input_group">
-              <input kniu:model="{{id}}" name="id" type="hidden">
-              <button class="kniu_btn seo_btn{{isSubmitting ? ' kniu_btn_loading' : ''}} seo_btn1" disabled="{{isSubmitting}}" type="submit">
-                <span class="kniu_btn_loading_spinner"></span>
-                <span class="seo_btn_text">提 交</span>
-              </button>
-            </div>
-          </div>
-        </li>
-      </ul>
-    </form>
+    <kniu-form kniu@submit.prevent="onSubmit" ref="form" model="{{seoform}}" rules="{{rules}}">
+      <kniu-form-cell>
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.title}}" name="title" placeholder="请输入网站名称">
+          <template #prepend label-width="120px">网站名称</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.url}}" name="url" placeholder="请输入网站域名">
+          <template #prepend label-width="120px">网站域名</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input style="max-width: 600px;">
+          <template #prepend label-width="120px">logo</template>
+          <template #append label-width="120px">
+            <kniu-upload ref="upload" kniu:model="{{files}}" name="logo" max-size="5" accept=".ico,image/x-icon,image/vnd.microsoft.icon,image/png,image/gif">选择logo</kniu-upload>
+          </template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.description}}" name="description" placeholder="请输入description描述" row="3" type="textarea">
+          <template #prepend label-width="120px">description</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.keywords}}" name="keywords" placeholder="请输入keywords关键词">
+          <template #prepend label-width="120px">keywords</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.author}}" name="author" placeholder="请输入author作者">
+          <template #prepend label-width="120px">author</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.copyright}}" name="copyright" placeholder="请输入版权">
+          <template #prepend label-width="120px">copyright</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.record}}" name="record" placeholder="请输入备案号">
+          <template #prepend label-width="120px">record</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.email}}" name="email" placeholder="请输入邮箱">
+          <template #prepend label-width="120px">email</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-btn style="margin-left: 120px;" disabled="{{isSubmitting}}" native-type="submit">
+          <kniu-icon kniu:if="{{isSubmitting}}" icon="Loading" />
+          <template kniu:else>提 交</template>
+        </kniu-btn>
+      </kniu-form-cell>
+    </kniu-form>
   </div>
 </section>

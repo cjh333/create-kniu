@@ -6,25 +6,7 @@ namespace Composer\Autoload;
 
 class ComposerStaticInit058f656fe3da013f4dd81979af8ad619
 {
-    public static $files = array (
-        '9b552a3cc426e3287cc811caefa3cf53' => __DIR__ . '/..' . '/topthink/think-helper/src/helper.php',
-        '35fab96057f1bf5e7aba31a8a6d5fdde' => __DIR__ . '/..' . '/topthink/think-orm/stubs/load_stubs.php',
-        '1cfd2761b63b0a29ed23657ea394cb2d' => __DIR__ . '/..' . '/topthink/think-captcha/src/helper.php',
-    );
-
     public static $prefixLengthsPsr4 = array (
-        't' => 
-        array (
-            'think\\captcha\\' => 14,
-            'think\\' => 6,
-        ),
-        'P' => 
-        array (
-            'Psr\\SimpleCache\\' => 16,
-            'Psr\\Log\\' => 8,
-            'Psr\\Http\\Message\\' => 17,
-            'Psr\\Container\\' => 14,
-        ),
         'C' => 
         array (
             'Core\\' => 5,
@@ -36,33 +18,6 @@ class ComposerStaticInit058f656fe3da013f4dd81979af8ad619
     );
 
     public static $prefixDirsPsr4 = array (
-        'think\\captcha\\' => 
-        array (
-            0 => __DIR__ . '/..' . '/topthink/think-captcha/src',
-        ),
-        'think\\' => 
-        array (
-            0 => __DIR__ . '/..' . '/topthink/think-template/src',
-            1 => __DIR__ . '/..' . '/topthink/framework/src/think',
-            2 => __DIR__ . '/..' . '/topthink/think-orm/src',
-            3 => __DIR__ . '/..' . '/topthink/think-helper/src',
-        ),
-        'Psr\\SimpleCache\\' => 
-        array (
-            0 => __DIR__ . '/..' . '/psr/simple-cache/src',
-        ),
-        'Psr\\Log\\' => 
-        array (
-            0 => __DIR__ . '/..' . '/psr/log/Psr/Log',
-        ),
-        'Psr\\Http\\Message\\' => 
-        array (
-            0 => __DIR__ . '/..' . '/psr/http-message/src',
-        ),
-        'Psr\\Container\\' => 
-        array (
-            0 => __DIR__ . '/..' . '/psr/container/src',
-        ),
         'Core\\' => 
         array (
             0 => __DIR__ . '/../..' . '/core',

@@ -1,11 +1,15 @@
-import { observe, reactive } from './kniutemplate.mjs';
+import KniuTemplate from './kniutemplate.mjs';
+import KniuUI from './kniuui.js';
+import { nextTick } from './kniuscheduler.mjs';
+
+const { collectReactiveReads, observe, reactive } = KniuTemplate;
 
 let activeInstance = null;
 
-export function loadController(name) {
+function loadController(name) {
   const controllerName = name.endsWith('Controller') ? name : `${name}Controller`;
   return import(`../controller/${controllerName}.js`).then(function (module) {
-    const controller = module[controllerName];
+    const controller = module[controllerName] || module.default;
     if (!controller) throw new Error(`[MVVM] Controller export not found: ${controllerName}`);
     return controller;
   });
@@ -51,17 +55,16 @@ function exposeBindings(state, bindings) {
   });
 }
 
-export function defineComponent(options = {}) {
-  if (typeof options.setup !== 'function') {
-    throw new TypeError('[MVVM] defineComponent() requires a setup() function');
-  }
+function controller(setup) {
+  if (typeof setup !== 'function') throw new TypeError('[MVVM] controller() expects a setup function');
   const component = {
-    name: options.name || 'AnonymousComponent',
-    setup: options.setup,
+    name: setup.name || 'AnonymousController',
+    setup,
     __kniuComponent: true,
     async mount(services, root) {
-      const viewModel = createViewModel(component, services, root);
-      const binding = services.bind(root, viewModel.state);
+      const refs = {};
+      const viewModel = createViewModel(component, services, root, refs);
+      const binding = services.bind(root, viewModel.state, refs);
       const disposeViewModel = await viewModel.mount();
       return function disposeComponent() {
         disposeViewModel?.();
@@ -72,7 +75,7 @@ export function defineComponent(options = {}) {
   return Object.freeze(component);
 }
 
-export function createViewModel(component, services = {}, root) {
+function createViewModel(component, services = {}, root, refs = {}) {
   const instance = {
     mounted: [],
     unmounted: [],
@@ -81,20 +84,26 @@ export function createViewModel(component, services = {}, root) {
     stopped: false,
     bindings: null
   };
-  const setupContext = createTimerServices({ ...services, root: root || services.root }, instance.timers);
+  const setupContext = createTimerServices({ ...services, root: root || services.root, $refs: refs, refs: refs }, instance.timers);
+  Object.assign(setupContext, { reactive, ref, computed, watch, watchEffect, onMounted, onUnmounted, onScopeDispose });
+  setupContext.$msg = KniuUI.msg;
+  setupContext.$confirm = KniuUI.confirm;
 
   activeInstance = instance;
   let bindings;
   try {
-    bindings = component.setup(setupContext) || instance.bindings || {};
+    bindings = component.setup.call(setupContext, setupContext) || {};
   } finally {
     activeInstance = null;
   }
 
   const state = bindings.state;
   if (!state || typeof state !== 'object') {
-    throw new TypeError(`[MVVM] ${component.name} setup() must register reactive bindings with toRefs()`);
+    throw new TypeError(`[MVVM] ${component.name} setup() must return { state, ...actions }`);
   }
+  if (!Object.prototype.hasOwnProperty.call(state, '$msg')) state.$msg = KniuUI.msg;
+  if (!Object.prototype.hasOwnProperty.call(state, '$confirm')) state.$confirm = KniuUI.confirm;
+  if (!Object.prototype.hasOwnProperty.call(state, '$refs')) state.$refs = refs;
   exposeBindings(state, bindings);
 
   async function mount() {
@@ -124,40 +133,128 @@ export function createViewModel(component, services = {}, root) {
   return { state, mount, dispose };
 }
 
-export function onMounted(hook) {
+function onMounted(hook) {
   registerLifecycleHook('mounted', hook);
 }
 
-export function onUnmounted(hook) {
+function onUnmounted(hook) {
   registerLifecycleHook('unmounted', hook);
 }
 
-export function onScopeDispose(cleanup) {
+function onScopeDispose(cleanup) {
   if (typeof cleanup !== 'function') throw new TypeError('[MVVM] cleanup must be a function');
   requireActiveInstance('onScopeDispose').cleanups.push(cleanup);
 }
 
-export function toRefs(bindings) {
-  if (!bindings || typeof bindings !== 'object') {
-    throw new TypeError('[MVVM] toRefs() expects a reactive state or setup bindings object');
-  }
-  const instance = requireActiveInstance('toRefs');
-  instance.bindings = Object.prototype.hasOwnProperty.call(bindings, 'state')
-    ? bindings
-    : { state: bindings };
-  return instance.bindings;
+function ref(value) {
+  return reactive({ value: value });
 }
 
-export function watch(state, key, callback, options = {}) {
-  if (!state || typeof key !== 'string' || typeof callback !== 'function') {
-    throw new TypeError('[MVVM] watch() expects reactive state, a key and a callback');
-  }
-  if (options.immediate) callback(state[key], undefined);
-  const stop = observe(state, function (change) {
-    if (change.key === key) callback(change.value, change.oldValue);
+function subscribeDependencies(dependencies, callback) {
+  const stops = [];
+  dependencies.forEach(function (keys, dependency) {
+    keys.forEach(function (key) { stops.push(observe(dependency, key, callback)); });
   });
-  if (activeInstance) activeInstance.cleanups.push(stop);
-  return stop;
+  return function () { stops.forEach(function (stop) { stop(); }); };
 }
 
-export { reactive };
+function createReactiveEffect(getter, notify) {
+  let stopDependencies = function () { };
+  let stopped = false;
+
+  function run() {
+    if (stopped) return undefined;
+    stopDependencies();
+    const collected = collectReactiveReads(getter);
+    stopDependencies = subscribeDependencies(collected.dependencies, function () { notify(run); });
+    return collected.value;
+  }
+
+  function stop() {
+    if (stopped) return;
+    stopped = true;
+    stopDependencies();
+  }
+
+  return { run, stop };
+}
+
+function computed(getter) {
+  if (typeof getter !== 'function') throw new TypeError('[MVVM] computed() expects a getter');
+  const result = reactive({ value: undefined });
+  const effect = createReactiveEffect(getter, function (run) { result.value = run(); });
+  result.value = effect.run();
+  if (activeInstance) activeInstance.cleanups.push(effect.stop);
+  return result;
+}
+
+function traverse(value, seen = new Set()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  Object.keys(value).forEach(function (key) { traverse(value[key], seen); });
+  return value;
+}
+
+function watch(source, callback, options = {}) {
+  const getter = Array.isArray(source)
+    ? function () { return source.map(function (item) { return typeof item === 'function' ? item() : item.value; }); }
+    : (typeof source === 'function'
+      ? source
+      : (source && Object.prototype.hasOwnProperty.call(source, 'value')
+        ? function () { return source.value; }
+        : function () { return traverse(source); }));
+  if (typeof callback !== 'function') throw new TypeError('[MVVM] watch() expects a callback');
+  let oldValue;
+  const effect = createReactiveEffect(getter, function (run) {
+    const value = run();
+    if (options.deep || !Object.is(value, oldValue)) {
+      const previous = oldValue;
+      oldValue = value;
+      callback(value, previous);
+    }
+  });
+  oldValue = effect.run();
+  if (options.immediate) callback(oldValue, undefined);
+  if (activeInstance) activeInstance.cleanups.push(effect.stop);
+  return effect.stop;
+}
+
+function watchEffect(effect) {
+  if (typeof effect !== 'function') throw new TypeError('[MVVM] watchEffect() expects a function');
+  let cleanup;
+  const runner = createReactiveEffect(
+    function () {
+      if (cleanup) cleanup();
+      cleanup = undefined;
+      return effect(function (fn) {
+        if (typeof fn !== 'function') throw new TypeError('[MVVM] watchEffect cleanup must be a function');
+        cleanup = fn;
+      });
+    },
+    function (run) { run(); }
+  );
+  runner.run();
+  const stop = runner.stop;
+  runner.stop = function () {
+    stop();
+    if (cleanup) cleanup();
+    cleanup = undefined;
+  };
+  if (activeInstance) activeInstance.cleanups.push(runner.stop);
+  return runner.stop;
+}
+
+export default {
+  loadController,
+  controller,
+  createViewModel,
+  onMounted,
+  onUnmounted,
+  onScopeDispose,
+  watch,
+  watchEffect,
+  ref,
+  computed,
+  reactive,
+  nextTick
+};

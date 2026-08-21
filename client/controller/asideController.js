@@ -1,28 +1,18 @@
-import { AUTH } from '../core/kniuauth.mjs';
-import { defineComponent, onMounted, reactive, toRefs } from '../core/kniumvvm.mjs';
+import KniuMvvm from '../core/kniumvvm.mjs';
+import { getCurrentRoutePath, getNavigationIndex } from '../core/kniuutil.mjs';
+import AUTH from '../core/kniuauth.mjs';
+import { NAVIGATION_PATHS, ROUTE_TO_NAVIGATION } from '../config/navbar.js';
 
-const NAVIGATION_PATHS = ['/', '/seo', '/nav', '/insights'];
+const { controller, onMounted, reactive } = KniuMvvm;
 
-function getCurrentRoutePath() {
-  const hash = location.hash.slice(1) || '/';
-  return hash.split('?')[0].split('#')[0] || '/';
-}
-
-function getNavigationIndex(path) {
-  const index = NAVIGATION_PATHS.indexOf(path);
-  return index >= 0 ? index : 0;
-}
-
-export const asideController = defineComponent({
-  setup({ eventTo, navigateTo, onRouteChange }) {
+const asideController = controller(({ eventTo, navigateTo, onRouteChange }) => {
     const state = reactive({
       brandMark: 'K',
       brandName: 'Kniu',
       brandSuffix: 'System',
       workspaceLabel: '工作台',
       helpLabel: '帮助',
-      activeNavigationIndex: getNavigationIndex(getCurrentRoutePath()),
-      badge: 12,
+      activeNavigationIndex: getNavigationIndex(getCurrentRoutePath(), NAVIGATION_PATHS, ROUTE_TO_NAVIGATION),
       userAvatar: '·',
       userName: '—',
       userRole: '—'
@@ -52,7 +42,7 @@ export const asideController = defineComponent({
     }
 
     function handleHelpRequest() {
-      eventTo?.emit('toast', '帮助文档正在建设中');
+      this.$msg('帮助文档正在建设中');
     }
 
     onMounted(function () {
@@ -64,7 +54,7 @@ export const asideController = defineComponent({
         AUTH.setUser(info);
       });
       const stopRouteSubscription = onRouteChange(function updateActiveNavigation(path) {
-        state.activeNavigationIndex = getNavigationIndex(path);
+        state.activeNavigationIndex = getNavigationIndex(path, NAVIGATION_PATHS, ROUTE_TO_NAVIGATION);
       });
       return function () {
         stopAuthSubscription();
@@ -73,6 +63,7 @@ export const asideController = defineComponent({
       };
     });
 
-    toRefs({ state, handleNavigationClick, handleLogout, handleHelpRequest });
-  }
+    return { state, handleNavigationClick, handleLogout, handleHelpRequest };
 });
+
+export default asideController;

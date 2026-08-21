@@ -1,4 +1,4 @@
-const PROCESS_ENV = (typeof process !== 'undefined' && process.env) ? (process.env.PROCESS_ENV || process.env.NODE_ENV || 'development') : 'development';
+import PROCESS_ENV from './env.js';
 const SERVER_MAP = {
   development: {
     // 时区设置。
@@ -55,4 +55,4 @@ const SERVER_MAP = {
     }
   }
 };
-export const SERVER = SERVER_MAP[PROCESS_ENV];
+export default SERVER_MAP[PROCESS_ENV];

@@ -2,13 +2,14 @@ import { createServer } from 'node:http';
 import { request as httpRequest } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { SERVER } from '../config/server.js';
-import { resolveAliasReferences } from './kniutil.mjs';
-import { collectTemplates } from './kniubuilder.mjs';
+import SERVER from '../config/server.js';
+import PROCESS_ENV from '../config/env.js';
+import { resolveAliasReferences } from './kniuutil.mjs';
+import collectTemplates from './kniubuilder.mjs';
+
 const ROOT = process.cwd();
 const VIEW_DIRECTORY = String(SERVER.VIEWS || '/views').replaceAll('\\', '/').replace(/^\/+|\/+$/g, '');
 const VIEW_INDEX = join(ROOT, VIEW_DIRECTORY, 'index.html');
-const PROCESS_ENV = (typeof process !== 'undefined') ? (process.env?.PROCESS_ENV || 'development') : 'development';
 function getApiTarget() {
   const proxy = SERVER.PROXY || {};
   for (const [prefix, cfg] of Object.entries(proxy)) {
@@ -57,6 +58,18 @@ const types = {
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.ogg': 'application/ogg',
+  '.mov': 'video/quicktime',
 };
 const NO_CACHE = {
   'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -92,7 +105,9 @@ const server = createServer(async function (request, response) {
     }
     let file = PATH_NAME === '/'
       ? VIEW_INDEX
-      : normalize(join(ROOT, PATH_NAME));
+      : PATH_NAME === '/upload' || PATH_NAME.startsWith('/upload/')
+        ? normalize(join(ROOT, 'public', PATH_NAME))
+        : normalize(join(ROOT, PATH_NAME));
     if (!file.startsWith(ROOT)) throw new Error('Invalid path');
     if ((await stat(file)).isDirectory()) file = join(file, 'index.html');
     if (extname(file) === '.html' && (PATH_NAME === '/' || PATH_NAME.endsWith('/index.html'))) {
@@ -134,4 +149,5 @@ server.listen(SERVER.PORT, SERVER.HOST, function () {
   const PROTOCOL = typeof server.setSecureContext === 'function' ? 'https' : 'http';
   console.log(`KniuSystem ${PROCESS_ENV} server is started on <${PROTOCOL}://${SERVER.HOST}:${SERVER.PORT}/>`);
   console.log(`Document root is: ${ROOT}\\public`);
+  console.log('(Ctrl+C exit)');
 });

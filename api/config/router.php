@@ -36,6 +36,7 @@ Router::post('/article_update', 'ArticleController@articleUpdate');
 Router::post('/article_list', 'ArticleController@articleList');
 Router::post('/article_detail', 'ArticleController@articleDetail');
 Router::post('/article_cover_delete', 'ArticleController@articleCoverDelete');
+Router::post('/article_media_upload', 'ArticleController@articleMediaUpload');
 // 角色。
 Router::post('/role_add', 'RoleController@roleAdd');
 Router::post('/role_delete', 'RoleController@roleDelete');

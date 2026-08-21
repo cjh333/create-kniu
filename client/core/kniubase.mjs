@@ -1,13 +1,16 @@
-import { create$, createEventBus, getTimeInZone, loadHtmlTemplate } from './kniueventer.mjs';
-import { UTIL } from './kniutil.mjs';
-import { AUTH } from './kniuauth.mjs';
-import { loadController } from './kniumvvm.mjs';
-import { SERVER } from '../config/server.js';
+import KniuEventer from './kniueventer.mjs';
+import UTIL from './kniuui.js';
+import AUTH from './kniuauth.mjs';
+import KniuMvvm from './kniumvvm.mjs';
+import SERVER from '../config/server.js';
+
+const { create$, createEventBus, getTimeInZone, loadHtmlTemplate } = KniuEventer;
+const { loadController } = KniuMvvm;
 
 var KniuBase = (function () {
   function toComponentTag(path) {
     const fileName = path.split('/').pop().replace('.html', '');
-    return 'client-' + fileName;
+    return 'kniu-system-' + fileName;
   }
 
   function toRoutePath(path) {
@@ -103,7 +106,6 @@ var KniuBase = (function () {
   // 创建项目。
   function createApp() {
     const eventBus = createEventBus();
-    eventBus.on('toast', function (msg) { UTIL.showToast(msg); });
     const navigateTo = function (path) {
       location.hash = path;
     };
@@ -149,7 +151,8 @@ var KniuBase = (function () {
       currentViewTag: null,
       _renderLock: null,
       routeListeners: [],
-      currentPath: '/'
+      currentPath: '/',
+      lastRenderedHash: null
     };
     return {
       use(routeConfig) {
@@ -225,16 +228,16 @@ var KniuBase = (function () {
           UTIL.setLoading(true);
           try {
             if (isLoginRoute(hash)) {
-              if (state.currentViewTag === 'client-login') return;
-              state.host.innerHTML = '<client-login></client-login>';
+              if (state.currentViewTag === 'kniu-system-login') return;
+              state.host.innerHTML = '<kniu-system-login></kniu-system-login>';
               state.contentArea = null;
-              state.currentViewTag = 'client-login';
+              state.currentViewTag = 'kniu-system-login';
               return;
             }
             const firstChild = state.host.firstElementChild;
-            const hasMain = firstChild && firstChild.tagName.toLowerCase() === 'client-main';
+            const hasMain = firstChild && firstChild.tagName.toLowerCase() === 'kniu-system-main';
             if (!hasMain) {
-              state.host.innerHTML = '<client-main></client-main>';
+              state.host.innerHTML = '<kniu-system-main></kniu-system-main>';
             }
             const mainEl = state.host.firstElementChild;
             await mainEl.ready;
@@ -242,13 +245,15 @@ var KniuBase = (function () {
               state.contentArea = mainEl.shadowRoot.querySelector('article.kniu_web_aside_view');
             }
             if (!state.contentArea) return;
-            const tag = state.pathToTag.get(hash) || state.pathToTag.get('/') || state.tags[0]?.tag;
+            const pathOnly = (hash.split('?')[0]) || '/';
+            const tag = state.pathToTag.get(pathOnly) || state.pathToTag.get('/') || state.tags[0]?.tag;
             if (!tag) return;
             const existing = state.contentArea.firstElementChild;
-            if (existing && existing.tagName.toLowerCase() === tag) return;
-            if (state.currentViewTag === tag) return;
+            // 同一视图但查询参数（如 ?id=）变化时需要重新渲染，以便详情页读取新参数。
+            if (existing && existing.tagName.toLowerCase() === tag && state.currentViewTag === tag && hash === state.lastRenderedHash) return;
             state.contentArea.innerHTML = '<' + tag + '></' + tag + '>';
             state.currentViewTag = tag;
+            state.lastRenderedHash = hash;
             const pageEl = state.contentArea.firstElementChild;
             if (pageEl?.ready) await pageEl.ready;
           } finally {
@@ -275,4 +280,4 @@ var KniuBase = (function () {
   };
 }());
 
-export const createApp = KniuBase.createApp;
+export default KniuBase.createApp;

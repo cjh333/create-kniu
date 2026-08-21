@@ -18,33 +18,31 @@
 </style>
 <nav class="kniu_web_aside_mdnav_wrap" aria-label="移动端应用导航">
   <template kniu:for="{{navigation}}" kniu:key="path">
-    <button class="kniu_web_aside_mdnav{{currentPath === item.path ? ' active' : ''}}" kniu:[nav]="{{item.path}}" kniu@click="handleNavigation" type="button">
-      <span class="kniu_web_aside_mdnav_icon">{{item.icon}}</span>
+    <kniu-btn class="kniu_web_aside_mdnav{{currentPath === item.path ? ' active' : ''}}" nav="{{item.path}}" kniu@click="handleNavigation" native-type="button">
+      <kniu-icon class="kniu_web_aside_mdnav_icon" icon="{{item.icon}}" />
       <span class="kniu_web_aside_mdnav_title">{{item.name}}</span>
-    </button>
+    </kniu-btn>
   </template>
 </nav>
 <header class="kniu_web_aside_head">
-  <button class="kniu_web_aside_brand" kniu@click="handleHomeNavigation" aria-label="返回总览" type="button">{{brandMark}}</button>
+  <kniu-btn class="kniu_web_aside_brand" kniu@click="handleHomeNavigation" aria-label="返回总览" native-type="button">{{brandMark}}</kniu-btn>
   <div class="kniu_web_aside_crumb_wrap">
     <span class="kniu_web_aside_crumb">{{workspaceLabel}} / </span>
     <strong>{{currentApp.name}}</strong>
   </div>
   <div class="kniu_web_aside_head_actions">
-    <form class="kniu_label kniu_label_fixs" id="searchform">
-      <div class="kniu_input_group">
-        <input class="kniu_input" kniu:model="{{searchQuery}}" aria-label="全局搜索" placeholder="搜索应用、订单、客户..." type="text">
-        <div class="kniu_input_beffix">
-          <span class="kniu_icon kniu_icon_search kniu_icon_1d2x kniu_input_btn_search"></span>
-        </div>
-        <div class="kniu_input_aftfix">
-          <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
-        </div>
-      </div>
-    </form>
-    <button class="kniu_web_aside_toast" kniu@click="handleNotificationRequest" aria-label="通知" type="button">♢<span></span></button>
-    <a class="admin_tab_refresh1" href="javascript:location.reload();">
-      <span class="kniu_icon kniu_icon_refresh kniu_icon_1d3x"></span>
-    </a>
+    <kniu-form ref="form" model="{{searchform}}">
+      <kniu-input-group style="margin-bottom: 0;">
+        <kniu-input kniu:model="{{searchform.query}}" name="keyword" placeholder="搜索文章标题..." autocomplete="off" clearable>
+          <template #append label-width="80px"><kniu-icon icon="Search" /></template>
+        </kniu-input>
+      </kniu-input-group>
+    </kniu-form>
+    <kniu-badge class="kniu_web_aside_note" kniu@click="handleNotificationRequest" is-dot>
+      <kniu-icon style="font-size:16px;color:#ff5c35;" icon="ChatDotRound" />
+    </kniu-badge>
+    <kniu-btn class="admin_tab_refresh1" kniu@click="handleRefresh">
+      <kniu-icon icon="Refresh" />
+    </kniu-btn>
   </div>
 </header>

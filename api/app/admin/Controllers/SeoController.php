@@ -20,11 +20,20 @@ class SeoController extends AdminBaseController
       $this->json([], 'SEO记录ID不能为空', 0);
       return;
     }
+    if (isset($_FILES['logo']) && $_FILES['logo']['error'] === UPLOAD_ERR_OK) {
+      $logoPath = $this->uploadFile($_FILES['logo'], 'logo');
+      if (!$logoPath) {
+        $this->json([], 'Logo上传失败，请检查文件格式和大小', 0);
+        return;
+      }
+    } else {
+      $logoPath = $this->input('post.logo') ?? null;
+    }
     $data = [
       'sid' => $this->input('post.sid') ?? null,
       'title' => $this->input('post.title') ?? null,
       'url' => $this->input('post.url') ?? null,
-      'logo' => $this->input('post.logo') ?? null,
+      'logo' => $logoPath,
       'description' => $this->input('post.description') ?? null,
       'keywords' => $this->input('post.keywords') ?? null,
       'author' => $this->input('post.author') ?? null,
@@ -39,6 +48,7 @@ class SeoController extends AdminBaseController
       $this->json([], '没有提供任何要更新的数据', 0);
       return;
     }
+    $data = $this->encodeFields($data, ['title', 'url', 'logo', 'description', 'keywords', 'author', 'copyright', 'record', 'email']);
     $result = Db::name('tb_seo')
       ->where('id', '=', $id)
       ->field(['sid', 'title', 'url', 'logo', 'description', 'keywords', 'author', 'copyright', 'record', 'email'])
@@ -62,6 +72,7 @@ class SeoController extends AdminBaseController
       $this->json([], 'SEO设置不存在', 0);
       return;
     }
+    $result = $this->decodeFields($result, ['title', 'url', 'logo', 'description', 'keywords', 'author', 'copyright', 'record', 'email']);
     $this->json($result);
   }
 }

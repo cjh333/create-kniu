@@ -23,6 +23,7 @@ class RoleController extends AdminBaseController
       'role_auth' => $this->input('post.role_auth') ?? 0,
       'is_show' => $this->input('post.is_show') ?? 1
     ];
+    $data = $this->encodeFields($data, ['name']);
     Db::name('tb_role')->insert($data);
     $this->json([], '添加成功', 1);
   }
@@ -59,6 +60,7 @@ class RoleController extends AdminBaseController
       $this->json([], '没有提供任何要更新的数据', 0);
       return;
     }
+    $data = $this->encodeFields($data, ['name']);
     if (isset($data['password'])) {
       $password = $data['password'];
       $hasDollar = strpos($password, '$') !== false;
@@ -111,6 +113,7 @@ class RoleController extends AdminBaseController
     $result = Db::name($table)
       ->order($field, $sort)
       ->page($pageCurrent, $pageRow);
+    $result['data'] = $this->decodeFields($result['data'] ?? [], ['name']);
     $result['selectall'] = $selectall;
     $this->json($result);
   }
@@ -122,6 +125,7 @@ class RoleController extends AdminBaseController
     $result = Db::name('tb_role')
       ->where('id', '=', $id)
       ->find();
+    $result = $this->decodeFields($result, ['name']);
     $this->json($result);
   }
 }

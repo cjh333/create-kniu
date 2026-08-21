@@ -35,7 +35,7 @@ class AuthController extends Controller
       return;
     }
 
-    $name = $this->input('post.name') ?? '';
+    $username = $this->input('post.username') ?? '';
     $password = $this->input('post.password') ?? '';
     $gvcode = $this->input('post.gvcode') ?? '';
 
@@ -47,13 +47,13 @@ class AuthController extends Controller
     }
     unset($_SESSION['captcha']);
 
-    if (empty($name) || empty($password)) {
+    if (empty($username) || empty($password)) {
       $this->json([], '用户名和密码不能为空', 0);
       return;
     }
 
     $result = Db::name('tb_role')
-      ->where('name', '=', $name)
+      ->where('name', '=', htmlspecialchars($username, ENT_QUOTES))
       ->field(['id', 'name', 'password', 'role', 'is_show'])
       ->select();
 
@@ -70,6 +70,7 @@ class AuthController extends Controller
     }
 
     if ($this->verifyPassword($password, $userData['password'])) {
+      session_regenerate_id(true);
       $token = bin2hex(random_bytes(32));
 
       // 加载认证配置

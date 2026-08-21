@@ -1,0 +1,91 @@
+<style scoped>
+  @import url("@kniu/kniu.min.css");
+  @import url("@style/admin/admin.min.css");
+  @import url("@style/admin/adminHome.min.css");
+
+  .index_cell2 {
+    background-color: #fff;
+  }
+
+  .detail_head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 10px 10px;
+  }
+
+  .detail_title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #303133;
+  }
+
+  .detail_wrap {
+    position: relative;
+    background-color: #fff;
+  }
+</style>
+<section class="index_cells">
+  <div class="admin_content_body index_cell index_cell2">
+    <div class="detail_head">
+      <span class="detail_title">每日一句</span>
+      <kniu-btn link type="primary" size="small" kniu@click="goBack">返回</kniu-btn>
+    </div>
+    <div class="detail_wrap">
+      <kniu-table kniu:style="{{'width:100%;max-height:' + (innerHeight - 210 / innerWidth * 1920) + 'px'}}" kniu:loading="{{loading}}" data="{{list}}" ref="table" row-key="id" stripe border>
+        <kniu-table-col style="width:60px;text-align:center;" type="checkbox" />
+        <kniu-table-col fixed field="id" label="ID" width="80" />
+        <kniu-table-col field="sid" label="排序" width="80" align="center" />
+        <kniu-table-col field="cn" label="中文" show-overflow-tooltip />
+        <kniu-table-col field="en" label="英文" show-overflow-tooltip />
+        <kniu-table-col field="is_show" label="显示" width="80" align="center">
+          <template #default>
+            <kniu-switch kniu:model="{{scope.row.is_show}}" kniu@change="updateShow(scope.$index, list)" active-value="1" inactive-value="0" active-color="#13ce66" inactive-color="#ff4949"></kniu-switch>
+          </template>
+        </kniu-table-col>
+        <kniu-table-col fixed="right" label="操作" width="120" align="center">
+          <template #default>
+            <kniu-btn link type="danger" size="small" kniu@click="deleteRow(scope.$index, list)">删除</kniu-btn>
+            <kniu-btn link type="primary" size="small" kniu@click="editRow(scope.$index, list)">修改</kniu-btn>
+          </template>
+        </kniu-table-col>
+      </kniu-table>
+      <kniu-page ref="page" background layout="条数,首页,上一页,页码,下一页,末页,总数" total="{{total}}" page-size="{{pageRows}}" current-page="{{currentPage}}" kniu@current-change="changePage" kniu@size-change="changePageSize" />
+    </div>
+  </div>
+</section>
+<!-- 弹框 -->
+<kniu-modal style="width:520px;" show="{{showmodal}}" kniu@close="closeDialog">
+  <template #header>
+    <span>修改每日一句</span>
+    <kniu-btn kniu@click="closeDialog" link size="small" type="primary">
+      <kniu-icon icon="Close" />
+    </kniu-btn>
+  </template>
+  <template #default>
+    <kniu-form-cell>
+      <kniu-input kniu:model="{{editForm.sid}}" name="sid" placeholder="请输入排序">
+        <template #prepend label-width="100px">排序</template>
+      </kniu-input>
+    </kniu-form-cell>
+    <kniu-form-cell>
+      <kniu-input kniu:model="{{editForm.cn}}" name="cn" placeholder="请输入中文">
+        <template #prepend label-width="100px">中文</template>
+      </kniu-input>
+    </kniu-form-cell>
+    <kniu-form-cell>
+      <kniu-input kniu:model="{{editForm.en}}" name="en" placeholder="请输入英文">
+        <template #prepend label-width="100px">英文</template>
+      </kniu-input>
+    </kniu-form-cell>
+    <kniu-form-cell>
+      <kniu-switch kniu:model="{{editForm.is_show}}" name="is_show" active-value="1" inactive-value="0" active-color="#13ce66" inactive-color="#ff4949">
+        <template #prepend label-width="100px">显示</template>
+      </kniu-switch>
+    </kniu-form-cell>
+  </template>
+  <template #footer>
+    <kniu-btn kniu@click="closeDialog">取 消</kniu-btn>
+    <kniu-btn style="margin-left:10px;" kniu@click="saveEdit" type="primary">保 存</kniu-btn>
+  </template>
+</kniu-modal>

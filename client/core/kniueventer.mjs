@@ -1,7 +1,10 @@
-import { bind, reactive, beginBindingCollection, endBindingCollection } from './kniutemplate.mjs';
-import { loadController } from './kniumvvm.mjs';
-import { SERVER } from '../config/server.js';
-import { resolveAliasReferences } from './kniutil.mjs';
+import KniuTemplate from './kniutemplate.mjs';
+import KniuMvvm from './kniumvvm.mjs';
+import SERVER from '../config/server.js';
+import { resolveAliasReferences } from './kniuutil.mjs';
+
+const { bind, reactive, beginBindingCollection, endBindingCollection } = KniuTemplate;
+const { loadController } = KniuMvvm;
 
 var KniuEventer = (function () {
   // 简易事件总线，支持 on / off / emit。
@@ -340,7 +343,7 @@ var KniuEventer = (function () {
     }
   }
 
-  // 将 <include src="..."> 替换为对应的自定义元素标签 <client-xxx></client-xxx>。
+  // 将 <include src="..."> 替换为对应的自定义元素标签 <kniu-system-xxx></kniu-system-xxx>。
   // VIEWS 配置目录下的每个 .html 文件都注册为独立的 Shadow DOM 自定义元素，
   // include 不再在字符串层面内联，而是渲染为嵌套 Shadow DOM 自定义元素。
   // 各自定义元素在 connectedCallback 中自行加载模板并创建 Shadow Root，
@@ -350,8 +353,70 @@ var KniuEventer = (function () {
     return source.replace(re, function (full, includePath) {
       const url = resolveTemplateIncludeUrl(includePath, baseTemplateUrl);
       const fileName = url.split('/').pop().replace('.html', '');
-      const tag = 'client-' + fileName;
+      const tag = 'kniu-system-' + fileName;
       return '<' + tag + '></' + tag + '>';
+    });
+  }
+
+  // 支持 PascalCase / camelCase 自定义标签写法（如 <KniuInputGroup>、<House>）。
+  // HTML 解析器会把它们小写化为无连字符形式（kniuinputgroup），因此需要在解析前转换。
+  // 仅作用于「标签名」位置（< 或 </ 后紧跟大写开头的标识符），不影响属性值中的大写。
+  function normalizeTagName(name) {
+    return name
+      .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
+      .toLowerCase();
+  }
+  function expandPascalTags(html) {
+    return String(html).replace(/<\/?[A-Z][A-Za-z0-9]*(?=[\s>/>])/g, function (match) {
+      const isClosing = match.startsWith('</');
+      const slashEnd = match.endsWith('/');
+      const name = match.replace(/^<\/?/, '');
+      const opening = isClosing ? '</' : '<';
+      return opening + normalizeTagName(name) + (slashEnd ? '/' : '');
+    });
+  }
+
+  // 把 <template slot="X"> 或 <template #X>（框架约定的 v-slot 简写，等同 slot="X"）平铺为带 slot 属性的真实子节点。
+  // Web Components 的 slot 算法不会展开 <template>（template 是 inert 元素，只在 .content 里存有内容），
+  // 所以 <slot name="X"> 在 light DOM 里只能拿到 <template> 元素本身（render 出来还是空的）。
+  // 这里是框架级兼容：递归走 fragment，把所有带 slot 的 <template> 替换为其 content 子节点的副本，
+  // 并把 slot 属性复制到每个顶层元素子节点（顶层文本节点不必 slot——slot 默认就是 default）。
+  // 处理两类组件的直接子模板：kniu-modal（header / default / footer）和 kniu-table（empty）。
+  // 组件内部的 #prepend / #append / #default（如 kniu-table-col、kniu-input）由各自组件自行处理，不能在这里平铺。
+  function slotNameOfTemplate(template) {
+    const byAttr = template.getAttribute('slot');
+    if (byAttr) return byAttr;
+    const hashAttr = [...template.attributes].find(function (a) { return a.name[0] === '#'; });
+    return hashAttr ? hashAttr.name.slice(1) : null;
+  }
+  function flattenSlotTemplates(root) {
+    if (!root || !root.querySelectorAll) return;
+    const templates = [...root.querySelectorAll('template')].filter(function (template) {
+      const parent = template.parentNode;
+      if (!parent) return false;
+      const parentTag = parent.tagName.toLowerCase();
+      const name = slotNameOfTemplate(template);
+      if (parentTag === 'kniu-modal') {
+        return name === 'header' || name === 'default' || name === 'footer';
+      }
+      if (parentTag === 'kniu-table') {
+        return name === 'empty';
+      }
+      return false;
+    });
+    templates.forEach(function (template) {
+      const slotName = slotNameOfTemplate(template);
+      const parent = template.parentNode;
+      if (!parent) return;
+      const frag = document.createDocumentFragment();
+      [...template.content.childNodes].forEach(function (node) {
+        if (node.nodeType === 1 && !node.hasAttribute('slot')) {
+          node.setAttribute('slot', slotName);
+        }
+        frag.appendChild(node);
+      });
+      parent.replaceChild(frag, template);
     });
   }
 
@@ -372,11 +437,17 @@ var KniuEventer = (function () {
       source = await response.text();
     }
     templateUrl = resolved;
-    const expandedSource = resolveTemplateIncludes(
+    let expandedSource = resolveTemplateIncludes(
       resolveAliasReferences(source, SERVER.ALIAS),
       templateUrl
-    );
+    ).replace(/<(kniu-[a-z0-9-]+)([^<>]*?)\s*\/>/gi, '<$1$2></$1>');
+    expandedSource = expandPascalTags(expandedSource);
     const fragment = document.createRange().createContextualFragment(expandedSource);
+    // 把 <template slot="X"> 或 <template #X>（简写）平铺为带 slot 属性的真实子节点：
+    //   <template #header><span>标题</span><kniu-btn>...</kniu-btn></template>
+    //   => <span slot="header">标题</span>  <kniu-btn slot="header">...</kniu-btn>
+    // Web Components 的 slot 算法不会展开 <template>（template 是 inert），否则具名插槽拿不到内容。
+    flattenSlotTemplates(fragment);
     const scripts = [...fragment.querySelectorAll('script')];
     scripts.forEach(function (script) { return script.remove(); });
     target.replaceChildren(fragment);
@@ -509,12 +580,4 @@ var KniuEventer = (function () {
   };
 }());
 
-export const createEventBus = KniuEventer.createEventBus;
-export const create$ = KniuEventer.create$;
-export const formatTime = KniuEventer.formatTime;
-export const getTimeInZone = KniuEventer.getTimeInZone;
-export const loadHtmlTemplate = KniuEventer.loadHtmlTemplate;
-export const createTemplateApp = KniuEventer.createTemplateApp;
-export const createRouteRecord = KniuEventer.createRouteRecord;
-export const RouterRegistry = KniuEventer.RouterRegistry;
-export const ROUTER = KniuEventer.ROUTER;
+export default KniuEventer;

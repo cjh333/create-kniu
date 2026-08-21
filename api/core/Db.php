@@ -174,18 +174,16 @@ class Db
    */
   public function order($field, $direction = 'asc')
   {
+    $validIdentifier = function ($value) { return is_string($value) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $value); };
+    $validDirection = function ($value) { $value = strtoupper((string)$value); return in_array($value, ['ASC', 'DESC'], true) ? $value : 'ASC'; };
     if (is_array($field)) {
       $orders = [];
       foreach ($field as $key => $value) {
-        $orders[] = "`{$key}` " . strtoupper($value);
+        if ($validIdentifier($key)) $orders[] = "`{$key}` " . $validDirection($value);
       }
       $this->options['order'] = implode(', ', $orders);
     } else {
-      if (strpos(strtoupper($field), ' DESC') !== false || strpos(strtoupper($field), ' ASC') !== false) {
-        $this->options['order'] = $field;
-      } else {
-        $this->options['order'] = "`{$field}` " . strtoupper($direction);
-      }
+      $this->options['order'] = $validIdentifier($field) ? "`{$field}` " . $validDirection($direction) : '`id` ASC';
     }
     return $this;
   }

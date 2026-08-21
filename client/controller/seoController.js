@@ -1,40 +1,80 @@
-import { defineComponent, reactive, onMounted, toRefs } from '../core/kniumvvm.mjs';
-import { REQUEST } from '../core/kniurequest.mjs';
+import KniuMvvm from '../core/kniumvvm.mjs';
+import REQUEST from '../core/kniurequest.mjs';
+import { buildMultipartFormData, fillModelFromResponse, toSingleFileList } from '../core/kniuutil.mjs';
 
-export const seoController = defineComponent({
-  setup({ eventTo, root }) {
+const { controller, reactive, onMounted } = KniuMvvm;
+
+const seoController = controller(() => {
     const state = reactive({
-      title: '',
-      url: '',
-      logo: '',
-      description: '',
-      keywords: '',
-      author: '',
-      copyright: '',
-      record: '',
-      email: '',
-      id: '',
-      isSubmitting: false
+      isSubmitting: false,
+      files: [],
+      seoform: {
+        title: '',
+        url: '',
+        logo: '',
+        description: '',
+        keywords: '',
+        author: '',
+        copyright: '',
+        record: '',
+        email: '',
+        id: ''
+      },
+      rules: {
+        title: {
+          condition: /^(?=.*\S).+$/,
+          message: '请输入网站名称'
+        },
+        url: {
+          condition: /^(?=.*\S).+$/,
+          message: '请输入网站域名'
+        },
+        logo: {
+          condition: /^(?=.*\S).+$/,
+          message: '请选择网站logo'
+        },
+        description: {
+          condition: /^(?=.*\S).+$/,
+          message: '请输入description描述'
+        },
+        keywords: {
+          condition: /^(?=.*\S).+$/,
+          message: '请输入keywords关键词'
+        },
+        author: {
+          condition: /^(?=.*\S).+$/,
+          message: '请输入author作者'
+        },
+        copyright: {
+          condition: /^(?=.*\S).+$/,
+          message: '请输入版权'
+        },
+        record: {
+          condition: /^(?=.*\S).+$/,
+          message: '请输入备案号'
+        },
+        email: {
+          condition: /^(?=.*\S).+$/,
+          message: '请输入邮箱'
+        }
+      }
     });
 
     async function getSeoList() {
-      const result = await REQUEST({ url: '/seo_list', type: 'POST' });
-      if (result.status === 1) {
-        kniu.each(result.data, function (res) {
-          state.id = res.id;
-          state.title = res.title;
-          state.logo = res.logo;
-          state.url = res.url;
-          state.description = res.description;
-          state.keywords = res.keywords;
-          state.author = res.author;
-          state.copyright = res.copyright;
-          state.record = res.record;
-          state.email = res.email;
-        });
-        return;
-      }
-      eventTo?.emit('toast', result.msg);
+      await REQUEST({
+        url: '/seo_list',
+        type: 'POST',
+        success(res) {
+          if (res.status !== 1) {
+            this.$msg({ content: res.msg, type: 'error' });
+            return;
+          }
+          const item = fillModelFromResponse(state.seoform, res.data);
+          if (!item) return;
+          state.files = toSingleFileList(state.seoform.logo);
+        },
+        fail(res) { this.$msg({ content: res.msg, type: 'error' }); }
+      });
     }
 
     async function onSubmit() {
@@ -42,36 +82,32 @@ export const seoController = defineComponent({
         return;
       }
       state.isSubmitting = true;
-      const result = await REQUEST({
+      const data = buildMultipartFormData(state.seoform, {
+        fileField: 'logo',
+        files: state.files
+      });
+      await REQUEST({
         url: '/seo_update',
         type: 'POST',
-        data: {
-          id: state.id,
-          title: state.title,
-          url: state.url,
-          logo: state.logo,
-          description: state.description,
-          keywords: state.keywords,
-          author: state.author,
-          copyright: state.copyright,
-          record: state.record,
-          email: state.email
+        data: data,
+        async success(res) {
+          this.$msg({ content: res.msg, type: res.status === 1 ? 'success' : 'error' });
+          if (res.status === 1) await getSeoList();
+        },
+        fail(res) {
+          this.$msg({ content: res.msg, type: 'error' });
+        },
+        complete() {
+          state.isSubmitting = false;
         }
       });
-      if (result.status === 1) {
-        state.isSubmitting = false;
-        eventTo?.emit('toast', result.msg);
-        return;
-      }
-      state.isSubmitting = false;
-      eventTo?.emit('toast', result.msg);
     }
 
     onMounted(() => {
-      kniu.form({ el: root.querySelector('#seoform') });
       getSeoList();
     });
 
-    toRefs({ state, onSubmit });
-  }
+    return { state, onSubmit };
 });
+
+export default seoController;

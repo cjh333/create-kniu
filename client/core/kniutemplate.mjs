@@ -1,8 +1,14 @@
+import { nextTick, queueJob } from './kniuscheduler.mjs';
+
 var KniuTemplate = (function () {
   const SUBS = Symbol('kniu-subs');
   const IS_REACTIVE = Symbol('kniu-is-reactive');
+  const ITERATE = Symbol('kniu-iterate');
   const proxyCache = new WeakMap();
   const changeObservers = new WeakMap();
+  const expressionCache = new Map();
+  const EXPRESSION_CACHE_LIMIT = 1000;
+  let activeReadCollector = null;
   let binding = false;
 
   function isObject(v) {
@@ -82,7 +88,7 @@ var KniuTemplate = (function () {
 
   const ATTR_TAGS = {
     href: ['a', 'area', 'base', 'link'],
-    src: ['img', 'script', 'iframe', 'audio', 'video', 'source', 'track', 'embed', 'input'],
+    src: ['img', 'script', 'iframe', 'audio', 'video', 'source', 'track', 'embed', 'input', 'kniu-image'],
     srcset: ['img', 'source'],
     alt: ['img', 'area', 'input'],
     value: ['input', 'textarea', 'button', 'option', 'li', 'meter', 'progress', 'param'],
@@ -130,8 +136,10 @@ var KniuTemplate = (function () {
 
   const SPECIAL_KNIU = new Set([
     'model',
+    'rules',
     'for', 'if', 'elseif', 'else',
     'for-index', 'for-item', 'key',
+    'loading',
   ]);
 
   const BOOLEAN_ATTRS = new Set([
@@ -165,7 +173,7 @@ var KniuTemplate = (function () {
     select: '*',
     input: ['input', 'textarea', 'select', 'button'],
     change: ['input', 'textarea', 'select', 'button'],
-    submit: ['form'],
+    submit: ['form', 'kniu-form'],
     reset: ['form'],
     focus: ['input', 'select', 'textarea', 'button', 'a', 'area', 'iframe', 'object'],
     blur: ['input', 'select', 'textarea', 'button', 'a', 'area', 'iframe', 'object'],
@@ -242,17 +250,19 @@ var KniuTemplate = (function () {
 
   function setAttr(node, name, value, isBool) {
     if (isBool) {
-      if (value) node.setAttribute(name, '');
-      else node.removeAttribute(name);
+      if (value && !node.hasAttribute(name)) node.setAttribute(name, '');
+      else if (!value && node.hasAttribute(name)) node.removeAttribute(name);
       return;
     }
     if (name === 'value') {
-      if ('value' in node) node.value = value == null ? '' : value;
-      else node.setAttribute('value', value == null ? '' : String(value));
+      const next = value == null ? '' : value;
+      if ('value' in node) {
+        if (!Object.is(node.value, next) && node.value !== String(next)) node.value = next;
+      } else if (node.getAttribute('value') !== String(next)) node.setAttribute('value', String(next));
       return;
     }
     if (value == null || value === false) {
-      node.removeAttribute(name);
+      if (node.hasAttribute(name)) node.removeAttribute(name);
       return;
     }
     if (URL_ATTRS.has(name) && isDangerousUrl(String(value))) {
@@ -260,27 +270,41 @@ var KniuTemplate = (function () {
       node.removeAttribute(name);
       return;
     }
-    node.setAttribute(name, String(value));
+    const next = String(value);
+    if (node.getAttribute(name) !== next) node.setAttribute(name, next);
   }
 
   function warn(msg) {
     if (typeof console !== 'undefined' && console.warn) console.warn('[kniutemplate] ' + msg);
   }
 
+  function compileExpression(expr) {
+    const e = String(expr).trim();
+    let fn = expressionCache.get(e);
+    if (fn === undefined) {
+      const forms = looksLikeObject(e)
+        ? [`with(__s){ return ({${e}}); }`, `with(__s){ return (${e}); }`]
+        : [`with(__s){ return (${e}); }`, `with(__s){ return ({${e}}); }`];
+      fn = null;
+      for (const body of forms) {
+        try {
+          fn = new Function('__s', body);
+          break;
+        } catch {
+          fn = null;
+        }
+      }
+      if (expressionCache.size >= EXPRESSION_CACHE_LIMIT) {
+        expressionCache.delete(expressionCache.keys().next().value);
+      }
+      expressionCache.set(e, fn);
+    }
+    return fn;
+  }
+
   function evalExpr(expr, base, extra) {
     const e = String(expr).trim();
-    const forms = looksLikeObject(e)
-      ? [`with(__s){ return ({${e}}); }`, `with(__s){ return (${e}); }`]
-      : [`with(__s){ return (${e}); }`, `with(__s){ return ({${e}}); }`];
-    let fn = null;
-    for (const body of forms) {
-      try {
-        fn = new Function('__s', body);
-        break;
-      } catch {
-        fn = null;
-      }
-    }
+    const fn = compileExpression(e);
     if (!fn) return { value: '', paths: [] };
     const { proxy, accessed } = makeScope(base, extra);
     let value;
@@ -292,8 +316,48 @@ var KniuTemplate = (function () {
     return { value, paths: accessed };
   }
 
+  function precompileTemplate(root) {
+    if (!root || typeof document === 'undefined') return 0;
+    const expressions = new Set();
+    const collectText = function (value) {
+      const pattern = /\{\{\s*([\s\S]*?)\s*\}\}/g;
+      let match;
+      while ((match = pattern.exec(String(value || '')))) {
+        const raw = match[1].trim();
+        expressions.add(raw.startsWith('@') ? raw.slice(1).trim() : raw);
+      }
+    };
+    const nodes = [root];
+    if (root.querySelectorAll) nodes.push(...root.querySelectorAll('*'));
+    nodes.forEach(function (node) {
+      if (node.nodeType === 3) {
+        collectText(node.nodeValue);
+        return;
+      }
+      if (node.nodeType !== 1) return;
+      [...node.attributes].forEach(function (attribute) {
+        collectText(attribute.value);
+        if (attribute.name.startsWith('kniu@') && !attribute.value.includes('{{')) {
+          expressions.add(attribute.value.trim());
+        } else if (attribute.name.startsWith('kniu:') && !attribute.value.includes('{{')) {
+          expressions.add(stripBraces(attribute.value));
+        }
+      });
+      if (node.tagName === 'TEMPLATE' && node.content) {
+        precompileTemplate(node.content);
+      }
+    });
+    expressions.forEach(compileExpression);
+    return expressions.size;
+  }
+
   function reactive(target) {
     if (!isObject(target)) return target;
+    // File/Blob 等浏览器原生对象依赖内部槽，不能被 Proxy 包装；否则
+    // URL.createObjectURL、FormData 以及文件身份比较都会失效。
+    if (target instanceof Date
+      || (typeof Node !== 'undefined' && target instanceof Node)
+      || (typeof Blob !== 'undefined' && target instanceof Blob)) return target;
     if (target[IS_REACTIVE]) return target;
     if (proxyCache.has(target)) return proxyCache.get(target);
 
@@ -306,19 +370,31 @@ var KniuTemplate = (function () {
 
     const handler = {
       get(obj, key) {
+        if (activeReadCollector && key !== SUBS && key !== IS_REACTIVE) {
+          let keys = activeReadCollector.get(proxy);
+          if (!keys) {
+            keys = new Set();
+            activeReadCollector.set(proxy, keys);
+          }
+          keys.add(key);
+        }
         if (key === SUBS) return subscribers;
         if (key === IS_REACTIVE) return true;
         const val = obj[key];
         return isObject(val) ? reactive(val) : val;
       },
       set(obj, key, value) {
+        const had = Object.prototype.hasOwnProperty.call(obj, key);
         const old = obj[key];
         obj[key] = value;
-        if (old !== value) {
+        if (!Object.is(old, value)) {
           const set = subscribers.get(key);
-          if (set) set.forEach(function (fn) { return fn(value); });
+          if (set) [...set].forEach(function (fn) { queueJob(fn); });
           const observers = changeObservers.get(proxy);
-          if (observers) observers.forEach(function (fn) { fn({ target: proxy, key, value, oldValue: old, type: 'set' }); });
+          const keyed = observers && observers.get(key);
+          if (keyed) [...keyed].forEach(function (fn) { queueJob(fn); });
+          const iterators = !had && observers && observers.get(ITERATE);
+          if (iterators) [...iterators].forEach(function (fn) { queueJob(fn); });
         }
         return true;
       },
@@ -328,11 +404,25 @@ var KniuTemplate = (function () {
         const ok = delete obj[key];
         if (had) {
           const set = subscribers.get(key);
-          if (set) set.forEach(function (fn) { return fn(undefined); });
+          if (set) [...set].forEach(function (fn) { queueJob(fn); });
           const observers = changeObservers.get(proxy);
-          if (observers) observers.forEach(function (fn) { fn({ target: proxy, key, value: undefined, oldValue: old, type: 'delete' }); });
+          const keyed = observers && observers.get(key);
+          if (keyed) [...keyed].forEach(function (fn) { queueJob(fn); });
+          const iterators = observers && observers.get(ITERATE);
+          if (iterators) [...iterators].forEach(function (fn) { queueJob(fn); });
         }
         return ok;
+      },
+      ownKeys(obj) {
+        if (activeReadCollector) {
+          let keys = activeReadCollector.get(proxy);
+          if (!keys) {
+            keys = new Set();
+            activeReadCollector.set(proxy, keys);
+          }
+          keys.add(ITERATE);
+        }
+        return Reflect.ownKeys(obj);
       },
     };
 
@@ -351,15 +441,33 @@ var KniuTemplate = (function () {
     return proxy;
   }
 
-  function observe(target, listener) {
+  function observe(target, key, listener) {
     if (!target || !target[IS_REACTIVE] || typeof listener !== 'function') return function () { };
     let observers = changeObservers.get(target);
     if (!observers) {
-      observers = new Set();
+      observers = new Map();
       changeObservers.set(target, observers);
     }
-    observers.add(listener);
-    return function () { observers.delete(listener); };
+    let listeners = observers.get(key);
+    if (!listeners) {
+      listeners = new Set();
+      observers.set(key, listeners);
+    }
+    listeners.add(listener);
+    return function () {
+      listeners.delete(listener);
+      if (listeners.size === 0) observers.delete(key);
+      if (observers.size === 0) changeObservers.delete(target);
+    };
+  }
+
+  function collectReactiveReads(getter) {
+    const dependencies = new Map();
+    const previous = activeReadCollector;
+    activeReadCollector = dependencies;
+    let value;
+    try { value = getter(); } finally { activeReadCollector = previous; }
+    return { value: value, dependencies: dependencies };
   }
 
   let currentScope = null;
@@ -374,7 +482,36 @@ var KniuTemplate = (function () {
     currentCollector = null;
   }
 
-  function bind(scope, source) {
+  // kniu:loading 指令所需的遮罩样式（含 spinner 动画），全局注入一次
+  let _kniuLoadingStyleInjected = false;
+  function ensureLoadingStyle() {
+    if (_kniuLoadingStyleInjected) return;
+    if (typeof document === 'undefined') return;
+    if (document.getElementById('kniu_loading_directive_style')) {
+      _kniuLoadingStyleInjected = true;
+      return;
+    }
+    const style = document.createElement('style');
+    style.id = 'kniu_loading_directive_style';
+    style.textContent = [
+      '.kniu_loading_mask{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;',
+      'align-items:center;justify-content:center;gap:8px;background:rgba(255,255,255,.72);',
+      'backdrop-filter:blur(1px);opacity:0;visibility:hidden;pointer-events:none;',
+      'transition:opacity .2s ease,visibility .2s ease}',
+      '.kniu_loading_mask[data-active="true"]{opacity:1;visibility:visible;pointer-events:auto}',
+      '.kniu_loading_mask--body{position:fixed}',
+      '.kniu_loading_spinner{width:34px;height:34px;box-sizing:border-box;border:3px solid rgba(64,158,255,.25);',
+      'border-top-color:#409eff;border-radius:50%;animation:kniu_loading_directive_spin .7s linear infinite}',
+      '.kniu_loading_text{font-size:13px;color:#606266;max-width:80%;text-align:center}',
+      '@keyframes kniu_loading_directive_spin{to{transform:rotate(360deg)}}',
+      '@media (prefers-reduced-motion:reduce){.kniu_loading_spinner{animation:none}}'
+    ].join('');
+    document.head.appendChild(style);
+    _kniuLoadingStyleInjected = true;
+  }
+
+  function bind(scope, source, refs = {}) {
+    precompileTemplate(scope);
     let state;
     if (source && source[IS_REACTIVE]) {
       state = source;
@@ -416,12 +553,27 @@ var KniuTemplate = (function () {
       return false;
     };
 
-    const applyBindings = function (root, base, extra, bucket) {
+    const applyBindings = function (root, base, extra, bucket, refs) {
       const resolve = function (key) { return evalExpr(key, base, extra).value; };
       const subscribe = function (key, fn) {
         evalExpr(key, base, extra).paths.forEach(function (p) { return subscribePath(base, p, fn, bucket); });
       };
       const write = function (key, value) { return setPath(base, key, value); };
+      const collectBindingNodes = function (container) {
+        const elements = [...container.querySelectorAll('*')];
+        const templateElements = [];
+        elements.filter(function (element) { return element.tagName === 'TEMPLATE'; }).forEach(function (template) {
+          const isControlFlow = template.hasAttribute('kniu:for') || template.hasAttribute('kniu:if')
+            || template.hasAttribute('kniu:elseif') || template.hasAttribute('kniu:else');
+          if (isControlFlow) return;
+          const tableColumn = template.closest('kniu-table-col');
+          [...template.content.querySelectorAll('*')].forEach(function (element) {
+            if (tableColumn) element.__kniuTableColumn = tableColumn;
+            templateElements.push(element);
+          });
+        });
+        return [container, ...elements, ...templateElements];
+      };
 
       const TEXT_RE = /\{\{\s*([\s\S]*?)\s*\}\}/g;
       const rawNodes = new WeakMap();
@@ -448,29 +600,38 @@ var KniuTemplate = (function () {
         const hasRaw = segments.some(function (s) { return s.t === 'key' && s.raw; });
         if (!hasRaw) {
           const render = function () {
-            return textNode.nodeValue = segments
+            const next = segments
               .map(function (s) { return s.t === 'text' ? s.v : String(resolve(s.k) ?? ''); })
               .join('');
+            if (textNode.nodeValue !== next) textNode.nodeValue = next;
+            return next;
           };
           render();
           segments.filter(function (s) { return s.t === 'key'; }).forEach(function (s) { return subscribe(s.k, render); });
         } else {
+          let previousRaw = null;
           const render = function () {
             const parent = textNode.parentNode;
             if (!parent) return;
+            const values = segments.map(function (segment) {
+              return segment.t === 'text' ? segment.v : String(resolve(segment.k) ?? '');
+            });
+            const signature = JSON.stringify(values);
+            if (signature === previousRaw) return;
+            previousRaw = signature;
             if (rawNodes.has(textNode)) {
               rawNodes.get(textNode).forEach(function (n) { return n.remove(); });
               rawNodes.delete(textNode);
             }
             const built = [];
-            segments.forEach(function (s) {
+            segments.forEach(function (s, index) {
               if (s.t === 'text') {
                 built.push(document.createTextNode(s.v));
               } else if (!s.raw) {
-                built.push(document.createTextNode(String(resolve(s.k) ?? '')));
+                built.push(document.createTextNode(values[index]));
               } else {
                 const span = document.createElement('span');
-                span.innerHTML = sanitizeHtml(String(resolve(s.k) ?? ''));
+                span.innerHTML = sanitizeHtml(values[index]);
                 built.push(span);
               }
             });
@@ -486,19 +647,31 @@ var KniuTemplate = (function () {
       }
 
       if (root.nodeType === 1 || root.nodeType === 11) {
-        const nodes = [root, ...root.querySelectorAll('*')];
+        const nodes = collectBindingNodes(root);
         nodes.forEach(function (node) {
           if (node.nodeType !== 1) return;
           if (node.hasAttribute('kniu:for') || node.hasAttribute('kniu:if') || node.hasAttribute('kniu:elseif') || node.hasAttribute('kniu:else')) return;
           if (hasAncestor(node, '[kniu\\:for],[kniu\\:if],[kniu\\:elseif],[kniu\\:else]')) return;
+
+          const refAttr = node.hasAttribute('kniu:ref') ? 'kniu:ref' : (node.hasAttribute('ref') ? 'ref' : '');
+          if (refAttr) {
+            const refName = node.getAttribute(refAttr);
+            if (refName) refs[refName] = node;
+            node.removeAttribute(refAttr);
+          }
 
           if (node.hasAttribute('kniu:model')) {
             const path = stripBraces(node.getAttribute('kniu:model'));
             const isBool = node.type === 'checkbox' || node.type === 'radio';
             const render = function () {
               const v = resolve(path);
-              if (isBool) node.checked = Boolean(v);
-              else node.value = v ?? '';
+              if (isBool) {
+                const next = Boolean(v);
+                if (node.checked !== next) node.checked = next;
+              } else {
+                const next = v ?? '';
+                if (node.value !== String(next)) node.value = next;
+              }
             };
             render();
             subscribe(path, render);
@@ -509,16 +682,129 @@ var KniuTemplate = (function () {
             node.removeAttribute('kniu:model');
           }
 
+          if (node.hasAttribute('kniu:rules')) {
+            const tag = node.tagName.toLowerCase();
+            const expr = stripBraces(node.getAttribute('kniu:rules'));
+            if (tag !== 'form' && tag !== 'kniu-form') {
+              warn(`kniu:rules 只能用在 <form> 或 <kniu-form> 上，当前元素为 <${tag}>。`);
+            } else {
+              const renderRules = function () {
+                const rules = resolve(expr);
+                node.rules = rules && typeof rules === 'object' ? rules : {};
+              };
+              renderRules();
+              subscribe(expr, renderRules);
+            }
+            node.removeAttribute('kniu:rules');
+          }
+
+          // kniu:loading 指令：区域 / 全屏加载遮罩。
+          // 用法：
+          //   kniu:loading="{{loading}}"        遮罩作为绑定元素子节点（区域加载，元素需为定位上下文）
+          //   kniu:loading.body="{{loading}}"  遮罩插入 document.body（全屏加载）
+          //   可选 kniu:loading-text="{{tip}}"  遮罩文案
+          const loadingAttr = [...node.attributes].find(function (a) {
+            return a.name === 'kniu:loading' || a.name === 'kniu:loading.body';
+          });
+          if (loadingAttr) {
+            const body = loadingAttr.name === 'kniu:loading.body';
+            const loadingExpr = stripBraces(loadingAttr.value);
+            const hasText = node.hasAttribute('kniu:loading-text');
+            const textExpr = hasText ? stripBraces(node.getAttribute('kniu:loading-text')) : '';
+            if (hasText) node.removeAttribute('kniu:loading-text');
+            node.removeAttribute('kniu:loading');
+            node.removeAttribute('kniu:loading.body');
+
+            // 委托检测：绑定元素是自带 loading 的 Shadow DOM 自定义组件（如 kniu-table）时，
+            // 不再往光层塞遮罩（光层子节点无 <slot> 不会渲染），而是直接驱动组件内置遮罩，
+            // 由组件自身管理遮罩，避免光层节点无法显示。
+            // 仅「区域加载」(kniu:loading) 委托；kniu:loading.body 仍走全屏遮罩。
+            const delegate = !body && node.shadowRoot
+              && typeof node.tagName === 'string'
+              && node.tagName.toLowerCase().indexOf('kniu-') === 0
+              && 'loading' in node;
+
+            if (delegate) {
+              const render = function () {
+                node.loading = Boolean(resolve(loadingExpr));
+                if (textExpr) node.loadingText = resolve(textExpr);
+              };
+              render();
+              subscribe(loadingExpr, render);
+              if (textExpr) subscribe(textExpr, render);
+              // 组件自管理遮罩，无需 disposer
+            } else {
+              ensureLoadingStyle();
+              const mask = document.createElement('div');
+              mask.className = 'kniu_loading_mask' + (body ? ' kniu_loading_mask--body' : '');
+              mask.setAttribute('data-active', 'false');
+              const spinner = document.createElement('span');
+              spinner.className = 'kniu_loading_spinner';
+              mask.appendChild(spinner);
+              const textEl = document.createElement('span');
+              textEl.className = 'kniu_loading_text';
+              mask.appendChild(textEl);
+
+              let mounted = false;
+              const mount = function () {
+                if (mounted) return;
+                if (body) {
+                  document.body.appendChild(mask);
+                } else {
+                  const pos = getComputedStyle(node).position;
+                  if (pos === 'static') node.style.position = 'relative';
+                  node.appendChild(mask);
+                }
+                mounted = true;
+              };
+              const unmount = function () {
+                if (!mounted) return;
+                if (mask.parentNode) mask.parentNode.removeChild(mask);
+                mounted = false;
+              };
+
+              const render = function () {
+                const active = Boolean(resolve(loadingExpr));
+                if (active) {
+                  mount();
+                  mask.setAttribute('data-active', 'true');
+                } else {
+                  mask.setAttribute('data-active', 'false');
+                }
+                if (textExpr) {
+                  const t = resolve(textExpr);
+                  textEl.textContent = t == null ? '' : String(t);
+                }
+              };
+              render();
+              subscribe(loadingExpr, render);
+              if (textExpr) subscribe(textExpr, render);
+              // 卸载时清理遮罩，避免 body 挂载泄漏
+              listDisposers.push(unmount);
+            }
+          }
+
           const DATA_ATTR_RE = /^kniu:\[([a-z][a-z0-9-]*)\]$/i;
           [...node.attributes].forEach(function (attr) {
             const match = attr.name.match(DATA_ATTR_RE);
             if (!match) return;
-            const dataAttrName = `data-${match[1].toLowerCase()}`;
+            const bindingName = match[1].toLowerCase();
+            const dataAttrName = `data-${bindingName}`;
+            const propertyName = bindingName.replace(/-([a-z0-9])/g, function (_, char) {
+              return char.toUpperCase();
+            });
+            const bindsComponentProperty = node.tagName.includes('-') && propertyName in node;
             const expr = stripBraces(attr.value);
             const render = function () {
               const { value } = evalExpr(expr, base, extra);
-              if (value == null || value === false) node.removeAttribute(dataAttrName);
-              else node.setAttribute(dataAttrName, String(value));
+              if (bindsComponentProperty) {
+                if (!Object.is(node[propertyName], value)) node[propertyName] = value;
+              } else if (value == null || value === false) {
+                if (node.hasAttribute(dataAttrName)) node.removeAttribute(dataAttrName);
+              } else {
+                const next = String(value);
+                if (node.getAttribute(dataAttrName) !== next) node.setAttribute(dataAttrName, next);
+              }
             };
             render();
             subscribe(expr, render);
@@ -548,8 +834,8 @@ var KniuTemplate = (function () {
             node.removeAttribute(full);
           });
 
-          const EVENT_RE = /^kniu@([a-z][a-z0-9]*)(?:\.([a-z0-9.]+))?$/i;
-          const EVENT_OPTION_MODIFIERS = new Set(['capture', 'once', 'passive']);
+          const EVENT_RE = /^kniu@([a-z][a-z0-9-]*)(?:\.([a-z0-9.]+))?$/i;
+          const EVENT_OPTION_MODIFIERS = new Set(['capture', 'once', 'passive', 'native']);
           const EVENT_BEHAVIOR_MODIFIERS = new Set([
             'prevent', 'stop', 'self', 'ctrl', 'shift', 'alt', 'meta', 'exact',
             'left', 'right', 'middle', 'enter', 'tab', 'delete', 'esc', 'space',
@@ -588,12 +874,35 @@ var KniuTemplate = (function () {
               return;
             }
             const tag = node.tagName.toLowerCase();
-            if (!isValidEventForTag(eventName, tag)) {
+            const insideTableColumn = node.closest('kniu-table-col') || node.__kniuTableColumn;
+            const isTableScopedSwitchChange = insideTableColumn
+              && node.matches('kniu-switch')
+              && eventName === 'change';
+            const isTableScopedButtonClick = insideTableColumn
+              && node.matches('kniu-btn')
+              && eventName === 'click';
+            if (!isTableScopedSwitchChange && !isTableScopedButtonClick && !isValidEventForTag(eventName, tag)) {
               warn(`kniu@${eventName} 不被 <${tag}> 支持，已跳过（事件只能绑定到元素原生支持的事件上）`);
               node.removeAttribute(attr.name);
               return;
             }
             const expr = attr.value.trim();
+            const tableScopedControl = insideTableColumn && (
+              (node.matches('kniu-btn') && eventName === 'click')
+              || (node.matches('kniu-switch') && eventName === 'change')
+            );
+            if (tableScopedControl) {
+              const handlerMatch = expr.match(/^([A-Za-z_$][\w$]*)\s*\(/);
+              const handlerName = handlerMatch?.[1] || expr;
+              const renderScopedHandler = function () {
+                const { value } = evalExpr(handlerName, base, extra);
+                node.__kniuTableScopedHandler = typeof value === 'function' ? value.bind(base) : null;
+              };
+              renderScopedHandler();
+              subscribe(handlerName, renderScopedHandler);
+              node.removeAttribute(attr.name);
+              return;
+            }
             const handlers = eventState.get(node) || new Map();
             eventState.set(node, handlers);
             const bindingKey = attr.name.toLowerCase();
@@ -668,7 +977,7 @@ var KniuTemplate = (function () {
 
       if (root.nodeType === 1 || root.nodeType === 11) {
         const ATTR_RE = /\{\{\s*([\s\S]*?)\s*\}\}/g;
-        const nodes = [root, ...root.querySelectorAll('*')];
+        const nodes = collectBindingNodes(root);
         nodes.forEach(function (node) {
           if (node.nodeType !== 1) return;
           if (node.hasAttribute('kniu:for') || node.hasAttribute('kniu:if') || node.hasAttribute('kniu:elseif') || node.hasAttribute('kniu:else')) return;
@@ -690,8 +999,18 @@ var KniuTemplate = (function () {
             if (last < template.length) segments.push({ t: 'text', v: template.slice(last) });
             const isBool = isBooleanAttr(name);
             const pureExpr = segments.length === 1 && segments[0].t === 'key';
+            // 组件 property 透传：自定义元素上存在同名 property 时，直接写入 property（支持对象/数组/函数），与 kniu:[name] 行为一致
+            const propertyName = name.replace(/-([a-z0-9])/g, function (_, char) {
+              return char.toUpperCase();
+            });
+            const bindsComponentProperty = node.tagName.includes('-') && propertyName in node;
             const render = function () {
               const parts = segments.map(function (s) { return s.t === 'text' ? s.v : resolve(s.k); });
+              if (bindsComponentProperty && pureExpr) {
+                const value = resolve(segments[0].k);
+                if (!Object.is(node[propertyName], value)) node[propertyName] = value;
+                return;
+              }
               if (isBool && pureExpr) {
                 if (parts[0]) node.setAttribute(name, '');
                 else node.removeAttribute(name);
@@ -708,7 +1027,7 @@ var KniuTemplate = (function () {
                 warn(`属性 "${name}" 的插值 URL 含危险协议，已拒绝写入以防 XSS`);
                 node.removeAttribute(name);
               } else {
-                node.setAttribute(name, resolved);
+                if (node.getAttribute(name) !== resolved) node.setAttribute(name, resolved);
               }
             };
             render();
@@ -764,11 +1083,11 @@ var KniuTemplate = (function () {
                 node.querySelectorAll('[kniu\\:for]').forEach(function (n) { return setupFor(n, extra, nb); });
                 node.querySelectorAll('[kniu\\:if]').forEach(function (n) { return setupIf(n, extra, nb); });
               }
-              applyBindings(node, state, extra, nb);
+              applyBindings(node, state, extra, nb, refs);
             });
             initialized = true;
           } else {
-            roots.forEach(function (node) { return applyBindings(node, state, extra, nb); });
+            roots.forEach(function (node) { return applyBindings(node, state, extra, nb, refs); });
           }
         };
         return { update, getNodes: function () { return roots; }, viewCleanups };
@@ -926,7 +1245,7 @@ var KniuTemplate = (function () {
               node.querySelectorAll('[kniu\\:for]').forEach(function (n) { return setupFor(n, parentExtra, bc); });
               node.querySelectorAll('[kniu\\:if]').forEach(function (n) { return setupIf(n, parentExtra, bc); });
             }
-            applyBindings(node, state, parentExtra, bc);
+            applyBindings(node, state, parentExtra, bc, refs);
             anchor.parentNode.insertBefore(node, anchor);
             rendered.push(node);
           });
@@ -940,7 +1259,7 @@ var KniuTemplate = (function () {
       });
     };
 
-    applyBindings(scope, state, {}, subscriptions);
+    applyBindings(scope, state, {}, subscriptions, refs);
 
     [...scope.querySelectorAll('[kniu\\:for]')]
       .filter(function (b) { return !hasAncestor(b, '[kniu\\:for]'); })
@@ -973,20 +1292,20 @@ var KniuTemplate = (function () {
       });
       listDisposers.forEach(function (d) { return d(); });
     };
-    return { state, dispose };
+    return { state, refs, dispose };
   }
 
   return {
     reactive: reactive,
     observe: observe,
+    collectReactiveReads: collectReactiveReads,
+    compileExpression: compileExpression,
+    precompileTemplate: precompileTemplate,
+    nextTick: nextTick,
     beginBindingCollection: beginBindingCollection,
     endBindingCollection: endBindingCollection,
     bind: bind
   };
 }());
 
-export const reactive = KniuTemplate.reactive;
-export const observe = KniuTemplate.observe;
-export const beginBindingCollection = KniuTemplate.beginBindingCollection;
-export const endBindingCollection = KniuTemplate.endBindingCollection;
-export const bind = KniuTemplate.bind;
+export default KniuTemplate;

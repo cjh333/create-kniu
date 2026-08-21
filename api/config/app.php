@@ -1,6 +1,6 @@
 <?php
 
-$env = 'development';
+$env = getenv('APP_ENV') ?: 'development';
 $config = [
   'development' => [
     'TIMEZONE' => 'Asia/Shanghai',  // 时区设置。
@@ -13,4 +13,4 @@ $config = [
     'DEBUG' => false  // 调试模式。
   ]
 ];
-return $config[$env];
+return $config[$env] ?? $config['development'];

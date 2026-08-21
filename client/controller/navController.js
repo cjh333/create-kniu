@@ -1,105 +1,125 @@
-import { defineComponent, reactive, onMounted, toRefs } from '../core/kniumvvm.mjs';
+import KniuMvvm from '../core/kniumvvm.mjs';
+import REQUEST from '../core/kniurequest.mjs';
+import { getResponseRecords, removeListRecord } from '../core/kniuutil.mjs';
 
-export const navController = defineComponent({
-  setup({ root }) {
+const { controller, reactive, onMounted } = KniuMvvm;
+
+const navController = controller(() => {
+    const self = this;
     const state = reactive({
-
+      tableData: [],
+      dialogVisible: false
     });
 
-    onMounted(() => {
-      var row = Math.ceil((top.innerHeight - 256 / 1080 * top.innerWidth) / 70);
-      var myTable = kniu.table({
-        el: root.querySelector('#tablegroup'),
-        request: {
-          type: 'POST',
-          url: '/api/nav_list',
-          current: 1,
-          row: Math.max(1, row)
+    async function loadTableData() {
+      await REQUEST({
+        url: '/nav_list',
+        type: 'POST',
+        data: {
+          page_current: 1,
+          page_rows: 100,
+          field: 'sid',
+          sort: 'asc'
         },
-        toolbar: [
-          'filter',
-          {
-            content: '<div class="kniu_btn table_toolbar_add" data-table-event="add" title="添加">添加</div>'
+        success(res) {
+          if (res.status !== 1) {
+            state.tableData = [];
+            this.$msg({ content: res.msg, type: 'error' });
+            return;
           }
-        ],
-        cols: [
-          {
-            field: 'is_select',
-            checkbox: true,
-            width: 60,
-            align: 'center',
-            filter: false
-          },
-          {
-            field: 'sid',
-            title: '排序',
-            sort: true,
-            edit: 'text',
-            width: 80,
-            align: 'center'
-          },
-          {
-            field: 'id',
-            title: 'ID',
-            sort: true,
-            width: 80
-          },
-          {
-            field: 'name',
-            title: '栏目名称',
-            width: 600
-          },
-          {
-            field: 'is_show',
-            title: '显示',
-            width: 80,
-            filter: false,
-            content: function (items) {
-              return `
-                <div class="kniu_switch">
-                  <input class="kniu_switch_input"
-                  data-table-params="${items.data.id},${items.field}"
-                  name="KNIU_TABLE_SWITCH"
-                  value="${items.data[items.field]}" ${items.data[items.field] == 1 ? "checked" : ""}
-                  type="checkbox">
-                  <div class="kniu_switch_status">
-                    <div class="kniu_switch_off">关</div>
-                    <div class="kniu_switch_on">开</div>
-                  </div>
-                </div>
-              `;
-            }
-          },
-          {
-            field: 'action',
-            title: '操作',
-            width: 200,
-            filter: false,
-            content: function (items) {
-              return `
-                <div class="kniu_table_operate_group">
-                  <a class="kniu_table_operate table_operate_delete kniu_tips"
-                    data-table-event="delete"
-                    data-table-id="${items.data.id}"
-                    href="javascript:;">
-                    <span class="kniu_table_operate_icon kniu_icon kniu_icon_delete"></span>
-                    <p class="kniu_table_operate_text">删除</p>
-                  </a>
-                  <a class="kniu_table_operate table_operate_update kniu_tips"
-                    data-table-event="update"
-                    data-table-id="${items.data.id}"
-                    href="javascript:;">
-                    <span class="kniu_table_operate_icon kniu_icon kniu_icon_square_edit"></span>
-                    <p class="kniu_table_operate_text">修改</p>
-                  </a>
-                </div>
-              `;
-            }
-          }
-        ]
+          state.tableData = getResponseRecords(res.data);
+        },
+        fail(res) {
+          state.tableData = [];
+          this.$msg({ content: res.msg, type: 'error' });
+        }
       });
-    });
+    }
 
-    toRefs(state);
-  }
+    function deleteRow(index, tableData) {
+      const row = tableData[index];
+      if (!row) return false;
+      this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).then(async () => {
+        await REQUEST({
+          url: '/nav_delete',
+          type: 'POST',
+          data: { id: row.id },
+          success: (res) => {
+            if (res.status !== 1) {
+              this.$msg({ type: 'error', content: res.msg });
+              return;
+            }
+            state.tableData = removeListRecord(state.tableData, row);
+            this.$msg({ type: 'success', content: '删除成功!' });
+          },
+          fail: (res) => {
+            this.$msg({ type: 'error', content: res.msg });
+          }
+        });
+        return false;
+      }).catch(() => {
+        this.$msg({ type: 'info', content: '已取消删除' });
+        return false;
+      });
+    }
+
+    function viewRow(index, tableData) {
+      const row = tableData[index];
+      if (!row) return false;
+      const text = ((row.name || '') + ' ' + (row.url || '')).toLowerCase();
+      const target = /文章|article/.test(text) ? '/articledetail' : '/dailydetail';
+      self.navigateTo(target);
+      return false;
+    }
+
+    async function updateShow(index, tableData, value) {
+      const row = tableData[index];
+      if (!row) return false;
+      let saved = false;
+      await REQUEST({
+        url: '/nav_update',
+        type: 'POST',
+        data: { id: row.id, is_show: value },
+        success(res) {
+          if (res.status !== 1) {
+            this.$msg({ content: res.msg, type: 'error' });
+            return;
+          }
+          saved = true;
+          this.$msg({ content: res.msg, type: 'success' });
+        },
+        fail(res) { this.$msg({ content: res.msg, type: 'error' }); }
+      });
+      return saved;
+    }
+
+    async function updateSort(index, tableData, value) {
+      const row = tableData[index];
+      if (!row) return false;
+      let saved = false;
+      await REQUEST({
+        url: '/nav_update',
+        type: 'POST',
+        data: { id: row.id, sid: value },
+        success(res) {
+          if (res.status !== 1) {
+            this.$msg({ content: res.msg, type: 'error' });
+            return;
+          }
+          saved = true;
+          this.$msg({ content: res.msg, type: 'success' });
+        },
+        fail(res) { this.$msg({ content: res.msg, type: 'error' }); }
+      });
+      return saved;
+    }
+
+    onMounted(loadTableData);
+    return { state, deleteRow, viewRow, updateShow, updateSort };
 });
+
+export default navController;

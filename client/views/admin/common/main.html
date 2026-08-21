@@ -2,13 +2,33 @@
   @import url("@kniu/kniu.min.css");
   @import url("@style/webs.min.css");
 
-  client-aside,
-  client-header,
-  client-home,
-  client-orders,
-  client-inventory,
-  client-insights {
+  :host {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  kniu-system-aside,
+  kniu-system-header,
+  kniu-system-home,
+  kniu-system-orders,
+  kniu-system-inventory,
+  kniu-system-insights {
     display: block;
+  }
+
+  .kniu_web_aside_body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .kniu_web_aside_view {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
   }
 </style>
 <include src="./aside.html" />
@@ -16,9 +36,4 @@
   <include src="./header.html" />
   <article class="kniu_web_aside_view"></article>
 </section>
-<!-- loading -->
-<div class="loading_mask" kniu:if="{{ui.loading}}">
-  <span class="loading_spinner"></span>
-</div>
-<!-- Toast -->
-<div class="toast{{ui.toastShow ? ' show' : ''}}" role="status" aria-live="polite">{{ui.toast}}</div>
+<kniu-loading show="{{ui.loading}}" />

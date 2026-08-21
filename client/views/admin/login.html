@@ -105,92 +105,46 @@
     padding: 20px 40px 36px
   }
 
-  .form_group {
-    margin-bottom: 20px
+  .kniu_sys_login_form {
+    display: block
   }
 
-  .form_label {
-    display: block;
-    font-size: 13px;
-    font-weight: 600;
-    color: #555;
-    margin-bottom: 6px
-  }
-
-  .form_input {
-    display: block;
-    width: 100%;
-    height: 42px;
-    padding: 0 14px;
-    font-size: 14px;
-    color: #333;
-    background: #f7f8fa;
-    border: 1px solid #e4e7ed;
-    border-radius: 6px;
-    outline: none;
-    transition: border-color .2s, box-shadow .2s
-  }
-
-  .form_input:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, .12);
-    background: #fff
-  }
-
-  .form_input::placeholder {
-    color: #c0c4cc
-  }
-
-  .captcha_row {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start
-  }
-
-  .captcha_row .form_group {
-    flex: 1;
-    margin-bottom: 0
-  }
-
-  .captcha_img {
-    cursor: pointer;
-    flex-shrink: 0;
-    border-radius: 6px;
-    border: 1px solid #e4e7ed;
-    height: 42px;
-    transition: opacity .2s
-  }
-
-  .captcha_img:hover {
-    opacity: .85
-  }
-
-  .captcha_loading_tip {
+  .kniu_sys_login_captcha_image {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-width: 110px;
-    font-size: 12px;
-    color: #999;
-    background: #f7f8fa
+    height: 40px;
+    overflow: hidden;
+    border: 1px solid #dcdfe6;
+    border-radius: 4px;
+    background: #f5f7fa;
+    color: #909399;
+    font-size: 12px
+  }
+
+  .kniu_sys_login_captcha_image img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    cursor: pointer
   }
 
   .captcha_tip {
-    font-size: 11px;
-    color: #999;
-    margin-top: 4px
+    margin: -8px 0 18px 72px;
+    color: #909399;
+    font-size: 12px
+  }
+
+  kniu-form[label-position="top"] .captcha_tip {
+    margin-left: 0
   }
 
   .form_error {
     display: none;
-    padding: 10px 14px;
-    margin-bottom: 16px;
-    font-size: 13px;
-    color: #e6423a;
-    background: #fef0ef;
-    border: 1px solid #fde2e2;
-    border-radius: 6px;
-    line-height: 1.5
+    margin: 0 0 16px 72px;
+    color: #f56c6c;
+    font-size: 13px
   }
 
   .form_error.show {
@@ -258,6 +212,15 @@
     font-size: 12px;
     color: #bbb
   }
+
+  @media (max-width: 480px) {
+
+    .login_header,
+    .login_body {
+      padding-left: 24px;
+      padding-right: 24px
+    }
+  }
 </style>
 
 <div class="login_group">
@@ -269,74 +232,27 @@
       </div>
       <p class="login_subtitle">原生多应用工作台 · 管理后台</p>
     </div>
-
     <div class="login_body">
-      <div class="form_error {{showError ? 'show' : ''}}">{{error}}</div>
-
-      <form class="kniu_form" id="loginform" kniu@submit.prevent="onSubmit">
-
-        <div class="kniu_form_cell">
-          <div class="kniu_label kniu_md_form_yl">
-            <p class="kniu_input_text">用户名</p>
-            <div class="kniu_input_group">
-              <input class="kniu_input kniu_required" name="name" kniu:model="{{username}}" placeholder="请输入用户名" autocomplete="off" required type="text">
-              <div class="kniu_input_aftfix">
-                <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
-              </div>
-            </div>
-          </div>
+      <kniu-form kniu@submit.prevent="onSubmit" ref="form" model="{{loginform}}" rules="{{rules}}" label-position="top" label-width="auto">
+        <kniu-form-cell label="用户名">
+          <kniu-input kniu:model="{{loginform.username}}" name="username" placeholder="请输入用户名" />
+        </kniu-form-cell>
+        <kniu-form-cell label="密码">
+          <kniu-input kniu:model="{{loginform.password}}" name="password" placeholder="请输入密码" show-password type="password" />
+        </kniu-form-cell>
+        <kniu-form-cell label="验证码">
+          <kniu-input kniu:model="{{loginform.gvcode}}" name="gvcode" placeholder="请输入验证码" maxlength="4" />
+          <kniu-image style="border-radius:3px;margin-left:5px;min-width:120px;min-height:40px;cursor:pointer;" kniu@click="refreshCaptcha" src="{{captchaImageUrl}}" fit="contain" />
+        </kniu-form-cell>
+        <p class="captcha_tip">请输入图片中算术题的计算结果</p>
+        <div class="kniu_btn_group">
+          <kniu-btn disabled="{{isSubmitting}}" native-type="submit" block>
+            <kniu-icon kniu:if="{{isSubmitting}}" icon="Loading" />
+            <template kniu:else>登 录</template>
+          </kniu-btn>
         </div>
-
-        <div class="kniu_form_cell">
-          <div class="kniu_label kniu_label_password kniu_md_form_yl">
-            <p class="kniu_input_text">密码</p>
-            <div class="kniu_input_group">
-              <input class="kniu_input kniu_required" name="password" kniu:model="{{password}}" placeholder="请输入密码" autocomplete="off" required type="password">
-              <div class="kniu_input_beffix">
-                <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
-              </div>
-              <div class="kniu_input_aftfix">
-                <span class="kniu_icon kniu_icon_uneye kniu_icon_1d3x kniu_input_btn_showpassword"></span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="kniu_form_cell">
-          <div class="kniu_label kniu_label_gvcode kniu_md_form_yl">
-            <p class="kniu_input_text">验证码</p>
-            <div class="kniu_input_group">
-              <div class="kniu_input_wrap">
-                <input class="kniu_input kniu_required" name="gvcode" kniu:model="{{verificationCode}}" placeholder="请输入验证码" maxlength="4" autocomplete="off" required type="text">
-                <div class="kniu_input_aftfix">
-                  <span class="kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear"></span>
-                </div>
-              </div>
-              <div class="kniu_gvcode_img_group">
-                <template kniu:if="{{isCaptchaLoading}}">
-                  <span class="kniu_gvcode_img captcha_loading_tip">加载中…</span>
-                </template>
-                <template kniu:else>
-                  <img class="kniu_gvcode_img" kniu@click="refreshCaptcha" src="{{captchaImageUrl}}" title="点击刷新验证码">
-                </template>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="kniu_form_cell">
-          <p class="captcha_tip">请输入图片中算术题的计算结果</p>
-        </div>
-
-        <div class="kniu_form_cell">
-          <button class="kniu_btn login_btn{{isSubmitting ? ' kniu_btn_loading' : ''}}" disabled="{{isSubmitting}}" type="submit">
-            <span class="kniu_btn_loading_spinner"></span>
-            <span class="login_btn_text">登 录</span>
-          </button>
-        </div>
-
-      </form>
+      </kniu-form>
     </div>
-
     <div class="login_footer">Kniu System &copy; 2026</div>
   </div>
 </div>

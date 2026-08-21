@@ -13,12 +13,14 @@ class IndexController extends Controller
     $result = Db::name('tb_daily')
       ->where('id', '=', $today)
       ->select();
+    $result = $this->decodeFields($result, ['cn', 'en']);
     $this->json($result);
   }
 
   public function getArticle(): void
   {
     $result = Db::name('tb_article')->select();
+    $result = $this->decodeFields($result, ['title', 'subtitle', 'summary', 'content']);
     $this->json($result);
   }
 
@@ -56,6 +58,7 @@ class IndexController extends Controller
         return;
       }
 
+      $result = $this->decodeFields($result, ['title', 'subtitle', 'summary', 'content']);
       $this->json($result[0]);
       return;
     } catch (\Exception $e) {

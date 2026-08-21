@@ -27,5 +27,11 @@ class AdminBaseController extends Controller
       ], JSON_UNESCAPED_UNICODE);
       exit;
     }
+    $role = (int)($_SESSION['admin_token']['role'] ?? 0);
+    if ($role !== 1 && in_array(get_class($this), ['App\\Admin\\Controllers\\RoleController', 'App\\Admin\\Controllers\\CacheController'], true)) {
+      http_response_code(403);
+      echo json_encode(['status' => 0, 'msg' => '权限不足', 'data' => null], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
   }
 }

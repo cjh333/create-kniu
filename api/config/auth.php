@@ -1,6 +1,6 @@
 <?php
 
-$env = 'development';
+$env = getenv('APP_ENV') ?: 'development';
 $config = [
   'development' => [
     'ENABLE' => true,  // 开发环境开启认证。
@@ -21,4 +21,4 @@ $config = [
     'CAPTCHA_NUMBER_MAX' => 20  // 验证码加减法的最大范围（20 表示 20 以内）。
   ]
 ];
-return $config[$env];
+return $config[$env] ?? $config['development'];

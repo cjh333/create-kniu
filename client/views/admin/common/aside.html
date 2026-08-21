@@ -13,33 +13,23 @@
   </div>
   <p class="kniu_web_aside_sidebar_label">{{workspaceLabel}}</p>
   <nav class="kniu_web_aside_sidebar_wrap" aria-label="应用导航">
-    <button class="kniu_web_aside_sidebar{{activeNavigationIndex === 0 ? ' active' : ''}}" kniu@click="handleNavigationClick" data-nav="0" type="button">
-      <i style="background-color: #ff5c35;">⌂</i>
-      <span>控制台</span>
-    </button>
-    <button class="kniu_web_aside_sidebar{{activeNavigationIndex === 1 ? ' active' : ''}}" kniu@click="handleNavigationClick" data-nav="1" type="button">
-      <i style="background-color: #635bff;">▤</i>
-      <span>网站信息</span>
-      <!-- <em>{{badge}}</em> -->
-    </button>
-    <button class="kniu_web_aside_sidebar{{activeNavigationIndex === 2 ? ' active' : ''}}" kniu@click="handleNavigationClick" data-nav="2" type="button">
-      <i style="background-color: #19a974;">◇</i>
-      <span>栏目管理</span>
-    </button>
-    <!-- <button class="kniu_web_aside_sidebar{{activeNavigationIndex === 3 ? ' active' : ''}}" kniu@click="handleNavigationClick" data-nav="3" type="button">
-      <i style="background-color: #e7a11a;">↗</i>
-      <span>数据洞察</span>
-    </button> -->
+    <kniu-btn class="kniu_web_aside_sidebar{{activeNavigationIndex === 0 ? ' active' : ''}}" unstyled kniu@click="handleNavigationClick" data-nav="0" native-type="button">
+      <kniu-icon style="margin-right:5px;font-size:17px;color:#ff5c35;" icon="House" />控制台
+    </kniu-btn>
+    <kniu-btn class="kniu_web_aside_sidebar{{activeNavigationIndex === 1 ? ' active' : ''}}" unstyled kniu@click="handleNavigationClick" data-nav="1" native-type="button">
+      <kniu-icon style="margin-right:5px;font-size:17px;color:#635bff;" icon="Document" />网站信息
+    </kniu-btn>
+    <kniu-btn class="kniu_web_aside_sidebar{{activeNavigationIndex === 2 ? ' active' : ''}}" unstyled kniu@click="handleNavigationClick" data-nav="2" native-type="button">
+      <kniu-icon style="margin-right:5px;font-size:17px;color:#19a974;" icon="Folder" />栏目管理
+    </kniu-btn>
   </nav>
   <div class="sidebar-foot">
-    <button class="kniu_web_aside_sidebar" kniu@click="handleHelpRequest" type="button">
-      <i class="neutral">?</i>
-      <span>{{helpLabel}}</span>
-    </button>
-    <button class="kniu_web_aside_sidebar" kniu@click="handleLogout" type="button">
-      <i class="neutral">↵</i>
-      <span>退出登录</span>
-    </button>
+    <kniu-btn class="kniu_web_aside_sidebar" unstyled kniu@click="handleHelpRequest" native-type="button">
+      <kniu-icon style="margin-right:5px;font-size:17px;color:#9aa3b8;" icon="Question" />{{helpLabel}}
+    </kniu-btn>
+    <kniu-btn class="kniu_web_aside_sidebar" unstyled kniu@click="handleLogout" native-type="button">
+      <kniu-icon style="margin-right:5px;font-size:17px;color:#9aa3b8;" icon="Logout" />退出登录
+    </kniu-btn>
     <div class="user">
       <span class="avatar">{{userAvatar}}</span>
       <div><b>{{userName}}</b><small>{{userRole}}</small></div>

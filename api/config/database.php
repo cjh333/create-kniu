@@ -1,26 +1,26 @@
 <?php
 
-$env = 'development';
+$env = getenv('APP_ENV') ?: 'development';
 $config = [
   'development' => [
     'TYPE' => 'mysql',
     'HOST' => '127.0.0.1',
     'DATABASE' => 'db_kniu',
-    'USERNAME' => 'root',
-    'PASSWORD' => 'root123',
+    'USERNAME' => getenv('DB_USERNAME') ?: 'root',
+    'PASSWORD' => getenv('DB_PASSWORD') ?: '',
     'CHARSET'  => 'utf8mb4',
     'COLLATION' => 'utf8mb4_unicode_ci',
     'PERSISTENT' => false
   ],
   'production' => [
     'TYPE' => 'mysql',
-    'HOST' => 'dphzmy-jzd0ohudotjkf0vk-pub.proxy.dms.aliyuncs.com',
-    'DATABASE' => 'qdm673522465_db',
-    'USERNAME' => 'lZgUGWWHZbPWyaZBiMWiFnHe',
-    'PASSWORD' => 'W48G5wSYoJLPDhcMIsHjjOjFQ37iPa',
+    'HOST' => getenv('DB_HOST') ?: '127.0.0.1',
+    'DATABASE' => getenv('DB_DATABASE') ?: '',
+    'USERNAME' => getenv('DB_USERNAME') ?: '',
+    'PASSWORD' => getenv('DB_PASSWORD') ?: '',
     'CHARSET'  => 'utf8mb4',
     'COLLATION' => 'utf8mb4_unicode_ci',
     'PERSISTENT' => false
   ]
 ];
-return $config[$env];
+return $config[$env] ?? $config['development'];

@@ -1,5 +1,7 @@
-import { reactive } from './kniutemplate.mjs';
-import { REQUEST } from './kniurequest.mjs';
+import KniuTemplate from './kniutemplate.mjs';
+import REQUEST from './kniurequest.mjs';
+
+const { reactive } = KniuTemplate;
 
 var KniuAuth = (function () {
   var state = reactive({
@@ -50,14 +52,18 @@ var KniuAuth = (function () {
    * @return {Promise}
    */
   function logout() {
-    return REQUEST({ url: '/logout', type: 'POST' }).then(function () {
-      state.loggedIn = false;
-      state.user = null;
-      try {
-        sessionStorage.removeItem('kniu_authed');
-        sessionStorage.removeItem('kniu_user');
-      } catch (e) { }
-      notify();
+    return REQUEST({
+      url: '/logout',
+      type: 'POST',
+      complete() {
+        state.loggedIn = false;
+        state.user = null;
+        try {
+          sessionStorage.removeItem('kniu_authed');
+          sessionStorage.removeItem('kniu_user');
+        } catch (e) { }
+        notify();
+      }
     });
   }
 
@@ -72,16 +78,16 @@ var KniuAuth = (function () {
         var savedUser = sessionStorage.getItem('kniu_user');
         state.user = savedUser ? JSON.parse(savedUser) : null;
         if (!state.user) {
-          var result = await REQUEST({ url: '/system', type: 'POST' });
-          if (result.status === 1) {
-            var systemInfo = result.data || {};
-            var userName = systemInfo.username || '';
-            setUser({
-              name: userName,
-              avatar: userName ? userName.charAt(0) : '·',
-              role: systemInfo.role || '管理员'
-            });
-          }
+          await REQUEST({
+            url: '/system',
+            type: 'POST',
+            success(res) {
+              if (res.status !== 1) return;
+              var systemInfo = res.data || {};
+              var userName = systemInfo.username || '';
+              setUser({ name: userName, avatar: userName ? userName.charAt(0) : '·', role: systemInfo.role || '管理员' });
+            }
+          });
         }
       }
     } catch (e) { }
@@ -126,4 +132,4 @@ var KniuAuth = (function () {
   };
 }());
 
-export const AUTH = KniuAuth;
+export default KniuAuth;

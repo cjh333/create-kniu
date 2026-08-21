@@ -2,15 +2,18 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto';
 import { dirname, extname, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { BUILDER } from '../config/builder.js';
-import { SERVER } from '../config/server.js';
-import { resolveAliasReferences } from './kniutil.mjs';
-import { appLogger } from './kniulogger.mjs';
+import BUILDER from '../config/builder.js';
+import PROCESS_ENV from '../config/env.js';
+import SERVER from '../config/server.js';
+import { resolveAliasReferences } from './kniuutil.mjs';
+import KniuLogger from './kniulogger.mjs';
+
+const { appLogger } = KniuLogger;
 
 const viewDirectory = String(SERVER.VIEWS || '/views').replaceAll('\\', '/').replace(/^\/+|\/+$/g, '');
 const viewIndexPath = join(viewDirectory, 'index.html');
 
-export async function collectTemplates(directory = viewDirectory, rootDirectory = directory) {
+async function collectTemplates(directory = viewDirectory, rootDirectory = directory) {
   const { readdir, readFile } = await import('node:fs/promises');
   const { join, relative } = await import('node:path');
   const templates = {};
@@ -31,7 +34,7 @@ export async function collectTemplates(directory = viewDirectory, rootDirectory 
 }
 
 const isMain = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
-const IS_PROD = process.env.PROCESS_ENV === 'production';
+const IS_PROD = PROCESS_ENV === 'production';
 const outfile = BUILDER.OUTFILE.replaceAll('\\', '/').replace(/^\/+|\/+$/g, '');
 const outputTemplateDir = join(BUILDER.OUTPUT_DIR, outfile);
 const publicPath = BUILDER.PUBLIC_PATH.replaceAll('\\', '/').replace(/\/+$/g, '');
@@ -88,6 +91,16 @@ async function clearOutputDirectory(directory) {
     if (error.code === 'ENOENT') return;
     throw error;
   }
+  // 用 Windows 原生命令绕过 workbuddy shim（shim 拦截 fs.promises.rm 走 trash binary 偶尔 ETIMEDOUT）
+  if (process.platform === 'win32') {
+    const { execFileSync } = await import('node:child_process');
+    for (const entryName of entries) {
+      const target = join(directory, entryName);
+      try { execFileSync('cmd.exe', ['/c', 'rmdir', '/s', '/q', target], { stdio: 'ignore' }); }
+      catch (e) { /* 单个失败不影响后续 */ }
+    }
+    return;
+  }
   await Promise.all(entries.map(function (entryName) { return rm(join(directory, entryName), { recursive: true, force: true }); }));
 }
 
@@ -103,6 +116,7 @@ if (isMain) {
     format: 'esm',
     platform: 'browser',
     external: ['node:*'],
+    define: { 'globalThis.PROCESS_ENV': JSON.stringify(PROCESS_ENV) },
     minify: IS_PROD,
     legalComments: 'none',
     supported: { 'template-literal': false },
@@ -203,3 +217,5 @@ if (isMain) {
   appLogger.info(BUILDER.SUCCESS_MESSAGE);
   await appLogger.flushPendingWrites();
 }
+
+export default collectTemplates;

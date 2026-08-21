@@ -1,4 +1,4 @@
-import { LOGGER } from '../config/logger.js';
+import LOGGER from '../config/logger.js';
 
 var KniuLogger = (function () {
   // 日志级别权重：数值越大越严重。
@@ -151,5 +151,4 @@ var KniuLogger = (function () {
   return { LoggerService: LoggerService, appLogger: appLogger };
 }());
 
-export const LoggerService = KniuLogger.LoggerService;
-export const appLogger = KniuLogger.appLogger;
+export default KniuLogger;

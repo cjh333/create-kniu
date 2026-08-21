@@ -22,6 +22,7 @@ class NavController extends AdminBaseController
       'url' => $this->input('post.url') ?? '',
       'is_show' => $this->input('post.is_show') ?? 1
     ];
+    $data = $this->encodeFields($data, ['name', 'url']);
     Db::name('tb_nav')->insert($data);
     $this->json([], '添加成功', 1);
   }
@@ -64,27 +65,27 @@ class NavController extends AdminBaseController
     $data = array_filter($data, function ($value) {
       return $value !== null && $value !== '';
     });
+    $isSelectall = $data['is_selectall'] ?? null;
+    unset($data['is_selectall']);
     if (empty($data)) {
       $this->json([], '没有提供任何要更新的数据', 0);
       return;
     }
+    $data = $this->encodeFields($data, ['name', 'url']);
     if ($type === 'KNIU_TABLE_EVENT_CHECKALL') {
       $selectallResult = Db::name('tb_selectall')
         ->where('name', '=', 'nav')
-        ->update(['is_select' => $data['is_selectall']]);
+        ->update(['is_select' => $isSelectall]);
       $dailyResult = Db::name('tb_nav')
         ->whereIn('id', explode(',', $id))
         ->update(['is_select' => $data['is_select']]);
       $result = $selectallResult + $dailyResult;
     } else {
-      $selectallResult = Db::name('tb_selectall')
-        ->where('name', '=', 'nav')
-        ->update(['is_select' => $data['is_selectall']]);
       $dailyResult = Db::name('tb_nav')
         ->where('id', '=', $id)
         ->field(['is_select', 'sid', 'name', 'url', 'is_show'])
         ->update($data);
-      $result = $selectallResult + $dailyResult;
+      $result = $dailyResult;
     }
     if ($result === false) {
       $this->json([], '更新失败', 0);
@@ -109,6 +110,7 @@ class NavController extends AdminBaseController
     $result = Db::name($table)
       ->order($field, $sort)
       ->page($pageCurrent, $pageRow);
+    $result['data'] = $this->decodeFields($result['data'] ?? [], ['name', 'url']);
     $result['selectall'] = $selectall;
     $this->json($result);
   }
@@ -120,6 +122,7 @@ class NavController extends AdminBaseController
     $result = Db::name('tb_nav')
       ->where('id', '=', $id)
       ->find();
+    $result = $this->decodeFields($result, ['name', 'url']);
     $this->json($result);
   }
 }

@@ -9,6 +9,22 @@
 </style>
 <section class="index_cells">
   <div class="admin_content_body index_cell index_cell2">
-    <div class="kniu_table_group kniu_table_bordered" id="tablegroup"></div>
+    <kniu-table style="width:100%;max-height:250px;" ref="table" data="{{tableData}}" row-key="id" stripe border highlight-current-row>
+      <kniu-table-col style="width:60px;text-align:center;" type="checkbox" />
+      <kniu-table-col style="width:80px;" field="id" label="ID" />
+      <kniu-table-col style="width:100px;text-align:center;" field="sid" label="排序" sortable editable edit-type="number" edit-min="0" on-change="{{updateSort}}"></kniu-table-col>
+      <kniu-table-col field="name" label="栏目名称"></kniu-table-col>
+      <kniu-table-col style="width:120px;text-align:center;" field="is_show" label="显示">
+        <template #default="scope">
+          <kniu-switch kniu@change.prevent="updateShow(scope.$index, tableData)" kniu:model="{{scope.row.is_show}}" active-value="1" inactive-value="0" active-color="#13ce66" inactive-color="#ff4949" />
+        </template>
+      </kniu-table-col>
+      <kniu-table-col style="width:120px;text-align:center;" label="操作">
+        <template #default="scope">
+          <kniu-btn link type="danger" size="small" kniu@click="deleteRow(scope.$index, tableData)">删除</kniu-btn>
+          <kniu-btn link type="primary" size="small" kniu@click="viewRow(scope.$index, tableData)">查看</kniu-btn>
+        </template>
+      </kniu-table-col>
+    </kniu-table>
   </div>
 </section>

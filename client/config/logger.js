@@ -1,4 +1,4 @@
-const PROCESS_ENV = (typeof process !== 'undefined' && process.env) ? (process.env.PROCESS_ENV || process.env.NODE_ENV || 'development') : 'development';
+import PROCESS_ENV from './env.js';
 const LOGGER_MAP = {
   development: {
     // 控制台输出。
@@ -29,4 +29,4 @@ const LOGGER_MAP = {
     MAX_FILES: 3
   }
 };
-export const LOGGER = LOGGER_MAP[PROCESS_ENV];
+export default LOGGER_MAP[PROCESS_ENV];

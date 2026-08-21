@@ -6,8 +6,10 @@ node_modules/
 runtime/
 pm2/.pm2/
 public/upload/
+upload/
 logs/
 dist/
+test/
 api/ssl/*.pem
 .env
 .env.local

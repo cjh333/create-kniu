@@ -21,6 +21,7 @@ class DailyController extends AdminBaseController
       'en' => $this->input('post.en') ?? '',
       'is_show' => $this->input('post.is_show') ?? 1
     ];
+    $data = $this->encodeFields($data, ['cn', 'en']);
     Db::name('tb_daily')->insert($data);
     $this->json([], '添加成功', 1);
   }
@@ -55,6 +56,7 @@ class DailyController extends AdminBaseController
       $this->json([], '没有提供任何要更新的数据', 0);
       return;
     }
+    $data = $this->encodeFields($data, ['cn', 'en']);
     if ($type === 'KNIU_TABLE_EVENT_CHECKALL') {
       $selectallResult = Db::name('tb_selectall')
         ->where('name', '=', 'daily')
@@ -96,6 +98,7 @@ class DailyController extends AdminBaseController
     $result = Db::name($table)
       ->order($field, $sort)
       ->page($pageCurrent, $pageRow);
+    $result['data'] = $this->decodeFields($result['data'] ?? [], ['cn', 'en']);
     $result['selectall'] = $selectall;
     $this->json($result);
   }
@@ -107,6 +110,7 @@ class DailyController extends AdminBaseController
     $result = Db::name('tb_daily')
       ->where('id', '=', $id)
       ->find();
+    $result = $this->decodeFields($result, ['cn', 'en']);
     $this->json($result);
   }
 }

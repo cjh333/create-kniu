@@ -1,35 +1,60 @@
-import { AUTH } from '../core/kniuauth.mjs';
-import { defineComponent, reactive, onMounted, onUnmounted, toRefs } from '../core/kniumvvm.mjs';
-import { REQUEST } from '../core/kniurequest.mjs';
+import KniuMvvm from '../core/kniumvvm.mjs';
+import REQUEST from '../core/kniurequest.mjs';
+import AUTH from '../core/kniuauth.mjs';
 
-export const loginController = defineComponent({
-  setup({ eventTo, navigateTo, root }) {
+const { controller, reactive, onMounted, onUnmounted } = KniuMvvm;
+
+const loginController = controller(({ navigateTo }) => {
     const state = reactive({
-      username: '',
-      password: '',
-      verificationCode: '',
       captchaImageUrl: '',
       isCaptchaLoading: true,
       isSubmitting: false,
-      error: '',
-      showError: false
+      loginform: {
+        username: '',
+        password: '',
+        gvcode: ''
+      },
+      rules: {
+        username: {
+          condition: /^(?=.*\S).+$/,
+          message: '请输入用户名'
+        },
+        password: {
+          condition: /^(?=.*\S).+$/,
+          message: '请输入密码'
+        },
+        gvcode: {
+          condition: function (v) {
+            return /^(?=.*\S).+/.test(v.value) && v.value.length <= 4;
+          },
+          message: '请输入验证码'
+        }
+      }
     });
     let captchaObjectUrl = '';
 
     async function refreshCaptcha() {
       state.isCaptchaLoading = true;
-      const result = await REQUEST({ url: '/captcha', type: 'POST', dataType: 'blob' });
-      if (result.status !== 1) {
-        state.isCaptchaLoading = false;
-        state.error = result.msg;
-        state.showError = true;
-        eventTo?.emit('toast', result.msg);
-        return;
-      }
-      if (captchaObjectUrl) URL.revokeObjectURL(captchaObjectUrl);
-      captchaObjectUrl = URL.createObjectURL(result.data);
-      state.captchaImageUrl = captchaObjectUrl;
-      state.isCaptchaLoading = false;
+      await REQUEST({
+        url: '/captcha',
+        type: 'POST',
+        dataType: 'blob',
+        success(res) {
+          if (res.status !== 1) {
+            state.isCaptchaLoading = false;
+            this.$msg({ content: res.msg, type: 'error' });
+            return;
+          }
+          if (captchaObjectUrl) URL.revokeObjectURL(captchaObjectUrl);
+          captchaObjectUrl = URL.createObjectURL(res.data);
+          state.captchaImageUrl = captchaObjectUrl;
+          state.isCaptchaLoading = false;
+        },
+        fail(res) {
+          state.isCaptchaLoading = false;
+          this.$msg({ content: res.msg, type: 'error' });
+        }
+      });
     }
 
     async function onSubmit() {
@@ -37,40 +62,37 @@ export const loginController = defineComponent({
         return;
       }
       state.isSubmitting = true;
-      state.showError = false;
 
-      const result = await REQUEST({
+      await REQUEST({
         url: '/logup',
         type: 'POST',
         data: {
-          name: state.username,
-          password: state.password,
-          gvcode: state.verificationCode
+          username: state.loginform.username,
+          password: state.loginform.password,
+          gvcode: state.loginform.gvcode
+        },
+        success(res) {
+          if (res.status === 1) {
+            const user = res.data || {};
+            const userName = user.username || user.name || state.loginform.username;
+            AUTH.setUser({ name: userName, avatar: user.avatar || userName.charAt(0), role: user.role });
+            navigateTo('/');
+            return;
+          }
+          state.isSubmitting = false;
+          state.loginform.gvcode = '';
+          this.$msg({ content: res.msg, type: 'error' });
+          refreshCaptcha();
+        },
+        fail(res) {
+          state.isSubmitting = false;
+          this.$msg({ content: res.msg, type: 'error' });
         }
       });
-      if (result.status === 1) {
-        const user = result.data || {};
-        const userName = user.name || state.username;
-        AUTH.setUser({
-          name: userName,
-          avatar: user.avatar || userName.charAt(0),
-          role: user.role
-        });
-        navigateTo('/');
-        return;
-      }
-
-      state.isSubmitting = false;
-      state.verificationCode = '';
-      state.error = result.msg;
-      state.showError = true;
-      eventTo?.emit('toast', result.msg);
-      await refreshCaptcha();
     }
 
     onMounted(() => {
       refreshCaptcha();
-      kniu.form({ el: root.querySelector('#loginform') });
     });
 
     onUnmounted(() => {
@@ -78,6 +100,7 @@ export const loginController = defineComponent({
       captchaObjectUrl = '';
     });
 
-    toRefs({ state, refreshCaptcha, onSubmit });
-  }
+    return { state, refreshCaptcha, onSubmit };
 });
+
+export default loginController;

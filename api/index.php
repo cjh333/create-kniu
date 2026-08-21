@@ -1,7 +1,8 @@
 <?php
 require_once __DIR__ . '/vendor/autoload.php';
 
-ini_set('display_errors', 1);
+$runtimeEnv = getenv('APP_ENV') ?: 'development';
+ini_set('display_errors', $runtimeEnv === 'production' ? '0' : '1');
 ini_set('log_errors', 1);
 error_reporting(E_ALL);
 
@@ -13,7 +14,7 @@ if (!is_dir($sessionPath)) {
   mkdir($sessionPath, 0777, true);
 }
 session_save_path($sessionPath);
-ini_set('session.cookie_path', '/');
+session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => !empty($_SERVER['HTTPS']), 'httponly' => true, 'samesite' => 'Strict']);
 session_start();
 
 // 加载应用配置。
@@ -26,9 +27,20 @@ $loggerConfig = require __DIR__ . '/config/log.php';
 date_default_timezone_set($appConfig['TIMEZONE']);
 
 // 添加 CORS 头。
-header('Access-Control-Allow-Origin: *');
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+$hostOrigin = (!empty($_SERVER['HTTPS']) ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
+if ($origin === '' || $origin === $hostOrigin) header('Access-Control-Allow-Origin: ' . ($origin ?: $hostOrigin));
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+header("Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'");
+if ($_SERVER['REQUEST_METHOD'] !== 'GET' && $origin !== '' && $origin !== $hostOrigin) {
+  http_response_code(403);
+  echo json_encode(['status' => 0, 'msg' => 'CSRF来源校验失败', 'data' => null], JSON_UNESCAPED_UNICODE);
+  exit;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
   exit;

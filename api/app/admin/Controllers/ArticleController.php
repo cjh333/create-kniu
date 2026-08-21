@@ -12,6 +12,21 @@ class ArticleController extends AdminBaseController
     parent::__construct();
   }
 
+  // 编辑器图片、音频和视频上传。
+  public function articleMediaUpload(): void
+  {
+    if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+      $this->json([], '请选择需要上传的媒体文件', 0);
+      return;
+    }
+    $path = $this->uploadFile($_FILES['file'], 'article');
+    if (!$path) {
+      $this->json([], '媒体文件上传失败', 0);
+      return;
+    }
+    $this->json(['url' => $path], '上传成功', 1);
+  }
+
   // 增加。
   public function articleAdd(): void
   {
@@ -34,6 +49,7 @@ class ArticleController extends AdminBaseController
       'create_time' => $this->input('post.create_time') ?? date('Y-m-d H:i:s'),
       'is_show' => $this->input('post.is_show') ?? 1
     ];
+    $data = $this->encodeFields($data, ['title', 'subtitle', 'summary', 'content']);
     Db::name('tb_article')->insert($data);
     $this->json([], '添加成功', 1);
   }
@@ -86,6 +102,7 @@ class ArticleController extends AdminBaseController
       $this->json([], '没有提供任何要更新的数据', 0);
       return;
     }
+    $data = $this->encodeFields($data, ['title', 'subtitle', 'summary', 'content']);
     if ($type === 'KNIU_TABLE_EVENT_CHECKALL') {
       $selectallResult = Db::name('tb_selectall')
         ->where('name', '=', 'article')
@@ -127,6 +144,7 @@ class ArticleController extends AdminBaseController
     $result = Db::name($table)
       ->order($field, $sort)
       ->page($pageCurrent, $pageRow);
+    $result['data'] = $this->decodeFields($result['data'] ?? [], ['title', 'subtitle', 'summary', 'content']);
     $result['selectall'] = $selectall;
     $this->json($result);
   }
@@ -138,6 +156,7 @@ class ArticleController extends AdminBaseController
     $result = Db::name('tb_article')
       ->where('id', '=', $id)
       ->find();
+    $result = $this->decodeFields($result, ['title', 'subtitle', 'summary', 'content']);
     $this->json($result);
   }
 
@@ -158,8 +177,17 @@ class ArticleController extends AdminBaseController
         return;
       }
 
-      $relativePath = str_replace($uploadConfig['URL_PREFIX'], '', $cover);
-      $filePath = $uploadConfig['UPLOAD_PATH'] . $relativePath;
+      if (strpos($cover, $uploadConfig['URL_PREFIX']) !== 0) {
+        $this->json([], '图片路径无效', 0);
+        return;
+      }
+      $relativePath = ltrim(substr($cover, strlen($uploadConfig['URL_PREFIX'])), '/\\');
+      $uploadRoot = realpath($uploadConfig['UPLOAD_PATH']);
+      $filePath = realpath($uploadConfig['UPLOAD_PATH'] . $relativePath);
+      if (!$uploadRoot || !$filePath || strpos($filePath, $uploadRoot . DIRECTORY_SEPARATOR) !== 0) {
+        $this->json([], '图片路径越界', 0);
+        return;
+      }
 
       $debugInfo = [
         'cover' => $cover,

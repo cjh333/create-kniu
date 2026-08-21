@@ -13,4 +13,4 @@ const BUILDER = {
     'public'
   ]
 };
-export { BUILDER };
+export default BUILDER;

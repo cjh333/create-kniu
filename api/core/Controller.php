@@ -55,6 +55,54 @@ class Controller
   }
 
   /**
+   * HTML 编解码规则（后端全责，前端零参与）：
+   * - 增/改：写入数据库前调用 encodeFields() 对文本字段单轮转义；
+   * - 查：查询结果返回前端前调用 decodeFields() 对文本字段单轮解码；
+   * - 删：不做任何编解码处理。
+   * 编码只存在于数据库内，接口进出两侧各一次，永不累积。
+   *
+   * 对数据数组中的指定文本字段做单轮 HTML 转义（写入数据库前调用）。
+   *
+   * @param array $data 待写入的数据数组。
+   * @param array $fields 需要转义的字段名列表。
+   * @return array 转义后的数据数组。
+   */
+  protected function encodeFields(array $data, array $fields): array
+  {
+    foreach ($fields as $field) {
+      if (isset($data[$field]) && is_string($data[$field])) {
+        $data[$field] = htmlspecialchars($data[$field], ENT_QUOTES);
+      }
+    }
+    return $data;
+  }
+
+  /**
+   * 对查询结果的指定文本字段做单轮 HTML 解码（返回前端前调用）。
+   *
+   * 兼容三种形态：单行关联数组（find 结果）、行数组（select/page 结果）、
+   * null（find 未命中）——非数组原样返回。递归一层处理行数组。
+   *
+   * @param mixed $rows 查询结果（单行/行数组/null）。
+   * @param array $fields 需要解码的字段名列表。
+   * @return mixed 解码后的结果。
+   */
+  protected function decodeFields($rows, array $fields)
+  {
+    if (!is_array($rows)) {
+      return $rows;
+    }
+    foreach ($rows as $key => $row) {
+      if (is_array($row)) {
+        $rows[$key] = $this->decodeFields($row, $fields);
+      } elseif (is_string($row) && in_array($key, $fields, true)) {
+        $rows[$key] = htmlspecialchars_decode($row, ENT_QUOTES);
+      }
+    }
+    return $rows;
+  }
+
+  /**
    * 根据请求方法获取输入参数值。
    *
    * @param string|null $method 请求方法（get/post/cookie/server）。
@@ -129,7 +177,7 @@ class Controller
         return is_array($value) ? $value : explode(',', $value);
       case 's':
       default:
-        return is_string($value) ? htmlspecialchars($value, ENT_QUOTES) : $value;
+        return $value;
     }
   }
 
@@ -323,7 +371,7 @@ class Controller
     }
 
     // 默认使用原字体。
-    return __DIR__ . '/../vendor/topthink/think-captcha/assets/zhttfs/1.otf';
+    return __DIR__ . '/../assets/fonts/captcha.otf';
   }
 
   /**

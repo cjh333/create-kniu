@@ -1,9 +1,11 @@
-import { defineComponent, reactive, toRefs } from '../core/kniumvvm.mjs';
-import { UTIL } from '../core/kniutil.mjs';
+import KniuMvvm from '../core/kniumvvm.mjs';
+import UTIL from '../core/kniuui.js';
 
-export const mainController = defineComponent({
-  setup() {
+const { controller, reactive } = KniuMvvm;
+
+const mainController = controller(() => {
     const state = reactive({ ui: UTIL.state });
-    toRefs(state);
-  }
+    return { state };
 });
+
+export default mainController;

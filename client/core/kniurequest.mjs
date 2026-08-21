@@ -1,4 +1,5 @@
-import { AUTH } from './kniuauth.mjs';
+import AUTH from './kniuauth.mjs';
+import KniuUI from './kniuui.js';
 
 var KniuRequest = (function () {
   const nativeFetch =
@@ -68,9 +69,16 @@ var KniuRequest = (function () {
       credentials: request.credentials,
     };
     if (hasBody && request.data != null) {
-      fetchInit.headers['Content-Type'] =
-        fetchInit.headers['Content-Type'] || 'application/json';
-      fetchInit.body = JSON.stringify(request.data);
+      if (typeof FormData !== 'undefined' && request.data instanceof FormData) {
+        Object.keys(fetchInit.headers).forEach(function (name) {
+          if (name.toLowerCase() === 'content-type') delete fetchInit.headers[name];
+        });
+        fetchInit.body = request.data;
+      } else {
+        fetchInit.headers['Content-Type'] =
+          fetchInit.headers['Content-Type'] || 'application/json';
+        fetchInit.body = JSON.stringify(request.data);
+      }
     }
     try {
       const response = await nativeFetch(url, fetchInit);
@@ -105,7 +113,10 @@ var KniuRequest = (function () {
     const list = isSingle ? [requests] : requests;
     const settled = await Promise.allSettled(list.map(function (req) {
       const normalized = normalizeRequest(req);
-      const key = `${normalized.type}:${normalized.url}:${JSON.stringify(normalized.data ?? null)}`;
+      const isFormData = typeof FormData !== 'undefined' && normalized.data instanceof FormData;
+      const key = isFormData
+        ? `${normalized.type}:${normalized.url}:form-data:${Math.random()}`
+        : `${normalized.type}:${normalized.url}:${JSON.stringify(normalized.data ?? null)}`;
       const ongoing = REQUEST_DEDUP.get(key);
       if (ongoing) return ongoing;
       const promise = executeRequest(req).finally(function clearPendingRequest() {
@@ -120,16 +131,26 @@ var KniuRequest = (function () {
         : createFailureResult(0, item.reason?.message || '未知错误', null);
     },
     );
-    results.forEach(function (result, index) {
+    for (let index = 0; index < results.length; index++) {
+      const result = results[index];
       const config = list[index];
-      if (!config) return;
-      if (result.status === 1) config.success?.(result.data, result);
-      else config.fail?.(result.msg, result);
-    });
+      if (!config) continue;
+      const httpSucceeded = result.httpStatus >= 200 && result.httpStatus < 300;
+      const callbackContext = {
+        $msg: KniuUI.msg,
+        $confirm: KniuUI.confirm
+      };
+      try {
+        if (httpSucceeded) await config.success?.call(callbackContext, result);
+        else await config.fail?.call(callbackContext, result);
+      } finally {
+        await config.complete?.call(callbackContext, result);
+      }
+    }
     return isSingle ? results[0] : results;
   }
 
   return { sendRequests };
 }());
 
-export const REQUEST = KniuRequest.sendRequests;
+export default KniuRequest.sendRequests;
