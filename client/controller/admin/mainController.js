@@ -1,5 +1,5 @@
-import KniuMvvm from '../core/kniumvvm.mjs';
-import UTIL from '../core/kniuui.js';
+import KniuMvvm from '../../core/kniumvvm.mjs';
+import UTIL from '../../core/kniuui.js';
 
 const { controller, reactive } = KniuMvvm;
 

@@ -1,6 +1,6 @@
-import KniuMvvm from '../core/kniumvvm.mjs';
-import REQUEST from '../core/kniurequest.mjs';
-import { getResponseRecords, removeListRecord } from '../core/kniuutil.mjs';
+import KniuMvvm from '../../core/kniumvvm.mjs';
+import REQUEST from '../../core/kniurequest.mjs';
+import { getResponseRecords, removeListRecord } from '../../core/kniuutil.mjs';
 
 const { controller, reactive, onMounted } = KniuMvvm;
 

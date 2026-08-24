@@ -81,11 +81,15 @@ var KniuAuth = (function () {
           await REQUEST({
             url: '/system',
             type: 'POST',
+            redirectOnUnauthorized: false,
             success(res) {
               if (res.status !== 1) return;
               var systemInfo = res.data || {};
               var userName = systemInfo.username || '';
               setUser({ name: userName, avatar: userName ? userName.charAt(0) : '·', role: systemInfo.role || '管理员' });
+            },
+            fail(res) {
+              if (res.httpStatus === 401) markLoggedOut();
             }
           });
         }

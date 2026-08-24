@@ -7,8 +7,15 @@ const { collectReactiveReads, observe, reactive } = KniuTemplate;
 let activeInstance = null;
 
 function loadController(name) {
-  const controllerName = name.endsWith('Controller') ? name : `${name}Controller`;
-  return import(`../controller/${controllerName}.js`).then(function (module) {
+  const normalized = String(name || '').trim().replaceAll('\\', '/').replace(/^\/+|\/+$/g, '');
+  if (!/^[a-z0-9_/-]+$/i.test(normalized) || normalized.includes('..') || !normalized.includes('/')) {
+    throw new TypeError('[MVVM] controller path must include its folder');
+  }
+  const parts = normalized.split('/');
+  const fileName = parts.pop();
+  const controllerName = fileName.endsWith('Controller') ? fileName : `${fileName}Controller`;
+  const controllerPath = [...parts, controllerName].join('/');
+  return import(`../controller/${controllerPath}.js`).then(function (module) {
     const controller = module[controllerName] || module.default;
     if (!controller) throw new Error(`[MVVM] Controller export not found: ${controllerName}`);
     return controller;

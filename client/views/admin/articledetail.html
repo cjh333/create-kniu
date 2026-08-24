@@ -1,7 +1,7 @@
 <style scoped>
   @import url("@kniu/kniu.min.css");
   @import url("@style/admin/admin.min.css");
-  @import url("@style/admin/adminHome.min.css");
+  @import url("@style/admin/admin_home.min.css");
 
   .index_cell2 {
     background-color: #fff;
@@ -18,6 +18,18 @@
     font-size: 16px;
     font-weight: 600;
     color: #303133;
+  }
+
+  .detail_head_actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .detail_head_actions kniu-input-group {
+    display: block;
+    width: 280px;
+    min-width: 0;
   }
 
   .detail_wrap {
@@ -56,7 +68,17 @@
   <div class="admin_content_body index_cell index_cell2">
     <div class="detail_head">
       <span class="detail_title">文章</span>
-      <kniu-btn link type="primary" size="small" kniu@click="goBack">返回</kniu-btn>
+      <div class="detail_head_actions">
+        <kniu-btn type="primary" kniu@click="addRow">添加</kniu-btn>
+        <kniu-input kniu:model="{{keyword}}" name="keyword" placeholder="请输入标题" kniu@keydown.enter="searchList">
+          <template #append label-width="48px">
+            <kniu-btn text kniu@click="searchList" aria-label="搜索">
+              <kniu-icon icon="Search" />
+            </kniu-btn>
+          </template>
+        </kniu-input>
+        <kniu-btn link type="primary" size="small" kniu@click="goBack">返回</kniu-btn>
+      </div>
     </div>
     <div class="detail_wrap">
       <kniu-table style="width:100%;max-height:480px;" kniu:loading="{{loading}}" data="{{list}}" ref="table" row-key="id" stripe border>
@@ -91,7 +113,7 @@
 <!-- 弹框 -->
 <kniu-modal style="width:90vw;" show="{{showmodal}}">
   <template #header>
-    <span>修改文章</span>
+    <span>{{dialogTitle}}</span>
     <kniu-btn link type="primary" size="small" kniu@click="closeDialog">
       <kniu-icon icon="Close" />
     </kniu-btn>

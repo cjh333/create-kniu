@@ -95,10 +95,10 @@ var KniuRequest = (function () {
         const status = Number(body.status) === 1 ? 1 : 0;
         const msg = body.msg || (response.ok ? 'success' : 'error');
         const data = body.data !== undefined ? body.data : null;
-        if (httpStatus === 401) handleAuthenticationExpired();
+        if (httpStatus === 401 && request.redirectOnUnauthorized !== false) handleAuthenticationExpired();
         return { status, msg, data, httpStatus, request };
       }
-      if (httpStatus === 401) handleAuthenticationExpired();
+      if (httpStatus === 401 && request.redirectOnUnauthorized !== false) handleAuthenticationExpired();
       return response.ok
         ? { status: 1, msg: 'success', data: parsed, httpStatus, request }
         : createFailureResult(httpStatus, `请求失败（HTTP ${httpStatus}）`, request);

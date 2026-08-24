@@ -495,10 +495,10 @@ var KniuTemplate = (function () {
     style.id = 'kniu_loading_directive_style';
     style.textContent = [
       '.kniu_loading_mask{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;',
-      'align-items:center;justify-content:center;gap:8px;background:rgba(255,255,255,.72);',
-      'backdrop-filter:blur(1px);opacity:0;visibility:hidden;pointer-events:none;',
-      'transition:opacity .2s ease,visibility .2s ease}',
-      '.kniu_loading_mask[data-active="true"]{opacity:1;visibility:visible;pointer-events:auto}',
+      'align-items:center;justify-content:center;gap:8px;background:#fff;',
+      'backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;visibility:hidden;pointer-events:none;',
+      'transition:opacity .4s ease,visibility .4s ease}',
+      '.kniu_loading_mask[data-active="true"]{opacity:1;visibility:visible;pointer-events:auto;transition:none}',
       '.kniu_loading_mask--body{position:fixed}',
       '.kniu_loading_spinner{width:34px;height:34px;box-sizing:border-box;border:3px solid rgba(64,158,255,.25);',
       'border-top-color:#409eff;border-radius:50%;animation:kniu_loading_directive_spin .7s linear infinite}',
@@ -926,6 +926,9 @@ var KniuTemplate = (function () {
                 node.removeEventListener(eventName, current.handler, current.options);
               }
               const handler = function (event) {
+                if (eventName === 'click' && !modifiers.includes('native') && !modifiers.includes('passive')) {
+                  event.preventDefault();
+                }
                 const isKeyboardEvent = event.type.startsWith('key');
                 const keyModifiers = isKeyboardEvent
                   ? modifiers.filter(function (modifier) {

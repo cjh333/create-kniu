@@ -1,28 +1,30 @@
 <style>
   @import url("@kniu/kniu.min.css");
-  @import url("@style/webs.min.css");
+  @import url("@style/admin/admin_global.min.css");
 
   :host {
     display: block;
   }
 </style>
 <aside class="kniu_web_aside_sidebar_group">
-  <div class="kniu_web_aside_sidebar_brand">
-    <span class="kniu_web_aside_sidebar_brandmark">{{brandMark}}</span>
-    <span class="kniu_web_aside_sidebar_brandtitle">{{brandName}}<strong>{{brandSuffix}}</strong></span>
-  </div>
   <p class="kniu_web_aside_sidebar_label">{{workspaceLabel}}</p>
-  <nav class="kniu_web_aside_sidebar_wrap" aria-label="应用导航">
-    <kniu-btn class="kniu_web_aside_sidebar{{activeNavigationIndex === 0 ? ' active' : ''}}" unstyled kniu@click="handleNavigationClick" data-nav="0" native-type="button">
-      <kniu-icon style="margin-right:5px;font-size:17px;color:#ff5c35;" icon="House" />控制台
-    </kniu-btn>
-    <kniu-btn class="kniu_web_aside_sidebar{{activeNavigationIndex === 1 ? ' active' : ''}}" unstyled kniu@click="handleNavigationClick" data-nav="1" native-type="button">
-      <kniu-icon style="margin-right:5px;font-size:17px;color:#635bff;" icon="Document" />网站信息
-    </kniu-btn>
-    <kniu-btn class="kniu_web_aside_sidebar{{activeNavigationIndex === 2 ? ' active' : ''}}" unstyled kniu@click="handleNavigationClick" data-nav="2" native-type="button">
-      <kniu-icon style="margin-right:5px;font-size:17px;color:#19a974;" icon="Folder" />栏目管理
-    </kniu-btn>
-  </nav>
+  <kniu-navbar type="side" home="#/admin" active="{{activeNavigationPath}}" aria-label="应用导航">
+    <template #brand>
+      <span class="kniu_web_aside_sidebar_brandmark">{{brandMark}}</span>
+      <span class="kniu_web_aside_sidebar_brandtitle">{{brandName}}<strong>{{brandSuffix}}</strong></span>
+    </template>
+    <template #default>
+      <kniu-navbar-cell index="/admin" href="#/admin">
+        <kniu-icon style="margin-right:5px;font-size:17px;color:#ff5c35;" icon="House" />控制台
+      </kniu-navbar-cell>
+      <kniu-navbar-cell index="/seo" href="#/seo">
+        <kniu-icon style="margin-right:5px;font-size:17px;color:#635bff;" icon="Document" />网站信息
+      </kniu-navbar-cell>
+      <kniu-navbar-cell index="/nav" href="#/nav">
+        <kniu-icon style="margin-right:5px;font-size:17px;color:#19a974;" icon="Folder" />栏目管理
+      </kniu-navbar-cell>
+    </template>
+  </kniu-navbar>
   <div class="sidebar-foot">
     <kniu-btn class="kniu_web_aside_sidebar" unstyled kniu@click="handleHelpRequest" native-type="button">
       <kniu-icon style="margin-right:5px;font-size:17px;color:#9aa3b8;" icon="Question" />{{helpLabel}}

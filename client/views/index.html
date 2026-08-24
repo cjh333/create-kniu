@@ -19,12 +19,12 @@
   <link href="@img/favicon.svg" rel="shortcut icon">
   <title>Kniu System｜原生多应用工作台</title>
   <link href="@kniu/kniu.min.css" rel="stylesheet">
-  <link href="@style/webs.min.css" rel="stylesheet">
+  <!-- 根滚动条槽位常驻预留：加载锁滚动条时不引发内容回流（避免固定遮罩右移/缩小）。文档级样式才能作用到真实 <html>。 -->
+  <style>html{scrollbar-gutter:stable;background-color:#fff}</style>
 </head>
 
 <body>
-  <div class="kniu_web kniu_web_aside" id="app">
-    <kniu-system-main></kniu-system-main>
+  <div class="kniu_web" id="app">
     <noscript>请启用 JavaScript 以使用 Kniu System。</noscript>
     <script src="client/client.mjs" type="module"></script>
   </div>

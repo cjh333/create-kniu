@@ -1,0 +1,7 @@
+@charset "UTF-8";
+
+.index_cell2 {
+  border: 1px solid var(--kniu_border_2);
+  margin: calc(10 / var(--kniu_vw));
+  padding: calc(10 / var(--kniu_vw));
+}

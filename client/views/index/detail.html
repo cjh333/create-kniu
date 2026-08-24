@@ -1,0 +1,35 @@
+<style scoped>
+  @import url("@kniu/kniu.min.css");
+  @import url("@style/index/detail.min.css");
+  @media (min-width: calc(1280px - 60px)) {
+    .kniu_web_body .kniu_container {
+      width: calc(100vw - 320 / var(--kniu_vw) * 2);
+    }
+  }
+</style>
+<div class="kniu_web">
+  <include src="./common/header.html" />
+  <!-- 2.内容 -->
+  <main class="kniu_web_body">
+    <section class="detail_cells">
+      <div class="detail_cell detail_cell1">
+        <div class="kniu_container">
+          <div class="detail_group1">
+            <div class="detail_title_group1">
+              <h1 class="detail_title1">{{title}}</h1>
+            </div>
+            <div class="detail_content1">{{@ content}}</div>
+          </div>
+        </div>
+      </div>
+      <div class="detail_cell detail_cell2">
+        <div class="kniu_container">
+          <div class="kniu_btn_group detail_btn_group">
+            <a class="kniu_btn detail_btn" kniu@click="toBack" href="#/">返回</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <include src="./common/footer.html" />
+</div>

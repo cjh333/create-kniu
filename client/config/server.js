@@ -8,7 +8,7 @@ const SERVER_MAP = {
     // 端口号。
     PORT: 6173,
     // 初始页。
-    HOME: 'home',
+    HOME: 'index/home',
     // 视图路径。
     VIEWS: '/client/views',
     // 路径别名。
@@ -16,6 +16,7 @@ const SERVER_MAP = {
       '@': './',
       '@style': './public/static/css',
       '@img': './public/static/img',
+      '@upload': './public/upload',
       '@plugin': './public/static/plugin',
       '@kniu': './public/static/plugin/kniu'
     },
@@ -35,7 +36,7 @@ const SERVER_MAP = {
     // 端口号。
     PORT: 6173,
     // 初始页。
-    HOME: 'home',
+    HOME: 'index/home',
     // 视图路径。
     VIEWS: '/client/views',
     // 路径别名。
@@ -43,6 +44,7 @@ const SERVER_MAP = {
       '@': './',
       '@style': './public/static/css',
       '@img': './public/static/img',
+      '@upload': './public/upload',
       '@plugin': './public/static/plugin',
       '@kniu': './public/static/plugin/kniu'
     },

@@ -160,7 +160,7 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 - `left`：标签位于左侧且文字左对齐。
 - `right`：标签位于左侧且文字右对齐，默认值。
 
-`kniu-input-group` 与 `kniu-form-cell` 共用同一套实现（标签 + 内容布局）。区别在于语义：**带 `label` 的表单单元统一写 `<kniu-form-cell label="用户名">`**，不带 label 的纯分组容器才用 `<kniu-input-group>`。两者的默认间距均为 `20px`，均可覆盖表单级 `label-position` 和 `label-width`。
+`kniu-input-group` 与 `kniu-form-cell` 共用同一套实现（标签 + 内容布局）。区别在于语义：**带 `label` 的表单单元统一写 `<kniu-form-cell label="用户名">`**，不带 label 的纯分组容器才用 `<kniu-input-group>`。两者默认间距规则：**仅当后面还有兄弟 `kniu-input-group`/`kniu-form-cell` 时才有 `20px` 下间距**（组间间距），单个使用时无下间距；均可覆盖表单级 `label-position` 和 `label-width`。
 
 `kniu-form` 通过 `rules="{{rules}}"`（纯属性）接收验证规则。`rules` 是一个以输入框 `name` 为键的对象：**rules 中存在的字段代表需要验证，不存在的字段不验证**。每个字段规则为 `{ condition, message }`：`condition` 可以是正则表达式或函数（函数接收 `{ value, field, input }`，返回布尔值），校验不通过时通过 `$msg` 弹出 `message` 错误提示（同时保留输入框红色边框），且阻止提交。该规则只对 `<form>` 和 `<kniu-form>` 有效，输入框无需再写 `required`。提交按钮应使用 `native-type="submit"`。
 
@@ -506,6 +506,47 @@ const myController = controller(function () {
 - `usePagination` 请求体固定携带 `page_current`、`page_rows`(= `state.pageRows`)、`field`、`sort`；成功回写 `list / currentPage / pageTotal / total / pageList`，失败回写 `error` 并调用 `self.$msg(...)` 弹错误浮层。
 - `state.pageRows` 是每页条数的**唯一数据源**，`<kniu-page page-size="{{pageRows}}">` 必须绑定它；`size-change` 由组件回写 `state.pageRows` 后自动重新拉取。
 - 切换每页大小时组件会把 `currentPage` 重置为 1，再从第 1 页加载。
+
+## 导航栏 Navbar
+
+`<kniu-navbar>` 自带桌面横向导航与移动端折叠菜单，不需要分别维护两套头部结构。
+
+```html
+<kniu-navbar home="#/">
+  <template #brand>
+    <kniu-image src="/static/logo.png" />
+  </template>
+  <template #append>
+    <kniu-navbar-cell index="/" href="#/">首页</kniu-navbar-cell>
+    <kniu-navbar-cell index="/about" href="#/about">关于我</kniu-navbar-cell>
+    <kniu-sub-navbar>
+      <template #title>更多</template>
+      <kniu-navbar-cell index="/help" href="#/help">帮助</kniu-navbar-cell>
+    </kniu-sub-navbar>
+  </template>
+</kniu-navbar>
+```
+
+| 组件/属性 | 说明 |
+| --- | --- |
+| `kniu-navbar[brand]` | 左侧名称 |
+| `kniu-navbar[home]` | 名称点击地址，默认 `#/` |
+| `kniu-navbar[active]` | 当前激活路径；不设置时自动读取当前路由 |
+| `kniu-navbar[type="side"]` | 纵向侧栏导航；与 `kniu-navbar-cell` 配合用于应用工作台 |
+| `template #brand` | 左侧品牌内容；未设置时显示 `brand` 属性文字 |
+| `template #append` | 右侧导航内容；仍兼容直接写入默认插槽 |
+| `kniu-navbar-cell[index]` | 用于匹配当前路由的唯一索引 |
+| `kniu-navbar-cell[href]` | 导航地址 |
+| `kniu-navbar-cell[disabled]` | 禁用导航项 |
+| `kniu-sub-navbar` | 可嵌套的子导航容器 |
+
+## 返回顶部 Backtop
+
+```html
+<kniu-backtop right="100" bottom="100" />
+```
+
+组件固定显示并自动查找当前可滚动容器；在窄屏设备上会自动使用安全边距。`right`、`bottom` 单位均为像素。
 
 ## 默认导出
 

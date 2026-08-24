@@ -1,0 +1,26 @@
+<style scoped>
+  @import url("@kniu/kniu.min.css");
+  @import url("@style/index/about.min.css");
+
+  @media (min-width: calc(1280px - 60px)) {
+    .kniu_web_body .kniu_container {
+      width: calc(100vw - 320 / var(--kniu_vw) * 2);
+    }
+  }
+</style>
+<div class="kniu_web">
+  <include src="./common/header.html" />
+  <!-- 2.内容 -->
+  <main class="kniu_web_body">
+    <section class="about_cells">
+      <div class="about_cell about_cell1">
+        <div class="kniu_container">
+          <div class="about_group1">
+            <kniu-empty note="暂无数据" />
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <include src="./common/footer.html" />
+</div>

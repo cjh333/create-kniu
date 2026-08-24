@@ -43,14 +43,14 @@ KniuSystem/
 1. 从 `client/config/router.js` 加载路由表。
 2. 调用 `createApp()` 创建应用实例和事件总线。
 3. 通过 `app.use(ROUTER)` 注入页面路由。
-4. 通过 `app.useViews({ main, aside, header })` 注入公共布局 Controller。
+4. 通过 `app.useViews({ 'admin/main', 'index/header', ... })` 按目录注入公共布局 Controller。
 5. 调用 `app.mount('#app')` 恢复会话、注册组件并渲染当前 Hash 路由。
 
 ### 视图、路由与组件
 
-- `client/views/admin/*.html` 是可路由页面；文件名会映射为 `kniu-system-<文件名>` 自定义元素和 `/<文件名>` 路径。
-- `client/views/admin/common/*.html` 是公共布局组件，不直接进入页面路由。
-- `SERVER.HOME` 当前为 `home`，因此 `/` 默认渲染 `home.html`。
+- `client/views/index/*.html` 是公开前台页面，`client/views/admin/*.html` 是后台页面；页面会映射为包含目录的唯一组件标识，避免前后台同名模板相互覆盖。
+- `client/views/admin/common/*.html` 与 `client/views/index/common/*.html` 是各自区域的公共布局组件，不直接进入页面路由。
+- `SERVER.HOME` 当前为 `index/index`，因此 `/` 默认渲染前台 `index.html`。
 - 路由使用 Location Hash，例如 `#/login`、`#/seo`、`#/nav`、`#/articledetail`。
 - 页面模板在独立 Shadow Root 内渲染，样式与 DOM 查询默认限制在组件作用域内。
 
@@ -58,14 +58,18 @@ KniuSystem/
 
 | 路径 | Controller | 鉴权 |
 | --- | --- | --- |
-| `/`、`/home` | `homeController`（默认约定加载） | 需要登录 |
-| `/seo` | `seoController` | 需要登录 |
-| `/nav` | `navController` | 需要登录 |
-| `/dailydetail` | `dailydetailController` | 需要登录 |
-| `/articledetail` | `articledetailController` | 需要登录 |
-| `/login` | `loginController` | 公开 |
+| `/` | `index/homeController` | 公开 |
+| `/about` | `index/aboutController` | 公开 |
+| `/detail` | `index/detailController` | 公开；文章 ID 通过路由状态传递，不显示在地址栏 |
+| `/login` | `admin/loginController` | 公开 |
+| `/admin` | `admin/homeController` | 需要登录；后台入口 |
+| `/home` | `admin/homeController` | 需要登录 |
+| `/seo` | `admin/seoController` | 需要登录 |
+| `/nav` | `admin/navController` | 需要登录 |
+| `/dailydetail` | `admin/dailydetailController` | 需要登录 |
+| `/articledetail` | `admin/articledetailController` | 需要登录 |
 
-`mainController`、`asideController` 和 `headerController` 由公共布局装配；模板目录中存在但未注册到路由表的页面会被收集为组件，但不会成为显式业务路由。
+路由的 Controller 必须填写包含目录的完整相对路径；公开前台使用 `index/`，后台使用 `admin/`。`admin/mainController`、`admin/asideController` 和 `admin/headerController` 由公共布局装配；模板目录中存在但未注册到路由表的页面会被收集为组件，但不会成为显式业务路由。
 
 ### MVVM 分层
 
@@ -73,7 +77,7 @@ KniuSystem/
 - ViewModel：`client/controller/` 中的 Controller 使用 `controller(setupFn)`；状态由 `reactive()` 创建，setup 直接返回模板所需状态与方法。
 - View：HTML 模板保留结构、样式与 `kniu:*` 声明式绑定。
 - 生命周期：`onMounted()`、`onUnmounted()` 和 `onScopeDispose()` 统一管理事件、定时器和清理函数。
-- 动态加载：路由与公共布局 Controller 由 `loadController()` 按名称动态导入。
+- 动态加载：路由与公共布局 Controller 由 `loadController()` 按明确的目录路径动态导入，不猜测同名 Controller 所在目录。
 
 控制器直接返回需要给模板使用的状态和方法：
 
@@ -219,9 +223,10 @@ dist/
 - 富文本进入编辑器前执行白名单清洗；上传删除路径必须位于 `public/upload/` 内。
 - `npm run check` 依次运行核心测试、生产构建、项目命名门禁和 PHP 语法检查。
 - `npm run benchmark` 运行核心性能基准，结果用于同一设备上的版本纵向比较。
-- 新增页面时，同时添加 `client/views/admin/<name>.html`、`client/controller/<name>Controller.js`，并在 `client/config/router.js` 注册路由。
-- 新增公共布局时，将模板放入 `client/views/admin/common/`，创建对应 Controller，并在 `client/client.mjs` 的 `useViews()` 中装配。
-- 页面和公共布局文件名必须唯一，因为自定义元素标签只根据文件名生成。
+- 新增公开页面时，同时添加 `client/views/index/<name>.html`、`client/controller/index/<name>Controller.js`，并以 `index/<name>Controller` 注册到普通路由。
+- 新增后台页面时，同时添加 `client/views/admin/<name>.html`、`client/controller/admin/<name>Controller.js`，并以 `admin/<name>Controller` 注册到 `ROUTER.auth()` 鉴权分组。
+- 新增公共布局时，将模板放入对应区域的 `common/`，将 Controller 放入同名区域目录，并在 `client/client.mjs` 的 `useViews()` 中使用 `区域/名称` 键装配。
+- 页面和公共布局组件标识包含所在区域，前后台允许使用同名文件且不会相互覆盖。
 - 后端新增接口时，在 `api/config/router.php` 注册，并将控制器放入对应应用的 `Controllers` 目录；部署到区分大小写的环境时必须保持目录名大小写正确。
 - `dist/` 是生成目录，不应直接编辑。
 

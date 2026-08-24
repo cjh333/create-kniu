@@ -352,8 +352,10 @@ var KniuEventer = (function () {
     const re = /<include\b[^>]*\bsrc="([^"]*)"[^>]*>(?:<\/include>)?/g;
     return source.replace(re, function (full, includePath) {
       const url = resolveTemplateIncludeUrl(includePath, baseTemplateUrl);
-      const fileName = url.split('/').pop().replace('.html', '');
-      const tag = 'kniu-system-' + fileName;
+      const parts = url.replaceAll('\\', '/').replace(/\.html$/, '').split('/').filter(Boolean);
+      const commonIndex = parts.lastIndexOf('common');
+      const names = commonIndex > 0 ? parts.slice(commonIndex - 1) : parts.slice(-2);
+      const tag = 'kniu-system-' + names.join('-').replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
       return '<' + tag + '></' + tag + '>';
     });
   }
@@ -382,7 +384,7 @@ var KniuEventer = (function () {
   // 所以 <slot name="X"> 在 light DOM 里只能拿到 <template> 元素本身（render 出来还是空的）。
   // 这里是框架级兼容：递归走 fragment，把所有带 slot 的 <template> 替换为其 content 子节点的副本，
   // 并把 slot 属性复制到每个顶层元素子节点（顶层文本节点不必 slot——slot 默认就是 default）。
-  // 处理两类组件的直接子模板：kniu-modal（header / default / footer）和 kniu-table（empty）。
+  // 处理组件直接子模板：kniu-modal（header / default / footer）、kniu-table（empty）及 kniu-navbar（brand / append / default）。
   // 组件内部的 #prepend / #append / #default（如 kniu-table-col、kniu-input）由各自组件自行处理，不能在这里平铺。
   function slotNameOfTemplate(template) {
     const byAttr = template.getAttribute('slot');
@@ -403,18 +405,37 @@ var KniuEventer = (function () {
       if (parentTag === 'kniu-table') {
         return name === 'empty';
       }
+      if (parentTag === 'kniu-sub-navbar') {
+        return name === 'title';
+      }
+      if (parentTag === 'kniu-navbar') {
+        return name === 'brand' || name === 'append' || name === 'default';
+      }
       return false;
     });
     templates.forEach(function (template) {
       const slotName = slotNameOfTemplate(template);
       const parent = template.parentNode;
       if (!parent) return;
+      const isNavbarDefaultSlot = parent.tagName.toLowerCase() === 'kniu-navbar' && slotName === 'default';
       const frag = document.createDocumentFragment();
       [...template.content.childNodes].forEach(function (node) {
-        if (node.nodeType === 1 && !node.hasAttribute('slot')) {
-          node.setAttribute('slot', slotName);
+        if (node.nodeType === 1) {
+          // 元素节点：直接补上 slot 属性（已有则保留）。
+          if (!isNavbarDefaultSlot && !node.hasAttribute('slot')) node.setAttribute('slot', slotName);
+          frag.appendChild(node);
+        } else if (node.nodeType === 3) {
+          // 文本节点无法携带 slot 属性，必须包一层带 slot 的元素，
+          // 否则会落入默认插槽（位置/样式与具名插槽不符）。
+          // 例：<template #brand>KniuSystem</template> 的文本应进入 brand 插槽（左侧），
+          // 而非默认插槽（navbar 的 .menu，右侧）。
+          if (node.textContent.trim() === '') return;
+          const wrap = document.createElement('span');
+          if (!isNavbarDefaultSlot) wrap.setAttribute('slot', slotName);
+          wrap.textContent = node.textContent;
+          frag.appendChild(wrap);
         }
-        frag.appendChild(node);
+        // 注释等其它节点忽略
       });
       parent.replaceChild(frag, template);
     });
@@ -531,10 +552,11 @@ var KniuEventer = (function () {
   }
 
   // 创建路由记录，仅包含路径和控制器映射。
-  function createRouteRecord(path, controller, authRequired = false) {
+  function createRouteRecord(path, controller, authRequired = false, controllerPath = '') {
     return {
       path: path,
       controller: controller,
+      controllerPath: controllerPath,
       authRequired: authRequired,
     };
   }
@@ -553,7 +575,12 @@ var KniuEventer = (function () {
       const routeController = typeof controller === 'string'
         ? function loadRouteController() { return loadController(controller); }
         : controller;
-      super.push(createRouteRecord(normalizeRoutePath(path), routeController, authRequired));
+      super.push(createRouteRecord(
+        normalizeRoutePath(path),
+        routeController,
+        authRequired,
+        typeof controller === 'string' ? controller : ''
+      ));
       return this;
     }
     auth(callback) {

@@ -1,6 +1,6 @@
 <style>
   @import url("@kniu/kniu.min.css");
-  @import url("@style/webs.min.css");
+  @import url("@style/admin/admin_global.min.css");
 
   :host {
     display: block;
@@ -15,14 +15,79 @@
     height: 72px;
     background-color: #fff;
   }
+
+  @media (max-width: 850px) {
+    .kniu_web_aside_mdnav_wrap {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      padding: 8px;
+      box-shadow: 0 6px 16px rgba(23, 33, 59, .06);
+    }
+
+    .kniu_web_aside_mdnav {
+      min-width: 0;
+      padding: 0;
+      font-size: 13px;
+    }
+
+    .kniu_web_aside_mdnav_title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .kniu_web_aside_head {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 10px;
+      height: auto;
+      min-height: 64px;
+      padding: 10px 12px;
+    }
+
+    .kniu_web_aside_brand {
+      margin-right: 0;
+    }
+
+    .kniu_web_aside_crumb_wrap {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .kniu_web_aside_head_actions {
+      display: grid;
+      grid-column: 1 / -1;
+      grid-template-columns: auto auto;
+      justify-content: end;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .kniu_web_aside_head_actions kniu-badge,
+    .kniu_web_aside_head_actions>kniu-btn {
+      display: inline-block;
+    }
+  }
+
+  @media (max-width: 390px) {
+    .kniu_web_aside_mdnav {
+      font-size: 12px;
+    }
+  }
 </style>
 <nav class="kniu_web_aside_mdnav_wrap" aria-label="移动端应用导航">
-  <template kniu:for="{{navigation}}" kniu:key="path">
-    <kniu-btn class="kniu_web_aside_mdnav{{currentPath === item.path ? ' active' : ''}}" nav="{{item.path}}" kniu@click="handleNavigation" native-type="button">
-      <kniu-icon class="kniu_web_aside_mdnav_icon" icon="{{item.icon}}" />
-      <span class="kniu_web_aside_mdnav_title">{{item.name}}</span>
-    </kniu-btn>
-  </template>
+  <kniu-btn block class="kniu_web_aside_mdnav{{currentPath === '/admin' ? ' active' : ''}}" data-nav="/admin" kniu@click="handleNavigation" native-type="button">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" icon="House" /><span class="kniu_web_aside_mdnav_title">控制台</span>
+  </kniu-btn>
+  <kniu-btn block class="kniu_web_aside_mdnav{{currentPath === '/seo' ? ' active' : ''}}" data-nav="/seo" kniu@click="handleNavigation" native-type="button">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" icon="Document" /><span class="kniu_web_aside_mdnav_title">网站信息</span>
+  </kniu-btn>
+  <kniu-btn block class="kniu_web_aside_mdnav{{currentPath === '/nav' || currentPath === '/dailydetail' || currentPath === '/articledetail' ? ' active' : ''}}" data-nav="/nav" kniu@click="handleNavigation" native-type="button">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" icon="Folder" /><span class="kniu_web_aside_mdnav_title">栏目管理</span>
+  </kniu-btn>
 </nav>
 <header class="kniu_web_aside_head">
   <kniu-btn class="kniu_web_aside_brand" kniu@click="handleHomeNavigation" aria-label="返回总览" native-type="button">{{brandMark}}</kniu-btn>
@@ -31,13 +96,7 @@
     <strong>{{currentApp.name}}</strong>
   </div>
   <div class="kniu_web_aside_head_actions">
-    <kniu-form ref="form" model="{{searchform}}">
-      <kniu-input-group style="margin-bottom: 0;">
-        <kniu-input kniu:model="{{searchform.query}}" name="keyword" placeholder="搜索文章标题..." autocomplete="off" clearable>
-          <template #append label-width="80px"><kniu-icon icon="Search" /></template>
-        </kniu-input>
-      </kniu-input-group>
-    </kniu-form>
+    <a class="kniu_btn" href="#/"><kniu-icon style="margin-right:5px;font-size:16px;" icon="House" />前端首页</a>
     <kniu-badge class="kniu_web_aside_note" kniu@click="handleNotificationRequest" is-dot>
       <kniu-icon style="font-size:16px;color:#ff5c35;" icon="ChatDotRound" />
     </kniu-badge>

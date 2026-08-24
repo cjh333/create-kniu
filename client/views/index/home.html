@@ -1,0 +1,69 @@
+<style scoped>
+  @import url("@kniu/kniu.min.css");
+  @import url("@style/index/home.min.css");
+  @media (min-width: calc(1280px - 60px)) {
+    .kniu_web_body .kniu_container {
+      width: calc(100vw - 320 / var(--kniu_vw) * 2);
+    }
+  }
+</style>
+<div class="kniu_web">
+  <include src="./common/header.html" />
+  <!-- 2.内容 -->
+  <main class="kniu_web_body">
+    <section class="index_cells">
+      <div class="index_cell index_cell1">
+        <div class="kniu_container">
+          <div class="index_group1">
+            <article class="index_wrap11">
+              <template kniu:for="{{dailys}}" kniu:key="id">
+                <div class="index_item11">
+                  <div class="index_daily_group">
+                    <p class="index_daily_title">({{today}}) 每日一句：</p>
+                    <p class="index_daily_cn">{{item.cn}}</p>
+                    <p class="index_daily_en">{{item.en}}</p>
+                  </div>
+                </div>
+              </template>
+              <template kniu:for="{{articles}}" kniu:key="id">
+                <a class="index_item11" kniu@click="toDetail" kniu:[article-id]="{{item.id}}" href="#/detail">
+                  <div class="index_article_group">
+                    <div class="index_article_title_group">
+                      <span class="index_article_title">{{item.title}}</span>
+                    </div>
+                    <p class="index_article_summary">{{item.summary}}</p>
+                    <div class="index_article_info_group">
+                      <p class="index_article_info">发布于：{{item.create_time}}</p>
+                      <p class="index_article_info">浏览次数：{{item.hits}}次</p>
+                    </div>
+                  </div>
+                </a>
+              </template>
+            </article>
+            <article class="index_wrap12">
+              <div class="index_item12">
+                <div class="index_user_group">
+                  <div class="index_user_wrap">
+                    <a class="index_user_photo_group" href="javascript:;">
+                      <img class="kniu_img index_user_photo" kniu:src="{{photo}}" />
+                    </a>
+                    <p class="index_user_note">{{note}}</p>
+                  </div>
+                </div>
+                <ul class="index_advertise_group">
+                  <li class="index_advertise">
+                    <a class="index_advertise_link" href="javascript:;">广告位</a>
+                  </li>
+                  <li class="index_advertise">
+                    <a class="index_advertise_link" href="javascript:;">广告位</a>
+                  </li>
+                </ul>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <include src="./common/footer.html" />
+</div>

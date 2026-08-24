@@ -1,24 +1,26 @@
-import KniuMvvm from '../core/kniumvvm.mjs';
-import { getCurrentRoutePath, getApplicationName } from '../core/kniuutil.mjs';
-import { NAVIGATION_ITEMS, ROUTE_TO_NAVIGATION } from '../config/navbar.js';
+import KniuMvvm from '../../core/kniumvvm.mjs';
+import { getCurrentRoutePath } from '../../core/kniuutil.mjs';
 
 const { controller, onMounted, reactive } = KniuMvvm;
+
+function getAdminPageName(path) {
+  if (path === '/seo') return '网站信息';
+  if (path === '/nav' || path === '/dailydetail' || path === '/articledetail') return '栏目管理';
+  return '控制台';
+}
 
 const headerController = controller(({ navigateTo, onRouteChange }) => {
     const initialPath = getCurrentRoutePath();
     const state = reactive({
       brandMark: 'K',
       workspaceLabel: '工作台',
-      navigation: NAVIGATION_ITEMS,
       currentPath: initialPath,
-      currentApp: { name: getApplicationName(initialPath, NAVIGATION_ITEMS, ROUTE_TO_NAVIGATION) },
-      searchQuery: '',
-      formConfig: {}
+      currentApp: { name: getAdminPageName(initialPath) }
     });
 
     function updateCurrentApplication(path) {
       state.currentPath = path;
-      state.currentApp = { name: getApplicationName(path, NAVIGATION_ITEMS, ROUTE_TO_NAVIGATION) };
+      state.currentApp = { name: getAdminPageName(path) };
     }
 
     function handleNavigation(event) {
@@ -29,8 +31,8 @@ const headerController = controller(({ navigateTo, onRouteChange }) => {
     }
 
     function handleHomeNavigation() {
-      updateCurrentApplication('/');
-      navigateTo('/');
+      updateCurrentApplication('/admin');
+      navigateTo('/admin');
     }
 
     function handleNotificationRequest() {

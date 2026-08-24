@@ -1,7 +1,7 @@
-import KniuMvvm from '../core/kniumvvm.mjs';
-import SERVER from '../config/server.js';
-import REQUEST from '../core/kniurequest.mjs';
-import AUTH from '../core/kniuauth.mjs';
+import KniuMvvm from '../../core/kniumvvm.mjs';
+import SERVER from '../../config/server.js';
+import REQUEST from '../../core/kniurequest.mjs';
+import AUTH from '../../core/kniuauth.mjs';
 
 const { controller, onMounted, reactive } = KniuMvvm;
 

@@ -84,14 +84,15 @@ ROUTER.addRoute('/example', exampleController);
 | `on` | `kniueventer.mjs` | 事件绑定助手：`on(target, type, fn, opt)`，等价 `$(target).on(...)`，返回解绑函数 |
 | `templateUrl` | `kniueventer.mjs` | 当前模板经过精确匹配后使用的路径 |
 | `eventTo` | 宿主注入 | 事件总线：`eventTo.emit(type, detail)` / `eventTo.on(type, fn)` |
-| `navigateTo` | 微应用运行时注入 | 路由跳转：`navigateTo('/orders')`，仅微应用模板内可用 |
+| `navigateTo` | 微应用运行时注入 | 路由跳转：`navigateTo('/orders')`；第二参数可传递不显示在地址栏的路由状态 |
+| `getRouteData` | 微应用运行时注入 | 读取 `navigateTo(path, data)` 传入的当前路由状态 |
 | `openExternalUrl` | 微应用运行时注入 | 在新标签页打开外部 HTTP/HTTPS 地址：`openExternalUrl('https://www.baidu.com')` |
-| `kniu-system-main` / `useViews` | `kniubase.mjs` | 公共工作台外壳由 `app.useViews({ main, aside })` 注册 `kniu-system-main` 持久渲染（侧边栏 + 顶栏 + 内容区 + Toast），导航、路由同步、快捷键、Toast 与清理逻辑由核心模块接管 |
+| 公共布局 / `useViews` | `kniubase.mjs` | 公共布局按 `区域/名称` 注册并生成包含目录的唯一组件标识，避免前后台同名覆盖 |
 | `ROUTER` / `useToastNotifications` / `createAppRuntime` 等 | `kniubase.mjs` 透传 | 底层框架能力，需要自定义外壳运行时才按需使用 |
 
 > 选用建议：Model 只负责数据与派生规则；Controller 使用 `reactive`、`eventTo`、`navigateTo` 和 `openExternalUrl`；View 不写业务脚本。
 
-公共工作台（侧边栏 + 顶栏 + 内容区 + Toast）在应用入口处注册，由持久外壳 `kniu-system-main` 承载：
+公共工作台（侧边栏 + 顶栏 + 内容区 + Toast）在应用入口处按目录注册，由后台公共主外壳承载：
 
 ```js
 import createApp from './core/kniubase.mjs';
@@ -102,7 +103,13 @@ import headerController from './controller/headerController.js';
 
 const app = createApp();
 app.use(ROUTER);
-app.useViews({ main: mainController, aside: asideController, header: headerController });
+app.useViews({
+  'admin/main': mainController,
+  'admin/aside': asideController,
+  'admin/header': headerController,
+  'index/header': indexHeaderController,
+  'index/footer': indexFooterController
+});
 app.mount('#app');
 ```
 
@@ -545,6 +552,8 @@ reactive({
 <form kniu@submit="handleSubmit">…</form>
 ```
 
+`kniu@click` 默认阻止元素的原生跳转或提交行为，因此普通点击不需要重复添加 `.prevent`；确实需要保留原生点击行为时使用 `.native`。其他事件仍按需使用 `.prevent`。
+
 事件修饰符采用点语法。例如：
 
 ```html
@@ -554,13 +563,20 @@ reactive({
 ```
 
 - 行为修饰符：`.prevent`、`.stop`、`.self`
-- 监听选项：`.once`、`.capture`、`.passive`
+- 监听选项：`.once`、`.capture`、`.passive`、`.native`
 - 系统按键：`.ctrl`、`.shift`、`.alt`、`.meta`、`.exact`
 - 键盘按键：`.enter`、`.tab`、`.delete`、`.esc`、`.space`、`.up`、`.down`、`.left`、`.right`
 - 鼠标按键：`.left`、`.middle`、`.right`
 
 `.prevent` 会在调用处理函数前执行 `event.preventDefault()`；`.stop` 会执行
 `event.stopPropagation()`。`.passive` 与 `.prevent` 不能同时使用。
+
+路由可以携带不显示在地址栏的页面状态：
+
+```js
+navigateTo('/detail', { id: row.id });
+const id = getRouteData()?.id;
+```
 
 ```js
 const exampleController = controller(({ eventTo }) => {

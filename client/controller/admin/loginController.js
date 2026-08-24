@@ -1,6 +1,6 @@
-import KniuMvvm from '../core/kniumvvm.mjs';
-import REQUEST from '../core/kniurequest.mjs';
-import AUTH from '../core/kniuauth.mjs';
+import KniuMvvm from '../../core/kniumvvm.mjs';
+import REQUEST from '../../core/kniurequest.mjs';
+import AUTH from '../../core/kniuauth.mjs';
 
 const { controller, reactive, onMounted, onUnmounted } = KniuMvvm;
 
@@ -76,7 +76,7 @@ const loginController = controller(({ navigateTo }) => {
             const user = res.data || {};
             const userName = user.username || user.name || state.loginform.username;
             AUTH.setUser({ name: userName, avatar: user.avatar || userName.charAt(0), role: user.role });
-            navigateTo('/');
+            navigateTo('/admin');
             return;
           }
           state.isSubmitting = false;

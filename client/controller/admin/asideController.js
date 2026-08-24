@@ -1,9 +1,12 @@
-import KniuMvvm from '../core/kniumvvm.mjs';
-import { getCurrentRoutePath, getNavigationIndex } from '../core/kniuutil.mjs';
-import AUTH from '../core/kniuauth.mjs';
-import { NAVIGATION_PATHS, ROUTE_TO_NAVIGATION } from '../config/navbar.js';
+import KniuMvvm from '../../core/kniumvvm.mjs';
+import { getCurrentRoutePath } from '../../core/kniuutil.mjs';
+import AUTH from '../../core/kniuauth.mjs';
 
 const { controller, onMounted, reactive } = KniuMvvm;
+
+function getActiveNavigationPath(path) {
+  return path === '/dailydetail' || path === '/articledetail' ? '/nav' : path;
+}
 
 const asideController = controller(({ eventTo, navigateTo, onRouteChange }) => {
     const state = reactive({
@@ -12,7 +15,7 @@ const asideController = controller(({ eventTo, navigateTo, onRouteChange }) => {
       brandSuffix: 'System',
       workspaceLabel: '工作台',
       helpLabel: '帮助',
-      activeNavigationIndex: getNavigationIndex(getCurrentRoutePath(), NAVIGATION_PATHS, ROUTE_TO_NAVIGATION),
+      activeNavigationPath: getActiveNavigationPath(getCurrentRoutePath()),
       userAvatar: '·',
       userName: '—',
       userRole: '—'
@@ -22,13 +25,6 @@ const asideController = controller(({ eventTo, navigateTo, onRouteChange }) => {
       state.userName = info.name || '—';
       state.userAvatar = info.avatar || (info.name ? info.name.charAt(0) : '·');
       state.userRole = info.role || '管理员';
-    }
-
-    function handleNavigationClick(event) {
-      const index = Number.parseInt(event.currentTarget.dataset.nav, 10);
-      const path = NAVIGATION_PATHS[index];
-      state.activeNavigationIndex = index;
-      navigateTo(path);
     }
 
     async function handleLogout() {
@@ -54,7 +50,7 @@ const asideController = controller(({ eventTo, navigateTo, onRouteChange }) => {
         AUTH.setUser(info);
       });
       const stopRouteSubscription = onRouteChange(function updateActiveNavigation(path) {
-        state.activeNavigationIndex = getNavigationIndex(path, NAVIGATION_PATHS, ROUTE_TO_NAVIGATION);
+        state.activeNavigationPath = getActiveNavigationPath(path);
       });
       return function () {
         stopAuthSubscription();
@@ -63,7 +59,7 @@ const asideController = controller(({ eventTo, navigateTo, onRouteChange }) => {
       };
     });
 
-    return { state, handleNavigationClick, handleLogout, handleHelpRequest };
+    return { state, handleLogout, handleHelpRequest };
 });
 
 export default asideController;
