@@ -5,10 +5,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "kill": "taskkill /F /IM node.exe",
-    "dev": "node --env-file=.env client/core/kniuserver.mjs",
     "build": "cross-env PROCESS_ENV=production node client/core/kniubuilder.mjs",
-    "preview": "node client/core/kniupreview.mjs"
+    "dev": "cross-env PROCESS_ENV=development node client/core/kniuserver.mjs",
+    "kill": "cross-env PROCESS_ENV=development taskkill /F /IM node.exe",
+    "preview": "cross-env PROCESS_ENV=development node client/core/kniupreview.mjs"
   },
   "devDependencies": {
     "cross-env": "^10.1.0",
