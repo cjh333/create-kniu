@@ -1,7 +1,7 @@
 import KniuTemplate from './kniutemplate.mjs';
 import REQUEST from './kniurequest.mjs';
 import { getResponseRecords } from './kniuutil.mjs';
-import { sanitizeRichHtml } from './kniusanitize.mjs';
+import { sanitizeRichHtml } from './kniusanitizer.mjs';
 
 const { reactive } = KniuTemplate;
 
