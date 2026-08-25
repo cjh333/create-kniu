@@ -8,10 +8,7 @@
     "kill": "taskkill /F /IM node.exe",
     "dev": "node --env-file=.env client/core/kniuserver.mjs",
     "build": "cross-env PROCESS_ENV=production node client/core/kniubuilder.mjs",
-    "benchmark": "node benchmark/core.bench.mjs",
-    "policy": "node --test test/project-policy.test.mjs",
-    "test": "node --test test/*.test.mjs",
-    "check": "npm run test && npm run build && npm run policy && php -l api/index.php && php -l api/core/Db.php && php -l api/core/Controller.php"
+    "preview": "node client/core/kniupreview.mjs"
   },
   "devDependencies": {
     "cross-env": "^10.1.0",

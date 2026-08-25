@@ -3,7 +3,7 @@
 $env = getenv('APP_ENV') ?: 'development';
 $config = [
   'development' => [
-    'ENABLE' => true,  // 开发环境默认开启日志。
+    'ENABLE' => false,  // 开发环境默认开启日志。
     'LEVEL' => 'debug',  // 日志级别：debug, info, notice, warning, error, critical, alert, emergency。
     'FILE_PATH' => __DIR__ . '/../runtime/log/api.log'  // 日志文件路径。
   ],

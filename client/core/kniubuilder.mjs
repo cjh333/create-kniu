@@ -40,6 +40,45 @@ const outputTemplateDir = join(BUILDER.OUTPUT_DIR, outfile);
 const publicPath = BUILDER.PUBLIC_PATH.replaceAll('\\', '/').replace(/\/+$/g, '');
 const outputTemplateUrl = publicPath ? `${publicPath}/${outfile}` : outfile;
 
+async function collectControllerPaths(directory = 'client/controller', rootDirectory = directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const paths = [];
+  for (const entry of entries) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) paths.push(...await collectControllerPaths(path, rootDirectory));
+    else if (entry.isFile() && entry.name.endsWith('.js')) {
+      paths.push(relative(rootDirectory, path).replaceAll('\\', '/').replace(/\.js$/, ''));
+    }
+  }
+  return paths.sort();
+}
+
+async function createControllerBundlePlugin() {
+  const controllerPaths = await collectControllerPaths();
+  const loaders = controllerPaths
+    .map(function (controllerPath) {
+      return `${JSON.stringify(controllerPath)}:function(){return import(${JSON.stringify(`../controller/${controllerPath}.js`)});}`;
+    })
+    .join(',');
+
+  return {
+    name: 'kniu-controller-bundle',
+    setup(bundle) {
+      bundle.onLoad({ filter: /kniumvvm\.mjs$/ }, async function (args) {
+        let source = await readFile(args.path, 'utf8');
+        const dynamicImport = 'return import(`../controller/${controllerPath}.js`).then(function (module) {';
+        const bundledImport =
+          `const controllerLoader=({${loaders}})[controllerPath];\n` +
+          `  if(!controllerLoader)return Promise.reject(new Error(\`[MVVM] Controller not found: \${controllerPath}\`));\n` +
+          '  return controllerLoader().then(function (module) {';
+        if (!source.includes(dynamicImport)) throw new Error('Controller loader source does not match the build rule');
+        source = source.replace(dynamicImport, bundledImport);
+        return { contents: source, loader: 'js' };
+      });
+    },
+  };
+}
+
 function contentHash(content) {
   return createHash('sha256').update(content).digest('hex').slice(0, 10);
 }
@@ -110,6 +149,7 @@ if (isMain) {
   await mkdir(BUILDER.OUTPUT_DIR, { recursive: true });
   await mkdir(outputTemplateDir, { recursive: true });
   const { build, transform } = await import('esbuild');
+  const controllerBundlePlugin = await createControllerBundlePlugin();
   const result = await build({
     entryPoints: ['client/client.mjs'],
     bundle: true,
@@ -120,6 +160,7 @@ if (isMain) {
     minify: IS_PROD,
     legalComments: 'none',
     supported: { 'template-literal': false },
+    plugins: [controllerBundlePlugin],
     write: false,
   });
   const clientSource = result.outputFiles[0].text.trim();
