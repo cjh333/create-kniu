@@ -1,4 +1,4 @@
-import PROCESS_ENV from './env.js';
+import PROCESS_ENV from '../core/kniuenv.mjs';
 const LOGGER_MAP = {
   development: {
     // 控制台输出。

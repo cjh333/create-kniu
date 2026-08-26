@@ -3,7 +3,7 @@ import { request as httpRequest } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import SERVER from '../config/server.js';
-import PROCESS_ENV from '../config/env.js';
+import PROCESS_ENV from './kniuenv.mjs';
 import { resolveAliasReferences } from './kniuutil.mjs';
 import collectTemplates from './kniubuilder.mjs';
 

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { dirname, extname, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import BUILDER from '../config/builder.js';
-import PROCESS_ENV from '../config/env.js';
+import PROCESS_ENV from './kniuenv.mjs';
 import SERVER from '../config/server.js';
 import { resolveAliasReferences } from './kniuutil.mjs';
 import KniuLogger from './kniulogger.mjs';

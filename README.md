@@ -143,7 +143,7 @@ MVVM 提供 `ref()`、`computed()`、getter/多来源 `watch()` 和 `watchEffect
 
 | 配置文件 | 关键内容 |
 | --- | --- |
-| `client/config/env.js` | 统一导出当前运行环境 `PROCESS_ENV` |
+| `client/core/kniuenv.mjs` | 统一导出当前运行环境 `PROCESS_ENV` |
 | `client/config/server.js` | 环境、时区、主机、端口、首页、视图目录、路径别名与 API 代理 |
 | `client/config/router.js` | 页面路由、Controller 映射与鉴权分组 |
 | `client/config/builder.js` | 输出目录、资源访问前缀、产物子目录和待复制资源 |
@@ -188,7 +188,7 @@ npm run build
 rm -rf dist && PROCESS_ENV=production node client/core/kniubuilder.mjs
 ```
 
-> 环境约定：`client/config/env.js` 默认 `development`；`npm run dev` 通过 `--env-file=.env`（内含 `PROCESS_ENV=development`）注入开发环境；只有显式 `PROCESS_ENV=production`（或 `npm run build`）才产出生产产物。
+> 环境约定：`client/core/kniuenv.mjs` 默认 `development`；`npm run dev` 通过 `--env-file=.env`（内含 `PROCESS_ENV=development`）注入开发环境；只有显式 `PROCESS_ENV=production`（或 `npm run build`）才产出生产产物。
 
 构建器会清空并重新生成 `dist/`：
 

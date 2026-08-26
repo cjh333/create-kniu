@@ -1,4 +1,4 @@
-import PROCESS_ENV from './env.js';
+import PROCESS_ENV from '../core/kniuenv.mjs';
 const SERVER_MAP = {
   development: {
     // 时区设置。
