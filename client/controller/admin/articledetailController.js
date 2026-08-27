@@ -16,7 +16,7 @@ const articledetailController = controller(function () {
       showmodal: false,
       dialogTitle: '修改文章',
       files: [],
-      editForm: {
+      editform: {
         id: '',
         sid: '',
         title: '',
@@ -93,7 +93,7 @@ const articledetailController = controller(function () {
     function editRow(index, list) {
       const row = list[index];
       if (!row) return false;
-      assignModelFields(state.editForm, row);
+      assignModelFields(state.editform, row);
       state.files = toSingleFileList(row.cover);
       state.dialogTitle = '修改文章';
       state.showmodal = true;
@@ -102,7 +102,7 @@ const articledetailController = controller(function () {
 
     // 新增：重置表单后复用编辑弹框（id 留空作为新增标记）。
     function addRow() {
-      const form = state.editForm;
+      const form = state.editform;
       Object.keys(form).forEach(function (field) {
         form[field] = '';
       });
@@ -120,7 +120,7 @@ const articledetailController = controller(function () {
     }
 
     async function saveEdit() {
-      const form = state.editForm;
+      const form = state.editform;
       if (!String(form.title || '').trim()) {
         self.$msg({ content: '请输入标题', type: 'error' });
         return;

@@ -120,32 +120,32 @@
   </template>
   <template #default>
     <kniu-form-cell>
-      <kniu-input kniu:model="{{editForm.sid}}" name="sid" placeholder="请输入排序">
+      <kniu-input kniu:model="{{editform.sid}}" name="sid" placeholder="请输入排序">
         <template #prepend label-width="100px">排序</template>
       </kniu-input>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-input kniu:model="{{editForm.title}}" name="title" placeholder="请输入标题">
+      <kniu-input kniu:model="{{editform.title}}" name="title" placeholder="请输入标题">
         <template #prepend label-width="100px">标题</template>
       </kniu-input>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-input kniu:model="{{editForm.subtitle}}" name="subtitle" placeholder="请输入副标题">
+      <kniu-input kniu:model="{{editform.subtitle}}" name="subtitle" placeholder="请输入副标题">
         <template #prepend label-width="100px">副标题</template>
       </kniu-input>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-input kniu:model="{{editForm.summary}}" name="summary" placeholder="请输入摘要" row="6" type="textarea">
+      <kniu-input kniu:model="{{editform.summary}}" name="summary" placeholder="请输入摘要" row="6" type="textarea">
         <template #prepend label-width="100px">摘要</template>
       </kniu-input>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-input kniu:model="{{editForm.url}}" name="url" placeholder="请输入链接">
+      <kniu-input kniu:model="{{editform.url}}" name="url" placeholder="请输入链接">
         <template #prepend label-width="100px">链接</template>
       </kniu-input>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-editor ref="editor" toolbar="{{toolbar}}" kniu:model="{{editForm.content}}" name="content">
+      <kniu-editor ref="editor" toolbar="{{toolbar}}" kniu:model="{{editform.content}}" name="content">
         <template #prepend label-width="100px">正文</template>
       </kniu-editor>
     </kniu-form-cell>
@@ -158,7 +158,7 @@
       </kniu-input>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-switch kniu:model="{{editForm.is_show}}" name="is_show" active-value="1" inactive-value="0" active-color="#13ce66" inactive-color="#ff4949">
+      <kniu-switch kniu:model="{{editform.is_show}}" name="is_show" active-value="1" inactive-value="0" active-color="#13ce66" inactive-color="#ff4949">
         <template #prepend label-width="100px">显示</template>
       </kniu-switch>
     </kniu-form-cell>

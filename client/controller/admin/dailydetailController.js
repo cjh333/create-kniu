@@ -14,7 +14,7 @@ const dailydetailController = controller(function () {
       error: '',
       keyword: '',
       showmodal: false,
-      editForm: { id: '', sid: '', cn: '', en: '', is_show: '1' },
+      editform: { id: '', sid: '', cn: '', en: '', is_show: '1' },
       ...paginationState(15)
     });
 
@@ -80,7 +80,7 @@ const dailydetailController = controller(function () {
     function editRow(index, list) {
       const row = list[index];
       if (!row) return false;
-      assignModelFields(state.editForm, row);
+      assignModelFields(state.editform, row);
       state.showmodal = true;
       return false;
     }
@@ -90,7 +90,7 @@ const dailydetailController = controller(function () {
     }
 
     async function saveEdit() {
-      const form = state.editForm;
+      const form = state.editform;
       if (!form.id) return;
       await REQUEST({
         url: '/daily_update',
