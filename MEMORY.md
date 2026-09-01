@@ -136,3 +136,4 @@
 134. 表格编辑配置只保留 `editable`，删除且不兼容 `editType`：`editable: true` 或 `'text'` 表示文本输入，`editable: 'number'` 表示数字输入，`editable: false` 关闭编辑；权限条件写成 `editable: canEdit ? 'number' : false`，数字最小值继续使用 `editMin`。
 135. 所有下拉类弹框（日期选择器、分页条数选择器、评论表情面板等）的浮层位置**默认统一显示在触发元素下方**；仅当下方空间不足以容纳完整面板、且上方空间足够时切换到上方，上方也不足时保持默认下方。上下切换通过容器/宿主 `data-placement` 或面板自身的 `above` 类控制，方向动画与展开方向一致。新增任何下拉弹框都必须遵循此定位约定，不能默认浮在上方。
 136. 评论表情面板（`.kniu_sys_comment_emoji_panel`）默认 `top:calc(100% + 6px)` 显示在输入区下方；打开时用 `getBoundingClientRect()` 测量下方剩余空间（仅用户点击时测一次，非渲染热路径），不足时加 `.kniu_sys_comment_above` 类切换到 `bottom:calc(100% + 6px)` 上方。间距 `6px` 与分页下拉一致，保证三类下拉弹框定位统一。
+137. 组件内部自定义按钮必须与项目 `kniu-btn` 的语义和尺寸保持一致：主操作使用蓝色主色 `#409eff`（悬停 `#79bbff`、禁用 `#a0cfff`），次要/图标操作使用默认白底灰边框 `#dcdfe6`（悬停蓝边框+`#ecf5ff` 浅蓝背景）；同一组按钮高度必须统一为 `min-height:32px`。禁止在组件内自行使用绿色、红色等非项目主色作为提交/确认按钮。

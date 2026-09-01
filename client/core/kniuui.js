@@ -6419,11 +6419,13 @@ var KniuUI = (function () {
       .kniu_sys_comment_textarea{width:100%;min-height:80px;padding:10px 12px;border:1px solid #dcdfe6;border-radius:4px;resize:vertical;font:inherit;box-sizing:border-box;outline:0}
       .kniu_sys_comment_textarea:focus{border-color:#409eff}
       .kniu_sys_comment_toolbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:10px}
-      .kniu_sys_comment_emoji_btn{background-color:#fff;border:1px solid #dcdfe6;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:18px;line-height:1;transition:border-color .2s}
-      .kniu_sys_comment_emoji_btn:hover{border-color:#409eff}
-      .kniu_sys_comment_submit{background-color:#28a745;color:#fff;border:0;border-radius:4px;padding:7px 20px;cursor:pointer;font-size:14px;transition:background-color .2s}
-      .kniu_sys_comment_submit:hover{background-color:#23903d}
-      .kniu_sys_comment_submit:disabled{background-color:#c0c4cc;cursor:not-allowed}
+      .kniu_sys_comment_emoji_btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:8px 12px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:14px;line-height:1;cursor:pointer;user-select:none;transition:.1s}
+      .kniu_sys_comment_emoji_btn:hover,.kniu_sys_comment_emoji_btn:focus-visible{border-color:#c6e2ff;background-color:#ecf5ff;color:#409eff}
+      .kniu_sys_comment_emoji_btn:active{filter:brightness(.94)}
+      .kniu_sys_comment_submit{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:8px 15px;border:1px solid #409eff;border-radius:4px;background-color:#409eff;color:#fff;font:500 14px/1 Arial,"Microsoft YaHei",sans-serif;cursor:pointer;user-select:none;transition:.1s}
+      .kniu_sys_comment_submit:hover,.kniu_sys_comment_submit:focus-visible{background-color:#79bbff;border-color:#79bbff}
+      .kniu_sys_comment_submit:active{filter:brightness(.94)}
+      .kniu_sys_comment_submit:disabled{border-color:#e4e7ed;background-color:#a0cfff;color:#fff;cursor:not-allowed;filter:none;opacity:.6}
       .kniu_sys_comment_emoji_panel{position:absolute;right:0;top:calc(100% + 6px);width:260px;max-height:220px;overflow-y:auto;overflow-x:hidden;background-color:#fff;border:1px solid #e4e7ed;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1);padding:8px;z-index:10;display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
       .kniu_sys_comment_emoji_panel.kniu_sys_comment_above{top:auto;bottom:calc(100% + 6px)}
       .kniu_sys_comment_emoji_panel.kniu_sys_comment_hidden{display:none}

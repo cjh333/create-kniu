@@ -840,6 +840,17 @@ box-shadow: 0 2px 12px rgba(0,0,0,.1);
 - 间距统一 `6px`，与分页下拉一致，保证三类下拉弹框定位统一。
 - 方向切换通过容器/面板自身的 `data-placement` 或 `above` 类控制，动画方向与展开方向一致。
 
+### 按钮样式约定
+
+评论组件工具栏内的按钮必须跟随项目 `kniu-btn` 的语义与尺寸，保持视觉统一：
+
+| 按钮 | 样式 | 尺寸 |
+| --- | --- | --- |
+| 表情按钮 | 默认样式：白底、灰边框 `#dcdfe6`、文字色 `#606266`；悬停蓝边框/浅蓝背景 `#ecf5ff` | `min-height:32px; padding:8px 12px` |
+| 提交按钮 | 主色样式：蓝底 `#409eff`、白字、蓝边框；悬停 `#79bbff`；禁用 `#a0cfff` | `min-height:32px; padding:8px 15px; font-weight:500` |
+
+两按钮**高度必须一致**，与项目 `kniu-btn` 默认/主色两种类型对齐；禁止自行使用绿色、红色等非项目主色的提交按钮。
+
 ### 组件实现要点（2026-09-01）
 
 - 必须定义本组件自己的 `options` accessor（存储到 `_options` 并触发 `_render`），否则 `installOptionsOnlyProtocol` 因无 `ownDescriptor.set` 会退回属性反射，`_options` 恒空、渲染不出内容——对齐 kniu-switch/kniu-select/kniu-date-picker 既有模式。
