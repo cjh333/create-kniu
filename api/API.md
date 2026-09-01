@@ -67,17 +67,26 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 
 - 公共内容：`/getDaily`、`/getArticle`、`/getInfo`、`/getDetail`、`/getComments`、`/submitComment`、`/likeComment`
 - 会话与系统：`/logup`、`/logout`、`/captcha`、`/admin`、`/system`
-- 后台业务（需登录）：SEO、导航、每日内容、文章、角色的增删改查，以及 `/clearCache`
+- 后台业务（需登录）：SEO、导航、每日内容、文章、角色、评论管理的增删改查，以及 `/clearCache`
 
 ### 评论接口（公开，POST）
 
 | 端点 | 入参 | 说明 |
 | --- | --- | --- |
-| `/getComments` | `article_id`（必填） | 返回该文章全部已展示评论（含回复，`parent_id` 区分），`is_show=1` 过滤，按 `id` 升序；`data` 为数组，每项 `{id,parentId,username,avatar,time,content,likes,liked}` |
-| `/submitComment` | `article_id`、`parent_id`、`name`、`message` | 提交评论或回复；`message` 写库前 `encodeFields` 转义，成功后返回 `{id}` |
+| `/getComments` | `article_id`（必填） | 返回该文章全部**已审核**评论（含回复，`parent_id` 区分），`is_show=1` 过滤，按 `id` 升序；`data` 为数组，每项 `{id,parentId,username,avatar,time,content,likes,liked}` |
+| `/submitComment` | `article_id`、`parent_id`、`name`、`message` | 提交评论或回复，**提交即待审核（`is_show=0`）**，后台审核通过（`is_show=1`）后才在 `/getComments` 显示；`message` 写库前 `encodeFields` 转义，成功后返回 `{id}` |
 | `/likeComment` | `comment_id`、`liked`（bool） | 点赞（`true` 加 1）或取消（`false` 减 1，不低于 0），返回最新 `{likes}` |
 
-`tb_comment` 为前台评论表，`article_id` 关联 `tb_article.id`；`parent_id` 为 0 表示顶层评论，大于 0 表示对该评论的回复。`name`/`message` 走 HTML 编解码铁律。
+### 评论管理接口（后台，POST，需登录）
+
+| 端点 | 入参 | 说明 |
+| --- | --- | --- |
+| `/comment_list` | `type`(`all`/`comment`/`reply`)、`audit`(`''`/`0`/`1`)、`keyword`、分页 `page_current`/`page_rows`、`field`/`sort` | 评论/回复列表，按 `parent_id` 区分顶层评论与回复，按 `is_show` 筛待审核/已通过，`name`/`message` 关键词模糊搜索（大小写不敏感）；`data` 每项含 `{id,parent_id,name,email,ip,message,likes,is_show,article_id,article_title,create_time,...}` |
+| `/comment_audit` | `id`、`audit`(`0`/`1`) | 审核评论：`audit=1` 通过（前台可见）、`0` 隐藏/撤回；需管理权限 |
+| `/comment_delete` | `id` | 删除评论；**删除顶层评论会级联删除其下全部回复**；需管理权限 |
+| `/comment_detail` | `id` | 查询单条评论（`decodeFields` 后返回） |
+
+`tb_comment` 为评论表，`article_id` 关联 `tb_article.id`；`parent_id` 为 0 表示顶层评论，大于 0 表示对该评论的回复。`name`/`message`/`article_title` 走 HTML 编解码铁律（前端渲染时再 `commentEscape` 双保险）。
 
 ## 五、新增接口
 

@@ -13,6 +13,7 @@ ROUTER.auth(function (router) {
   router.addRoute('users', 'admin/usersController');
   router.addRoute('dailydetail', 'admin/dailydetailController');
   router.addRoute('articledetail', 'admin/articledetailController');
+  router.addRoute('comment', 'admin/commentController');
 });
 
 // 无需登录鉴权的路由。

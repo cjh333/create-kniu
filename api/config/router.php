@@ -40,6 +40,11 @@ Router::post('/article_list', 'ArticleController@articleList');
 Router::post('/article_detail', 'ArticleController@articleDetail');
 Router::post('/article_cover_delete', 'ArticleController@articleCoverDelete');
 Router::post('/article_media_upload', 'ArticleController@articleMediaUpload');
+// 评论管理。
+Router::post('/comment_list', 'CommentController@commentList');
+Router::post('/comment_audit', 'CommentController@commentAudit');
+Router::post('/comment_delete', 'CommentController@commentDelete');
+Router::post('/comment_detail', 'CommentController@commentDetail');
 // 角色。
 Router::post('/role_add', 'RoleController@roleAdd');
 Router::post('/role_delete', 'RoleController@roleDelete');

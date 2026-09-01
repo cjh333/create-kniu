@@ -1,4 +1,5 @@
 import KniuMvvm from '../../core/kniumvvm.mjs';
+import KniuUI from '../../core/kniuui.js';
 import REQUEST from '../../core/kniurequest.mjs';
 
 const { controller, onMounted, reactive } = KniuMvvm;
@@ -62,6 +63,8 @@ const detailController = controller(({ navigateTo, getRouteData }) => {
       redirectOnUnauthorized: false
     });
     if (result.status === 1) {
+      // 提交即待审核：评论不会立即显示，给用户明确反馈。
+      KniuUI.msg({ content: '评论已提交，审核通过后将展示', type: 'success' });
       await loadComments();
     }
   }

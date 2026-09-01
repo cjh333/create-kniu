@@ -138,7 +138,8 @@ class IndexController extends Controller
         'email' => '',
         'ip' => '',
         'message' => $message,
-        'is_show' => 1
+        // 提交即待审核：is_show=0，后台审核通过置 1 后才在前台展示。
+        'is_show' => 0
       ], ['name', 'message']);
       $id = Db::name('tb_comment')->insert($data);
 
