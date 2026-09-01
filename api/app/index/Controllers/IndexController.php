@@ -66,4 +66,120 @@ class IndexController extends Controller
       return;
     }
   }
+
+  /**
+   * 获取文章评论列表。
+   *
+   * 返回该文章下全部已展示评论（含回复），按创建时间正序排列，
+   * 顶层评论 parent_id=0，回复记录保留 parent_id 供前端定位。
+   */
+  public function getComments(): void
+  {
+    $articleId = $this->input('post.article_id/d', 0);
+    if ($articleId <= 0) {
+      $this->json([], '文章ID参数错误', 0);
+      return;
+    }
+
+    try {
+      $result = Db::name('tb_comment')
+        ->where('article_id', '=', $articleId)
+        ->where('is_show', '=', 1)
+        ->order('id', 'asc')
+        ->select();
+      $result = $this->decodeFields($result, ['name', 'message']);
+
+      $list = array_map(function ($row) {
+        return [
+          'id' => (int)$row['id'],
+          'parentId' => (int)$row['parent_id'],
+          'username' => $row['name'] ?: '匿名',
+          'avatar' => '',
+          'time' => $row['create_time'] ?: '',
+          'content' => $row['message'] ?: '',
+          'likes' => (int)$row['likes'],
+          'liked' => false
+        ];
+      }, $result);
+
+      $this->json($list);
+    } catch (\Exception $e) {
+      $this->json([], '获取评论失败', 0);
+    }
+  }
+
+  /**
+   * 提交评论或回复。
+   *
+   * article_id 关联文章；parent_id 为 0 表示顶层评论，大于 0 表示对某条评论的回复。
+   * message 入库前 HTML 转义（后端全责）。
+   */
+  public function submitComment(): void
+  {
+    $articleId = $this->input('post.article_id/d', 0);
+    $parentId = $this->input('post.parent_id/d', 0);
+    $name = $this->input('post.name/s', '匿名');
+    $message = $this->input('post.message/s', '');
+
+    if ($articleId <= 0) {
+      $this->json([], '文章ID参数错误', 0);
+      return;
+    }
+    if (trim($message) === '') {
+      $this->json([], '评论内容不能为空', 0);
+      return;
+    }
+
+    try {
+      $data = $this->encodeFields([
+        'article_id' => $articleId,
+        'parent_id' => $parentId,
+        'name' => $name,
+        'email' => '',
+        'ip' => '',
+        'message' => $message,
+        'is_show' => 1
+      ], ['name', 'message']);
+      $id = Db::name('tb_comment')->insert($data);
+
+      if (!$id) {
+        $this->json([], '评论失败', 0);
+        return;
+      }
+      $this->json(['id' => (int)$id], '评论成功', 1);
+    } catch (\Exception $e) {
+      $this->json([], '评论失败', 0);
+    }
+  }
+
+  /**
+   * 评论点赞。
+   *
+   * liked=true 点赞数 +1，liked=false 取消点赞数 -1（不低于 0）。
+   */
+  public function likeComment(): void
+  {
+    $commentId = $this->input('post.comment_id/d', 0);
+    $liked = $this->input('post.liked/b', true);
+
+    if ($commentId <= 0) {
+      $this->json([], '评论ID参数错误', 0);
+      return;
+    }
+
+    try {
+      $current = Db::name('tb_comment')->where('id', '=', $commentId)->value('likes');
+      if ($current === null) {
+        $this->json([], '评论不存在', 0);
+        return;
+      }
+
+      $next = $liked ? ((int)$current + 1) : max(0, (int)$current - 1);
+      Db::name('tb_comment')->where('id', '=', $commentId)->update(['likes' => $next]);
+
+      $this->json(['likes' => (int)$next], '操作成功', 1);
+    } catch (\Exception $e) {
+      $this->json([], '点赞失败', 0);
+    }
+  }
 }

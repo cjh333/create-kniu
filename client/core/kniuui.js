@@ -6471,6 +6471,15 @@ var KniuUI = (function () {
       }
       connectedCallback() { this._render(); }
       attributeChangedCallback() {}
+      // kniu:options 统一配置入口：必须提供本组件自身的 options accessor，
+      // 否则 installOptionsOnlyProtocol 因无 ownDescriptor.set 会退回属性反射
+      // （reflectOptions），_options 恒空、_render 渲染不出任何内容
+      // （对齐 kniu-switch / kniu-select / kniu-date-picker 的既有模式）。
+      set options(value) {
+        this._options = value && typeof value === 'object' ? value : {};
+        this._render();
+      }
+      get options() { return this._options; }
       _render() {
         const options = this._options || {};
         const list = Array.isArray(options.list) ? options.list : [];
@@ -6757,7 +6766,7 @@ var KniuUI = (function () {
     'kniu-option', 'kniu-select', 'kniu-radio', 'kniu-radio-group', 'kniu-page', 'kniu-image', 'kniu-input',
     'kniu-input-group', 'kniu-form-cell', 'kniu-date-picker', 'kniu-form', 'kniu-upload', 'kniu-icon',
     'kniu-badge', 'kniu-tag', 'kniu-status', 'kniu-empty', 'kniu-editor', 'kniu-navbar-cell',
-    'kniu-sub-navbar', 'kniu-navbar', 'kniu-backtop'
+    'kniu-sub-navbar', 'kniu-navbar', 'kniu-backtop', 'kniu-comment'
   ].forEach(installOptionsOnlyProtocol);
 
   return {

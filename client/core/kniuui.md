@@ -785,6 +785,59 @@ format 字母大小写不敏感，组件会在内部自动规范化：日期部�
 
 日期网格首行与星期栏分隔线保留间距；标记圆点仅在日期未选中时显示，标记日期进入单选高亮或范围起止高亮后自动隐藏圆点。
 
+## 评论组件 kniu-comment
+
+前台文章底部的评论留言组件，配置只通过 `kniu:options` 传入。
+
+```html
+<kniu-comment kniu:options="{{commentOptions}}" />
+```
+
+```js
+state.commentOptions = {
+  list: [],                          // 评论列表：{id,parentId,username,avatar,time,content,likes,liked}
+  placeholder: '请输入评论...',
+  submitText: '发表评论',
+  emptyText: '暂无评论，快来抢沙发吧！',
+  emojis: ['😀', '😄', ...],         // 可选，默认内置常用表情
+  currentUser: '游客',
+  onSubmit: async (detail) => { /* detail: {content, parentId} */ },
+  onLike: async (detail) => { /* detail: {commentId, liked} */ }
+};
+```
+
+| options 字段 | 说明 |
+| --- | --- |
+| `list` | 评论列表，每项含 `id`（评论ID）、`parentId`（回复的父评论ID，0 为顶层）、`username`、`avatar`（可选）、`time`、`content`、`likes`（点赞数）、`liked`（当前是否已赞） |
+| `placeholder` | 输入框占位文字 |
+| `submitText` | 提交按钮文字，默认“评论” |
+| `emptyText` | 空态提示文字 |
+| `emojis` | 表情面板内可选表情数组，默认内置 46 个常用表情 |
+| `currentUser` | 当前用户昵称，提交评论时作为 `name` 传给后端 |
+| `onSubmit` | 提交评论回调，`detail` 含 `content` 与 `parentId`（回复目标） |
+| `onLike` | 点赞/取消点赞回调，`detail` 含 `commentId` 与 `liked` |
+
+事件回调（`onSubmit`/`onLike`）由统一 options 协议映射为组件内部派发的 `submit`/`like` 事件，回调收到的 `detail` 即事件负载。
+
+### 下拉面板样式统一约定
+
+表情面板与分页下拉、日期选择器下拉使用同一套面板样式（本次已统一）：
+
+```css
+background-color: #fff;
+border: 1px solid #e4e7ed;
+border-radius: 4px;
+box-shadow: 0 2px 12px rgba(0,0,0,.1);
+```
+
+网格型面板（表情）额外声明 `overflow-y:auto; overflow-x:hidden`，去除横向滚动条。**以后凡新增这类下拉面板，样式一律对齐此基准。**
+
+### 组件实现要点（2026-09-01）
+
+- 必须定义本组件自己的 `options` accessor（存储到 `_options` 并触发 `_render`），否则 `installOptionsOnlyProtocol` 因无 `ownDescriptor.set` 会退回属性反射，`_options` 恒空、渲染不出内容——对齐 kniu-switch/kniu-select/kniu-date-picker 既有模式。
+- 必须把 `kniu-comment` 加入统一 options 协议组件清单，否则 `onSubmit`/`onLike` 事件回调不会绑定。
+- 后端返回的 `list` 项字段为 `{id, parentId, username, avatar, time, content, likes, liked}`；前端渲染时 `commentEscape()` 转义，后端已 `decodeFields` 一次，安全且显示正确。
+
 ## 默认导出
 
 ```js

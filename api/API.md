@@ -65,9 +65,19 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 
 ## 四、接口清单（当前注册于 `api/config/router.php`，均 POST）
 
-- 公共内容：`/getDaily`、`/getArticle`、`/getInfo`、`/getDetail`
+- 公共内容：`/getDaily`、`/getArticle`、`/getInfo`、`/getDetail`、`/getComments`、`/submitComment`、`/likeComment`
 - 会话与系统：`/logup`、`/logout`、`/captcha`、`/admin`、`/system`
 - 后台业务（需登录）：SEO、导航、每日内容、文章、角色的增删改查，以及 `/clearCache`
+
+### 评论接口（公开，POST）
+
+| 端点 | 入参 | 说明 |
+| --- | --- | --- |
+| `/getComments` | `article_id`（必填） | 返回该文章全部已展示评论（含回复，`parent_id` 区分），`is_show=1` 过滤，按 `id` 升序；`data` 为数组，每项 `{id,parentId,username,avatar,time,content,likes,liked}` |
+| `/submitComment` | `article_id`、`parent_id`、`name`、`message` | 提交评论或回复；`message` 写库前 `encodeFields` 转义，成功后返回 `{id}` |
+| `/likeComment` | `comment_id`、`liked`（bool） | 点赞（`true` 加 1）或取消（`false` 减 1，不低于 0），返回最新 `{likes}` |
+
+`tb_comment` 为前台评论表，`article_id` 关联 `tb_article.id`；`parent_id` 为 0 表示顶层评论，大于 0 表示对该评论的回复。`name`/`message` 走 HTML 编解码铁律。
 
 ## 五、新增接口
 

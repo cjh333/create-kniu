@@ -6,6 +6,9 @@ Router::post('/getDaily', 'IndexController@getDaily');
 Router::post('/getArticle', 'IndexController@getArticle');
 Router::post('/getInfo', 'IndexController@getInfo');
 Router::post('/getDetail', 'IndexController@getDetail');
+Router::post('/getComments', 'IndexController@getComments');
+Router::post('/submitComment', 'IndexController@submitComment');
+Router::post('/likeComment', 'IndexController@likeComment');
 // ------------------------------------------------------------------------------------------------
 // 登录。
 Router::post('/logup', 'AuthController@logup');
