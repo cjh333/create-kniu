@@ -2291,7 +2291,7 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this._value = '';
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;min-width:120px}.kniu_sys_select_wrap{position:relative;width:100%}.kniu_sys_select{display:flex;align-items:center;width:100%;height:40px;padding:0 34px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background:#fff;color:#606266;font:14px Arial,"Microsoft YaHei",sans-serif;cursor:pointer;box-sizing:border-box;white-space:nowrap}.kniu_sys_select:hover{border-color:#c0c4cc}.kniu_sys_select:focus-visible,.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select{border-color:#409eff}.kniu_sys_select:disabled{background:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_arrow{position:absolute;top:50%;right:12px;width:7px;height:7px;border-right:1px solid #909399;border-bottom:1px solid #909399;transform:translateY(-70%) rotate(45deg);transition:transform .2s;pointer-events:none}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_arrow{transform:translateY(-30%) rotate(225deg)}.kniu_sys_select_dropdown{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:10030;max-height:220px;overflow:auto;padding:5px 0;border:1px solid #e4e7ed;border-radius:4px;background:#fff;box-shadow:0 4px 14px rgba(0,0,0,.12);opacity:0;visibility:hidden;transform:translateY(-4px);transition:.16s}.kniu_sys_select_wrap[data-placement="top"] .kniu_sys_select_dropdown{top:auto;bottom:calc(100% + 6px);transform:translateY(4px)}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_dropdown{opacity:1;visibility:visible;transform:none}.kniu_sys_select_option{display:block;width:100%;height:32px;padding:0 12px;border:0;background:transparent;color:#606266;font:inherit;text-align:left;cursor:pointer}.kniu_sys_select_option:hover,.kniu_sys_select_option.is-selected{color:#409eff;background:#f5f7fa}.kniu_sys_select_option:disabled{color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_slot{display:none}</style><div class="kniu_sys_select_wrap" data-open="false" data-placement="bottom"><button type="button" class="kniu_sys_select" aria-haspopup="listbox" aria-expanded="false"></button><span class="kniu_sys_select_arrow" aria-hidden="true"></span><div class="kniu_sys_select_dropdown" role="listbox"></div></div><slot class="kniu_sys_select_slot"></slot>`;
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;min-width:120px}.kniu_sys_select_wrap{position:relative;width:100%}.kniu_sys_select{display:flex;align-items:center;width:100%;height:40px;padding:0 34px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background:#fff;color:#606266;font:14px Arial,"Microsoft YaHei",sans-serif;cursor:pointer;box-sizing:border-box;white-space:nowrap}.kniu_sys_select:hover{border-color:#c0c4cc}.kniu_sys_select:focus-visible,.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select{border-color:#409eff}.kniu_sys_select:disabled{background:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_arrow{position:absolute;top:50%;right:12px;width:7px;height:7px;border-right:1px solid #909399;border-bottom:1px solid #909399;transform:translateY(-70%) rotate(45deg);transition:transform .2s;pointer-events:none}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_arrow{transform:translateY(-30%) rotate(225deg)}.kniu_sys_select_dropdown{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:10030;max-height:220px;overflow:auto;padding:5px 0;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);opacity:0;visibility:hidden;transform:translateY(-4px);transition:.16s}.kniu_sys_select_wrap[data-placement="top"] .kniu_sys_select_dropdown{top:auto;bottom:calc(100% + 6px);transform:translateY(4px)}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_dropdown{opacity:1;visibility:visible;transform:none}.kniu_sys_select_option{display:block;width:100%;height:32px;padding:0 12px;border:0;background:transparent;color:#606266;font:inherit;text-align:left;cursor:pointer}.kniu_sys_select_option:hover,.kniu_sys_select_option.is-selected{color:#409eff;background:#f5f7fa}.kniu_sys_select_option:disabled{color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_slot{display:none}</style><div class="kniu_sys_select_wrap" data-open="false" data-placement="bottom"><button type="button" class="kniu_sys_select" aria-haspopup="listbox" aria-expanded="false"></button><span class="kniu_sys_select_arrow" aria-hidden="true"></span><div class="kniu_sys_select_dropdown" role="listbox"></div></div><slot class="kniu_sys_select_slot"></slot>`;
         this._wrap = this.shadowRoot.querySelector('.kniu_sys_select_wrap');
         this._select = this.shadowRoot.querySelector('.kniu_sys_select');
         this._dropdown = this.shadowRoot.querySelector('.kniu_sys_select_dropdown');
@@ -6406,6 +6406,233 @@ var KniuUI = (function () {
     customElements.define('kniu-backtop', KniuBacktop);
   }
 
+  function registerCommentComponent() {
+    if (typeof customElements === 'undefined' || customElements.get('kniu-comment')) return;
+    const documentRef = typeof document !== 'undefined' ? document : null;
+    if (!documentRef) return;
+
+    const COMMENT_DEFAULT_EMOJIS = ['😀', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😉', '😊', '😍', '😘', '😎', '🤔', '🤨', '😐', '😴', '😭', '😡', '👍', '👎', '👌', '✌️', '🤝', '👏', '💪', '🙏', '👀', '💡', '🔥', '⭐', '✨', '🎉', '❤️', '💔', '💯', '✅', '❌', '⚠️', '❓', '❗', '💬', '📌', '📝'];
+    const COMMENT_STYLE = `
+      :host{display:block;font-size:14px;color:#333;line-height:1.5}
+      .kniu_sys_comment{background:#fff;padding:16px;border-radius:4px}
+      .kniu_sys_comment_input_area{position:relative;margin-bottom:20px}
+      .kniu_sys_comment_textarea{width:100%;min-height:80px;padding:10px 12px;border:1px solid #dcdfe6;border-radius:4px;resize:vertical;font:inherit;box-sizing:border-box;outline:0}
+      .kniu_sys_comment_textarea:focus{border-color:#409eff}
+      .kniu_sys_comment_toolbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:10px}
+      .kniu_sys_comment_emoji_btn{background-color:#fff;border:1px solid #dcdfe6;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:18px;line-height:1;transition:border-color .2s}
+      .kniu_sys_comment_emoji_btn:hover{border-color:#409eff}
+      .kniu_sys_comment_submit{background-color:#28a745;color:#fff;border:0;border-radius:4px;padding:7px 20px;cursor:pointer;font-size:14px;transition:background-color .2s}
+      .kniu_sys_comment_submit:hover{background-color:#23903d}
+      .kniu_sys_comment_submit:disabled{background-color:#c0c4cc;cursor:not-allowed}
+      .kniu_sys_comment_emoji_panel{position:absolute;right:0;bottom:42px;width:260px;max-height:220px;overflow-y:auto;overflow-x:hidden;background-color:#fff;border:1px solid #e4e7ed;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1);padding:8px;z-index:10;display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+      .kniu_sys_comment_emoji_panel.kniu_sys_comment_hidden{display:none}
+      .kniu_sys_comment_emoji_item{background-color:#fff;border:1px solid transparent;border-radius:4px;padding:4px 2px;cursor:pointer;font-size:20px;text-align:center;line-height:1}
+      .kniu_sys_comment_emoji_item:hover{background-color:#f5f7fa;border-color:#dcdfe6}
+      .kniu_sys_comment_list{}
+      .kniu_sys_comment_empty{padding:40px 0;text-align:center;color:#909399;font-size:14px}
+      .kniu_sys_comment_item{display:flex;gap:12px;padding:16px 0;border-bottom:1px solid #ebeef5}
+      .kniu_sys_comment_item:last-child{border-bottom:0}
+      .kniu_sys_comment_avatar{width:40px;height:40px;border-radius:50%;overflow:hidden;flex-shrink:0;background-color:#e4e7ed;display:grid;place-items:center;color:#909399;font-size:14px}
+      .kniu_sys_comment_avatar img{width:100%;height:100%;object-fit:cover;display:block}
+      .kniu_sys_comment_body{flex:1;min-width:0}
+      .kniu_sys_comment_meta{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+      .kniu_sys_comment_username{color:#409eff;font-weight:500}
+      .kniu_sys_comment_time{color:#909399;font-size:12px}
+      .kniu_sys_comment_content{margin:6px 0;color:#606266;word-break:break-all}
+      .kniu_sys_comment_actions{display:flex;align-items:center;gap:8px;font-size:13px;color:#606266}
+      .kniu_sys_comment_action_sep{color:#dcdfe6}
+      .kniu_sys_comment_action_reply,.kniu_sys_comment_action_like{background-color:transparent;border:0;padding:0;color:#606266;cursor:pointer;font:inherit;display:flex;align-items:center;gap:4px;transition:color .2s}
+      .kniu_sys_comment_action_reply:hover,.kniu_sys_comment_action_like:hover{color:#409eff}
+      .kniu_sys_comment_action_like.kniu_sys_comment_liked{color:#f56c6c}
+      .kniu_sys_comment_like_icon{font-size:12px}
+      .kniu_sys_comment_reply_hint{padding:6px 10px;margin-bottom:8px;background-color:#f5f7fa;border-radius:4px;color:#606266;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+      .kniu_sys_comment_reply_hint button{background-color:transparent;border:0;color:#909399;cursor:pointer;font-size:16px;line-height:1}
+      .kniu_sys_comment_reply_hint button:hover{color:#f56c6c}
+    `;
+
+    function commentEscape(text) {
+      return String(text == null ? '' : text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    class KniuSysComment extends HTMLElement {
+      constructor() {
+        super();
+        attachComponentShadow(this);
+        this._options = {};
+        this._showEmoji = false;
+        this._replyId = null;
+        this._replyName = '';
+        this._closeEmojiHandler = null;
+      }
+      connectedCallback() { this._render(); }
+      attributeChangedCallback() {}
+      _render() {
+        const options = this._options || {};
+        const list = Array.isArray(options.list) ? options.list : [];
+        const placeholder = options.placeholder || 'Please enter a comment...';
+        const submitText = options.submitText || '评论';
+        const emojis = Array.isArray(options.emojis) ? options.emojis : COMMENT_DEFAULT_EMOJIS;
+        const emptyText = options.emptyText || '暂无评论，快来抢沙发吧！';
+        const currentUser = options.currentUser || null;
+        const canSubmit = typeof options.onSubmit === 'function' || true;
+
+        const htmlParts = ['<style>' + COMMENT_STYLE + '</style><div class="kniu_sys_comment">'];
+        // 输入区
+        htmlParts.push('<div class="kniu_sys_comment_input_area">');
+        if (this._replyId) {
+          htmlParts.push('<div class="kniu_sys_comment_reply_hint">回复 ' + commentEscape(this._replyName) + '...<button type="button" data-action="cancel-reply" title="取消回复">×</button></div>');
+        }
+        htmlParts.push('<textarea class="kniu_sys_comment_textarea" placeholder="' + commentEscape(placeholder) + '"></textarea>');
+        htmlParts.push('<div class="kniu_sys_comment_toolbar">');
+        htmlParts.push('<button type="button" class="kniu_sys_comment_emoji_btn" title="表情">😊</button>');
+        htmlParts.push('<button type="button" class="kniu_sys_comment_submit" type="button">' + commentEscape(submitText) + '</button>');
+        htmlParts.push('</div>');
+        htmlParts.push('<div class="kniu_sys_comment_emoji_panel' + (this._showEmoji ? '' : ' kniu_sys_comment_hidden') + '">');
+        emojis.forEach(function (emoji) {
+          htmlParts.push('<button type="button" class="kniu_sys_comment_emoji_item">' + emoji + '</button>');
+        });
+        htmlParts.push('</div>');
+        htmlParts.push('</div>');
+        // 评论列表
+        htmlParts.push('<div class="kniu_sys_comment_list">');
+        if (list.length === 0) {
+          htmlParts.push('<div class="kniu_sys_comment_empty">' + commentEscape(emptyText) + '</div>');
+        } else {
+          list.forEach(function (item) {
+            const username = item.username || '匿名';
+            const firstChar = String(username).charAt(0).toUpperCase();
+            htmlParts.push('<div class="kniu_sys_comment_item" data-id="' + commentEscape(item.id) + '">');
+            htmlParts.push('<div class="kniu_sys_comment_avatar">');
+            if (item.avatar) htmlParts.push('<img src="' + commentEscape(item.avatar) + '" alt="">');
+            else htmlParts.push('<div class="kniu_sys_comment_avatar_default">' + commentEscape(firstChar) + '</div>');
+            htmlParts.push('</div>');
+            htmlParts.push('<div class="kniu_sys_comment_body">');
+            htmlParts.push('<div class="kniu_sys_comment_meta">');
+            htmlParts.push('<span class="kniu_sys_comment_username">' + commentEscape(username) + '</span>');
+            htmlParts.push('<span class="kniu_sys_comment_time">' + commentEscape(item.time || '') + '</span>');
+            htmlParts.push('</div>');
+            htmlParts.push('<div class="kniu_sys_comment_content">' + commentEscape(item.content || '') + '</div>');
+            htmlParts.push('<div class="kniu_sys_comment_actions">');
+            htmlParts.push('<button type="button" class="kniu_sys_comment_action_reply">回复</button>');
+            htmlParts.push('<span class="kniu_sys_comment_action_sep">|</span>');
+            htmlParts.push('<button type="button" class="kniu_sys_comment_action_like' + (item.liked ? ' kniu_sys_comment_liked' : '') + '">');
+            htmlParts.push('<span class="kniu_sys_comment_like_icon">' + (item.liked ? '❤' : '♡') + '</span>');
+            htmlParts.push('<span>' + (Number(item.likes) || 0) + '</span>');
+            htmlParts.push('</button>');
+            htmlParts.push('</div>');
+            htmlParts.push('</div>');
+            htmlParts.push('</div>');
+          });
+        }
+        htmlParts.push('</div>');
+        htmlParts.push('</div>');
+        this.shadowRoot.innerHTML = htmlParts.join('');
+        this._bindEvents();
+      }
+      _bindEvents() {
+        const self = this;
+        const root = this.shadowRoot;
+        const documentRefLocal = this.ownerDocument || document;
+        if (!root) return;
+
+        const textarea = root.querySelector('.kniu_sys_comment_textarea');
+        const emojiBtn = root.querySelector('.kniu_sys_comment_emoji_btn');
+        const emojiPanel = root.querySelector('.kniu_sys_comment_emoji_panel');
+        const submitBtn = root.querySelector('.kniu_sys_comment_submit');
+
+        if (emojiBtn && emojiPanel) {
+          emojiBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            self._showEmoji = !self._showEmoji;
+            emojiPanel.classList.toggle('kniu_sys_comment_hidden', !self._showEmoji);
+          });
+          // 全局点击关闭 emoji 面板
+          if (this._closeEmojiHandler) documentRefLocal.removeEventListener('click', this._closeEmojiHandler);
+          this._closeEmojiHandler = function (e) {
+            if (!self.isConnected) return;
+            const path = e.composedPath?.() || [];
+            if (!path.includes(emojiBtn) && !path.includes(emojiPanel)) {
+              self._showEmoji = false;
+              emojiPanel.classList.add('kniu_sys_comment_hidden');
+            }
+          };
+          documentRefLocal.addEventListener('click', this._closeEmojiHandler);
+        }
+
+        root.querySelectorAll('.kniu_sys_comment_emoji_item').forEach(function (btn) {
+          btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (textarea) {
+              textarea.value += btn.textContent;
+              textarea.focus();
+            }
+            self._showEmoji = false;
+            emojiPanel?.classList.add('kniu_sys_comment_hidden');
+          });
+        });
+
+        if (submitBtn && textarea) {
+          submitBtn.addEventListener('click', function () {
+            const content = String(textarea.value || '').trim();
+            if (!content) return;
+            self._dispatch('submit', { content: content, parentId: self._replyId });
+            textarea.value = '';
+            self._replyId = null;
+            self._replyName = '';
+            self._render();
+          });
+        }
+
+        const cancelReplyBtn = root.querySelector('[data-action="cancel-reply"]');
+        if (cancelReplyBtn && textarea) {
+          cancelReplyBtn.addEventListener('click', function () {
+            self._replyId = null;
+            self._replyName = '';
+            self._render();
+          });
+        }
+
+        root.querySelectorAll('.kniu_sys_comment_action_reply').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const item = btn.closest('.kniu_sys_comment_item');
+            if (!item || !textarea) return;
+            const id = item.dataset.id;
+            const usernameEl = item.querySelector('.kniu_sys_comment_username');
+            self._replyId = id || null;
+            self._replyName = usernameEl ? usernameEl.textContent : '';
+            self._render();
+          });
+        });
+
+        root.querySelectorAll('.kniu_sys_comment_action_like').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const item = btn.closest('.kniu_sys_comment_item');
+            if (!item) return;
+            const id = item.dataset.id;
+            if (!id) return;
+            const liked = btn.classList.contains('kniu_sys_comment_liked');
+            self._dispatch('like', { commentId: id, liked: !liked });
+          });
+        });
+      }
+      _dispatch(name, detail) {
+        this.dispatchEvent(new CustomEvent(name, { detail: detail, bubbles: true, composed: true }));
+      }
+      disconnectedCallback() {
+        if (this._closeEmojiHandler) {
+          (this.ownerDocument || document).removeEventListener('click', this._closeEmojiHandler);
+          this._closeEmojiHandler = null;
+        }
+      }
+    }
+    customElements.define('kniu-comment', KniuSysComment);
+  }
+
   function registerIcons(set) {
     Object.keys(set || {}).forEach(function (name) {
       registerIconGlyph(name, set[name]);
@@ -6523,6 +6750,7 @@ var KniuUI = (function () {
   registerEditorComponent();
   registerNavbarComponent();
   registerBacktopComponent();
+  registerCommentComponent();
   registerIcons(KNIU_ICON_SET);
   [
     'kniu-btn', 'kniu-switch', 'kniu-modal', 'kniu-table', 'kniu-table-col', 'kniu-loading', 'kniu-msg',
