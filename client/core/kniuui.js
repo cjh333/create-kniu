@@ -988,7 +988,7 @@ var KniuUI = (function () {
         }
         const numericValue = Number.isFinite(Number(input.value)) ? Number(input.value) : 0;
         const nextValue = editMode === 'number'
-          ? Math.max(column.editMin ?? Number.NEGATIVE_INFINITY, numericValue)
+          ? Math.max(column.editMin ?? 0, numericValue)
           : input.value;
         if (String(nextValue) === String(oldValue)) {
           render();
