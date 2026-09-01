@@ -59,6 +59,26 @@ class IndexController extends Controller
       }
 
       $result = $this->decodeFields($result, ['title', 'subtitle', 'summary', 'content']);
+      $previous = Db::name('tb_article')
+        ->where('is_show', '=', 1)
+        ->where('id', '<', $id)
+        ->order('id', 'desc')
+        ->find();
+      $next = Db::name('tb_article')
+        ->where('is_show', '=', 1)
+        ->where('id', '>', $id)
+        ->order('id', 'asc')
+        ->find();
+      $previous = $this->decodeFields($previous, ['title']);
+      $next = $this->decodeFields($next, ['title']);
+      $result[0]['previous'] = $previous ? [
+        'id' => (int)$previous['id'],
+        'title' => $previous['title'] ?: ''
+      ] : null;
+      $result[0]['next'] = $next ? [
+        'id' => (int)$next['id'],
+        'title' => $next['title'] ?: ''
+      ] : null;
       $this->json($result[0]);
       return;
     } catch (\Exception $e) {
@@ -178,6 +198,31 @@ class IndexController extends Controller
       $next = $liked ? ((int)$current + 1) : max(0, (int)$current - 1);
       Db::name('tb_comment')->where('id', '=', $commentId)->update(['likes' => $next]);
 
+      $this->json(['likes' => (int)$next], '操作成功', 1);
+    } catch (\Exception $e) {
+      $this->json([], '点赞失败', 0);
+    }
+  }
+
+  /** 文章点赞或取消点赞，返回服务端最新计数。 */
+  public function likeArticle(): void
+  {
+    $articleId = $this->input('post.article_id/d', 0);
+    $liked = $this->input('post.liked/b', true);
+
+    if ($articleId <= 0) {
+      $this->json([], '文章ID参数错误', 0);
+      return;
+    }
+
+    try {
+      $current = Db::name('tb_article')->where('id', '=', $articleId)->value('likes');
+      if ($current === null) {
+        $this->json([], '文章不存在', 0);
+        return;
+      }
+      $next = $liked ? ((int)$current + 1) : max(0, (int)$current - 1);
+      Db::name('tb_article')->where('id', '=', $articleId)->update(['likes' => $next]);
       $this->json(['likes' => (int)$next], '操作成功', 1);
     } catch (\Exception $e) {
       $this->json([], '点赞失败', 0);

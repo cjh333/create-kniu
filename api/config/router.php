@@ -9,6 +9,7 @@ Router::post('/getDetail', 'IndexController@getDetail');
 Router::post('/getComments', 'IndexController@getComments');
 Router::post('/submitComment', 'IndexController@submitComment');
 Router::post('/likeComment', 'IndexController@likeComment');
+Router::post('/likeArticle', 'IndexController@likeArticle');
 // ------------------------------------------------------------------------------------------------
 // 登录。
 Router::post('/logup', 'AuthController@logup');

@@ -65,7 +65,7 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 
 ## 四、接口清单（当前注册于 `api/config/router.php`，均 POST）
 
-- 公共内容：`/getDaily`、`/getArticle`、`/getInfo`、`/getDetail`、`/getComments`、`/submitComment`、`/likeComment`
+- 公共内容：`/getDaily`、`/getArticle`、`/getInfo`、`/getDetail`、`/getComments`、`/submitComment`、`/likeComment`、`/likeArticle`
 - 会话与系统：`/logup`、`/logout`、`/captcha`、`/admin`、`/system`
 - 后台业务（需登录）：SEO、导航、每日内容、文章、角色、评论管理的增删改查，以及 `/clearCache`
 
@@ -76,6 +76,9 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 | `/getComments` | `article_id`（必填） | 返回该文章全部**已审核**评论（含回复，`parent_id` 区分），`is_show=1` 过滤，按 `id` 升序；`data` 为数组，每项 `{id,parentId,username,avatar,time,content,likes,liked}` |
 | `/submitComment` | `article_id`、`parent_id`、`name`、`message` | 提交评论或回复，**提交即待审核（`is_show=0`）**，后台审核通过（`is_show=1`）后才在 `/getComments` 显示；`message` 写库前 `encodeFields` 转义，成功后返回 `{id}` |
 | `/likeComment` | `comment_id`、`liked`（bool） | 点赞（`true` 加 1）或取消（`false` 减 1，不低于 0），返回最新 `{likes}` |
+| `/likeArticle` | `article_id`、`liked`（bool） | 文章点赞（`true` 加 1）或取消（`false` 减 1，不低于 0），返回最新 `{likes}`；`tb_article.likes` 默认 0 |
+
+`/getDetail` 除文章字段外还返回 `previous` 和 `next`，有相邻已显示文章时为 `{id,title}`，没有时为 `null`。相邻顺序按文章 `id`，并过滤 `is_show=1`。
 
 ### 评论管理接口（后台，POST，需登录）
 

@@ -18,6 +18,327 @@ var KniuUI = (function () {
   var KNIU_CONTAIN_EXCLUDE_TAGS = { 'KNIU-TABLE': 1, 'KNIU-NAVBAR': 1, 'KNIU-MODAL': 1, 'KNIU-DATE-PICKER': 1 };
   function shouldContainHost(tag) { return !KNIU_CONTAIN_EXCLUDE_TAGS[String(tag || '').toUpperCase()]; }
 
+  // ==== 双语配置基础（locale 文案字典 + 翻译工具）====
+  // 所有组件内置文案统一从 KNIU_I18N 读取，支持 lang='cn'|'en'（默认 cn，向后兼容）。
+  // 键采用扁平命名空间「组件.具体键」，带参数用 {n} 占位（n 从 1 起）。
+  var KNIU_I18N = {
+    cn: {
+      'common.ok': '确定',
+      'common.cancel': '取消',
+      'common.delete': '删除',
+      'common.back': '返回',
+      'common.submit': '提交',
+      'common.search': '搜索',
+      'common.confirm': '确认',
+      'common.save': '保存',
+      'common.loading': '加载中...',
+      'common.empty': '暂无数据',
+      'common.noMore': '没有更多了',
+      'common.auto': '自动',
+      'common.rows': '行',
+      'common.cols': '列',
+      'common.width': '宽度',
+      'common.height': '高度',
+      'common.sourceType': '来源类型',
+      'common.cloud': '云媒体',
+      'common.localUpload': '本地上传',
+      'common.mediaName': '媒体名称',
+      'common.mediaUrl': '媒体地址',
+      'common.localFile': '本地文件',
+      'common.lockRatio': '锁定宽高比',
+      'common.scale': '缩放',
+      'common.chooseLocalFile': '请选择需要上传的本地文件',
+
+      'editor.undo': '撤销',
+      'editor.redo': '重做',
+      'editor.preview': '预览',
+      'editor.print': '打印',
+      'editor.codeMode': '代码模式',
+      'editor.maximize': '最大化/还原',
+      'editor.bold': '加粗',
+      'editor.italic': '斜体',
+      'editor.underline': '下划线',
+      'editor.strikeThrough': '删除线',
+      'editor.subscript': '下标',
+      'editor.superscript': '上标',
+      'editor.justifyLeft': '左对齐',
+      'editor.justifyCenter': '居中',
+      'editor.justifyRight': '右对齐',
+      'editor.justifyFull': '两端对齐',
+      'editor.indent': '增加缩进',
+      'editor.outdent': '减少缩进',
+      'editor.insertOrderedList': '有序列表',
+      'editor.insertUnorderedList': '无序列表',
+      'editor.lineheight': '行距',
+      'editor.h1': '标题1',
+      'editor.h2': '标题2',
+      'editor.h3': '标题3',
+      'editor.p': '段落',
+      'editor.blockquote': '引用',
+      'editor.pre': '代码块',
+      'editor.hr': '分割线',
+      'editor.table': '表格',
+      'editor.fontname': '字体',
+      'editor.fontsize': '字号',
+      'editor.forecolor': '文字颜色',
+      'editor.hilitecolor': '文字背景',
+      'editor.link': '链接',
+      'editor.unlink': '取消链接',
+      'editor.image': '插入图片',
+      'editor.media': '插入音视频',
+      'editor.emoticons': '表情',
+      'editor.removeFormat': '清除格式',
+      'editor.clearhtml': '清理HTML',
+      'editor.selectAll': '全选',
+      'editor.chooseFont': '选择字体',
+      'editor.chooseSize': '选择字号',
+      'editor.insertTable': '插入表格',
+      'editor.tableRows': '行数',
+      'editor.tableCols': '列数',
+      'editor.insertLink': '插入链接',
+      'editor.linkUrl': '链接地址',
+      'editor.linkText': '链接文字',
+      'editor.enterLinkText': '请输入链接文字',
+      'editor.enterLinkUrl': '请输入链接地址',
+      'editor.enterLinkUrlSafe': '请输入安全有效的链接地址',
+      'editor.widthHeightRange': '宽度和高度必须在 1 至 5000px 之间',
+      'editor.insertImage': '插入图片',
+      'editor.imageUrl': '图片地址',
+      'editor.localImage': '本地图片',
+      'editor.insertMedia': '插入音视频',
+      'editor.mediaType': '媒体类型',
+      'editor.video': '视频',
+      'editor.audio': '音频',
+      'editor.editImage': '编辑图片',
+      'editor.editVideo': '编辑视频',
+      'editor.editAudio': '编辑音频',
+      'editor.deleteImage': '删除图片',
+      'editor.deleteVideo': '删除视频',
+      'editor.deleteAudio': '删除音频',
+      'editor.deleteConfirm': '确定要从文章正文中删除当前{1}吗？',
+      'editor.deleteMediaBtn': '确定删除',
+      'editor.enterMediaUrl': '请输入媒体地址',
+      'editor.enterMediaName': '请输入媒体名称',
+      'editor.enterImageUrl': '请输入安全有效的图片地址',
+      'editor.enterMediaUrlSafe': '请输入安全有效的媒体地址',
+      'editor.mediaUploadFail': '媒体文件上传失败',
+      'editor.mediaUploadRetry': '媒体文件上传失败，请稍后重试',
+
+      'modal.title': '提示',
+      'modal.close': '关闭',
+      'modal.cancel': '取消',
+      'modal.ok': '确定',
+
+      'table.actions': '操作',
+      'table.empty': '暂无数据',
+
+      'loading.aria': '加载中',
+
+      'pagination.error': '加载失败',
+
+      'image.loading': '加载中…',
+      'image.error': '加载失败',
+      'image.empty': '暂无图片',
+
+      'input.clear': '清空输入内容',
+      'input.hidePassword': '隐藏密码',
+      'input.showPassword': '显示密码',
+
+      'upload.select': '选择图片',
+      'upload.empty': '暂无图片',
+      'upload.uploaded': '已上传图片',
+      'upload.deleteAria': '删除 {1}',
+      'upload.tooLarge': '{1} 超过单张 {2}M 的限制',
+      'upload.selectedCount': '已选择 {1} 张图片',
+      'upload.selectPreview': '选择图片可以预览（最多 {1} 张）',
+      'upload.selectPreviewSingle': '选择图片可以预览',
+      'upload.maxCount': '最多只能选择 {1} 张图片',
+
+      'navbar.menu': '菜单',
+      'navbar.primary': '主导航',
+      'navbar.expand': '展开导航',
+      'navbar.collapse': '收起导航',
+      'navbar.home': '首页',
+
+      'backtop.aria': '返回顶部',
+
+      'comment.title': '评论',
+      'comment.empty': '暂无评论，快来抢沙发吧！',
+      'comment.replyTo': '回复 ',
+      'comment.cancelReply': '取消回复',
+      'comment.emoji': '表情',
+      'comment.anonymous': '匿名',
+      'comment.reply': '回复',
+      'comment.delete': '删除评论'
+    },
+    en: {
+      'common.ok': 'OK',
+      'common.cancel': 'Cancel',
+      'common.delete': 'Delete',
+      'common.back': 'Back',
+      'common.submit': 'Submit',
+      'common.search': 'Search',
+      'common.confirm': 'Confirm',
+      'common.save': 'Save',
+      'common.loading': 'Loading...',
+      'common.empty': 'No data',
+      'common.noMore': 'No more',
+      'common.auto': 'Auto',
+      'common.rows': 'Rows',
+      'common.cols': 'Columns',
+      'common.width': 'Width',
+      'common.height': 'Height',
+      'common.sourceType': 'Source',
+      'common.cloud': 'Cloud',
+      'common.localUpload': 'Local upload',
+      'common.mediaName': 'Media name',
+      'common.mediaUrl': 'Media URL',
+      'common.localFile': 'Local file',
+      'common.lockRatio': 'Lock aspect ratio',
+      'common.scale': 'Scale',
+      'common.chooseLocalFile': 'Please choose a local file to upload',
+
+      'editor.undo': 'Undo',
+      'editor.redo': 'Redo',
+      'editor.preview': 'Preview',
+      'editor.print': 'Print',
+      'editor.codeMode': 'Code mode',
+      'editor.maximize': 'Maximize / Restore',
+      'editor.bold': 'Bold',
+      'editor.italic': 'Italic',
+      'editor.underline': 'Underline',
+      'editor.strikeThrough': 'Strikethrough',
+      'editor.subscript': 'Subscript',
+      'editor.superscript': 'Superscript',
+      'editor.justifyLeft': 'Align left',
+      'editor.justifyCenter': 'Align center',
+      'editor.justifyRight': 'Align right',
+      'editor.justifyFull': 'Justify',
+      'editor.indent': 'Increase indent',
+      'editor.outdent': 'Decrease indent',
+      'editor.insertOrderedList': 'Ordered list',
+      'editor.insertUnorderedList': 'Unordered list',
+      'editor.lineheight': 'Line height',
+      'editor.h1': 'Heading 1',
+      'editor.h2': 'Heading 2',
+      'editor.h3': 'Heading 3',
+      'editor.p': 'Paragraph',
+      'editor.blockquote': 'Quote',
+      'editor.pre': 'Code block',
+      'editor.hr': 'Divider',
+      'editor.table': 'Table',
+      'editor.fontname': 'Font',
+      'editor.fontsize': 'Font size',
+      'editor.forecolor': 'Text color',
+      'editor.hilitecolor': 'Text highlight',
+      'editor.link': 'Link',
+      'editor.unlink': 'Unlink',
+      'editor.image': 'Insert image',
+      'editor.media': 'Insert media',
+      'editor.emoticons': 'Emoticons',
+      'editor.removeFormat': 'Clear format',
+      'editor.clearhtml': 'Clean HTML',
+      'editor.selectAll': 'Select all',
+      'editor.chooseFont': 'Choose font',
+      'editor.chooseSize': 'Choose font size',
+      'editor.insertTable': 'Insert table',
+      'editor.tableRows': 'Rows',
+      'editor.tableCols': 'Columns',
+      'editor.insertLink': 'Insert link',
+      'editor.linkUrl': 'Link URL',
+      'editor.linkText': 'Link text',
+      'editor.enterLinkText': 'Enter link text',
+      'editor.enterLinkUrl': 'Enter a link URL',
+      'editor.enterLinkUrlSafe': 'Enter a safe valid link URL',
+      'editor.widthHeightRange': 'Width and height must be between 1 and 5000px',
+      'editor.insertImage': 'Insert image',
+      'editor.imageUrl': 'Image URL',
+      'editor.localImage': 'Local image',
+      'editor.insertMedia': 'Insert media',
+      'editor.mediaType': 'Media type',
+      'editor.video': 'Video',
+      'editor.audio': 'Audio',
+      'editor.editImage': 'Edit image',
+      'editor.editVideo': 'Edit video',
+      'editor.editAudio': 'Edit audio',
+      'editor.deleteImage': 'Delete image',
+      'editor.deleteVideo': 'Delete video',
+      'editor.deleteAudio': 'Delete audio',
+      'editor.deleteConfirm': 'Remove this {1} from the article body?',
+      'editor.deleteMediaBtn': 'Delete',
+      'editor.enterMediaUrl': 'Enter media URL',
+      'editor.enterMediaName': 'Enter media name',
+      'editor.enterImageUrl': 'Enter a safe valid image URL',
+      'editor.enterMediaUrlSafe': 'Enter a safe valid media URL',
+      'editor.mediaUploadFail': 'Media upload failed',
+      'editor.mediaUploadRetry': 'Media upload failed, please try again later',
+
+      'modal.title': 'Notice',
+      'modal.close': 'Close',
+      'modal.cancel': 'Cancel',
+      'modal.ok': 'OK',
+
+      'table.actions': 'Actions',
+      'table.empty': 'No data',
+
+      'loading.aria': 'Loading',
+
+      'pagination.error': 'Failed to load',
+
+      'image.loading': 'Loading...',
+      'image.error': 'Failed to load',
+      'image.empty': 'No image',
+
+      'input.clear': 'Clear input',
+      'input.hidePassword': 'Hide password',
+      'input.showPassword': 'Show password',
+
+      'upload.select': 'Select image',
+      'upload.empty': 'No image',
+      'upload.uploaded': 'Uploaded image',
+      'upload.deleteAria': 'Delete {1}',
+      'upload.tooLarge': '{1} exceeds the {2}M limit',
+      'upload.selectedCount': '{1} image(s) selected',
+      'upload.selectPreview': 'Select images to preview (up to {1})',
+      'upload.selectPreviewSingle': 'Select an image to preview',
+      'upload.maxCount': 'You can select at most {1} image(s)',
+
+      'navbar.menu': 'Menu',
+      'navbar.primary': 'Primary nav',
+      'navbar.expand': 'Expand nav',
+      'navbar.collapse': 'Collapse nav',
+      'navbar.home': 'Home',
+
+      'backtop.aria': 'Back to top',
+
+      'comment.title': 'Comments',
+      'comment.empty': 'No comments yet, be the first to comment!',
+      'comment.replyTo': 'Reply to ',
+      'comment.cancelReply': 'Cancel reply',
+      'comment.emoji': 'Emoticons',
+      'comment.anonymous': 'Anonymous',
+      'comment.reply': 'Reply',
+      'comment.delete': 'Delete comment'
+    }
+  };
+
+  // 读取组件 options 的 lang：默认 cn，不区分大小写，'en'/'english' 视为英文。
+  function componentLang(options) {
+    var v = options && options.lang != null ? options.lang : 'cn';
+    return String(v).toLowerCase() === 'en' ? 'en' : 'cn';
+  }
+
+  // 翻译工具：key 缺失时回退中文，再缺失返回 key 本身；支持 {1}/{2} 占位替换。
+  function componentText(lang, key, params) {
+    var dict = KNIU_I18N[lang] || KNIU_I18N.cn;
+    var text = dict[key];
+    if (text == null) text = KNIU_I18N.cn[key] != null ? KNIU_I18N.cn[key] : key;
+    if (params && Object.keys(params).length) {
+      for (var k in params) text = String(text).replace(new RegExp('\\{' + k + '\\}', 'g'), String(params[k]));
+    }
+    return text;
+  }
+
   function supportsAdoptedStyleSheets(root) {
     if (globalThis.__KNIU_NO_SHARED_SHEETS) return false;
     return typeof CSSStyleSheet === 'function'
@@ -365,7 +686,7 @@ var KniuUI = (function () {
     loadingMask.className = 'kniu_sys_table_loading';
     loadingMask.setAttribute('data-active', String(!!options.loading));
     loadingMask.setAttribute('role', 'status');
-    loadingMask.setAttribute('aria-label', '加载中');
+    loadingMask.setAttribute('aria-label', componentText(componentLang(options), 'loading.aria'));
     const loadingSpinner = documentRef.createElement('span');
     loadingSpinner.className = 'kniu_sys_table_loading_spinner';
     loadingMask.appendChild(loadingSpinner);
@@ -587,7 +908,7 @@ var KniuUI = (function () {
           button.dataset.actionIndex = String(actionIndex);
           button.textContent = typeof action.title === 'function'
             ? String(action.title(row, rowIndex))
-            : String(action.title || '操作');
+            : String(action.title || componentText(componentLang(options), 'table.actions'));
           cell.append(button);
         });
         return;
@@ -700,7 +1021,7 @@ var KniuUI = (function () {
         button.dataset.actionIndex = String(actionIndex);
         const title = typeof action.title === 'function'
           ? String(action.title(row, rowIndex))
-          : String(action.title || '操作');
+          : String(action.title || componentText(componentLang(options), 'table.actions'));
         if (button.textContent !== title) button.textContent = title;
         cursor += 1;
       });
@@ -800,7 +1121,7 @@ var KniuUI = (function () {
         emptyCell.textContent = '';
         emptyRow.style.display = 'none';
       } else {
-        emptyCell.textContent = options.emptyText || '暂无数据';
+        emptyCell.textContent = options.emptyText || componentText(componentLang(options), 'table.empty');
       }
       emptyRow.append(emptyCell);
       return emptyRow;
@@ -1732,15 +2053,18 @@ var KniuUI = (function () {
         const c = this.shadowRoot.querySelector('.kniu_modal_cancel');
         const cf = this.shadowRoot.querySelector('.kniu_modal_confirm');
         const close = this.shadowRoot.querySelector('.kniu_modal_close');
-        if (t) t.textContent = this.title || '提示';
+        if (t) t.textContent = this.title || componentText(componentLang(this.__kniuOptions), 'modal.title');
         if (m) m.textContent = this.message || '';
         if (i) { i.textContent = ICON[type]; i.style.color = COLOR[type]; }
-        if (c) c.textContent = this.cancelText || '取消';
-        if (cf) cf.textContent = this.confirmText || '确定';
+        if (c) c.textContent = this.cancelText || componentText(componentLang(this.__kniuOptions), 'modal.cancel');
+        if (cf) cf.textContent = this.confirmText || componentText(componentLang(this.__kniuOptions), 'modal.ok');
         if (close) close.style.display = this.getAttribute('show-close') === 'false' ? 'none' : '';
+        if (close) close.setAttribute('aria-label', componentText(componentLang(this.__kniuOptions), 'modal.close'));
       }
       _confirm() { this.dispatchEvent(new CustomEvent('confirm', { bubbles: true, composed: true })); this.show = false; }
       _cancel() { this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true })); this.show = false; }
+      // options 变化（含 lang）时重填确认框文案，支持运行中动态切换。
+      _sync() { if (this._confirmMode && this.shadowRoot) this._fillConfirm(); }
       _onEscape() {
         if (!this.show) return;
         if (this._confirmMode) this._cancel();
@@ -1855,12 +2179,14 @@ var KniuUI = (function () {
       // 旧 attribute 一律作废。options 对象整体替换即触发刷新（响应式通知 + 本 setter）。
       set options(value) {
         const opts = value && typeof value === 'object' ? value : {};
+        const langChanged = Object.hasOwn(opts, 'lang') && componentLang(opts) !== componentLang(this._config);
         if (!this._config) this._config = {};
         this._config = { ...this._config, ...opts };
         if (Object.hasOwn(opts, 'loading')) this._loading = !!opts.loading;
         if (Object.hasOwn(opts, 'loadingText')) this._loadingText = opts.loadingText == null ? '' : String(opts.loadingText);
         if (this._table) this._table.setLoading(this._loading, this._loadingText);
         if (this._table && Object.hasOwn(opts, 'maxHeight')) this._table.setMaxHeight(opts.maxHeight);
+        if (langChanged) { this._queueRender(); this._clearColumnDefinitions(); return; }
         if (Array.isArray(opts.data)) {
           if (this._table) {
             // 列模板 content 内 switch 的 kniu:options 在 applyBindings 同步块内才写入 expando，
@@ -2079,10 +2405,11 @@ var KniuUI = (function () {
           showHeader: cfg.showHeader !== false,
           highlightCurrentRow: cfg.highlightCurrentRow === true,
           rowKey: cfg.rowKey || '',
-          emptyText: cfg.emptyText ?? '暂无数据',
+          emptyText: cfg.emptyText ?? componentText(componentLang(this.options), 'table.empty'),
           emptySlot: !!this.querySelector('[slot="empty"]'),
           loading: this._loading,
           loadingText: this._loadingText,
+          lang: componentLang(this.options),
           el: this.shadowRoot
         });
       }
@@ -2750,7 +3077,7 @@ var KniuUI = (function () {
           this.dispatchEvent(new Event('load', { bubbles: true, composed: true }));
         });
         this._image.addEventListener('error', () => {
-          this._status.textContent = '加载失败';
+          this._status.textContent = componentText(componentLang(this.__kniuOptions), 'image.error');
           this._status.dataset.hidden = 'false';
           this.dispatchEvent(new Event('error', { bubbles: true, composed: true }));
         });
@@ -2792,12 +3119,12 @@ var KniuUI = (function () {
         this._image.style.objectFit = this._fit;
         if (!src) {
           this._image.removeAttribute('src');
-          this._status.textContent = '暂无图片';
+          this._status.textContent = componentText(componentLang(this.__kniuOptions), 'image.empty');
           this._status.dataset.hidden = 'false';
           return;
         }
         if (this._image.src !== src) {
-          this._status.textContent = '加载中…';
+          this._status.textContent = componentText(componentLang(this.__kniuOptions), 'image.loading');
           this._status.dataset.hidden = 'false';
           this._image.src = src;
         }
@@ -3025,8 +3352,9 @@ var KniuUI = (function () {
           this._passwordButton.innerHTML = this._passwordVisible
             ? '<svg class="kniu_sys_input_password_icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z"></path><circle cx="12" cy="12" r="2.5"></circle></svg>'
             : '<svg class="kniu_sys_input_password_icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"></path><path d="M10.6 10.7a2 2 0 0 0 2.7 2.7"></path><path d="M9.9 4.2A10.8 10.8 0 0 1 12 4c5.5 0 9 8 9 8a16.8 16.8 0 0 1-2.1 3.2"></path><path d="M6.2 6.2C4.1 7.7 3 12 3 12s3.5 8 9 8a10.2 10.2 0 0 0 4-.8"></path></svg>';
-          this._passwordButton.setAttribute('aria-label', this._passwordVisible ? '隐藏密码' : '显示密码');
+          this._passwordButton.setAttribute('aria-label', componentText(componentLang(this.__kniuOptions), this._passwordVisible ? 'input.hidePassword' : 'input.showPassword'));
           this._wrap.dataset.clearable = String(this.hasAttribute('clearable'));
+          if (this._clearButton) this._clearButton.setAttribute('aria-label', componentText(componentLang(this.__kniuOptions), 'input.clear'));
           ['name', 'placeholder', 'autocomplete', 'maxlength'].forEach((name) => {
             const value = this.getAttribute(name);
             if (value == null) this._input.removeAttribute(name);
@@ -3301,7 +3629,13 @@ var KniuUI = (function () {
       _sync() {
         const name = this._options.name;
         if (name == null) this._input.removeAttribute('name'); else this._input.name = name;
-        this._input.placeholder = this._options.placeholder || (this._options.range === true ? '请选择开始和结束时间' : (this._options.type === 'datetime' ? '请选择日期时间' : (this._options.type === 'time' ? '请选择时间' : '请选择日期')));
+        const pickerLang = String(this._options.lang || 'cn').toLowerCase() === 'en';
+        const defaultPlaceholder = this._options.range === true
+          ? (pickerLang ? 'Select start and end time' : '请选择开始和结束时间')
+          : (this._options.type === 'datetime' ? (pickerLang ? 'Select date and time' : '请选择日期时间')
+            : (this._options.type === 'time' ? (pickerLang ? 'Select time' : '请选择时间')
+              : (pickerLang ? 'Select date' : '请选择日期')));
+        this._input.placeholder = this._options.placeholder || defaultPlaceholder;
         this._input.disabled = this._options.disabled === true;
         this._input.required = this._options.required === true;
         if (this._options.disabled === true || this._options.readonly === true) this._close();
@@ -4143,7 +4477,7 @@ var KniuUI = (function () {
         const limits = this._limits();
         const valid = selected.filter((file) => {
           if (file.size <= limits.bytes) return true;
-          this._notice(`${file.name} 超过单张 ${this.getAttribute('max-size')}M 的限制`, 'error');
+          this._notice(componentText(componentLang(this.__kniuOptions), 'upload.tooLarge', { '1': file.name, '2': this.getAttribute('max-size') }), 'error');
           return false;
         });
         if (!this.hasAttribute('multiple')) {
@@ -4159,7 +4493,7 @@ var KniuUI = (function () {
         }
         const room = Math.max(0, limits.count - this._files.length);
         if (valid.length > room) {
-          this._notice(`最多只能选择 ${limits.count} 张图片`, 'warning');
+          this._notice(componentText(componentLang(this.__kniuOptions), 'upload.maxCount', { '1': limits.count }), 'warning');
           this.dispatchEvent(new CustomEvent('exceed', { detail: { files: valid, maxCount: limits.count }, bubbles: true, composed: true }));
         }
         this._files.push(...valid.slice(0, room));
@@ -4189,7 +4523,8 @@ var KniuUI = (function () {
           const image = document.createElement('img');
           image.className = 'kniu_upload_image';
           const isStoredImage = typeof file === 'string';
-          image.alt = isStoredImage ? '已上传图片' : file.name;
+          const uploadT = (k, p) => componentText(componentLang(this.__kniuOptions), k, p);
+          image.alt = isStoredImage ? uploadT('upload.uploaded') : file.name;
           let url = isStoredImage ? file : this._objectUrls.get(file);
           if (!url && !isStoredImage) {
             url = URL.createObjectURL(file);
@@ -4201,7 +4536,7 @@ var KniuUI = (function () {
           remove.type = 'button';
           remove.disabled = this.hasAttribute('disabled');
           remove.dataset.index = String(index);
-          remove.setAttribute('aria-label', `删除 ${isStoredImage ? '已上传图片' : file.name}`);
+          remove.setAttribute('aria-label', uploadT('upload.deleteAria', { '1': isStoredImage ? uploadT('upload.uploaded') : file.name }));
           remove.textContent = '×';
           item.append(image, remove);
           return item;
@@ -4209,8 +4544,8 @@ var KniuUI = (function () {
         if (previews.length === 0) {
           const empty = document.createElement('div');
           empty.className = 'kniu_upload_item kniu_upload_empty';
-          empty.setAttribute('aria-label', '暂无图片');
-          empty.innerHTML = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="6" width="24" height="20" rx="1"></rect><circle cx="21" cy="12" r="2"></circle><path d="m6 23 7-8 5 5 3-3 5 6"></path></svg><span>暂无图片</span>';
+          empty.setAttribute('aria-label', componentText(componentLang(this.__kniuOptions), 'upload.empty'));
+          empty.innerHTML = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="6" width="24" height="20" rx="1"></rect><circle cx="21" cy="12" r="2"></circle><path d="m6 23 7-8 5 5 3-3 5 6"></path></svg><span>' + componentText(componentLang(this.__kniuOptions), 'upload.empty') + '</span>';
           previews.push(empty);
         }
         replaceChildrenWithFragment(this._wall, previews);
@@ -4224,7 +4559,13 @@ var KniuUI = (function () {
         this._input.disabled = this.hasAttribute('disabled')
           || (this.hasAttribute('multiple') && this._files.length >= limits.count);
         this._button.disabled = this._input.disabled;
-        this._hint.textContent = this._files.length ? `已选择 ${this._files.length} 张图片` : (this.hasAttribute('multiple') ? `选择图片可以预览（最多 ${limits.count} 张）` : '选择图片可以预览');
+        const t = (k, p) => componentText(componentLang(this.__kniuOptions), k, p);
+        this._hint.textContent = this._files.length
+          ? t('upload.selectedCount', { '1': this._files.length })
+          : (this.hasAttribute('multiple') ? t('upload.selectPreview', { '1': limits.count }) : t('upload.selectPreviewSingle'));
+        // 本地化按钮默认 slot 文案（仅当用户未提供自定义按钮内容时生效）
+        const btnSlot = this.shadowRoot.querySelector('.kniu_upload_btn > slot');
+        if (btnSlot && (!btnSlot.assignedNodes || btnSlot.assignedNodes().length === 0)) btnSlot.textContent = t('upload.select');
       }
     }
     customElements.define('kniu-upload', KniuSysUpload);
@@ -4515,7 +4856,7 @@ var KniuUI = (function () {
       attributeChangedCallback() { this._render(); }
       _render() {
         var text = this.shadowRoot.querySelector('.kniu_sys_empty_text');
-        text.textContent = this.getAttribute('note') || '暂无数据';
+        text.textContent = this.getAttribute('note') || componentText(componentLang(this.__kniuOptions), 'common.empty');
       }
     }
     customElements.define('kniu-empty', KniuSysEmpty);
@@ -5002,7 +5343,34 @@ var KniuUI = (function () {
             self._closePopover();
           }
         });
+        this._applyToolbarLang();
         this._syncToolbarState();
+      }
+
+      // 依据组件 lang（默认 cn）本地化工具栏按钮的 title / aria-label。
+      // 通过 data-cmd / data-action / data-block / data-action=lineheight 识别 token，
+      // 无需改写 EDITOR_TOOLBAR_ITEMS 的长 SVG 模板。lang 变化时 _sync() 会重建工具栏。
+      _applyToolbarLang() {
+        var lang = this._editorLang();
+        var t = function (key, params) { return componentText(lang, key, params); };
+        var self = this;
+        this._toolbar.querySelectorAll('.kniu_sys_editor_btn').forEach(function (btn) {
+          var token = btn.dataset.cmd || btn.dataset.action || btn.dataset.block;
+          if (!token || !KNIU_I18N.cn['editor.' + token]) return;
+          btn.setAttribute('title', t('editor.' + token));
+          btn.setAttribute('aria-label', t('editor.' + token));
+          // 字体/字号/颜色的 aria-label 语义不同，单独处理
+          if (btn.dataset.action === 'fontname') btn.setAttribute('aria-label', t('editor.chooseFont'));
+          else if (btn.dataset.action === 'fontsize') btn.setAttribute('aria-label', t('editor.chooseSize'));
+          else if (btn.dataset.action === 'forecolor') btn.setAttribute('aria-label', t('editor.forecolor'));
+          else if (btn.dataset.action === 'hilitecolor') btn.setAttribute('aria-label', t('editor.hilitecolor'));
+          else if (btn.dataset.action === 'image') btn.setAttribute('aria-label', t('editor.image'));
+          else if (btn.dataset.action === 'media') btn.setAttribute('aria-label', t('editor.media'));
+        });
+        this._toolbar.querySelectorAll('.kniu_sys_editor_select').forEach(function (sel) {
+          var token = sel.dataset.action;
+          if (token && KNIU_I18N.cn['editor.' + token]) sel.setAttribute('title', t('editor.' + token));
+        });
       }
 
       get value() {
@@ -5506,9 +5874,10 @@ var KniuUI = (function () {
       }
 
       _tablePopoverHTML() {
-        return '<div class="kniu_sys_editor_popover_row"><label>行数</label><input type="number" class="pop_rows" min="1" max="20" value="3"></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>列数</label><input type="number" class="pop_cols" min="1" max="20" value="3"></div>' +
-          '<div class="kniu_sys_editor_popover_row"><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="table">插入表格</button></div>';
+        var t = this._editorT();
+        return '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.tableRows') + '</label><input type="number" class="pop_rows" min="1" max="20" value="3"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.tableCols') + '</label><input type="number" class="pop_cols" min="1" max="20" value="3"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="table">' + t('editor.insertTable') + '</button></div>';
       }
 
       _emojiPopoverHTML() {
@@ -5518,33 +5887,36 @@ var KniuUI = (function () {
       }
 
       _linkPopoverHTML() {
+        var t = this._editorT();
         var selectedText = this._linkRange ? this._linkRange.toString() : '';
-        return '<div class="kniu_sys_editor_popover_title">插入链接</div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>链接地址</label><input type="url" class="pop_link_url" value="https://" autocomplete="off" placeholder="https://example.com"></div>' +
-          (selectedText ? '' : '<div class="kniu_sys_editor_popover_row"><label>链接文字</label><input type="text" class="pop_link_text" value="链接" autocomplete="off" placeholder="请输入链接文字"></div>') +
+        return '<div class="kniu_sys_editor_popover_title">' + t('editor.insertLink') + '</div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.linkUrl') + '</label><input type="url" class="pop_link_url" value="https://" autocomplete="off" placeholder="https://example.com"></div>' +
+          (selectedText ? '' : '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.linkText') + '</label><input type="text" class="pop_link_text" value="' + t('editor.link') + '" autocomplete="off" placeholder="' + t('editor.enterLinkText') + '"></div>') +
           '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
-          '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">取消</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="link">确定</button></div>';
+          '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">' + t('common.cancel') + '</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="link">' + t('common.ok') + '</button></div>';
       }
 
       _imagePopoverHTML() {
-        return '<div class="kniu_sys_editor_popover_title">插入图片</div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>来源类型</label><select class="pop_image_source"><option value="cloud">云媒体</option><option value="local">本地上传</option></select></div>' +
-          '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>图片地址</label><input type="url" class="pop_image_url" autocomplete="off" placeholder="https://example.com/image.jpg"></div>' +
-          '<div class="kniu_sys_editor_popover_row pop_local_row" hidden><label>本地图片</label><input type="file" class="pop_image_file" accept="image/jpeg,image/png,image/gif,image/webp"></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>媒体名称</label><input type="text" class="pop_image_name" autocomplete="off" placeholder="请输入媒体名称"></div>' +
+        var t = this._editorT();
+        return '<div class="kniu_sys_editor_popover_title">' + t('editor.insertImage') + '</div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.sourceType') + '</label><select class="pop_image_source"><option value="cloud">' + t('common.cloud') + '</option><option value="local">' + t('common.localUpload') + '</option></select></div>' +
+          '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>' + t('editor.imageUrl') + '</label><input type="url" class="pop_image_url" autocomplete="off" placeholder="https://example.com/image.jpg"></div>' +
+          '<div class="kniu_sys_editor_popover_row pop_local_row" hidden><label>' + t('editor.localImage') + '</label><input type="file" class="pop_image_file" accept="image/jpeg,image/png,image/gif,image/webp"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.mediaName') + '</label><input type="text" class="pop_image_name" autocomplete="off" placeholder="' + t('editor.enterMediaName') + '"></div>' +
           '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
-          '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">取消</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="image">确定</button></div>';
+          '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">' + t('common.cancel') + '</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="image">' + t('common.ok') + '</button></div>';
       }
 
       _mediaPopoverHTML() {
-        return '<div class="kniu_sys_editor_popover_title">插入音视频</div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>媒体类型</label><select class="pop_media_type"><option value="video">视频</option><option value="audio">音频</option></select></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>来源类型</label><select class="pop_media_source"><option value="cloud">云媒体</option><option value="local">本地上传</option></select></div>' +
-          '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>媒体地址</label><input type="url" class="pop_media_url" autocomplete="off" placeholder="https://example.com/media.mp4"></div>' +
-          '<div class="kniu_sys_editor_popover_row pop_local_row" hidden><label>本地文件</label><input type="file" class="pop_media_file" accept="video/mp4,video/webm,video/ogg,video/quicktime"></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>媒体名称</label><input type="text" class="pop_media_name" autocomplete="off" placeholder="请输入媒体名称"></div>' +
+        var t = this._editorT();
+        return '<div class="kniu_sys_editor_popover_title">' + t('editor.insertMedia') + '</div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.mediaType') + '</label><select class="pop_media_type"><option value="video">' + t('editor.video') + '</option><option value="audio">' + t('editor.audio') + '</option></select></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.sourceType') + '</label><select class="pop_media_source"><option value="cloud">' + t('common.cloud') + '</option><option value="local">' + t('common.localUpload') + '</option></select></div>' +
+          '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>' + t('common.mediaUrl') + '</label><input type="url" class="pop_media_url" autocomplete="off" placeholder="https://example.com/media.mp4"></div>' +
+          '<div class="kniu_sys_editor_popover_row pop_local_row" hidden><label>' + t('common.localFile') + '</label><input type="file" class="pop_media_file" accept="video/mp4,video/webm,video/ogg,video/quicktime"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.mediaName') + '</label><input type="text" class="pop_media_name" autocomplete="off" placeholder="' + t('editor.enterMediaName') + '"></div>' +
           '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
-          '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">取消</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="media">确定</button></div>';
+          '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">' + t('common.cancel') + '</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="media">' + t('common.ok') + '</button></div>';
       }
 
       _openMediaSizeDialog(media) {
@@ -5552,7 +5924,9 @@ var KniuUI = (function () {
         this._editingMedia = media;
         this._selectMedia(media);
         this._popoverAction = 'media-size';
-        var label = media.tagName === 'IMG' ? '图片' : media.tagName === 'AUDIO' ? '音频' : '视频';
+        var t = this._editorT();
+        var label = this._editorMediaLabel(media.tagName);
+        var editKey = media.tagName === 'IMG' ? 'editor.editImage' : media.tagName === 'AUDIO' ? 'editor.editAudio' : 'editor.editVideo';
         var rect = media.getBoundingClientRect();
         var width = parseFloat(media.style.width) || Math.round(rect.width) || '';
         var height = parseFloat(media.style.height) || Math.round(rect.height) || '';
@@ -5561,16 +5935,16 @@ var KniuUI = (function () {
         var accept = media.tagName === 'IMG' ? 'image/jpeg,image/png,image/gif,image/webp'
           : media.tagName === 'AUDIO' ? 'audio/mpeg,audio/ogg,audio/wav,audio/mp4'
             : 'video/mp4,video/webm,video/ogg,video/quicktime';
-        this._popover.innerHTML = '<div class="kniu_sys_editor_popover_title">编辑' + label + '</div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>来源类型</label><select class="pop_edit_source"><option value="cloud">云媒体</option><option value="local">本地上传</option></select></div>' +
-          '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>媒体地址</label><input type="url" class="pop_edit_url" value="' + source + '" autocomplete="off" placeholder="请输入媒体地址"></div>' +
-          '<div class="kniu_sys_editor_popover_row pop_local_row" hidden><label>本地文件</label><input type="file" class="pop_edit_file" accept="' + accept + '"></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>媒体名称</label><input type="text" class="pop_edit_name" value="' + name + '" autocomplete="off" placeholder="请输入媒体名称"></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>宽度</label><input type="number" class="pop_media_width" min="1" max="5000" value="' + width + '" placeholder="自动"><span>px</span></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>高度</label><input type="number" class="pop_media_height" min="1" max="5000" value="' + height + '" placeholder="自动"><span>px</span></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>缩放</label><input type="checkbox" class="pop_media_ratio_lock" checked><span>锁定宽高比</span></div>' +
+        this._popover.innerHTML = '<div class="kniu_sys_editor_popover_title">' + t(editKey) + '</div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.sourceType') + '</label><select class="pop_edit_source"><option value="cloud">' + t('common.cloud') + '</option><option value="local">' + t('common.localUpload') + '</option></select></div>' +
+          '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>' + t('common.mediaUrl') + '</label><input type="url" class="pop_edit_url" value="' + source + '" autocomplete="off" placeholder="' + t('editor.enterMediaUrl') + '"></div>' +
+          '<div class="kniu_sys_editor_popover_row pop_local_row" hidden><label>' + t('common.localFile') + '</label><input type="file" class="pop_edit_file" accept="' + accept + '"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.mediaName') + '</label><input type="text" class="pop_edit_name" value="' + name + '" autocomplete="off" placeholder="' + t('editor.enterMediaName') + '"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.width') + '</label><input type="number" class="pop_media_width" min="1" max="5000" value="' + width + '" placeholder="' + t('common.auto') + '"><span>px</span></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.height') + '</label><input type="number" class="pop_media_height" min="1" max="5000" value="' + height + '" placeholder="' + t('common.auto') + '"><span>px</span></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.scale') + '</label><input type="checkbox" class="pop_media_ratio_lock" checked><span>' + t('common.lockRatio') + '</span></div>' +
           '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
-          '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_delete" data-delete="media">删除媒体</button><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">取消</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="media-size">确定</button></div>';
+          '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_delete" data-delete="media">' + t('common.delete') + ' ' + label + '</button><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">' + t('common.cancel') + '</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="media-size">' + t('common.ok') + '</button></div>';
         this._popover.classList.add('kniu_sys_editor_popover_link');
         this._popover.classList.add('kniu_sys_editor_popover_media_edit');
         this._popover.hidden = false;
@@ -5598,10 +5972,12 @@ var KniuUI = (function () {
 
       _showMediaDeleteConfirm() {
         if (!this._editingMedia) return;
-        var label = this._editingMedia.tagName === 'IMG' ? '图片' : this._editingMedia.tagName === 'AUDIO' ? '音频' : '视频';
-        this._popover.innerHTML = '<div class="kniu_sys_editor_popover_title">删除' + label + '</div>' +
-          '<div class="kniu_sys_editor_delete_tip">确定要从文章正文中删除当前' + label + '吗？</div>' +
-          '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-back="media-edit">返回</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="delete-media">确定删除</button></div>';
+        var t = this._editorT();
+        var label = this._editorMediaLabel(this._editingMedia.tagName);
+        var deleteKey = this._editingMedia.tagName === 'IMG' ? 'editor.deleteImage' : this._editingMedia.tagName === 'AUDIO' ? 'editor.deleteAudio' : 'editor.deleteVideo';
+        this._popover.innerHTML = '<div class="kniu_sys_editor_popover_title">' + t(deleteKey) + '</div>' +
+          '<div class="kniu_sys_editor_delete_tip">' + t('editor.deleteConfirm', { '1': label }) + '</div>' +
+          '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-back="media-edit">' + t('common.back') + '</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="delete-media">' + t('editor.deleteMediaBtn') + '</button></div>';
       }
 
       _deleteEditingMedia() {
@@ -5642,7 +6018,7 @@ var KniuUI = (function () {
         var width = widthInput && widthInput.value !== '' ? Number(widthInput.value) : 0;
         var height = heightInput && heightInput.value !== '' ? Number(heightInput.value) : 0;
         if ((width && (width < 1 || width > 5000)) || (height && (height < 1 || height > 5000))) {
-          if (error) error.textContent = '宽度和高度必须在 1 至 5000px 之间';
+          if (error) error.textContent = this._editorT()('editor.widthHeightRange');
           return;
         }
         var isLocal = sourceInput && sourceInput.value === 'local';
@@ -5651,7 +6027,7 @@ var KniuUI = (function () {
           : (urlInput ? urlInput.value.trim() : '');
         if (!source) return;
         if (!isLocal && !this._validResourceUrl(source)) {
-          if (error) error.textContent = '请输入安全有效的媒体地址';
+          if (error) error.textContent = this._editorT()('editor.enterMediaUrlSafe');
           if (urlInput) urlInput.focus();
           return;
         }
@@ -5698,7 +6074,7 @@ var KniuUI = (function () {
 
       async _uploadEditorMedia(file, error) {
         if (!file) {
-          if (error) error.textContent = '请选择需要上传的本地文件';
+          if (error) error.textContent = this._editorT()('common.chooseLocalFile');
           return '';
         }
         var form = new FormData();
@@ -5707,12 +6083,12 @@ var KniuUI = (function () {
           var response = await fetch('/api/article_media_upload', { method: 'POST', body: form, credentials: 'include' });
           var result = await response.json();
           if (!response.ok || Number(result.status) !== 1 || !result.data || !result.data.url) {
-            if (error) error.textContent = result.msg || '媒体文件上传失败';
+            if (error) error.textContent = result.msg || this._editorT()('editor.mediaUploadFail');
             return '';
           }
           return result.data.url;
         } catch (e) {
-          if (error) error.textContent = '媒体文件上传失败，请稍后重试';
+          if (error) error.textContent = this._editorT()('editor.mediaUploadRetry');
           return '';
         }
       }
@@ -5750,7 +6126,7 @@ var KniuUI = (function () {
           : (urlInput ? urlInput.value.trim() : '');
         if (!url) return;
         if (!isLocal && !this._validResourceUrl(url)) {
-          if (error) error.textContent = '请输入安全有效的图片地址';
+          if (error) error.textContent = this._editorT()('editor.enterImageUrl');
           if (urlInput) urlInput.focus();
           return;
         }
@@ -5778,7 +6154,7 @@ var KniuUI = (function () {
           : (urlInput ? urlInput.value.trim() : '');
         if (!url) return;
         if (!isLocal && !this._validResourceUrl(url)) {
-          if (error) error.textContent = '请输入安全有效的媒体地址';
+          if (error) error.textContent = this._editorT()('editor.enterMediaUrlSafe');
           if (urlInput) urlInput.focus();
           return;
         }
@@ -6000,7 +6376,7 @@ var KniuUI = (function () {
         var error = this._popover.querySelector('.kniu_sys_editor_popover_error');
         var url = urlInput ? urlInput.value.trim() : '';
         if (!url || /^(javascript|vbscript|data):/i.test(url)) {
-          if (error) error.textContent = !url ? '请输入链接地址' : '请输入安全有效的链接地址';
+          if (error) error.textContent = !url ? this._editorT()('editor.enterLinkUrl') : this._editorT()('editor.enterLinkUrlSafe');
           if (urlInput) urlInput.focus();
           return;
         }
@@ -6089,6 +6465,14 @@ var KniuUI = (function () {
       }
 
       _sync() {
+        // lang 变化时重建工具栏（本地化 title/aria-label），满足运行中动态切换。
+        var lang = this._editorLang();
+        if (this.__kniuLastLang !== lang) {
+          this.__kniuLastLang = lang;
+          if (this._toolbar) {
+            this._buildToolbar(this._resolveToolbarConfig());
+          }
+        }
         var placeholder = this.getAttribute('placeholder');
         this._editor.dataset.placeholder = placeholder || '';
         var ro = this.hasAttribute('readonly') || this.hasAttribute('disabled');
@@ -6101,6 +6485,23 @@ var KniuUI = (function () {
           var isMax = c.dataset.action === 'maximize';
           c.disabled = ro || (this._codeMode && !isCodeToggle && !isMax);
         }
+      }
+
+      // 读取组件 options.lang（默认 cn）。options-only 协议把 options 存于 __kniuOptions。
+      _editorLang() {
+        return componentLang(this.__kniuOptions);
+      }
+
+      // 本地化翻译函数，绑定当前 lang。
+      _editorT() {
+        var lang = this._editorLang();
+        return function (key, params) { return componentText(lang, key, params); };
+      }
+
+      // 媒体标签（图片/音频/视频）按 lang 本地化。
+      _editorMediaLabel(tagName) {
+        var key = tagName === 'IMG' ? 'editor.image' : tagName === 'AUDIO' ? 'editor.audio' : 'editor.video';
+        return componentText(this._editorLang(), key);
       }
     }
 
@@ -6256,15 +6657,17 @@ var KniuUI = (function () {
         attributeChangedCallback() { this._sync(); }
         _sync() {
           if (!this._brand) return;
-          this._brandLabel.textContent = this.getAttribute('brand') || '首页';
+          const t = (k) => componentText(componentLang(this.__kniuOptions), k);
+          this._brandLabel.textContent = this.getAttribute('brand') || t('navbar.home');
           this._brand.href = this.getAttribute('home') || '#/';
           this._syncActive();
           this._syncToggle();
         }
         _syncToggle() {
           const open = this.hasAttribute('open') && !this.hasAttribute('closing');
+          const t = (k) => componentText(componentLang(this.__kniuOptions), k);
           this._toggle.setAttribute('aria-expanded', String(open));
-          this._toggle.setAttribute('aria-label', open ? '收起导航' : '展开导航');
+          this._toggle.setAttribute('aria-label', open ? t('navbar.collapse') : t('navbar.expand'));
         }
         _openMenu() {
           if (this._closeTimer) globalThis.clearTimeout(this._closeTimer);
@@ -6378,7 +6781,10 @@ var KniuUI = (function () {
         const bottom = Math.max(0, Number(this.getAttribute('bottom')) || 40);
         this.style.setProperty('--right', right + 'px');
         this.style.setProperty('--bottom', bottom + 'px');
+        const btn = this.shadowRoot?.querySelector('button');
+        if (btn) btn.setAttribute('aria-label', componentText(componentLang(this.__kniuOptions), 'backtop.aria'));
       }
+      _sync() { this._syncPosition(); }
       _syncVisible() {
         const target = this._target || document.scrollingElement || document.documentElement;
         const win = globalThis;
@@ -6419,6 +6825,7 @@ var KniuUI = (function () {
       .kniu_sys_comment_textarea{width:100%;min-height:80px;padding:10px 12px;border:1px solid #dcdfe6;border-radius:4px;resize:vertical;font:inherit;box-sizing:border-box;outline:0}
       .kniu_sys_comment_textarea:focus{border-color:#409eff}
       .kniu_sys_comment_toolbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:10px}
+      .kniu_sys_comment_count{margin-right:auto;color:#909399;font-size:12px;white-space:nowrap}.kniu_sys_comment_count.is-limit{color:#f56c6c}
       .kniu_sys_comment_emoji_btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:8px 12px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:14px;line-height:1;cursor:pointer;user-select:none;transition:.1s}
       .kniu_sys_comment_emoji_btn:hover,.kniu_sys_comment_emoji_btn:focus-visible{border-color:#c6e2ff;background-color:#ecf5ff;color:#409eff}
       .kniu_sys_comment_emoji_btn:active{filter:brightness(.94)}
@@ -6444,8 +6851,11 @@ var KniuUI = (function () {
       .kniu_sys_comment_content{margin:6px 0;color:#606266;word-break:break-all}
       .kniu_sys_comment_actions{display:flex;align-items:center;gap:8px;font-size:13px;color:#606266}
       .kniu_sys_comment_action_sep{color:#dcdfe6}
-      .kniu_sys_comment_action_reply,.kniu_sys_comment_action_like{background-color:transparent;border:0;padding:0;color:#606266;cursor:pointer;font:inherit;display:flex;align-items:center;gap:4px;transition:color .2s}
+      .kniu_sys_comment_action_reply,.kniu_sys_comment_action_like,.kniu_sys_comment_action_delete{background-color:transparent;border:0;padding:0;color:#606266;cursor:pointer;font:inherit;display:flex;align-items:center;gap:4px;transition:color .2s,opacity .2s}
       .kniu_sys_comment_action_reply:hover,.kniu_sys_comment_action_like:hover{color:#409eff}
+      .kniu_sys_comment_action_delete{margin-left:auto;color:#f56c6c;opacity:0;visibility:hidden;pointer-events:none}
+      .kniu_sys_comment_actions:hover .kniu_sys_comment_action_delete,.kniu_sys_comment_actions:focus-within .kniu_sys_comment_action_delete{opacity:1;visibility:visible;pointer-events:auto}
+      .kniu_sys_comment_action_delete:hover,.kniu_sys_comment_action_delete:focus-visible{color:#f78989}
       .kniu_sys_comment_action_like.kniu_sys_comment_liked{color:#f56c6c}
       .kniu_sys_comment_like_icon{font-size:12px}
       .kniu_sys_comment_reply_hint{padding:6px 10px;margin-bottom:8px;background-color:#f5f7fa;border-radius:4px;color:#606266;font-size:13px;display:flex;justify-content:space-between;align-items:center}
@@ -6485,23 +6895,27 @@ var KniuUI = (function () {
       get options() { return this._options; }
       _render() {
         const options = this._options || {};
+        const lang = componentLang(options);
+        const t = (k, p) => componentText(lang, k, p);
         const list = Array.isArray(options.list) ? options.list : [];
         const placeholder = options.placeholder || 'Please enter a comment...';
-        const submitText = options.submitText || '评论';
+        const submitText = options.submitText || t('comment.title');
         const emojis = Array.isArray(options.emojis) ? options.emojis : COMMENT_DEFAULT_EMOJIS;
-        const emptyText = options.emptyText || '暂无评论，快来抢沙发吧！';
+        const emptyText = options.emptyText || t('comment.empty');
         const currentUser = options.currentUser || null;
+        const maxLength = Math.max(0, Number.parseInt(options.maxLength, 10) || 0);
         const canSubmit = typeof options.onSubmit === 'function' || true;
 
         const htmlParts = ['<style>' + COMMENT_STYLE + '</style><div class="kniu_sys_comment">'];
         // 输入区
         htmlParts.push('<div class="kniu_sys_comment_input_area">');
         if (this._replyId) {
-          htmlParts.push('<div class="kniu_sys_comment_reply_hint">回复 ' + commentEscape(this._replyName) + '...<button type="button" data-action="cancel-reply" title="取消回复">×</button></div>');
+          htmlParts.push('<div class="kniu_sys_comment_reply_hint">' + t('comment.replyTo') + commentEscape(this._replyName) + '...<button type="button" data-action="cancel-reply" title="' + t('comment.cancelReply') + '">×</button></div>');
         }
         htmlParts.push('<textarea class="kniu_sys_comment_textarea" placeholder="' + commentEscape(placeholder) + '"></textarea>');
         htmlParts.push('<div class="kniu_sys_comment_toolbar">');
-        htmlParts.push('<button type="button" class="kniu_sys_comment_emoji_btn" title="表情">😊</button>');
+        if (maxLength) htmlParts.push('<span class="kniu_sys_comment_count">0 / ' + maxLength + '</span>');
+        htmlParts.push('<button type="button" class="kniu_sys_comment_emoji_btn" title="' + t('comment.emoji') + '">😊</button>');
         htmlParts.push('<button type="button" class="kniu_sys_comment_submit" type="button">' + commentEscape(submitText) + '</button>');
         htmlParts.push('</div>');
         htmlParts.push('<div class="kniu_sys_comment_emoji_panel' + (this._showEmoji ? '' : ' kniu_sys_comment_hidden') + '">');
@@ -6516,7 +6930,7 @@ var KniuUI = (function () {
           htmlParts.push('<div class="kniu_sys_comment_empty">' + commentEscape(emptyText) + '</div>');
         } else {
           list.forEach(function (item) {
-            const username = item.username || '匿名';
+            const username = item.username || t('comment.anonymous');
             const firstChar = String(username).charAt(0).toUpperCase();
             htmlParts.push('<div class="kniu_sys_comment_item" data-id="' + commentEscape(item.id) + '">');
             htmlParts.push('<div class="kniu_sys_comment_avatar">');
@@ -6530,12 +6944,13 @@ var KniuUI = (function () {
             htmlParts.push('</div>');
             htmlParts.push('<div class="kniu_sys_comment_content">' + commentEscape(item.content || '') + '</div>');
             htmlParts.push('<div class="kniu_sys_comment_actions">');
-            htmlParts.push('<button type="button" class="kniu_sys_comment_action_reply">回复</button>');
+            htmlParts.push('<button type="button" class="kniu_sys_comment_action_reply">' + t('comment.reply') + '</button>');
             htmlParts.push('<span class="kniu_sys_comment_action_sep">|</span>');
             htmlParts.push('<button type="button" class="kniu_sys_comment_action_like' + (item.liked ? ' kniu_sys_comment_liked' : '') + '">');
             htmlParts.push('<span class="kniu_sys_comment_like_icon">' + (item.liked ? '❤' : '♡') + '</span>');
             htmlParts.push('<span>' + (Number(item.likes) || 0) + '</span>');
             htmlParts.push('</button>');
+            htmlParts.push('<button type="button" class="kniu_sys_comment_action_delete" title="' + t('comment.delete') + '">' + t('common.delete') + '</button>');
             htmlParts.push('</div>');
             htmlParts.push('</div>');
             htmlParts.push('</div>');
@@ -6556,6 +6971,17 @@ var KniuUI = (function () {
         const emojiBtn = root.querySelector('.kniu_sys_comment_emoji_btn');
         const emojiPanel = root.querySelector('.kniu_sys_comment_emoji_panel');
         const submitBtn = root.querySelector('.kniu_sys_comment_submit');
+        const countEl = root.querySelector('.kniu_sys_comment_count');
+        const maxLength = Math.max(0, Number.parseInt(this._options?.maxLength, 10) || 0);
+        const syncCount = function () {
+          if (!textarea || !countEl || !maxLength) return;
+          const characters = Array.from(textarea.value);
+          if (characters.length > maxLength) textarea.value = characters.slice(0, maxLength).join('');
+          const length = Array.from(textarea.value).length;
+          countEl.textContent = length + ' / ' + maxLength;
+          countEl.classList.toggle('is-limit', length >= maxLength);
+        };
+        textarea?.addEventListener('input', syncCount);
 
         if (emojiBtn && emojiPanel) {
           emojiBtn.addEventListener('click', function (e) {
@@ -6594,7 +7020,10 @@ var KniuUI = (function () {
           btn.addEventListener('click', function (e) {
             e.stopPropagation();
             if (textarea) {
-              textarea.value += btn.textContent;
+              textarea.value = maxLength
+                ? Array.from(textarea.value + btn.textContent).slice(0, maxLength).join('')
+                : textarea.value + btn.textContent;
+              syncCount();
               textarea.focus();
             }
             self._showEmoji = false;
@@ -6606,6 +7035,7 @@ var KniuUI = (function () {
           submitBtn.addEventListener('click', function () {
             const content = String(textarea.value || '').trim();
             if (!content) return;
+            if (maxLength && Array.from(content).length > maxLength) return;
             self._dispatch('submit', { content: content, parentId: self._replyId });
             textarea.value = '';
             self._replyId = null;
@@ -6645,6 +7075,14 @@ var KniuUI = (function () {
             self._dispatch('like', { commentId: id, liked: !liked });
           });
         });
+
+        root.querySelectorAll('.kniu_sys_comment_action_delete').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const item = btn.closest('.kniu_sys_comment_item');
+            const id = item?.dataset.id;
+            if (id) self._dispatch('delete', { commentId: id });
+          });
+        });
       }
       _dispatch(name, detail) {
         this.dispatchEvent(new CustomEvent(name, { detail: detail, bubbles: true, composed: true }));
@@ -6657,6 +7095,115 @@ var KniuUI = (function () {
       }
     }
     customElements.define('kniu-comment', KniuSysComment);
+  }
+
+  function registerThumbsComponent() {
+    if (typeof customElements === 'undefined' || customElements.get('kniu-thumbs')) return;
+    class KniuSysThumbs extends HTMLElement {
+      constructor() {
+        super();
+        attachComponentShadow(this);
+        this._options = {};
+        this._handleClick = this._click.bind(this);
+      }
+      connectedCallback() { this._render(); }
+      disconnectedCallback() {
+        this.shadowRoot.querySelector('button')?.removeEventListener('click', this._handleClick);
+      }
+      set options(value) {
+        this._options = value && typeof value === 'object' ? value : {};
+        this._render();
+      }
+      get options() { return this._options; }
+      _render() {
+        const options = this._options || {};
+        const count = Math.max(0, Number.parseInt(options.count, 10) || 0);
+        const liked = Boolean(options.liked);
+        const disabled = Boolean(options.disabled || options.loading);
+        this.shadowRoot.innerHTML = `
+          <style>
+            :host{display:inline-flex;color:#606266;font:14px/1 Arial,"Microsoft YaHei",sans-serif}
+            button{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:7px 12px;border:1px solid #dcdfe6;border-radius:4px;background:#fff;color:inherit;font:inherit;cursor:pointer;transition:color .15s,border-color .15s,background-color .15s;box-sizing:border-box}
+            button:hover,button:focus-visible{color:#409eff;border-color:#c6e2ff;background:#ecf5ff;outline:0}
+            button[aria-pressed="true"]{color:#409eff;border-color:#409eff;background:#ecf5ff}
+            button:disabled{color:#a8abb2;border-color:#e4e7ed;background:#f5f7fa;cursor:not-allowed}
+            svg{display:block;width:18px;height:18px;fill:currentColor}
+            .count{white-space:nowrap}
+          </style>
+          <button type="button" aria-label="${liked ? '取消点赞' : '点赞'}" aria-pressed="${liked}" ${disabled ? 'disabled' : ''}>
+            <svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M885.6 421.6c-20.8-25.6-52-40-85.6-40H622.4l24-116.8c12.8-62.4-10.4-127.2-60-166.4-20-16-48.8-13.6-66.4 5.6L300.8 349.6c-12 13.6-18.4 30.4-18.4 48v416c0 40 32 72 72 72h373.6c52 0 98.4-36.8 108.8-88l72-280c7.2-33.6-1.6-68-23.2-96zM218.4 381.6H112c-26.4 0-48 21.6-48 48v408c0 26.4 21.6 48 48 48h106.4c26.4 0 48-21.6 48-48v-408c0-26.4-21.6-48-48-48z"/></svg>
+            <span class="count">(${count})</span>
+          </button>`;
+        this.shadowRoot.querySelector('button')?.addEventListener('click', this._handleClick);
+      }
+      _click() {
+        if (this._options?.disabled || this._options?.loading) return;
+        this.dispatchEvent(new CustomEvent('change', {
+          detail: { liked: !Boolean(this._options?.liked), count: Math.max(0, Number(this._options?.count) || 0) },
+          bubbles: true,
+          composed: true
+        }));
+      }
+    }
+    customElements.define('kniu-thumbs', KniuSysThumbs);
+  }
+
+  function registerArticleTabComponent() {
+    if (typeof customElements === 'undefined' || customElements.get('kniu-article-tab')) return;
+    class KniuArticleTab extends HTMLElement {
+      constructor() {
+        super();
+        attachComponentShadow(this);
+        this._options = {};
+      }
+      connectedCallback() { this._render(); }
+      set options(value) {
+        this._options = value && typeof value === 'object' ? value : {};
+        this._render();
+      }
+      get options() { return this._options; }
+      _render() {
+        const options = this._options || {};
+        const rows = [
+          { direction: 'previous', label: options.previousLabel || '上一篇', article: options.previous },
+          { direction: 'next', label: options.nextLabel || '下一篇', article: options.next }
+        ];
+        const emptyText = options.emptyText || '返回列表';
+        const escape = function (text) {
+          return String(text == null ? '' : text)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        };
+        this.shadowRoot.innerHTML = `
+          <style>
+            :host{display:block;margin:20px 0;color:#4b5563;font:14px/1.7 Arial,"Microsoft YaHei",sans-serif}
+            .tabs{display:flex;flex-direction:column;gap:6px}
+            button{display:block;width:max-content;max-width:100%;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+            button:hover,button:focus-visible{color:#409eff;outline:0}
+            .title{overflow-wrap:anywhere}
+          </style>
+          <nav class="tabs" aria-label="文章翻篇">
+            ${rows.map(function (row) {
+              const title = row.article?.title || emptyText;
+              const id = Number(row.article?.id) || 0;
+              return '<button type="button" data-direction="' + row.direction + '" data-id="' + id + '"><span class="label">' + escape(row.label) + '：</span><span class="title">' + escape(title) + '</span></button>';
+            }).join('')}
+          </nav>`;
+        this.shadowRoot.querySelectorAll('button').forEach(function (button) {
+          button.addEventListener('click', function () {
+            this.dispatchEvent(new CustomEvent('change', {
+              detail: {
+                direction: button.dataset.direction,
+                id: Number(button.dataset.id) || null
+              },
+              bubbles: true,
+              composed: true
+            }));
+          }.bind(this));
+        }, this);
+      }
+    }
+    customElements.define('kniu-article-tab', KniuArticleTab);
   }
 
   function registerIcons(set) {
@@ -6777,13 +7324,15 @@ var KniuUI = (function () {
   registerNavbarComponent();
   registerBacktopComponent();
   registerCommentComponent();
+  registerThumbsComponent();
+  registerArticleTabComponent();
   registerIcons(KNIU_ICON_SET);
   [
     'kniu-btn', 'kniu-switch', 'kniu-modal', 'kniu-table', 'kniu-table-col', 'kniu-loading', 'kniu-msg',
     'kniu-option', 'kniu-select', 'kniu-radio', 'kniu-radio-group', 'kniu-page', 'kniu-image', 'kniu-input',
     'kniu-input-group', 'kniu-form-cell', 'kniu-date-picker', 'kniu-form', 'kniu-upload', 'kniu-icon',
     'kniu-badge', 'kniu-tag', 'kniu-status', 'kniu-empty', 'kniu-editor', 'kniu-navbar-cell',
-    'kniu-sub-navbar', 'kniu-navbar', 'kniu-backtop', 'kniu-comment'
+    'kniu-sub-navbar', 'kniu-navbar', 'kniu-backtop', 'kniu-comment', 'kniu-thumbs', 'kniu-article-tab'
   ].forEach(installOptionsOnlyProtocol);
 
   return {

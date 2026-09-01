@@ -21,6 +21,26 @@
 
 表格的 `cols`、`data`、loading、编辑、开关、操作按钮和回调均属于 `tableOptions`，不再使用 `kniu-table-col`。options 数据变化时必须整体替换对象引用。以后新增组件也必须先实现本协议。
 
+### 双语配置（lang，强制约定）
+
+所有 `kniu-*` 组件的**内置文案**统一支持中英双语，通过 `kniu:options` 里的 `lang` 字段切换：
+
+- `lang` 取值：`'cn'`（默认）/ `'en'`（`'english'` 亦视为英文），不区分大小写。**未配置时默认中文**，向后兼容。
+- **运行时动态切换**：改 `options.lang` 后（经 `options` 属性 setter，即 `installOptionsOnlyProtocol`），组件调用 `_sync()` / `_render()` 立即按新 lang 重渲染。无需重建组件。
+- 文案统一读 `KNIU_I18N` 字典（`cn` / `en` 两组，扁平命名空间「组件.具体键」，参数用 `{n}` 占位），经 `componentText(lang, key, params)` 翻译：**key 缺失回退中文，再缺失返回 key 本身**。`componentLang(options)` 读取 lang（默认 `cn`）。
+- **显式配置优先**：组件内部文案（如按钮默认文字、空状态、aria-label）走字典；若 `options` 里显式传入同名字段（如 `submitText`、`emptyText`、`placeholder`），则以显式值为准，不受 `lang` 影响。
+- 参考实现：编辑器工具栏 `_applyToolbarLang()` 遍历 `.kniu_sys_editor_btn` 按 `data-cmd` / `data-action` / `data-block` token 设 `title` / `aria-label`，`_sync()` 在 lang 变化时重建工具栏（`__kniuLastLang` 缓存比较）。
+
+```html
+<kniu-empty kniu:options="{{({ lang:'en' })}}" />
+<kniu-comment kniu:options="{{commentOptions}}" />
+```
+```js
+state.commentOptions = Object.assign({}, state.commentOptions, { lang: 'en' }); // 运行中切英文
+```
+
+> 备注：业务方传入的显式文案（控制器里硬编码的中文）优先于内置字典，属预期行为；要让整页跟随 `lang`，需在业务层同时按 `lang` 提供或省略文案字段。
+
 ### 渲染与样式约定（性能铁律）
 
 - **所有组件必须 Shadow DOM 隔离**，统一经 `attachComponentShadow(host)` 初始化：`<template>` 按 HTML 文本缓存，实例只克隆 DocumentFragment 并一次性挂载。
@@ -797,12 +817,14 @@ format 字母大小写不敏感，组件会在内部自动规范化：日期部�
 state.commentOptions = {
   list: [],                          // 评论列表：{id,parentId,username,avatar,time,content,likes,liked}
   placeholder: '请输入评论...',
+  maxLength: 500,                     // 最大字数；配置后显示实时“已输入 / 上限”
   submitText: '发表评论',
   emptyText: '暂无评论，快来抢沙发吧！',
   emojis: ['😀', '😄', ...],         // 可选，默认内置常用表情
   currentUser: '游客',
   onSubmit: async (detail) => { /* detail: {content, parentId} */ },
-  onLike: async (detail) => { /* detail: {commentId, liked} */ }
+  onLike: async (detail) => { /* detail: {commentId, liked} */ },
+  onDelete: async (detail) => { /* detail: {commentId} */ }
 };
 ```
 
@@ -810,14 +832,16 @@ state.commentOptions = {
 | --- | --- |
 | `list` | 评论列表，每项含 `id`（评论ID）、`parentId`（回复的父评论ID，0 为顶层）、`username`、`avatar`（可选）、`time`、`content`、`likes`（点赞数）、`liked`（当前是否已赞） |
 | `placeholder` | 输入框占位文字 |
+| `maxLength` | 评论最大字数；大于 0 时限制输入、表情插入与提交，并在工具栏左侧实时显示“当前字数 / 上限” |
 | `submitText` | 提交按钮文字，默认“评论” |
 | `emptyText` | 空态提示文字 |
 | `emojis` | 表情面板内可选表情数组，默认内置 46 个常用表情 |
 | `currentUser` | 当前用户昵称，提交评论时作为 `name` 传给后端 |
 | `onSubmit` | 提交评论回调，`detail` 含 `content` 与 `parentId`（回复目标） |
 | `onLike` | 点赞/取消点赞回调，`detail` 含 `commentId` 与 `liked` |
+| `onDelete` | 删除按钮回调，`detail` 含 `commentId`；删除按钮默认隐藏，鼠标移入或键盘聚焦 actions 区域时显示 |
 
-事件回调（`onSubmit`/`onLike`）由统一 options 协议映射为组件内部派发的 `submit`/`like` 事件，回调收到的 `detail` 即事件负载。
+事件回调（`onSubmit`/`onLike`/`onDelete`）由统一 options 协议映射为组件内部派发的 `submit`/`like`/`delete` 事件，回调收到的 `detail` 即事件负载。
 
 ### 下拉面板样式统一约定
 
@@ -856,6 +880,55 @@ box-shadow: 0 2px 12px rgba(0,0,0,.1);
 - 必须定义本组件自己的 `options` accessor（存储到 `_options` 并触发 `_render`），否则 `installOptionsOnlyProtocol` 因无 `ownDescriptor.set` 会退回属性反射，`_options` 恒空、渲染不出内容——对齐 kniu-switch/kniu-select/kniu-date-picker 既有模式。
 - 必须把 `kniu-comment` 加入统一 options 协议组件清单，否则 `onSubmit`/`onLike` 事件回调不会绑定。
 - 后端返回的 `list` 项字段为 `{id, parentId, username, avatar, time, content, likes, liked}`；前端渲染时 `commentEscape()` 转义，后端已 `decodeFields` 一次，安全且显示正确。
+
+## 点赞组件 kniu-thumbs
+
+文章点赞组件只通过 `kniu:options` 配置，按钮显示大拇指图标及括号包裹的点赞数，例如“大拇指图标 (360)”。
+
+```html
+<kniu-thumbs kniu:options="{{thumbsOptions}}" />
+```
+
+```js
+state.thumbsOptions = {
+  count: 360,
+  liked: false,
+  loading: false,
+  disabled: false,
+  onChange: async ({ liked, count }) => { /* 提交后以服务端计数覆盖 count */ }
+};
+```
+
+| options 字段 | 说明 |
+| --- | --- |
+| `count` | 当前点赞数，组件保证显示为不小于 0 的整数 |
+| `liked` | 当前是否已点赞；为 `true` 时显示主色高亮 |
+| `loading` | 提交中禁用按钮，防止连续点击造成重复请求 |
+| `disabled` | 禁用点赞 |
+| `onChange` | 点击回调，收到 `{liked, count}`；`liked` 是本次期望提交的新状态 |
+
+组件只派发状态意图，不在本地先行增减；业务提交 `/likeArticle` 后用服务端返回的最新 `likes` 整体替换 options，避免并发下计数漂移。
+
+## 文章翻篇组件 kniu-article-tab
+
+用于详情页显示上一篇、下一篇。相邻文章不存在时显示“返回列表”，点击时 `id` 为 `null`，由业务返回列表页。
+
+```html
+<kniu-article-tab kniu:options="{{articleTabOptions}}" />
+```
+
+```js
+state.articleTabOptions = {
+  previous: { id: 1, title: '上一篇文章标题' }, // 无相邻文章时为 null
+  next: { id: 3, title: '下一篇文章标题' },
+  previousLabel: '上一篇',
+  nextLabel: '下一篇',
+  emptyText: '返回列表',
+  onChange: ({ direction, id }) => { /* id=null 时返回列表 */ }
+};
+```
+
+组件按上下两行排列，标题允许换行；点击派发 `change`，负载为 `{direction:'previous'|'next', id:number|null}`。
 
 ## 默认导出
 

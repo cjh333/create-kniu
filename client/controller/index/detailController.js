@@ -12,9 +12,22 @@ const detailController = controller(({ navigateTo, getRouteData }) => {
     error: '',
     currentYear: new Date().getFullYear(),
     articleId: 0,
+    thumbsOptions: {
+      count: 0,
+      liked: false,
+      loading: false
+    },
+    articleTabOptions: {
+      previous: null,
+      next: null,
+      previousLabel: '上一篇',
+      nextLabel: '下一篇',
+      emptyText: '返回列表'
+    },
     commentOptions: {
       list: [],
       placeholder: '请输入评论...',
+      maxLength: 500,
       submitText: '发表评论',
       emptyText: '暂无评论，快来抢沙发吧！',
       currentUser: '游客'
@@ -30,6 +43,45 @@ const detailController = controller(({ navigateTo, getRouteData }) => {
   // 都必须整体重建 commentOptions 对象（内存铁律：深层路径不响应式）。
   function updateCommentOptions(patch) {
     state.commentOptions = Object.assign({}, state.commentOptions, patch);
+  }
+
+  function updateThumbsOptions(patch) {
+    state.thumbsOptions = Object.assign({}, state.thumbsOptions, patch);
+  }
+
+  function updateArticleTabOptions(patch) {
+    state.articleTabOptions = Object.assign({}, state.articleTabOptions, patch);
+  }
+
+  function onArticleTabChange(detail) {
+    const id = Number(detail?.id);
+    if (Number.isInteger(id) && id > 0) {
+      navigateTo('/detail', { id: id });
+      return;
+    }
+    navigateTo('/');
+  }
+
+  async function onThumbsChange(detail) {
+    const id = getArticleId();
+    if (!id || state.thumbsOptions.loading) return;
+    const liked = Boolean(detail?.liked);
+    updateThumbsOptions({ loading: true });
+    try {
+      const result = await REQUEST({
+        url: '/likeArticle',
+        type: 'POST',
+        data: { article_id: id, liked: liked },
+        redirectOnUnauthorized: false
+      });
+      if (result.status !== 1) return;
+      updateThumbsOptions({
+        count: Number(result.data?.likes) || 0,
+        liked: liked
+      });
+    } finally {
+      updateThumbsOptions({ loading: false });
+    }
   }
 
   async function loadComments() {
@@ -51,6 +103,11 @@ const detailController = controller(({ navigateTo, getRouteData }) => {
     if (!id) return;
     const content = detail?.content || '';
     if (!content.trim()) return;
+    const maxLength = Math.max(0, Number(state.commentOptions.maxLength) || 0);
+    if (maxLength && Array.from(content).length > maxLength) {
+      KniuUI.msg({ content: `评论不能超过 ${maxLength} 个字`, type: 'error' });
+      return;
+    }
     const result = await REQUEST({
       url: '/submitComment',
       type: 'POST',
@@ -111,6 +168,11 @@ const detailController = controller(({ navigateTo, getRouteData }) => {
     }
     state.title = result.data.title || '';
     state.content = result.data.content || '';
+    updateThumbsOptions({ count: Number(result.data.likes) || 0, liked: false });
+    updateArticleTabOptions({
+      previous: result.data.previous || null,
+      next: result.data.next || null
+    });
     state.loading = false;
     loadComments();
   }
@@ -124,6 +186,8 @@ const detailController = controller(({ navigateTo, getRouteData }) => {
   // 整体重建时保留。
   state.commentOptions.onSubmit = onSubmitComment;
   state.commentOptions.onLike = onLikeComment;
+  state.thumbsOptions.onChange = onThumbsChange;
+  state.articleTabOptions.onChange = onArticleTabChange;
 
   onMounted(loadDetail);
   return { state, loadDetail, toBack };
