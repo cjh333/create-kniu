@@ -15,6 +15,7 @@ class NavController extends AdminBaseController
   // 增加。
   public function navAdd(): void
   {
+    if (!$this->requireManagePermission()) return;
     $data = [
       'is_select' => $this->input('post.is_select') ?? 0,
       'sid' => $this->input('post.sid') ?? 0,
@@ -30,6 +31,7 @@ class NavController extends AdminBaseController
   // 删除。
   public function navDelete(): void
   {
+    if (!$this->requireManagePermission()) return;
     $id = $this->input('post.id') ?? '';
     if (empty($id)) {
       $this->json([], 'ID不能为空', 0);
@@ -52,6 +54,7 @@ class NavController extends AdminBaseController
   // 修改。
   public function navUpdate(): void
   {
+    if (!$this->requireManagePermission()) return;
     $type = $this->input('post.type') ?? null;
     $id = $this->input('post.id') ?? null;
     $data = [

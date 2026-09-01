@@ -15,6 +15,7 @@ class ArticleController extends AdminBaseController
   // 编辑器图片、音频和视频上传。
   public function articleMediaUpload(): void
   {
+    if (!$this->requireManagePermission()) return;
     if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
       $this->json([], '请选择需要上传的媒体文件', 0);
       return;
@@ -30,6 +31,7 @@ class ArticleController extends AdminBaseController
   // 增加。
   public function articleAdd(): void
   {
+    if (!$this->requireManagePermission()) return;
     $coverPath = '';
     if (isset($_FILES['cover']) && $_FILES['cover']['error'] === UPLOAD_ERR_OK) {
       $coverPath = $this->uploadFile($_FILES['cover'], 'article');
@@ -57,6 +59,7 @@ class ArticleController extends AdminBaseController
   // 删除。
   public function articleDelete(): void
   {
+    if (!$this->requireManagePermission()) return;
     $id = $this->input('post.id') ?? '';
     Db::name('tb_article')
       ->where('id', '=', $id)
@@ -67,6 +70,7 @@ class ArticleController extends AdminBaseController
   // 修改。
   public function articleUpdate(): void
   {
+    if (!$this->requireManagePermission()) return;
     $type = $this->input('post.type') ?? null;
     $id = $this->input('post.id') ?? null;
 
@@ -171,6 +175,7 @@ class ArticleController extends AdminBaseController
   // 删除封面图片。
   public function articleCoverDelete(): void
   {
+    if (!$this->requireManagePermission()) return;
     try {
       $cover = $this->input('post.cover') ?? '';
       if (empty($cover)) {

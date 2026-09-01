@@ -10,6 +10,7 @@ ROUTER.auth(function (router) {
   router.addRoute('home', 'admin/homeController');
   router.addRoute('seo', 'admin/seoController');
   router.addRoute('nav', 'admin/navController');
+  router.addRoute('users', 'admin/usersController');
   router.addRoute('dailydetail', 'admin/dailydetailController');
   router.addRoute('articledetail', 'admin/articledetailController');
 });

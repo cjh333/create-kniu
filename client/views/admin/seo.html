@@ -2,21 +2,17 @@
   @import url("@kniu/kniu.min.css");
   @import url("@style/admin/admin.min.css");
   @import url("@style/admin/admin_home.min.css");
-
-  .index_cell2 {
-    background-color: #fff;
-  }
 </style>
 <section class="seo_cells">
-  <div class="admin_content_body index_cell index_cell2">
-    <kniu-form kniu@submit.prevent="onSubmit" ref="form" model="{{seoform}}" rules="{{rules}}">
+  <div class="admin_content_body index_cell index_cell_2">
+    <kniu-form ref="form" kniu:options="{{({...(seoModel)})}}" kniu@submit.prevent="onSubmit">
       <kniu-form-cell>
-        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.title}}" name="title" placeholder="请输入网站名称">
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoModel.title}}" kniu:options="{{({readonly:(!canEditContent),name:'title',placeholder:'请输入网站名称'})}}">
           <template #prepend label-width="120px">网站名称</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
-        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.url}}" name="url" placeholder="请输入网站域名">
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoModel.url}}" kniu:options="{{({readonly:(!canEditContent),name:'url',placeholder:'请输入网站域名'})}}">
           <template #prepend label-width="120px">网站域名</template>
         </kniu-input>
       </kniu-form-cell>
@@ -24,43 +20,43 @@
         <kniu-input style="max-width: 600px;">
           <template #prepend label-width="120px">logo</template>
           <template #append label-width="120px">
-            <kniu-upload ref="upload" kniu:model="{{files}}" name="logo" max-size="5" accept=".ico,image/x-icon,image/vnd.microsoft.icon,image/png,image/gif">选择logo</kniu-upload>
+            <kniu-upload ref="upload" kniu:model="{{files}}" kniu:options="{{({disabled:(!canEditContent),name:'logo',maxSize:'5',accept:'.ico,image/x-icon,image/vnd.microsoft.icon,image/png,image/gif'})}}">选择logo</kniu-upload>
           </template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
-        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.description}}" name="description" placeholder="请输入description描述" row="3" type="textarea">
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoModel.description}}" kniu:options="{{({readonly:(!canEditContent),name:'description',placeholder:'请输入description描述',row:'3',type:'textarea'})}}">
           <template #prepend label-width="120px">description</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
-        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.keywords}}" name="keywords" placeholder="请输入keywords关键词">
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoModel.keywords}}" kniu:options="{{({readonly:(!canEditContent),name:'keywords',placeholder:'请输入keywords关键词'})}}">
           <template #prepend label-width="120px">keywords</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
-        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.author}}" name="author" placeholder="请输入author作者">
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoModel.author}}" kniu:options="{{({readonly:(!canEditContent),name:'author',placeholder:'请输入author作者'})}}">
           <template #prepend label-width="120px">author</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
-        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.copyright}}" name="copyright" placeholder="请输入版权">
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoModel.copyright}}" kniu:options="{{({readonly:(!canEditContent),name:'copyright',placeholder:'请输入版权'})}}">
           <template #prepend label-width="120px">copyright</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
-        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.record}}" name="record" placeholder="请输入备案号">
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoModel.record}}" kniu:options="{{({readonly:(!canEditContent),name:'record',placeholder:'请输入备案号'})}}">
           <template #prepend label-width="120px">record</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
-        <kniu-input style="max-width: 600px;" kniu:model="{{seoform.email}}" name="email" placeholder="请输入邮箱">
+        <kniu-input style="max-width: 600px;" kniu:model="{{seoModel.email}}" kniu:options="{{({readonly:(!canEditContent),name:'email',placeholder:'请输入邮箱'})}}">
           <template #prepend label-width="120px">email</template>
         </kniu-input>
       </kniu-form-cell>
-      <kniu-form-cell>
-        <kniu-btn style="margin-left: 120px;" disabled="{{isSubmitting}}" native-type="submit">
-          <kniu-icon kniu:if="{{isSubmitting}}" icon="Loading" />
+      <kniu-form-cell kniu:if="{{canEditContent}}">
+        <kniu-btn style="margin-left: 120px;" kniu:options="{{({disabled:(isSubmitting),nativeType:'submit'})}}">
+          <kniu-icon kniu:if="{{isSubmitting}}" kniu:options="{{({icon:'Loading'})}}" />
           <template kniu:else>提 交</template>
         </kniu-btn>
       </kniu-form-cell>

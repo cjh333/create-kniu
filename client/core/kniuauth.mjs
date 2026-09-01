@@ -77,7 +77,7 @@ var KniuAuth = (function () {
         state.loggedIn = true;
         var savedUser = sessionStorage.getItem('kniu_user');
         state.user = savedUser ? JSON.parse(savedUser) : null;
-        if (!state.user) {
+        if (!state.user || state.user.roleAuth == null) {
           await REQUEST({
             url: '/system',
             type: 'POST',
@@ -86,7 +86,13 @@ var KniuAuth = (function () {
               if (res.status !== 1) return;
               var systemInfo = res.data || {};
               var userName = systemInfo.username || '';
-              setUser({ name: userName, avatar: userName ? userName.charAt(0) : '·', role: systemInfo.role || '管理员' });
+              setUser({
+                name: userName,
+                avatar: userName ? userName.charAt(0) : '·',
+                role: systemInfo.role || '管理员',
+                roleId: Number(systemInfo.role_id || 0),
+                roleAuth: Number(systemInfo.role_auth || 0)
+              });
             },
             fail(res) {
               if (res.httpStatus === 401) markLoggedOut();

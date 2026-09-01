@@ -32,6 +32,8 @@ class AdminController extends AdminBaseController
     $info = $this->getSystemInfo();
     $info['username'] = $_SESSION['admin_token']['name'] ?? '';
     $info['role']     = $this->mapRoleName($_SESSION['admin_token']['role'] ?? '');
+    $info['role_id'] = (int)($_SESSION['admin_token']['role'] ?? 0);
+    $info['role_auth'] = (int)($_SESSION['admin_token']['role_auth'] ?? 0);
     $this->json($info);
   }
 

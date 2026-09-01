@@ -1,7 +1,44 @@
 @charset "UTF-8";
 
-.index_cell2 {
-  border: 1px solid var(--kniu_border_2);
+.index_cell_2 {
+  border: 1px solid #ebeef5;
   margin: calc(10 / var(--kniu_vw));
   padding: calc(10 / var(--kniu_vw));
+  background-color: #fff;
+}
+
+@media (max-width: 480px) {
+  .index_cell_2 {
+    margin: 8px;
+    padding: 6px;
+  }
+
+  .detail_head {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 4px;
+    padding-right: 0!important;
+    padding-bottom: 10px;
+    padding-left: 0!important;
+  }
+
+  .detail_head_actions {
+    flex: 1 1 220px;
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .detail_head_actions kniu-input,
+  .detail_head_actions kniu-input-group {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 340px) {
+  .detail_head_actions {
+    flex-basis: 100%;
+    width: 100%;
+  }
 }

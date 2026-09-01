@@ -3,6 +3,7 @@ require_once __DIR__ . '/vendor/autoload.php';
 
 use Core\Env;
 use Core\Router;
+use Core\SessionName;
 
 Env::load(dirname(__DIR__) . '/.env');
 
@@ -17,6 +18,7 @@ if (!is_dir($sessionPath)) {
   mkdir($sessionPath, 0777, true);
 }
 session_save_path($sessionPath);
+session_name(SessionName::resolve(getenv('SESSION_NAME') ?: null, $sessionPath));
 session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => !empty($_SERVER['HTTPS']), 'httponly' => true, 'samesite' => 'Strict']);
 session_start();
 

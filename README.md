@@ -143,7 +143,7 @@ MVVM 提供 `ref()`、`computed()`、getter/多来源 `watch()` 和 `watchEffect
 
 | 配置文件 | 关键内容 |
 | --- | --- |
-| `client/core/kniuenv.mjs` | 统一导出当前运行环境 `PROCESS_ENV` |
+| `client/core/kniudotenv.mjs` | 加载项目根目录 `.env`，并统一导出当前运行环境 `PROCESS_ENV` 与 `RUNTIME_ENV`（原 `kniuenv.mjs` 已合并至此） |
 | `client/config/server.js` | 环境、时区、主机、端口、首页、视图目录、路径别名与 API 代理 |
 | `client/config/router.js` | 页面路由、Controller 映射与鉴权分组 |
 | `client/config/builder.js` | 输出目录、资源访问前缀、产物子目录和待复制资源 |
@@ -188,7 +188,7 @@ npm run build
 rm -rf dist && PROCESS_ENV=production node client/core/kniubuilder.mjs
 ```
 
-> 环境约定：`client/core/kniuenv.mjs` 默认 `development`；`npm run dev` 通过 `--env-file=.env`（内含 `PROCESS_ENV=development`）注入开发环境；只有显式 `PROCESS_ENV=production`（或 `npm run build`）才产出生产产物。
+> 环境约定：前端核心启动时自动读取项目根目录 `.env`，外部进程已显式设置的变量优先；`client/core/kniudotenv.mjs` 在未配置时默认使用 `development`，只有显式 `PROCESS_ENV=production`（或 `npm run build`）才产出生产产物。
 
 构建器会清空并重新生成 `dist/`：
 
@@ -231,3 +231,5 @@ dist/
 - `dist/` 是生成目录，不应直接编辑。
 
 更细的模板语法参见 `client/core/kniutemplate.md`，系统 UI 组件（`kniu-table` / `kniu-page` / `kniu-empty` / `kniu-modal` / `kniu-form` / `kniu-input` / `kniu-switch` / `kniu-editor` 等）用法参见 `client/core/kniuui.md`，后端补充说明（含 HTML 编解码、接口清单）参见 `api/API.md`。
+
+所有 `kniu-*` 自定义组件统一使用 `kniu:options` 配置，旧的零散组件属性不再兼容。模板标签仅保留 `ref`、`kniu:model`、模板指令、插槽和模板事件；组件回调优先配置为 options 中的 `onXxx`。

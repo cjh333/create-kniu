@@ -16,7 +16,14 @@
       <div class="about_cell about_cell1">
         <div class="kniu_container">
           <div class="about_group1">
-            <kniu-empty note="暂无数据" />
+            <kniu-empty kniu:options="{{({note:'暂无数据'})}}" />
+          </div>
+        </div>
+      </div>
+      <div class="detail_cell detail_cell2">
+        <div class="kniu_container">
+          <div class="kniu_btn_group detail_btn_group">
+            <a class="kniu_btn detail_btn" kniu@click="toBack" href="#/">返回</a>
           </div>
         </div>
       </div>

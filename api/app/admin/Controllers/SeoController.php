@@ -15,6 +15,7 @@ class SeoController extends AdminBaseController
   // 修改。
   public function seoUpdate(): void
   {
+    if (!$this->requireManagePermission()) return;
     $id = $this->input('post.id') ?? null;
     if (empty($id)) {
       $this->json([], 'SEO记录ID不能为空', 0);

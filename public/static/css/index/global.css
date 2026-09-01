@@ -66,6 +66,14 @@
 }
 
 @media (max-width: 720px) {
+  .kniu_web_head {
+    box-shadow: none;
+    -webkit-box-shadow: none;
+    -moz-box-shadow: none;
+    -ms-box-shadow: none;
+    -o-box-shadow: none;
+  }
+
   .kniu_web_body {
     min-height: calc(100vh - 70px);
   }

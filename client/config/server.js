@@ -1,4 +1,4 @@
-import PROCESS_ENV from '../core/kniuenv.mjs';
+import PROCESS_ENV, { RUNTIME_ENV } from '../core/kniudotenv.mjs';
 const SERVER_MAP = {
   development: {
     // 时区设置。
@@ -57,4 +57,5 @@ const SERVER_MAP = {
     }
   }
 };
-export default SERVER_MAP[PROCESS_ENV];
+const SERVER = SERVER_MAP[PROCESS_ENV] || SERVER_MAP.development;
+export default { ...SERVER, HOST: RUNTIME_ENV.HOST || SERVER.HOST, PORT: Number(RUNTIME_ENV.PORT) || SERVER.PORT };

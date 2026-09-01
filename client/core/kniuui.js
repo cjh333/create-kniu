@@ -3,7 +3,7 @@ import REQUEST from './kniurequest.mjs';
 import { getResponseRecords } from './kniuutil.mjs';
 import { sanitizeRichHtml } from './kniusanitizer.mjs';
 
-const { reactive } = KniuTemplate;
+const { reactive, compileExpression } = KniuTemplate;
 
 var KniuUI = (function () {
   var state = reactive({
@@ -11,13 +11,155 @@ var KniuUI = (function () {
   });
   var toastTimer = null;
   var toastInstance = null;
+  var scrollLockStyles = null;
+  var shadowTemplateCache = new Map();
+  var shadowStyleSheetCache = new Map();
+  var KNIU_BASE_CONTAIN_CSS = ':host{contain:layout}';
+  var KNIU_CONTAIN_EXCLUDE_TAGS = { 'KNIU-TABLE': 1, 'KNIU-NAVBAR': 1, 'KNIU-MODAL': 1, 'KNIU-DATE-PICKER': 1 };
+  function shouldContainHost(tag) { return !KNIU_CONTAIN_EXCLUDE_TAGS[String(tag || '').toUpperCase()]; }
 
-  // 加载态期间锁定根滚动条：白板覆盖时滚动条彻底消失，
-  // 避免「无滚动条页 → 有滚动条页」切换时滚动条出现导致固定遮罩右移/缩小。
-  // 配合 html{scrollbar-gutter:stable} 使用，锁/解锁均不引发内容回流。
+  function supportsAdoptedStyleSheets(root) {
+    if (globalThis.__KNIU_NO_SHARED_SHEETS) return false;
+    return typeof CSSStyleSheet === 'function'
+      && Array.isArray(root.adoptedStyleSheets)
+      && typeof root.adoptedStyleSheets !== 'string';
+  }
+
+  function getSharedStyleSheet(cssText) {
+    let sheet = shadowStyleSheetCache.get(cssText);
+    if (!sheet) {
+      sheet = new CSSStyleSheet();
+      sheet.replaceSync(cssText);
+      shadowStyleSheetCache.set(cssText, sheet);
+    }
+    return sheet;
+  }
+
+  function adoptSharedStyle(root, cssText) {
+    const css = String(cssText == null ? '' : cssText);
+    if (!css) return null;
+    if (supportsAdoptedStyleSheets(root)) {
+      const sheet = getSharedStyleSheet(css);
+      if (!root.adoptedStyleSheets.includes(sheet)) {
+        root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+      }
+      return null;
+    }
+    const element = (root.ownerDocument || root.host?.ownerDocument || document).createElement('style');
+    element.textContent = css;
+    root.appendChild(element);
+    return element;
+  }
+
+  // 所有组件统一通过 Shadow DOM 隔离。模板字符串只在首次出现时解析，
+  // 后续实例直接克隆缓存的 DocumentFragment，一次性挂载到 ShadowRoot。
+  // 其中 <style> 块被抽离为共享样式表（adoptedStyleSheets），不逐实例重复解析。
+  function attachComponentShadow(host) {
+    const root = host.attachShadow({ mode: 'open' });
+    if (typeof ShadowRoot === 'undefined') return root;
+    // 渲染隔离：给 :host 加 contain:layout（排除含视口固定后代的组件，见 KNIU_CONTAIN_EXCLUDE_TAGS）。
+    if (shouldContainHost(host.tagName)) adoptSharedStyle(root, KNIU_BASE_CONTAIN_CSS);
+    let prototype = ShadowRoot.prototype;
+    let descriptor = null;
+    while (prototype && !descriptor) {
+      descriptor = Object.getOwnPropertyDescriptor(prototype, 'innerHTML');
+      prototype = Object.getPrototypeOf(prototype);
+    }
+    if (!descriptor || typeof descriptor.get !== 'function') return root;
+    Object.defineProperty(root, 'innerHTML', {
+      configurable: true,
+      get: function () { return descriptor.get.call(root); },
+      set: function (markup) {
+        const html = String(markup == null ? '' : markup);
+        // 抽离 <style> 内容，剩下的结构部分走模板缓存
+        let styleText = '';
+        const structure = html.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, function (_, css) {
+          styleText += css + '\n';
+          return '';
+        });
+        let template = shadowTemplateCache.get(structure);
+        if (!template) {
+          template = (host.ownerDocument || document).createElement('template');
+          template.innerHTML = structure;
+          shadowTemplateCache.set(structure, template);
+        }
+        root.replaceChildren(template.content.cloneNode(true));
+        if (styleText) {
+          if (supportsAdoptedStyleSheets(root)) {
+            // replaceChildren + 重设 adoptedStyleSheets 会清空基础渲染隔离样式，这里补回流。
+            root.adoptedStyleSheets = shouldContainHost(host.tagName) ? [getSharedStyleSheet(KNIU_BASE_CONTAIN_CSS)] : [];
+            adoptSharedStyle(root, styleText);
+          } else {
+            // 退回逐实例 <style>：replaceChildren 已清空原先的基础 <style>，这里补回再追加组件样式。
+            if (shouldContainHost(host.tagName)) {
+              const base = (root.ownerDocument || root.host && root.host.ownerDocument || document).createElement('style');
+              base.textContent = KNIU_BASE_CONTAIN_CSS;
+              root.appendChild(base);
+            }
+            adoptSharedStyle(root, styleText);
+          }
+        }
+      }
+    });
+    return root;
+  }
+
+  function replaceChildrenWithFragment(target, nodes) {
+    const documentRef = target.ownerDocument || document;
+    const fragment = documentRef.createDocumentFragment();
+    Array.from(nodes || []).forEach(function (node) {
+      if (node) fragment.appendChild(node);
+    });
+    target.replaceChildren(fragment);
+  }
+
+  function resolveTableRowTemplate(template, row, rowIndex) {
+    if (typeof template === 'function') return template(row, rowIndex);
+    if (typeof template !== 'string' || !template.includes('{{')) return template;
+    const matches = [...template.matchAll(/\{\{\s*([\s\S]*?)\s*\}\}/g)];
+    if (!matches.length) return template;
+    const evaluate = function (expression) {
+      const evaluator = compileExpression(expression);
+      if (!evaluator) return '';
+      try { return evaluator({ scope: { row: row, $index: rowIndex } }); } catch { return ''; }
+    };
+    if (matches.length === 1 && matches[0][0] === template.trim()) return evaluate(matches[0][1]);
+    return template.replace(/\{\{\s*([\s\S]*?)\s*\}\}/g, function (_, expression) {
+      const value = evaluate(expression);
+      return value == null ? '' : String(value);
+    });
+  }
+
   function setScrollLock(locked) {
-    if (typeof document === 'undefined' || !document.documentElement) return;
-    document.documentElement.style.overflow = locked ? 'hidden' : '';
+    if (typeof document === 'undefined' || !document.documentElement || !document.body) return;
+    const root = document.documentElement;
+    const body = document.body;
+    if (locked) {
+      if (scrollLockStyles) return;
+      scrollLockStyles = {
+        rootOverflow: root.style.overflow,
+        rootOverflowX: root.style.overflowX,
+        rootOverflowY: root.style.overflowY,
+        bodyOverflow: body.style.overflow,
+        bodyOverflowX: body.style.overflowX,
+        bodyOverflowY: body.style.overflowY
+      };
+      root.style.setProperty('overflow', 'hidden');
+      root.style.setProperty('overflow-x', 'hidden');
+      root.style.setProperty('overflow-y', 'hidden');
+      body.style.setProperty('overflow', 'hidden');
+      body.style.setProperty('overflow-x', 'hidden');
+      body.style.setProperty('overflow-y', 'hidden');
+      return;
+    }
+    if (!scrollLockStyles) return;
+    root.style.overflow = scrollLockStyles.rootOverflow;
+    root.style.overflowX = scrollLockStyles.rootOverflowX;
+    root.style.overflowY = scrollLockStyles.rootOverflowY;
+    body.style.overflow = scrollLockStyles.bodyOverflow;
+    body.style.overflowX = scrollLockStyles.bodyOverflowX;
+    body.style.overflowY = scrollLockStyles.bodyOverflowY;
+    scrollLockStyles = null;
   }
 
   // 切换路由加载态。
@@ -68,7 +210,18 @@ var KniuUI = (function () {
     if (!target || typeof target.replaceChildren !== 'function') {
       throw new TypeError('[KniuUI] createTable() requires a el element');
     }
-    const columns = Array.isArray(options.cols) ? options.cols : [];
+    // 列定义过滤：condition 为空或对空行求值为真才保留（条件列）。
+    // 不能 filter 拷贝后固定引用：options.cols 与外部数组是同一引用，调用方可能
+    // 原地 mutate（push/splice）而不重建表格，故 render 每次重新过滤并原地替换，
+    // 让行池签名与实际列结构一致（2026-09-01：曾因 filter 拷贝隔离 mutate 而失效）。
+    function readColumns() {
+      return Array.isArray(options.cols)
+        ? options.cols.filter(function (column) {
+          return column.condition == null || !!resolveTableRowTemplate(column.condition, {}, 0);
+        })
+        : [];
+    }
+    const columns = readColumns();
     if (!columns.length) {
       throw new TypeError('[KniuUI] createTable() requires at least one column');
     }
@@ -76,6 +229,9 @@ var KniuUI = (function () {
     const maxHeight = Number.parseInt(options.maxHeight, 10) || 0;
     const height = Number.parseInt(options.height, 10) || 0;
     let rows = Array.isArray(options.data) ? options.data : [];
+    // 数据源原始顺序（未排序基准）：升/降/清空三态排序都从它出发，
+    // 第三次点击清空排序时恢复此顺序，避免在已排序结果上叠加。
+    let initialRows = rows;
     let sortState = { field: '', order: '' };
     let currentRow = null;
     const selectedRows = new Set();
@@ -86,28 +242,43 @@ var KniuUI = (function () {
     let rendering = false;
     let headElement = null;
     let bodyElement = null;
+    // 行节点复用池：render 结束后保存当前 tbody 中的 tr 顺序。
+    // 列配置在 createTable 实例生命周期内固定，故行数不变时可整行复用，只更新单元格内容。
+    let rowPool = [];
+    // 复用池对应的列结构签名。options.cols 是外部数组的同一引用，若调用方原地
+    // mutate 列（push/splice）而不重建表格，复用行的单元格数会与 columns 失配
+    // （列变少残留旧格、列变多 cells[index] 为 undefined）。故每次 render 校验签名，
+    // 不一致即整体丢弃重建。开销 O(列数)，可忽略。
+    let rowPoolColumnSignature = '';
+    // 实测列宽缓存（固定列阴影用）。避免每次 render 都 getBoundingClientRect 强制回流。
+    let measuredColumnWidths = null;
+    // 固定列阴影显隐的 rAF 句柄（把布局读取移出 render 同步路径）
+    let shadowVisibilityFrame = 0;
+    // 视口尺寸观察器：容器尺寸变化时刷新列宽缓存与阴影布局指标
+    let viewportResizeObserver = null;
 
-    const style = documentRef.createElement('style');
-    style.textContent = `
+    // 表格 CSS 是静态的：目标为 ShadowRoot 时走共享样式表，多个表格实例共用一份解析结果。
+    const tableStyleSheetText = `
       :host{display:block;min-width:0}
-      .kniu_sys_table_group{position:relative;overflow:hidden;background:#fff;color:#606266;font-size:14px}
-      .kniu_sys_table_viewport{max-width:100%;overflow:auto}
-      .kniu_sys_table{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;background:#fff}
-      .kniu_sys_table th,.kniu_sys_table td{border-bottom:1px solid #ebeef5;padding:0 10px;height:48px;box-sizing:border-box;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#fff}
-      .kniu_sys_table th{position:sticky;top:0;z-index:3;color:#909399;font-weight:600;background:#f5f7fa}
+      .kniu_sys_table_group{position:relative;overflow:hidden;background-color:#fff;color:#606266;font-size:14px}
+      .kniu_sys_table_viewport{max-width:100%;overflow-x:auto;overflow-y:auto}
+      @supports(overflow-y:overlay){.kniu_sys_table_viewport{overflow-y:overlay}}
+      .kniu_sys_table{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;background-color:#fff}
+      .kniu_sys_table th,.kniu_sys_table td{border-bottom:1px solid #ebeef5;padding:0 10px;height:48px;box-sizing:border-box;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background-color:#fff}
+      .kniu_sys_table th{position:sticky;top:0;z-index:3;color:#909399;font-weight:600;background-color:#f5f7fa}
       .kniu_sys_table_group[data-empty="true"] thead{pointer-events:none;user-select:none}
       .kniu_sys_table_group[data-empty="true"] thead th{cursor:not-allowed!important}
       .kniu_sys_table_group[data-empty="true"] .kniu_sys_table_sort,.kniu_sys_table_group[data-empty="true"] .kniu_sys_table_selection{cursor:not-allowed}
-      .kniu_sys_table tbody tr:hover td{background:#f5f7fa}
-      .kniu_sys_table_group[data-stripe="true"] tbody tr:nth-child(even) td{background:#fafafa}
-      .kniu_sys_table_group[data-stripe="true"] tbody tr:hover td{background:#f5f7fa}
-      .kniu_sys_table_group[data-highlight-current-row="true"] tbody tr[data-current="true"] td{background:#ecf5ff}
+      .kniu_sys_table tbody tr:hover td{background-color:#f5f7fa}
+      .kniu_sys_table_group[data-stripe="true"] tbody tr:nth-child(even) td{background-color:#fafafa}
+      .kniu_sys_table_group[data-stripe="true"] tbody tr:hover td{background-color:#f5f7fa}
+      .kniu_sys_table_group[data-highlight-current-row="true"] tbody tr[data-current="true"] td{background-color:#ecf5ff}
       .kniu_sys_table_group[data-border="true"]{border:1px solid #ebeef5;border-right:0;border-bottom:0}
       .kniu_sys_table_group[data-border="true"] th,.kniu_sys_table_group[data-border="true"] td{border-right:1px solid #ebeef5}
       .kniu_sys_table_group[data-size="large"] th,.kniu_sys_table_group[data-size="large"] td{height:52px;padding:0 12px}
       .kniu_sys_table_group[data-size="small"] th,.kniu_sys_table_group[data-size="small"] td{height:40px;padding:0 8px;font-size:12px}
-      .kniu_sys_table .kniu_sys_table_fixed_left,.kniu_sys_table .kniu_sys_table_fixed_right{position:sticky;z-index:2;background:#fff}
-      .kniu_sys_table th.kniu_sys_table_fixed_left,.kniu_sys_table th.kniu_sys_table_fixed_right{z-index:5;background:#f5f7fa}
+      .kniu_sys_table .kniu_sys_table_fixed_left,.kniu_sys_table .kniu_sys_table_fixed_right{position:sticky;z-index:2;background-color:#fff}
+      .kniu_sys_table th.kniu_sys_table_fixed_left,.kniu_sys_table th.kniu_sys_table_fixed_right{z-index:5;background-color:#f5f7fa}
       .kniu_sys_table_fixed_shadow{position:absolute;top:0;bottom:0;z-index:10;display:none;pointer-events:none;box-shadow:0 0 10px rgba(0,0,0,.12)}
       .kniu_sys_table_fixed_shadow_left{left:0}
       .kniu_sys_table_fixed_shadow_right{right:0}
@@ -115,22 +286,22 @@ var KniuUI = (function () {
       .kniu_sys_table_group[data-mobile-overflow-left="true"]::before,.kniu_sys_table_group[data-mobile-overflow-right="true"]::after{content:"";position:absolute;z-index:11;top:0;bottom:0;width:26px;pointer-events:none}
       .kniu_sys_table_group[data-mobile-overflow-left="true"]::before{left:0;background-image:linear-gradient(to right,var(--kniu-table-edge-fade),transparent)}
       .kniu_sys_table_group[data-mobile-overflow-right="true"]::after{right:0;background-image:linear-gradient(to left,var(--kniu-table-edge-fade),transparent)}
-      .kniu_sys_table_action{border:0;padding:4px 0;background:transparent;color:#409eff;font:inherit;cursor:pointer}
+      .kniu_sys_table_action{border:0;padding:4px 0;background-color:transparent;color:#409eff;font:inherit;cursor:pointer}
       .kniu_sys_table_action:hover{color:#66b1ff}
       .kniu_sys_table_editable{cursor:text}
-      .kniu_sys_table_editable:hover{background:#ecf5ff!important}
+      .kniu_sys_table_editable:hover{background-color:#ecf5ff!important}
       .kniu_sys_table_edit_input{width:100%;height:32px;padding:0 8px;border:1px solid #409eff;border-radius:3px;outline:0;box-sizing:border-box;color:#606266;font:inherit}
       .kniu_sys_table_empty td{height:80px;text-align:center;color:#909399}
-      .kniu_sys_table_empty:hover td{background:#fff!important;cursor:default}
+      .kniu_sys_table_empty:hover td{background-color:#fff!important;cursor:default}
       .kniu_sys_table_empty td slot[name="empty"]{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
-      .kniu_sys_table_sort{display:inline-flex;flex-direction:column;margin-left:6px;vertical-align:middle;color:#c0c4cc;font-size:9px;line-height:7px;cursor:pointer}.kniu_sys_table_sort[data-order="ascending"] .kniu_sys_table_sort_up,.kniu_sys_table_sort[data-order="descending"] .kniu_sys_table_sort_down{color:#409eff}
-      .kniu_sys_table_selection{width:14px;height:14px;accent-color:#409eff;cursor:pointer}
+      .kniu_sys_table_sort{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:16px;height:22px;margin-left:5px;vertical-align:middle;color:#c0c4cc;cursor:pointer}.kniu_sys_table_sort_up,.kniu_sys_table_sort_down{display:block;width:14px;height:10px;line-height:0}.kniu_sys_table_sort svg{display:block;width:14px;height:14px;fill:currentColor}.kniu_sys_table_sort_up svg{transform:translateY(1px)}.kniu_sys_table_sort_down svg{transform:translateY(-5px)}.kniu_sys_table_sort[data-order="ascending"] .kniu_sys_table_sort_up,.kniu_sys_table_sort[data-order="descending"] .kniu_sys_table_sort_down{color:#333}
+      .kniu_sys_table_selection{appearance:none;width:14px;height:14px;margin:0;border:1px solid #dcdfe6;border-radius:2px;outline:0;background-color:#fff;background-position:center;background-repeat:no-repeat;background-size:10px 8px;box-sizing:border-box;cursor:pointer;transition:border-color .2s,background-color .2s}.kniu_sys_table_selection:checked{border-color:#409eff;background-color:#409eff;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 10'%3E%3Cpath d='M1 5l3 3 7-7' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}.kniu_sys_table_selection:indeterminate{border-color:#409eff;background-color:#409eff;background-image:linear-gradient(#fff,#fff);background-size:8px 2px}.kniu_sys_table_selection:focus-visible{outline:2px solid rgba(64,158,255,.3);outline-offset:2px}.kniu_sys_table_selection:disabled{border-color:#dcdfe6;background-color:#f5f7fa;cursor:not-allowed;opacity:.65}.kniu_sys_table_selection:disabled:checked,.kniu_sys_table_selection:disabled:indeterminate{border-color:#a0cfff;background-color:#a0cfff}
       .kniu_sys_table_cell_tooltip{position:relative}
-      .kniu_sys_table_tooltip{position:fixed;z-index:9999;max-width:50vw;padding:8px 12px;border-radius:4px;background:rgba(48,49,51,.92);color:#fff;font-size:12px;line-height:1.5;white-space:normal;word-break:break-all;box-shadow:0 2px 12px rgba(0,0,0,.18);pointer-events:none}
+      .kniu_sys_table_tooltip{position:fixed;z-index:9999;max-width:50vw;padding:8px 12px;border-radius:4px;background-color:rgba(48,49,51,.92);color:#fff;font-size:12px;line-height:1.5;white-space:normal;word-break:break-all;box-shadow:0 2px 12px rgba(0,0,0,.18);pointer-events:none}
       .kniu_sys_table_tooltip::after{content:"";position:absolute;width:0;height:0;border:6px solid transparent;pointer-events:none;left:var(--kniu_tip_arrow_x,50%);transform:translateX(-50%)}
       .kniu_sys_table_tooltip[data-placement="top"]::after{bottom:-12px;border-top-color:rgba(48,49,51,.92)}
       .kniu_sys_table_tooltip[data-placement="bottom"]::after{top:-12px;border-bottom-color:rgba(48,49,51,.92)}
-      .kniu_sys_table_loading{position:absolute;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:rgba(255,255,255,.9);color:#606266;opacity:0;visibility:hidden;transition:opacity .2s ease,visibility .2s ease;pointer-events:auto}
+      .kniu_sys_table_loading{position:absolute;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background-color:rgba(255,255,255,.9);color:#606266;opacity:0;visibility:hidden;transition:opacity .2s ease,visibility .2s ease;pointer-events:auto}
       .kniu_sys_table_loading[data-active="true"]{opacity:1;visibility:visible}
       .kniu_sys_table_loading_spinner{width:34px;height:34px;box-sizing:border-box;border:3px solid rgba(64,158,255,.25);border-top-color:#409eff;border-radius:50%;animation:kniu_sys_table_loading_spin .7s linear infinite}
       .kniu_sys_table_loading_text{font-size:13px;max-width:80%;text-align:center}
@@ -145,6 +316,14 @@ var KniuUI = (function () {
       }
       @media (prefers-reduced-motion:reduce){.kniu_sys_table_loading_spinner{animation:none}}
     `;
+    // 目标是 ShadowRoot 时用共享样式表；否则（普通容器）退回 <style> 元素。
+    const style = supportsAdoptedStyleSheets(target)
+      ? (adoptSharedStyle(target, tableStyleSheetText), null)
+      : (function () {
+        const element = documentRef.createElement('style');
+        element.textContent = tableStyleSheetText;
+        return element;
+      })();
     const group = documentRef.createElement('div');
     group.className = 'kniu_sys_table_group';
     const viewport = documentRef.createElement('div');
@@ -158,7 +337,10 @@ var KniuUI = (function () {
       if (Number.isFinite(w) && w > 0) return w;
       const m = Number.parseInt(column.minWidth, 10);
       if (Number.isFinite(m) && m > 0) return m;
-      return 0;
+      // 未声明宽度的业务列也必须计入表格最小宽度。原先返回 0，
+      // 导致移动端固定宽度列占满后，栏目名称/中文/英文/用户名等
+      // 弹性列被 table-layout:fixed 压缩到 0px。与 columnWidth() 的默认值保持一致。
+      return 120;
     };
     const hasFlexibleColumn = columns.some(function (column) {
       const w = Number.parseInt(column.width, 10);
@@ -201,7 +383,7 @@ var KniuUI = (function () {
     tooltip.className = 'kniu_sys_table_tooltip';
     tooltip.hidden = true;
     tooltip.setAttribute('role', 'tooltip');
-    target.replaceChildren(style, group, tooltip);
+    replaceChildrenWithFragment(target, [style, group, tooltip]);
 
     function columnWidth(column) {
       return Math.max(40, Number.parseInt(column.width, 10) || Number.parseInt(column.minWidth, 10) || 120);
@@ -309,59 +491,97 @@ var KniuUI = (function () {
         const checkbox = documentRef.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.className = 'kniu_sys_table_selection';
+        // 行节点会被复用，监听器不能闭包持有 row（换页后即失效），统一按 rowIndex 取回当前行对象
+        checkbox.dataset.rowIndex = String(rowIndex);
         checkbox.checked = selectedRows.has(row);
         checkbox.disabled = typeof column.selectable === 'function' && !column.selectable(row, rowIndex);
         checkbox.addEventListener('click', function (event) { event.stopPropagation(); });
         checkbox.addEventListener('change', function () {
-          if (checkbox.checked) selectedRows.add(row);
-          else selectedRows.delete(row);
+          const currentIndex = Number.parseInt(checkbox.dataset.rowIndex, 10);
+          const currentRowData = Number.isFinite(currentIndex) ? rows[currentIndex] : row;
+          if (currentRowData === undefined) return;
+          if (checkbox.checked) selectedRows.add(currentRowData);
+          else selectedRows.delete(currentRowData);
           options.host?.dispatchEvent(new CustomEvent('selection-change', { detail: [...selectedRows], bubbles: true, composed: true }));
           render();
         });
         cell.append(checkbox);
         return;
       }
+      if (column.image) {
+        const image = documentRef.createElement('kniu-image');
+        image.options = { ...(column.image.options || column.image.attributes || {}), src: column.field == null ? '' : row?.[column.field] };
+        image.style.width = column.image.width;
+        image.style.height = column.image.height;
+        cell.append(image);
+        return;
+      }
       if (column.switch) {
         const switchElement = documentRef.createElement('kniu-switch');
-        Object.entries(column.switch.attributes).forEach(function ([name, value]) {
-          if (value === true) switchElement.setAttribute(name, '');
-          else if (value !== false && value != null && value !== '') switchElement.setAttribute(name, String(value));
-        });
+        // 列内开关配置统一来自 kniu:options 快照（旧 attribute 快照已作废）
+        if (column.switch.options && typeof column.switch.options === 'object') {
+          switchElement.options = column.switch.options;
+        }
         switchElement.value = column.field == null ? false : row?.[column.field];
+        // 同上：行节点复用后按 rowIndex 取回行对象，避免闭包里是上一页的 row
+        switchElement.dataset.rowIndex = String(rowIndex);
+        switchElement._saveQueue = Promise.resolve();
+        switchElement._changeVersion = 0;
         switchElement.addEventListener('change', async function (event) {
-          const previousValue = column.field == null ? undefined : row[column.field];
-          if (column.field != null) row[column.field] = event.detail;
+          const currentIndex = Number.parseInt(switchElement.dataset.rowIndex, 10);
+          const currentRowData = Number.isFinite(currentIndex) ? rows[currentIndex] : row;
+          if (currentRowData === undefined) return;
+          const previousValue = column.field == null ? undefined : currentRowData[column.field];
+          const requestedValue = event.detail;
+          if (column.field != null) currentRowData[column.field] = requestedValue;
           if (typeof column.switch.onChange !== 'function') return;
-          switchElement.disabled = true;
-          let saved = false;
-          try {
-            saved = await column.switch.onChange(rowIndex, rows, event.detail) !== false;
-          } finally {
-            switchElement.disabled = !!column.switch.attributes.disabled;
-          }
-          if (!saved && column.field != null) {
-            row[column.field] = previousValue;
+          // 不在请求期间禁用开关：禁用会让连续点击被浏览器吞掉，
+          // 因而看起来像“切换几次后不再发请求”。同一开关的提交按操作顺序
+          // 串行入队，既不丢操作，也避免后发请求先返回导致服务端最终值错乱。
+          const changeVersion = ++switchElement._changeVersion;
+          const saveTask = switchElement._saveQueue.then(function () {
+            return column.switch.onChange(currentIndex, rows, requestedValue);
+          });
+          switchElement._saveQueue = saveTask.catch(function () { return false; });
+          const saved = await saveTask.catch(function () { return false; }) !== false;
+          if (!saved && column.field != null && switchElement._changeVersion === changeVersion) {
+            currentRowData[column.field] = previousValue;
             switchElement.value = previousValue;
           }
         });
         cell.append(switchElement);
         return;
       }
+      if (column.tag) {
+        const tag = documentRef.createElement('kniu-tag');
+        tag.options = Object.fromEntries(Object.entries(column.tag.options || column.tag.attributes || {}).map(function ([name, value]) {
+          return [name, resolveTableRowTemplate(value, row, rowIndex)];
+        }));
+        const rawValue = column.field == null ? '' : row?.[column.field];
+        tag.textContent = rawValue == null ? '' : String(rawValue);
+        cell.append(tag);
+        return;
+      }
+      if (column.status) {
+        const status = documentRef.createElement('kniu-status');
+        status.options = Object.fromEntries(Object.entries(column.status.options || column.status.attributes || {}).map(function ([name, value]) {
+          return [name, resolveTableRowTemplate(value, row, rowIndex)];
+        }));
+        const rawValue = column.field == null ? '' : row?.[column.field];
+        status.textContent = rawValue == null ? '' : String(rawValue);
+        cell.append(status);
+        return;
+      }
       if (Array.isArray(column.actions)) {
         column.actions.forEach(function (action, actionIndex) {
+          if (action.condition != null && !resolveTableRowTemplate(action.condition, row, rowIndex)) return;
           const button = documentRef.createElement('kniu-btn');
           button.className = `kniu_sys_table_action${action.className ? ` ${action.className}` : ''}`;
-          button.setAttribute('native-type', 'button');
-          if (action.type) button.setAttribute('type', action.type);
-          if (action.size) button.setAttribute('size', action.size);
-          if (action.plain) button.setAttribute('plain', '');
-          if (action.text) button.setAttribute('text', '');
-          if (action.bg) button.setAttribute('bg', '');
-          if (action.link) button.setAttribute('link', '');
-          if (action.round) button.setAttribute('round', '');
-          if (action.circle) button.setAttribute('circle', '');
-          if (action.disabled) button.setAttribute('disabled', '');
-          if (action.icon) button.setAttribute('icon', action.icon);
+          button.options = {
+            nativeType: 'button', type: action.type, size: action.size, plain: action.plain,
+            text: action.text, bg: action.bg, link: action.link, round: action.round, circle: action.circle,
+            disabled: action.disabled, icon: action.icon
+          };
           button.dataset.rowIndex = String(rowIndex);
           button.dataset.columnIndex = String(columns.indexOf(column));
           button.dataset.actionIndex = String(actionIndex);
@@ -387,20 +607,350 @@ var KniuUI = (function () {
       }
     }
 
-    function updateFixedShadowVisibility() {
+    // ===== 批量渲染优化：行/单元格复用 =====
+    // 原因：原实现每次 render 都重建 tbody 内全部 tr/td（500 行 × 8 列 = 4000+ 节点，
+    // 其中控件列还要逐个 attachShadow 创建自定义元素），随后又读 getBoundingClientRect
+    // 触发整表强制同步布局。实测单次 setData 约 60ms，其中 80% 耗在强制回流上。
+    // 复用后：节点不重建 → 浏览器只做增量布局；列宽缓存 → 不再每次强制回流。
+
+    // 纯文本列（无控件、无自定义元素）可只改 textContent，零元素创建。
+    function isPlainTextColumn(column) {
+      return column.type !== 'checkbox'
+        && !column.image
+        && !column.switch
+        && !column.tag
+        && !column.status
+        && !Array.isArray(column.actions);
+    }
+
+    function setWidgetAttribute(element, name, value) {
+      if (value == null || value === '') element.removeAttribute(name);
+      else element.setAttribute(name, String(value));
+    }
+
+    function setWidgetFlag(element, name, active) {
+      if (active) element.setAttribute(name, '');
+      else element.removeAttribute(name);
+    }
+
+    // 复用单元格内已有控件，只更新值与状态。返回 false 表示结构不匹配，需重建。
+    function updateCellWidget(cell, column, row, rowIndex) {
+      const child = cell.firstElementChild;
+      if (column.type === 'checkbox') {
+        if (!child || child.tagName !== 'INPUT') return false;
+        // rowIndex 必须同步：行节点复用后若不更新，change 会拿旧索引改错行
+        child.dataset.rowIndex = String(rowIndex);
+        child.checked = selectedRows.has(row);
+        child.disabled = typeof column.selectable === 'function' && !column.selectable(row, rowIndex);
+        return true;
+      }
+      if (column.image) {
+        if (!child || child.tagName !== 'KNIU-IMAGE') return false;
+        child.options = { ...(column.image.options || column.image.attributes || {}), src: column.field == null ? '' : row?.[column.field] };
+        return true;
+      }
+      if (column.switch) {
+        if (!child || child.tagName !== 'KNIU-SWITCH') return false;
+        // 首次渲染早于 kniu:options 绑定（快照为 null）时，行复用节点也需在列定义
+        // 重读后同步最新配置；整体替换 options 后此处按引用变化更新。
+        if (column.switch.options && typeof column.switch.options === 'object'
+          && child.options !== column.switch.options) {
+          child.options = column.switch.options;
+        }
+        child.value = column.field == null ? false : row?.[column.field];
+        child.dataset.rowIndex = String(rowIndex);
+        return true;
+      }
+      if (column.tag || column.status) {
+        const tagName = column.tag ? 'KNIU-TAG' : 'KNIU-STATUS';
+        if (!child || child.tagName !== tagName) return false;
+        const config = column.tag || column.status;
+        child.options = Object.fromEntries(Object.entries(config.options || config.attributes || {}).map(function ([name, value]) {
+          return [name, resolveTableRowTemplate(value, row, rowIndex)];
+        }));
+        const rawValue = column.field == null ? '' : row?.[column.field];
+        child.textContent = rawValue == null ? '' : String(rawValue);
+        return true;
+      }
+      if (Array.isArray(column.actions)) return updateActionButtons(cell, column, row, rowIndex);
+      return false;
+    }
+
+    // 操作列：按钮数量会随 condition 变化，用「按需显示/隐藏」代替「删除/重建」，
+    // 避免每次 render 都创建成百上千个 kniu-btn（每个都要挂 ShadowRoot）。
+    function updateActionButtons(cell, column, row, rowIndex) {
+      const existing = [...cell.children];
+      let cursor = 0;
+      column.actions.forEach(function (action, actionIndex) {
+        if (action.condition != null && !resolveTableRowTemplate(action.condition, row, rowIndex)) return;
+        let button = existing[cursor];
+        if (!button || button.tagName !== 'KNIU-BTN') {
+          button = documentRef.createElement('kniu-btn');
+          cell.appendChild(button);
+        }
+        button.className = `kniu_sys_table_action${action.className ? ` ${action.className}` : ''}`;
+        button.style.display = '';
+        button.options = {
+          nativeType: 'button', type: action.type, size: action.size, plain: action.plain,
+          text: action.text, bg: action.bg, link: action.link, round: action.round, circle: action.circle,
+          disabled: action.disabled, icon: action.icon
+        };
+        button.dataset.rowIndex = String(rowIndex);
+        button.dataset.columnIndex = String(columns.indexOf(column));
+        button.dataset.actionIndex = String(actionIndex);
+        const title = typeof action.title === 'function'
+          ? String(action.title(row, rowIndex))
+          : String(action.title || '操作');
+        if (button.textContent !== title) button.textContent = title;
+        cursor += 1;
+      });
+      for (let index = cursor; index < existing.length; index += 1) existing[index].style.display = 'none';
+      return true;
+    }
+
+    // 更新单元格内容：文本列走极速路径，控件列优先复用。
+    function renderCellContent(cell, column, row, rowIndex, reused) {
+      if (!cell) return;
+      if (isPlainTextColumn(column)) {
+        let text;
+        if (column.type === 'index') {
+          text = typeof column.index === 'function'
+            ? String(column.index(rowIndex))
+            : String(rowIndex + (Number(column.index) || 1));
+        } else {
+          const rawValue = column.field == null ? '' : row?.[column.field];
+          const value = typeof column.formatter === 'function'
+            ? column.formatter(row, column, rawValue, rowIndex)
+            : rawValue;
+          // HTML 编解码为后端全责（查→后端解码返回），前端拿到即最终文本，直接渲染。
+          text = value == null ? '' : String(value);
+        }
+        if (cell.textContent !== text) cell.textContent = text;
+        if (column.showOverflowTooltip) {
+          cell._tooltipText = text;
+          if (!cell.classList.contains('kniu_sys_table_cell_tooltip')) {
+            cell.classList.add('kniu_sys_table_cell_tooltip');
+            cell.addEventListener('mouseenter', function () { showCellTooltip(cell); });
+            cell.addEventListener('mouseleave', function () { hideTooltip(); });
+          }
+        }
+        return;
+      }
+      if (reused && updateCellWidget(cell, column, row, rowIndex)) return;
+      cell.replaceChildren();
+      appendCellContent(cell, column, row, rowIndex);
+    }
+
+    // 新建数据行：一次性用 DocumentFragment 挂载全部单元格，避免逐个 append 触发多次布局。
+    function createBodyRow(offsets) {
+      const tableRow = documentRef.createElement('tr');
+      const cellFragment = documentRef.createDocumentFragment();
+      columns.forEach(function (column, index) {
+        const cell = documentRef.createElement('td');
+        applyColumnLayout(cell, column, index, offsets);
+        if (column.editable) cell.classList.add('kniu_sys_table_editable');
+        cellFragment.appendChild(cell);
+      });
+      tableRow.appendChild(cellFragment);
+      return tableRow;
+    }
+
+    function buildBodyRow(row, rowIndex, offsets) {
+      const pooled = rowPool[rowIndex];
+      // 空态行结构不同（只有 1 个 colspan 单元格），不能与数据行互用；
+      // 单元格数与当前列数不一致时同样不可复用（兜底，正常由列签名拦截）。
+      const reused = !!pooled
+        && !pooled.classList.contains('kniu_sys_table_empty')
+        && pooled.cells.length === columns.length;
+      const tableRow = reused ? pooled : createBodyRow(offsets);
+      if (options.rowKey && row?.[options.rowKey] != null) tableRow.dataset.rowKey = String(row[options.rowKey]);
+      else if (tableRow.dataset.rowKey != null) delete tableRow.dataset.rowKey;
+      tableRow.dataset.current = String(row === currentRow);
+      // 行索引写进 dataset：事件委托时据此从 rows 取回行对象，避免监听器闭包持有陈旧的 row
+      tableRow.dataset.rowIndex = String(rowIndex);
+      const cells = tableRow.cells;
+      for (let index = 0; index < columns.length; index += 1) {
+        renderCellContent(cells[index], columns[index], row, rowIndex, reused);
+      }
+      return tableRow;
+    }
+
+    // 列结构签名：单元格数量与列布局（宽度 / 固定 / 可编辑）一旦变化，复用行必须重建。
+    function columnSignature() {
+      let signature = String(columns.length);
+      for (let i = 0; i < columns.length; i += 1) {
+        const column = columns[i];
+        signature += `|${column.field ?? column.type ?? ''},${column.width ?? ''},${column.minWidth ?? ''},${column.fixed ?? ''},${column.editable ? 1 : 0},${column.align ?? ''}`;
+      }
+      return signature;
+    }
+
+    function buildEmptyRow() {
+      const emptyRow = documentRef.createElement('tr');
+      emptyRow.className = 'kniu_sys_table_empty';
+      const emptyCell = documentRef.createElement('td');
+      emptyCell.colSpan = columns.length;
+      if (options.emptySlot) {
+        // <template #empty> 插槽：在空行内投影自定义内容（图标、按钮等）
+        const slot = documentRef.createElement('slot');
+        slot.name = 'empty';
+        emptyCell.append(slot);
+      } else if (options.emptyText === '') {
+        // 外部自行提供空状态（如 kniu-empty）时隐藏内置空行，避免重复文案
+        emptyCell.textContent = '';
+        emptyRow.style.display = 'none';
+      } else {
+        emptyCell.textContent = options.emptyText || '暂无数据';
+      }
+      emptyRow.append(emptyCell);
+      return emptyRow;
+    }
+
+    // 行点击 / 可编辑单元格改为事件委托：整表只挂 2 个监听器，
+    // 取代原本「每行一个 click + 每格一个 pointerdown/click」（500 行表格即数千个监听器）。
+    function findEventElement(event, selector) {
+      const pathMatch = event.composedPath?.().find(function (node) {
+        return node?.matches?.(selector);
+      });
+      return pathMatch || event.target?.closest?.(selector) || null;
+    }
+
+    function resolveRowFromEvent(event, selector) {
+      if (disposed) return null;
+      if (selector && findEventElement(event, selector)) return null;
+      // kniu-btn / kniu-switch 内部是 Shadow DOM，event.target 在委托层会被重定向。
+      // 通过 composedPath 取真实路径，才能稳定找到宿主控件和所属单元格。
+      const cell = findEventElement(event, 'td');
+      if (!cell || !bodyElement || !bodyElement.contains(cell)) return null;
+      const tableRow = cell.parentElement;
+      if (!tableRow || tableRow.parentElement !== bodyElement) return null;
+      const rowIndex = Number.parseInt(tableRow.dataset.rowIndex, 10);
+      if (!Number.isFinite(rowIndex)) return null;
+      const row = rows[rowIndex];
+      if (row === undefined) return null;
+      return { cell: cell, tableRow: tableRow, row: row, rowIndex: rowIndex, column: columns[cell.cellIndex] };
+    }
+
+    function handleBodyClick(event) {
+      const hit = resolveRowFromEvent(event, null);
+      if (!hit) return;
+      const { cell, tableRow, row, rowIndex, column } = hit;
+      const isControl = findEventElement(event, '.kniu_sys_table_action,.kniu_sys_table_editable,.kniu_sys_table_selection,kniu-switch');
+      if (isControl) {
+        if (column?.editable && cell.classList.contains('kniu_sys_table_editable')) {
+          beginCellEdit(cell, column, row, rowIndex);
+        }
+        return;
+      }
+      const previous = currentRow;
+      currentRow = row;
+      options.host?.dispatchEvent(new CustomEvent('row-click', { detail: { row: row, index: rowIndex }, bubbles: true, composed: true }));
+      if (previous !== row) options.host?.dispatchEvent(new CustomEvent('current-change', { detail: { currentRow: row, oldCurrentRow: previous }, bubbles: true, composed: true }));
+      if (options.highlightCurrentRow) {
+        bodyElement.querySelectorAll('tr[data-current="true"]').forEach(function (item) { item.dataset.current = 'false'; });
+        tableRow.dataset.current = 'true';
+      }
+    }
+
+    function handleBodyPointerDown(event) {
+      const cell = event.target.closest?.('td.kniu_sys_table_editable');
+      if (!cell || !bodyElement || !bodyElement.contains(cell)) return;
+      const activeInput = table.querySelector('.kniu_sys_table_edit_input');
+      if (!activeInput || cell.contains(activeInput)) return;
+      const tableRow = cell.parentElement;
+      const rowIndex = Number.parseInt(tableRow?.dataset?.rowIndex, 10);
+      const column = columns[cell.cellIndex];
+      if (!column || !Number.isFinite(rowIndex)) return;
+      event.preventDefault();
+      pendingEdit = { row: rows[rowIndex], column: column };
+      activeInput.blur();
+    }
+
+    // 固定列阴影需要的实测列宽：列配置固定，宽度只在容器尺寸变化时改变，
+    // 因此缓存结果，仅在 resize / doLayout 时失效，避免每次 render 强制回流。
+    function invalidateColumnWidthCache() {
+      measuredColumnWidths = null;
+    }
+
+    function measureColumnWidths() {
+      if (measuredColumnWidths) return measuredColumnWidths;
+      const head = table.querySelector('thead');
+      const measured = [];
+      let anyMeasured = false;
+      for (let index = 0; index < columns.length; index += 1) {
+        const th = head?.rows?.[0]?.cells?.[index];
+        const width = th ? th.getBoundingClientRect().width : 0;
+        if (width > 0) {
+          measured[index] = width;
+          anyMeasured = true;
+        } else {
+          measured[index] = columnWidth(columns[index]);
+        }
+      }
+      // 只有拿到真实宽度才缓存，否则首帧尚未布局时会把兜底值固化
+      if (anyMeasured) measuredColumnWidths = measured;
+      return measured;
+    }
+
+    // 阴影显隐依赖 viewport 的 scrollWidth/clientWidth，同步读取会强制布局；
+    // 推迟到下一帧统一处理，视觉无差别，但把强制回流移出了 render 的同步路径。
+    function scheduleShadowVisibilityUpdate() {
+      // 行数/列宽变化会改变 scrollWidth，先让缓存指标失效再在下一帧重算
+      invalidateLayoutMetrics();
+      if (shadowVisibilityFrame) return;
+      const view = documentRef.defaultView;
+      if (!view || typeof view.requestAnimationFrame !== 'function') {
+        updateFixedShadowVisibility();
+        return;
+      }
+      shadowVisibilityFrame = view.requestAnimationFrame(function () {
+        shadowVisibilityFrame = 0;
+        if (!disposed) updateFixedShadowVisibility();
+      });
+    }
+
+    // 滚动时若每次都读 scrollWidth/clientWidth/offsetWidth，会在每个 scroll 事件上强制同步布局。
+    // 这三个值只随「内容尺寸 / 容器尺寸」变化，故缓存起来，滚动路径只读廉价的 scrollLeft。
+    let layoutMetrics = null;
+    // matchMedia 结果缓存为单个 MediaQueryList，避免每次滚动都重新解析媒体查询
+    let mobileMediaQuery = null;
+
+    function invalidateLayoutMetrics() {
+      layoutMetrics = null;
+    }
+
+    function getLayoutMetrics() {
+      if (layoutMetrics) return layoutMetrics;
+      if (!mobileMediaQuery && typeof globalThis.matchMedia === 'function') {
+        mobileMediaQuery = globalThis.matchMedia('(max-width: 850px)');
+      }
       const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
-      const hasHorizontalOverflow = maxScrollLeft > 1;
-      const isMobile = globalThis.matchMedia?.('(max-width: 850px)').matches;
-      group.dataset.mobileOverflowLeft = String(!!isMobile && hasHorizontalOverflow && viewport.scrollLeft > 1);
-      group.dataset.mobileOverflowRight = String(!!isMobile && hasHorizontalOverflow && viewport.scrollLeft < maxScrollLeft - 1);
+      layoutMetrics = {
+        maxScrollLeft: maxScrollLeft,
+        hasHorizontalOverflow: maxScrollLeft > 1,
+        isMobile: !!mobileMediaQuery?.matches,
+        // 右侧固定列阴影宽度保持恒定（仅等于固定列宽度），不随竖向滚动条出现/消失而改变，避免翻页抖动。
+        // 滚动条为 classic 模式时，阴影 right 位置跟随滚动条宽度内缩，防止被滚动条覆盖。
+        verticalScrollbarWidth: Math.max(0, viewport.offsetWidth - viewport.clientWidth)
+      };
+      return layoutMetrics;
+    }
+
+    function updateFixedShadowVisibility() {
+      const metrics = getLayoutMetrics();
+      const scrollLeft = viewport.scrollLeft;
+      const { maxScrollLeft, hasHorizontalOverflow, isMobile, verticalScrollbarWidth } = metrics;
+      group.dataset.mobileOverflowLeft = String(isMobile && hasHorizontalOverflow && scrollLeft > 1);
+      group.dataset.mobileOverflowRight = String(isMobile && hasHorizontalOverflow && scrollLeft < maxScrollLeft - 1);
       leftFixedShadow.style.display =
-        fixedLeftWidth > 0 && hasHorizontalOverflow && viewport.scrollLeft > 1
+        fixedLeftWidth > 0 && hasHorizontalOverflow && scrollLeft > 1
           ? 'block'
           : 'none';
       rightFixedShadow.style.display =
-        fixedRightWidth > 0 && hasHorizontalOverflow && viewport.scrollLeft < maxScrollLeft - 1
+        fixedRightWidth > 0 && hasHorizontalOverflow && scrollLeft < maxScrollLeft - 1
           ? 'block'
           : 'none';
+      rightFixedShadow.style.right = `${verticalScrollbarWidth}px`;
     }
 
     function beginCellEdit(cell, column, row, rowIndex) {
@@ -408,8 +958,9 @@ var KniuUI = (function () {
       const oldValue = row?.[column.field];
       const input = documentRef.createElement('input');
       input.className = 'kniu_sys_table_edit_input';
-      input.type = column.editType === 'number' ? 'number' : 'text';
-      if (column.editType === 'number' && column.editMin != null) input.min = String(column.editMin);
+      const editMode = column.editable === 'number' ? 'number' : 'text';
+      input.type = editMode;
+      if (editMode === 'number' && column.editMin != null) input.min = String(column.editMin);
       input.value = oldValue == null ? '' : String(oldValue);
       cell.replaceChildren(input);
       input.focus();
@@ -417,7 +968,7 @@ var KniuUI = (function () {
       let cancelled = false;
       let committed = false;
       input.addEventListener('keydown', function (event) {
-        if (column.editType === 'number' && column.editMin >= 0 && event.key === '-') {
+        if (editMode === 'number' && column.editMin >= 0 && event.key === '-') {
           event.preventDefault();
           return;
         }
@@ -436,7 +987,7 @@ var KniuUI = (function () {
           return;
         }
         const numericValue = Number.isFinite(Number(input.value)) ? Number(input.value) : 0;
-        const nextValue = column.editType === 'number'
+        const nextValue = editMode === 'number'
           ? Math.max(column.editMin ?? Number.NEGATIVE_INFINITY, numericValue)
           : input.value;
         if (String(nextValue) === String(oldValue)) {
@@ -450,7 +1001,7 @@ var KniuUI = (function () {
         if (!saved) row[column.field] = oldValue;
         if (saved) {
           rows.sort(function (left, right) {
-            if (column.editType === 'number') return Number(left?.[column.field] || 0) - Number(right?.[column.field] || 0);
+            if (column.editable === 'number') return Number(left?.[column.field] || 0) - Number(right?.[column.field] || 0);
             return String(left?.[column.field] ?? '').localeCompare(String(right?.[column.field] ?? ''), 'zh-CN');
           });
         }
@@ -463,7 +1014,8 @@ var KniuUI = (function () {
       sortState = { field: field || '', order: order || '' };
       if (column && order) {
         const direction = order === 'descending' ? -1 : 1;
-        rows.sort(function (left, right) {
+        // 从初始顺序副本出发排序：升/降/清空三态反复切换也不会在已排序结果上叠加。
+        rows = [...initialRows].sort(function (left, right) {
           if (typeof column.sortMethod === 'function') return column.sortMethod(left, right) * direction;
           const a = left?.[field];
           const b = right?.[field];
@@ -474,6 +1026,9 @@ var KniuUI = (function () {
             ? a - b
             : String(a).localeCompare(String(b), 'zh-CN', { numeric: true })) * direction;
         });
+      } else {
+        // 第三次点击（或 clearSort）：清空排序，恢复数据源原始顺序。
+        rows = initialRows;
       }
       options.host?.dispatchEvent(new CustomEvent('sort-change', {
         detail: { column: column || null, field: field || '', order: order || null },
@@ -482,9 +1037,16 @@ var KniuUI = (function () {
       render();
     }
 
-    function render() {
+    function render(renderOptions = {}) {
       if (disposed || rendering) return;
+      // 外部可能原地 mutate options.cols（与外部同一引用）：每次渲染重读列定义并原地替换，
+      // 行池签名（columnSignature）据此检测列结构变化并整体作废重建（2026-09-01 修复
+      // filter 拷贝隔离 mutate 导致列增删后复用行单元格数失配）。
+      columns.length = 0;
+      columns.push(...readColumns());
       rendering = true;
+      const syncSortHeader = renderOptions.syncSortHeader !== false;
+      const syncSelectionHeader = renderOptions.syncSelectionHeader !== false;
       const isEmpty = rows.length === 0;
       group.dataset.empty = String(isEmpty);
       const offsets = fixedOffsets();
@@ -493,40 +1055,42 @@ var KniuUI = (function () {
       if (!headElement && options.showHeader !== false) {
         headElement = documentRef.createElement('thead');
         const headRow = documentRef.createElement('tr');
+        const headFragment = documentRef.createDocumentFragment();
         columns.forEach(function (column, index) {
           const cell = documentRef.createElement('th');
           cell.scope = 'col';
           cell.style.textAlign = column.headerAlign || column.align || 'left';
           // 表头 checkbox 列：根据当前列定义实时计算可选行集，
-            // 必须**每次都重新过滤**，因为 headElement 只创建一次，
-            // 首次创建时 rows 可能为空（data 尚未就绪），后续 setData 不会重建表头，
-            // 若把 selectableRows 闭包到 addEventListener 里，就会拿到陈旧的空数组。
-            function getSelectableRows(columnObj) {
-              return rows.filter(function (row, rowIndex) { return typeof columnObj.selectable !== 'function' || columnObj.selectable(row, rowIndex); });
-            }
-            if (column.type === 'checkbox') {
-              const checkbox = documentRef.createElement('input');
-              checkbox.type = 'checkbox';
-              checkbox.className = 'kniu_sys_table_selection';
-              checkbox.disabled = isEmpty;
-              checkbox.checked = getSelectableRows(column).length > 0 && getSelectableRows(column).every(function (row) { return selectedRows.has(row); });
-              checkbox.indeterminate = !checkbox.checked && getSelectableRows(column).some(function (row) { return selectedRows.has(row); });
-              checkbox.addEventListener('change', function () {
-                if (!rows.length) return;
-                // 不要用陈旧闭包，每次都按当前 rows 重新计算可选行集合
-                getSelectableRows(column).forEach(function (row) { checkbox.checked ? selectedRows.add(row) : selectedRows.delete(row); });
-                options.host?.dispatchEvent(new CustomEvent('selection-change', { detail: [...selectedRows], bubbles: true, composed: true }));
-                render();
-              });
-              cell.append(checkbox);
-            } else {
+          // 必须**每次都重新过滤**，因为 headElement 只创建一次，
+          // 首次创建时 rows 可能为空（data 尚未就绪），后续 setData 不会重建表头，
+          // 若把 selectableRows 闭包到 addEventListener 里，就会拿到陈旧的空数组。
+          function getSelectableRows(columnObj) {
+            return rows.filter(function (row, rowIndex) { return typeof columnObj.selectable !== 'function' || columnObj.selectable(row, rowIndex); });
+          }
+          if (column.type === 'checkbox') {
+            const checkbox = documentRef.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'kniu_sys_table_selection';
+            checkbox.disabled = isEmpty;
+            checkbox.checked = getSelectableRows(column).length > 0 && getSelectableRows(column).every(function (row) { return selectedRows.has(row); });
+            checkbox.indeterminate = !checkbox.checked && getSelectableRows(column).some(function (row) { return selectedRows.has(row); });
+            checkbox.addEventListener('change', function () {
+              if (!rows.length) return;
+              // 不要用陈旧闭包，每次都按当前 rows 重新计算可选行集合
+              getSelectableRows(column).forEach(function (row) { checkbox.checked ? selectedRows.add(row) : selectedRows.delete(row); });
+              options.host?.dispatchEvent(new CustomEvent('selection-change', { detail: [...selectedRows], bubbles: true, composed: true }));
+              render();
+            });
+            cell.append(checkbox);
+          } else {
             cell.append(documentRef.createTextNode(column.label == null ? '' : String(column.label)));
           }
           if (column.sortable && column.field) {
             const sorter = documentRef.createElement('span');
             sorter.className = 'kniu_sys_table_sort';
+            sorter.dataset.field = column.field;
             sorter.dataset.order = sortState.field === column.field ? sortState.order : '';
-            sorter.innerHTML = '<span class="kniu_sys_table_sort_up">▲</span><span class="kniu_sys_table_sort_down">▼</span>';
+            sorter.innerHTML = '<span class="kniu_sys_table_sort_up">' + buildGlyphSvg(KNIU_ICON_SET['caret-top']) + '</span><span class="kniu_sys_table_sort_down">' + buildGlyphSvg(KNIU_ICON_SET['caret-bottom']) + '</span>';
             cell.append(sorter);
             cell.style.cursor = 'pointer';
             cell.addEventListener('click', function () {
@@ -538,13 +1102,20 @@ var KniuUI = (function () {
             });
           }
           applyColumnLayout(cell, column, index, offsets);
-          headRow.append(cell);
+          headFragment.appendChild(cell);
         });
+        headRow.appendChild(headFragment);
         headElement.append(headRow);
       } else if (headElement && options.showHeader !== false) {
+        if (syncSortHeader) headElement.querySelectorAll('.kniu_sys_table_sort').forEach(function (sorter) {
+          const order = sortState.field === sorter.dataset.field ? sortState.order : '';
+          if (sorter.dataset.order !== order) sorter.dataset.order = order;
+        });
         // head 已存在时同步表头 checkbox 列的 checked/indeterminate：setData、组件 toggleRowSelection、
         // setCurrentRow 等都会触发 render，但其不重建表头，需在此刷新以反映 selectedRows 的实时变化。
-        const headerInputs = headElement.querySelectorAll('input[type="checkbox"].kniu_sys_table_selection');
+        const headerInputs = syncSelectionHeader
+          ? headElement.querySelectorAll('input[type="checkbox"].kniu_sys_table_selection')
+          : [];
         headerInputs.forEach(function (input) {
           const idx = [...input.closest('tr').cells].indexOf(input.closest('th'));
           const column = columns[idx];
@@ -555,81 +1126,44 @@ var KniuUI = (function () {
           input.indeterminate = !input.checked && selectableRows.some(function (row) { return selectedRows.has(row); });
         });
       }
-      if (headElement) headElement.setAttribute('aria-disabled', String(isEmpty));
+      if (headElement && headElement.getAttribute('aria-disabled') !== String(isEmpty)) {
+        headElement.setAttribute('aria-disabled', String(isEmpty));
+      }
+
+      const signature = columnSignature();
+      if (rowPoolColumnSignature !== signature) {
+        // 列结构变化：整池作废，避免复用行单元格数与新列失配
+        rowPool = [];
+        rowPoolColumnSignature = signature;
+      }
 
       const rowNodes = [];
       if (!rows.length) {
-        const emptyRow = documentRef.createElement('tr');
-        emptyRow.className = 'kniu_sys_table_empty';
-        const emptyCell = documentRef.createElement('td');
-        emptyCell.colSpan = columns.length;
-        if (options.emptySlot) {
-          // <template #empty> 插槽：在空行内投影自定义内容（图标、按钮等）
-          const slot = documentRef.createElement('slot');
-          slot.name = 'empty';
-          emptyCell.append(slot);
-        } else if (options.emptyText === '') {
-          // 外部自行提供空状态（如 kniu-empty）时隐藏内置空行，避免重复文案
-          emptyCell.textContent = '';
-          emptyRow.style.display = 'none';
-        } else {
-          emptyCell.textContent = options.emptyText || '暂无数据';
-        }
-        emptyRow.append(emptyCell);
-        rowNodes.push(emptyRow);
+        rowNodes.push(buildEmptyRow());
       } else {
-        rows.forEach(function (row, rowIndex) {
-          const tableRow = documentRef.createElement('tr');
-          if (options.rowKey && row?.[options.rowKey] != null) {
-            tableRow.dataset.rowKey = String(row[options.rowKey]);
-          }
-          tableRow.dataset.current = String(row === currentRow);
-          tableRow.addEventListener('click', function (event) {
-            if (event.target.closest?.('.kniu_sys_table_action,.kniu_sys_table_editable,.kniu_sys_table_selection,kniu-switch')) return;
-            const previous = currentRow;
-            currentRow = row;
-            options.host?.dispatchEvent(new CustomEvent('row-click', { detail: { row: row, index: rowIndex }, bubbles: true, composed: true }));
-            if (previous !== row) options.host?.dispatchEvent(new CustomEvent('current-change', { detail: { currentRow: row, oldCurrentRow: previous }, bubbles: true, composed: true }));
-            if (options.highlightCurrentRow) {
-              table.querySelectorAll('tbody tr[data-current="true"]').forEach(function (item) { item.dataset.current = 'false'; });
-              tableRow.dataset.current = 'true';
-            }
-          });
-          columns.forEach(function (column, index) {
-            const cell = documentRef.createElement('td');
-            applyColumnLayout(cell, column, index, offsets);
-            appendCellContent(cell, column, row, rowIndex);
-            if (column.editable) {
-              cell.classList.add('kniu_sys_table_editable');
-              cell.addEventListener('pointerdown', function (event) {
-                const activeInput = table.querySelector('.kniu_sys_table_edit_input');
-                if (!activeInput || cell.contains(activeInput)) return;
-                event.preventDefault();
-                pendingEdit = { row: row, column: column };
-                activeInput.blur();
-              });
-              cell.addEventListener('click', function () { beginCellEdit(cell, column, row, rowIndex); });
-            }
-            tableRow.append(cell);
-          });
-          rowNodes.push(tableRow);
-        });
+        for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+          rowNodes.push(buildBodyRow(rows[rowIndex], rowIndex, offsets));
+        }
       }
+      rowPool = rowNodes;
       // 首次渲染时创建并挂载 tbody（同时挂载缓存的 thead），后续仅原地替换行子节点，结构稳定不抖动。
       if (!bodyElement) {
         bodyElement = documentRef.createElement('tbody');
+        // 行点击与可编辑单元格统一委托到 tbody，整表只挂 2 个监听器
+        bodyElement.addEventListener('click', handleBodyClick);
+        bodyElement.addEventListener('pointerdown', handleBodyPointerDown);
         if (options.showHeader !== false && headElement && !table.contains(headElement)) {
           table.append(headElement);
         }
         table.append(bodyElement);
       }
-      bodyElement.replaceChildren(...rowNodes);
+      replaceChildrenWithFragment(bodyElement, rowNodes);
 
       // 按实测列宽计算固定列阴影宽度：固定列无显式宽度时取其内容实际宽度（避免强制 120 造成裁切或留白）。
+      // 宽度走缓存，只有首帧或 resize/doLayout 后才真正测量。
+      const measuredWidths = measureColumnWidths();
       function actualColumnWidth(index) {
-        const th = table.querySelector('thead')?.rows?.[0]?.cells?.[index];
-        const measured = th ? th.getBoundingClientRect().width : 0;
-        return measured > 0 ? measured : columnWidth(columns[index]);
+        return measuredWidths[index] || columnWidth(columns[index]);
       }
       fixedLeftWidth = [...offsets.left.keys()].reduce(function (width, index) {
         return width + actualColumnWidth(index);
@@ -640,11 +1174,7 @@ var KniuUI = (function () {
       leftFixedShadow.style.width = `${fixedLeftWidth}px`;
       rightFixedShadow.style.width = `${fixedRightWidth}px`;
 
-      // 右侧固定列阴影宽度保持恒定（仅等于固定列宽度），不随竖向滚动条出现/消失而改变，避免翻页抖动。
-      // 滚动条为 classic 模式时，阴影 right 位置跟随滚动条宽度内缩，防止被滚动条覆盖。
-      const verticalScrollbarWidth = Math.max(0, viewport.offsetWidth - viewport.clientWidth);
-      rightFixedShadow.style.right = `${verticalScrollbarWidth}px`;
-      updateFixedShadowVisibility();
+      scheduleShadowVisibilityUpdate();
       rendering = false;
       if (pendingEdit) {
         const target = pendingEdit;
@@ -657,20 +1187,24 @@ var KniuUI = (function () {
     }
 
     function handleAction(event) {
-      const button = event.target.closest?.('.kniu_sys_table_action');
+      const button = findEventElement(event, 'kniu-btn.kniu_sys_table_action');
       if (!button || !table.contains(button)) return;
       const rowIndex = Number.parseInt(button.dataset.rowIndex, 10);
       const column = columns[Number.parseInt(button.dataset.columnIndex, 10)];
       const action = column?.actions?.[Number.parseInt(button.dataset.actionIndex, 10)];
       if (!action || typeof action.onClick !== 'function') return;
-      action.onClick({ row: rows[rowIndex], index: rowIndex, rows: rows, table: api });
+      action.onClick({ row: rows[rowIndex], index: rowIndex, rows: rows, table: api, event: event });
     }
 
     function setData(data) {
       rows = Array.isArray(data) ? data : [];
+      // 新数据源到来时重置初始顺序基准：清空排序应回到本次 setData 的顺序。
+      initialRows = rows;
       [...selectedRows].forEach(function (row) { if (!rows.includes(row)) selectedRows.delete(row); });
       if (currentRow && !rows.includes(currentRow)) currentRow = null;
-      render();
+      // 分页/刷新数据不会改变排序字段和方向，因此只更新 tbody；
+      // 表头节点和排序箭头保持原样。仅全选列的布尔状态需随新页数据同步。
+      render({ syncSortHeader: false, syncSelectionHeader: true });
       return rows;
     }
 
@@ -703,18 +1237,44 @@ var KniuUI = (function () {
       return removed;
     }
 
+    // 容器尺寸变化会让实测列宽与阴影布局指标失效，需一起刷新
+    function handleContainerResize() {
+      invalidateColumnWidthCache();
+      invalidateLayoutMetrics();
+      updateFixedShadowVisibility();
+    }
+    function handleWindowResize() { handleContainerResize(); }
+
     function destroy() {
       if (disposed) return;
       disposed = true;
+      if (shadowVisibilityFrame) {
+        documentRef.defaultView?.cancelAnimationFrame?.(shadowVisibilityFrame);
+        shadowVisibilityFrame = 0;
+      }
       table.removeEventListener('click', handleAction);
+      bodyElement?.removeEventListener('click', handleBodyClick);
+      bodyElement?.removeEventListener('pointerdown', handleBodyPointerDown);
       viewport.removeEventListener('scroll', updateFixedShadowVisibility);
-      documentRef.defaultView?.removeEventListener('resize', updateFixedShadowVisibility);
+      documentRef.defaultView?.removeEventListener('resize', handleWindowResize);
+      if (viewportResizeObserver) {
+        viewportResizeObserver.disconnect();
+        viewportResizeObserver = null;
+      }
+      rowPool = [];
+      rowPoolColumnSignature = '';
       target.replaceChildren();
     }
 
     function setLoading(active, text) {
       loadingMask.setAttribute('data-active', String(!!active));
       if (text != null) loadingTextEl.textContent = String(text);
+    }
+    function setMaxHeight(value) {
+      const next = Number.parseInt(value, 10) || 0;
+      viewport.style.maxHeight = next > 0 ? `${Math.max(40, next)}px` : '';
+      viewport.style.overflowY = next > 0 ? 'auto' : '';
+      updateFixedShadowVisibility();
     }
     // 初始文案（options.loadingText）
     if (options.loadingText != null) loadingTextEl.textContent = String(options.loadingText);
@@ -729,14 +1289,22 @@ var KniuUI = (function () {
       setCurrentRow: setCurrentRow,
       sort: applySort,
       clearSort: function () { applySort('', ''); },
-      doLayout: render,
+      // 外部主动重排：列宽可能已变，先让缓存失效再渲染
+      doLayout: function () { invalidateColumnWidthCache(); render(); },
       render: render,
       setLoading: setLoading,
+      setMaxHeight: setMaxHeight,
       destroy: destroy
     };
     table.addEventListener('click', handleAction);
     viewport.addEventListener('scroll', updateFixedShadowVisibility, { passive: true });
-    documentRef.defaultView?.addEventListener('resize', updateFixedShadowVisibility, { passive: true });
+    documentRef.defaultView?.addEventListener('resize', handleWindowResize, { passive: true });
+    // 容器自身尺寸变化（侧栏折叠、栅格重排）不会触发 window.resize，
+    // 用 ResizeObserver 覆盖这类场景，避免列宽缓存与阴影宽度停留在旧值。
+    if (typeof ResizeObserver === 'function') {
+      viewportResizeObserver = new ResizeObserver(function () { handleContainerResize(); });
+      viewportResizeObserver.observe(viewport);
+    }
     render();
     return api;
   }
@@ -751,14 +1319,14 @@ var KniuUI = (function () {
       }
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-flex;vertical-align:middle;flex-shrink:0}:host([block]){display:flex;width:100%}.kniu_sys_button{--kniu-button-color:#606266;--kniu-button-bg:#fff;--kniu-button-border:#dcdfe6;--kniu-button-hover-color:#409eff;--kniu-button-hover-bg:#ecf5ff;--kniu-button-hover-border:#c6e2ff;--kniu-button-active-bg:#ecf5ff;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;min-height:32px;margin:0;padding:8px 15px;border:1px solid var(--kniu-button-border);border-radius:4px;outline:0;background:var(--kniu-button-bg);color:var(--kniu-button-color);font:500 14px/1 Arial,"Microsoft YaHei",sans-serif;text-decoration:none;white-space:nowrap;cursor:pointer;user-select:none;transition:.1s}.kniu_sys_button:hover,.kniu_sys_button:focus-visible{border-color:var(--kniu-button-hover-border);background:var(--kniu-button-hover-bg);color:var(--kniu-button-hover-color)}.kniu_sys_button:active{background:var(--kniu-button-active-bg);filter:brightness(.94)}.kniu_sys_button[data-type="primary"]{--kniu-button-color:#fff;--kniu-button-bg:#409eff;--kniu-button-border:#409eff;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#79bbff;--kniu-button-hover-border:#79bbff}.kniu_sys_button[data-type="success"]{--kniu-button-color:#fff;--kniu-button-bg:#67c23a;--kniu-button-border:#67c23a;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#95d475;--kniu-button-hover-border:#95d475}.kniu_sys_button[data-type="warning"]{--kniu-button-color:#fff;--kniu-button-bg:#e6a23c;--kniu-button-border:#e6a23c;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#eebe77;--kniu-button-hover-border:#eebe77}.kniu_sys_button[data-type="danger"]{--kniu-button-color:#fff;--kniu-button-bg:#f56c6c;--kniu-button-border:#f56c6c;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#f89898;--kniu-button-hover-border:#f89898}.kniu_sys_button[data-type="info"]{--kniu-button-color:#fff;--kniu-button-bg:#909399;--kniu-button-border:#909399;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#b1b3b8;--kniu-button-hover-border:#b1b3b8}.kniu_sys_button[data-plain="true"]{--kniu-button-color:var(--kniu-button-border);--kniu-button-bg:color-mix(in srgb,var(--kniu-button-border) 10%,#fff);--kniu-button-hover-color:#fff;--kniu-button-hover-bg:var(--kniu-button-border);--kniu-button-hover-border:var(--kniu-button-border)}.kniu_sys_button[data-type="default"][data-plain="true"]{--kniu-button-color:#606266;--kniu-button-bg:#fff;--kniu-button-border:#dcdfe6;--kniu-button-hover-color:#409eff;--kniu-button-hover-bg:#ecf5ff;--kniu-button-hover-border:#c6e2ff}.kniu_sys_button[data-text="true"],.kniu_sys_button[data-link="true"]{border-color:transparent;background:transparent;color:var(--kniu-button-border)}.kniu_sys_button[data-type="default"][data-text="true"],.kniu_sys_button[data-type="default"][data-link="true"]{color:#606266}.kniu_sys_button[data-text="true"]:hover{border-color:transparent;background:#f5f7fa}.kniu_sys_button[data-text="true"][data-bg="true"]{background:#f5f7fa}.kniu_sys_button[data-text="true"][data-bg="true"]:hover{background:#e9e9eb}.kniu_sys_button[data-unstyled="true"]{border:0;background:transparent;padding:0;margin:0;min-height:0;width:100%;justify-content:flex-start;color:inherit;font:inherit;border-radius:0}.kniu_sys_button[data-link="true"]{height:auto;min-height:0;padding:2px}.kniu_sys_button[data-link="true"]:hover,.kniu_sys_button[data-link="true"]:focus-visible{border-color:transparent;background:transparent;filter:brightness(.8)}.kniu_sys_button[data-size="large"]{min-height:40px;padding:12px 19px;font-size:14px}.kniu_sys_button[data-size="small"]{min-height:24px;padding:5px 11px;font-size:12px}.kniu_sys_button[data-round="true"]{border-radius:999px}.kniu_sys_button[data-circle="true"]{width:32px;height:32px;padding:0;border-radius:50%}.kniu_sys_button[data-circle="true"][data-size="large"]{width:40px;height:40px}.kniu_sys_button[data-circle="true"][data-size="small"]{width:24px;height:24px}.kniu_sys_button:disabled{border-color:#e4e7ed;background:#fff;color:#a8abb2;cursor:not-allowed;filter:none;opacity:.6}.kniu_sys_button[data-block="true"]{width:100%}.kniu_sys_button_icon:empty{display:none}.kniu_sys_button_loading{display:none;width:12px;height:12px;box-sizing:border-box;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:kniu_sys_button_spin .8s linear infinite}.kniu_sys_button_loading[class]:not([class="kniu_sys_button_loading"]){border:0;animation:none}.kniu_sys_button[data-loading="true"] .kniu_sys_button_loading{display:inline-block}.kniu_sys_button_label{display:inline-flex;align-items:center;gap:6px;min-width:0}.kniu_sys_button_label[data-auto-space="true"]{letter-spacing:.25em;margin-right:-.25em}@keyframes kniu_sys_button_spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.kniu_sys_button_loading{animation:none}}</style><button class="kniu_sys_button" type="button"><span class="kniu_sys_button_loading" aria-hidden="true"></span><i class="kniu_sys_button_icon" aria-hidden="true"></i><span class="kniu_sys_button_label"><slot></slot></span></button>`;
+        attachComponentShadow(this);
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-flex;vertical-align:middle;flex-shrink:0}:host([block]){display:flex;width:100%}.kniu_sys_button{--kniu-button-color:#606266;--kniu-button-bg:#fff;--kniu-button-border:#dcdfe6;--kniu-button-hover-color:#409eff;--kniu-button-hover-bg:#ecf5ff;--kniu-button-hover-border:#c6e2ff;--kniu-button-active-bg:#ecf5ff;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;min-height:32px;margin:0;padding:8px 15px;border:1px solid var(--kniu-button-border);border-radius:4px;outline:0;background-color:var(--kniu-button-bg);color:var(--kniu-button-color);font:500 14px/1 Arial,"Microsoft YaHei",sans-serif;text-decoration:none;white-space:nowrap;cursor:pointer;user-select:none;transition:.1s}.kniu_sys_button:hover,.kniu_sys_button:focus-visible{border-color:var(--kniu-button-hover-border);background-color:var(--kniu-button-hover-bg);color:var(--kniu-button-hover-color)}.kniu_sys_button:active{background-color:var(--kniu-button-active-bg);filter:brightness(.94)}.kniu_sys_button[data-type="primary"]{--kniu-button-color:#fff;--kniu-button-bg:#409eff;--kniu-button-border:#409eff;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#79bbff;--kniu-button-hover-border:#79bbff}.kniu_sys_button[data-type="success"]{--kniu-button-color:#fff;--kniu-button-bg:#67c23a;--kniu-button-border:#67c23a;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#95d475;--kniu-button-hover-border:#95d475}.kniu_sys_button[data-type="warning"]{--kniu-button-color:#fff;--kniu-button-bg:#e6a23c;--kniu-button-border:#e6a23c;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#eebe77;--kniu-button-hover-border:#eebe77}.kniu_sys_button[data-type="danger"]{--kniu-button-color:#fff;--kniu-button-bg:#f56c6c;--kniu-button-border:#f56c6c;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#f89898;--kniu-button-hover-border:#f89898}.kniu_sys_button[data-type="info"]{--kniu-button-color:#fff;--kniu-button-bg:#909399;--kniu-button-border:#909399;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#b1b3b8;--kniu-button-hover-border:#b1b3b8}.kniu_sys_button[data-plain="true"]{--kniu-button-color:var(--kniu-button-border);--kniu-button-bg:color-mix(in srgb,var(--kniu-button-border) 10%,#fff);--kniu-button-hover-color:#fff;--kniu-button-hover-bg:var(--kniu-button-border);--kniu-button-hover-border:var(--kniu-button-border)}.kniu_sys_button[data-type="default"][data-plain="true"]{--kniu-button-color:#606266;--kniu-button-bg:#fff;--kniu-button-border:#dcdfe6;--kniu-button-hover-color:#409eff;--kniu-button-hover-bg:#ecf5ff;--kniu-button-hover-border:#c6e2ff}.kniu_sys_button[data-text="true"],.kniu_sys_button[data-link="true"]{border-color:transparent;background-color:transparent;color:var(--kniu-button-border)}.kniu_sys_button[data-type="default"][data-text="true"],.kniu_sys_button[data-type="default"][data-link="true"]{color:#606266}.kniu_sys_button[data-text="true"]:hover{border-color:transparent;background-color:#f5f7fa}.kniu_sys_button[data-text="true"][data-bg="true"]{background-color:#f5f7fa}.kniu_sys_button[data-text="true"][data-bg="true"]:hover{background-color:#e9e9eb}.kniu_sys_button[data-unstyled="true"]{border:0;background-color:transparent;padding:0;margin:0;min-height:0;width:100%;justify-content:flex-start;color:inherit;font:inherit;border-radius:0}.kniu_sys_button[data-link="true"]{height:auto;min-height:0;padding:2px}.kniu_sys_button[data-link="true"]:hover,.kniu_sys_button[data-link="true"]:focus-visible{border-color:transparent;background-color:transparent;filter:brightness(.8)}.kniu_sys_button[data-size="large"]{min-height:40px;padding:12px 19px;font-size:14px}.kniu_sys_button[data-size="small"]{min-height:24px;padding:5px 11px;font-size:12px}.kniu_sys_button[data-round="true"]{border-radius:999px}.kniu_sys_button[data-circle="true"]{width:32px;height:32px;padding:0;border-radius:50%}.kniu_sys_button[data-circle="true"][data-size="large"]{width:40px;height:40px}.kniu_sys_button[data-circle="true"][data-size="small"]{width:24px;height:24px}.kniu_sys_button:disabled{border-color:#e4e7ed;background-color:#fff;color:#a8abb2;cursor:not-allowed;filter:none;opacity:.6}.kniu_sys_button[data-block="true"]{width:100%}.kniu_sys_button_icon:empty{display:none}.kniu_sys_button_loading{display:none;width:12px;height:12px;box-sizing:border-box;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:kniu_sys_button_spin .8s linear infinite}.kniu_sys_button_loading[class]:not([class="kniu_sys_button_loading"]){border:0;animation:none}.kniu_sys_button[data-loading="true"] .kniu_sys_button_loading{display:inline-block}.kniu_sys_button_label{display:inline-flex;align-items:center;gap:6px;min-width:0}.kniu_sys_button_label[data-auto-space="true"]{letter-spacing:.25em;margin-right:-.25em}@keyframes kniu_sys_button_spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.kniu_sys_button_loading{animation:none}}</style><button class="kniu_sys_button" type="button"><span class="kniu_sys_button_loading" aria-hidden="true"></span><i class="kniu_sys_button_icon" aria-hidden="true"></i><span class="kniu_sys_button_label"><slot></slot></span></button>`;
         this._button = this.shadowRoot.querySelector('.kniu_sys_button');
         this._bindButton();
         this.shadowRoot.querySelector('slot').addEventListener('slotchange', () => this._syncAutoSpace());
-        const iconStyle = document.createElement('style');
-        iconStyle.textContent = '.kniu_sys_button_icon{display:inline-flex;align-items:center;justify-content:center}.kniu_sys_button_icon svg{display:block;width:1em;height:1em;fill:currentColor;overflow:visible}';
-        this.shadowRoot.appendChild(iconStyle);
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_button_icon{display:inline-flex;align-items:center;justify-content:center}.kniu_sys_button_icon svg{display:block;width:1em;height:1em;fill:currentColor;overflow:visible}');
+        adoptSharedStyle(this.shadowRoot, ':host([block]){height:100%}:host([block]) .kniu_sys_button{width:100%;height:100%}');
+        adoptSharedStyle(this.shadowRoot, 'slot::slotted(kniu-icon){font-size:var(--kniu-button-icon-size,1em)}');
       }
       _bindButton() {
         this._icon = this._button.querySelector('.kniu_sys_button_icon');
@@ -855,20 +1423,33 @@ var KniuUI = (function () {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-switch')) return;
     class KniuSysSwitch extends HTMLElement {
+      // 2026-09-01：所有旧 attribute（disabled / width / active-value / inactive-value /
+      // active-color / inactive-color / active-icon-class / inactive-icon-class /
+      // active-text / inactive-text / name / validate-event）全部作废，只认 kniu:options。
+      // 仅保留属性绑定透传：模板 `disabled="{{expr}}"` 走 property setter 写 _propDisabled。
       static get observedAttributes() {
-        return ['disabled', 'width', 'active-icon-class', 'inactive-icon-class', 'active-text', 'inactive-text', 'active-value', 'inactive-value', 'active-color', 'inactive-color', 'name', 'validate-event'];
+        return [];
       }
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
+        attachComponentShadow(this);
         this._value = false;
         this._activeValue = undefined;
         this._inactiveValue = undefined;
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;flex-shrink:0}.kniu_sys_switch_group{display:flex;width:100%;align-items:stretch}.kniu_sys_switch_content{flex:1;min-width:0;display:flex;align-items:center;justify-content:flex-start;padding:0 12px;background:#fff;box-sizing:border-box}.kniu_sys_switch_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_switch_group[data-affix="true"] .kniu_sys_switch_content{border:1px solid #dcdfe6}.kniu_sys_switch_group[data-has-prepend="true"] .kniu_sys_switch_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_switch_group[data-has-prepend="true"] .kniu_sys_switch_content{border-radius:0 4px 4px 0}.kniu_sys_switch_group[data-has-append="true"] .kniu_sys_switch_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_switch_group[data-affix="true"]{height:40px}.kniu_sys_switch_group:not([data-affix="true"]) .kniu_sys_switch_content{padding:0;background:transparent}.kniu_sys_switch{position:relative;display:inline-flex;align-items:center;gap:8px;color:#303133;font-size:14px;line-height:20px;cursor:pointer;user-select:none}.kniu_sys_switch_input{position:absolute;width:0;height:0;opacity:0}.kniu_sys_switch_core{position:relative;display:inline-block;box-sizing:border-box;height:20px;border:1px solid transparent;border-radius:10px;background:#c0ccda;outline:0;transition:border-color .3s,background-color .3s}.kniu_sys_switch_button{position:absolute;top:1px;left:1px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .3s}.kniu_sys_switch[data-active="true"] .kniu_sys_switch_button{transform:translateX(var(--kniu-switch-distance))}.kniu_sys_switch_text{white-space:nowrap}.kniu_sys_switch_icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}.kniu_sys_switch_icon:empty{display:none}.kniu_sys_switch[data-disabled="true"]{opacity:.6;cursor:not-allowed}.kniu_sys_switch_input:focus-visible+.kniu_sys_switch_core{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}</style><div class="kniu_sys_switch_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_switch_affix kniu_sys_switch_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_switch_content"><label class="kniu_sys_switch" data-active="false" data-disabled="false"><span class="kniu_sys_switch_text kniu_sys_switch_inactive_text"></span><input class="kniu_sys_switch_input" type="checkbox"><span class="kniu_sys_switch_core"><span class="kniu_sys_switch_button"></span><i class="kniu_sys_switch_icon"></i></span><span class="kniu_sys_switch_text kniu_sys_switch_active_text"></span></label></div><span class="kniu_sys_switch_affix kniu_sys_switch_append"><slot name="append"></slot></span></div>`;
+        this._propDisabled = false;
+        this._options = null;
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;flex-shrink:0}.kniu_sys_switch_group{display:flex;width:100%;align-items:stretch}.kniu_sys_switch_content{flex:1;min-width:0;display:flex;align-items:center;justify-content:flex-start;padding:0 12px;background-color:#fff;box-sizing:border-box}.kniu_sys_switch_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_switch_group[data-affix="true"] .kniu_sys_switch_content{border:1px solid #dcdfe6}.kniu_sys_switch_group[data-has-prepend="true"] .kniu_sys_switch_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_switch_group[data-has-prepend="true"] .kniu_sys_switch_content{border-radius:0 4px 4px 0}.kniu_sys_switch_group[data-has-append="true"] .kniu_sys_switch_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_switch_group[data-affix="true"]{height:40px}.kniu_sys_switch_group:not([data-affix="true"]) .kniu_sys_switch_content{padding:0;background-color:transparent}.kniu_sys_switch{position:relative;display:inline-flex;align-items:center;gap:8px;color:#303133;font-size:14px;line-height:20px;cursor:pointer;user-select:none}.kniu_sys_switch_input{position:absolute;width:0;height:0;opacity:0}.kniu_sys_switch_core{position:relative;display:inline-block;box-sizing:border-box;height:20px;padding:0;border:1px solid transparent;border-radius:10px;background-color:#c0ccda;outline:0;cursor:pointer;transition:border-color .3s,background-color .3s}.kniu_sys_switch_button{position:absolute;top:1px;left:1px;width:16px;height:16px;border-radius:50%;background-color:#fff;transition:transform .3s}.kniu_sys_switch[data-active="true"] .kniu_sys_switch_button{transform:translateX(var(--kniu-switch-distance))}.kniu_sys_switch_text{white-space:nowrap}.kniu_sys_switch_icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}.kniu_sys_switch_icon:empty{display:none}.kniu_sys_switch[data-disabled="true"]{opacity:.6;cursor:not-allowed}.kniu_sys_switch_input:focus-visible+.kniu_sys_switch_core{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}</style><div class="kniu_sys_switch_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_switch_affix kniu_sys_switch_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_switch_content"><label class="kniu_sys_switch" data-active="false" data-disabled="false"><span class="kniu_sys_switch_text kniu_sys_switch_inactive_text"></span><input class="kniu_sys_switch_input" type="checkbox"><button class="kniu_sys_switch_core" type="button"><span class="kniu_sys_switch_button"></span><i class="kniu_sys_switch_icon"></i></button><span class="kniu_sys_switch_text kniu_sys_switch_active_text"></span></label></div><span class="kniu_sys_switch_affix kniu_sys_switch_append"><slot name="append"></slot></span></div>`;
         this._root = this.shadowRoot.querySelector('.kniu_sys_switch');
         this._input = this.shadowRoot.querySelector('.kniu_sys_switch_input');
         this._core = this.shadowRoot.querySelector('.kniu_sys_switch_core');
         this._icon = this.shadowRoot.querySelector('.kniu_sys_switch_icon');
+        this._core.addEventListener('click', (event) => {
+          // 轨道是 label 内的独立 button，浏览器不会像点击 label 空白处那样
+          // 稳定激活关联的 checkbox。显式转发给 input，让唯一的 change 链路
+          // 负责更新 value、重绘和对外派发事件，避免双次切换。
+          event.preventDefault();
+          if (!this.disabled) this._input.click();
+        });
         this._input.addEventListener('change', () => {
           this._value = this._input.checked ? this.activeValue : this.inactiveValue;
           this._sync();
@@ -894,36 +1475,51 @@ var KniuUI = (function () {
       }
       get activeValue() {
         if (this._activeValue !== undefined) return this._activeValue;
-        return this.hasAttribute('active-value') ? this.getAttribute('active-value') : true;
+        if (this._options && this._options.activeValue !== undefined) return this._options.activeValue;
+        return true;
       }
       set activeValue(value) { this._activeValue = value; this._sync(); }
       get inactiveValue() {
         if (this._inactiveValue !== undefined) return this._inactiveValue;
-        return this.hasAttribute('inactive-value') ? this.getAttribute('inactive-value') : false;
+        if (this._options && this._options.inactiveValue !== undefined) return this._options.inactiveValue;
+        return false;
       }
       set inactiveValue(value) { this._inactiveValue = value; this._sync(); }
       get value() { return this._value; }
       set value(value) { this._value = value; this._sync(); }
-      get disabled() { return this.hasAttribute('disabled'); }
-      set disabled(value) { this.toggleAttribute('disabled', !!value); }
+      get disabled() { return (this._options && this._options.disabled === true) || this._propDisabled === true; }
+      set disabled(value) { this._propDisabled = !!value; this._sync(); }
+      // kniu:options 统一配置入口（2026-09-01）：activeValue / inactiveValue / activeColor /
+      // inactiveColor / disabled / width / activeText / inactiveText / activeIconClass /
+      // inactiveIconClass / name 全部收进 options；旧 attribute 一律作废。
+      set options(value) {
+        this._options = value && typeof value === 'object' ? value : null;
+        this._sync();
+      }
+      get options() { return this._options; }
+      _cfg(key, fallback) {
+        const o = this._options || {};
+        return (o[key] !== undefined && o[key] !== null) ? o[key] : fallback;
+      }
       focus() { this._input.focus(); }
       _isActive() { return this._value === this.activeValue || String(this._value) === String(this.activeValue); }
       _sync() {
         const active = this._isActive();
-        const disabled = this.hasAttribute('disabled');
-        const width = Math.max(20, Number.parseInt(this.getAttribute('width'), 10) || 40);
+        const disabled = this.disabled;
+        const width = Math.max(20, Number.parseInt(this._cfg('width', 40), 10) || 40);
         this._root.dataset.active = String(active);
         this._root.dataset.disabled = String(disabled);
         this._input.checked = active;
         this._input.disabled = disabled;
-        this._input.name = this.getAttribute('name') || '';
+        this._core.disabled = disabled;
+        this._input.name = String(this._cfg('name', ''));
         this._core.style.width = `${width}px`;
-        this._core.style.backgroundColor = active ? (this.getAttribute('active-color') || '#409EFF') : (this.getAttribute('inactive-color') || '#C0CCDA');
+        this._core.style.backgroundColor = active ? String(this._cfg('activeColor', '#409EFF')) : String(this._cfg('inactiveColor', '#C0CCDA'));
         this._root.style.setProperty('--kniu-switch-distance', `${width - 20}px`);
-        const iconClass = active ? (this.getAttribute('active-icon-class') || '') : (this.getAttribute('inactive-icon-class') || '');
+        const iconClass = active ? String(this._cfg('activeIconClass', '')) : String(this._cfg('inactiveIconClass', ''));
         this._icon.className = `kniu_sys_switch_icon${iconClass ? ` ${iconClass}` : ''}`;
-        this.shadowRoot.querySelector('.kniu_sys_switch_active_text').textContent = this.hasAttribute('active-icon-class') ? '' : (this.getAttribute('active-text') || '');
-        this.shadowRoot.querySelector('.kniu_sys_switch_inactive_text').textContent = this.hasAttribute('inactive-icon-class') ? '' : (this.getAttribute('inactive-text') || '');
+        this.shadowRoot.querySelector('.kniu_sys_switch_active_text').textContent = iconClass ? '' : String(this._cfg('activeText', ''));
+        this.shadowRoot.querySelector('.kniu_sys_switch_inactive_text').textContent = iconClass ? '' : String(this._cfg('inactiveText', ''));
         this.setAttribute('role', 'switch');
         this.setAttribute('aria-checked', String(active));
         this.setAttribute('aria-disabled', String(disabled));
@@ -939,9 +1535,10 @@ var KniuUI = (function () {
     const GENERIC_HTML = '<style>'
       + ':host{position:fixed;inset:0;z-index:2000;display:none}'
       + ':host([show="true"]){display:block!important}'
-      + '.kniu_modal_mask{position:absolute;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;animation:kniu_modal_mask_in .25s ease both}'
-      + '.kniu_modal_dialog{position:relative;width:var(--kniu-modal-width,520px);max-width:100%;background:#fff;border-radius:6px;box-shadow:0 2px 12px rgba(0,0,0,.18);display:flex;flex-direction:column;max-height:90vh;overflow:hidden;animation:kniu_modal_box_in .25s cubic-bezier(.25,.8,.25,1) both}'
+      + '.kniu_modal_mask{position:absolute;inset:0;background-color:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;animation:kniu_modal_mask_in .25s ease both}'
+      + '.kniu_modal_dialog{position:relative;width:var(--kniu-modal-width,auto);min-width:320px;max-width:100%;background-color:#fff;border-radius:6px;box-shadow:0 2px 12px rgba(0,0,0,.18);display:flex;flex-direction:column;max-height:90vh;overflow:visible;animation:kniu_modal_box_in .25s cubic-bezier(.25,.8,.25,1)}'
       + '.kniu_modal_header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #ebeef5;font-size:16px;font-weight:600;color:#303133;flex:none}'
+      + '.kniu_modal_header slot::slotted(kniu-btn){--kniu-button-icon-size:24px}'
       + '.kniu_modal_body{padding:20px 24px;overflow:auto;flex:1 1 auto;box-sizing:border-box}'
       + '.kniu_modal_footer{padding:12px 20px;border-top:1px solid #ebeef5;text-align:right;flex:none}'
       + '.kniu_modal_footer kniu-btn{margin-left:12px}'
@@ -958,11 +1555,12 @@ var KniuUI = (function () {
     const CONFIRM_HTML = '<style>'
       + ':host{position:fixed;inset:0;z-index:2000;display:none}'
       + ':host([show="true"]){display:block!important}'
-      + '.kniu_modal_mask{position:absolute;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;animation:kniu_modal_mask_in .25s ease both}'
-      + '.kniu_modal_dialog{position:relative;width:var(--kniu-modal-width,420px);max-width:100%;background:#fff;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1);display:flex;flex-direction:column;overflow:hidden;animation:kniu_modal_box_in .25s cubic-bezier(.25,.8,.25,1) both}'
+      + '.kniu_modal_mask{position:absolute;inset:0;background-color:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;animation:kniu_modal_mask_in .25s ease both}'
+      + '.kniu_modal_dialog{position:relative;width:var(--kniu-modal-width,auto);min-width:320px;max-width:100%;background-color:#fff;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1);display:flex;flex-direction:column;overflow:hidden;animation:kniu_modal_box_in .25s cubic-bezier(.25,.8,.25,1) both}'
       + '.kniu_modal_header{position:relative;padding:15px 15px 10px;flex:none}'
-      + '.kniu_modal_confirm_title{margin:0;padding-right:30px;color:#303133;font-size:18px;font-weight:400;line-height:1}'
-      + '.kniu_modal_close{position:absolute;top:-2px;right:6px;width:32px;height:32px;padding:0;border:0;background:transparent;color:#909399;font-size:24px;line-height:32px;cursor:pointer}'
+      + '.kniu_modal_confirm_title{margin:0;padding-right:40px;color:#303133;font-size:18px;font-weight:400;line-height:1}'
+      + '.kniu_modal_close{position:absolute;top:0;right:6px;display:flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:0;background-color:transparent;color:#909399;cursor:pointer}'
+      + '.kniu_modal_close svg{display:block;width:26px;height:26px;fill:currentColor}'
       + '.kniu_modal_close:hover{color:#409eff}'
       + '.kniu_modal_body{display:flex;align-items:flex-start;padding:10px 15px 15px;color:#606266;font-size:14px;flex:none}'
       + '.kniu_modal_confirm_icon{flex:none;margin-right:10px;font-size:24px;line-height:24px}'
@@ -974,7 +1572,7 @@ var KniuUI = (function () {
       + ':host([closing]) .kniu_modal_mask{animation:kniu_modal_mask_out .22s ease both}:host([closing]) .kniu_modal_dialog{animation:kniu_modal_box_out .22s cubic-bezier(.25,.8,.25,1) both}'
       + '@media (prefers-reduced-motion:reduce){.kniu_modal_mask,.kniu_modal_dialog{animation:none}}</style>'
       + '<div class="kniu_modal_mask" part="mask"><div class="kniu_modal_dialog" part="dialog">'
-      + '<div class="kniu_modal_header"><h4 class="kniu_modal_confirm_title"></h4><button class="kniu_modal_close" type="button" aria-label="关闭">×</button></div>'
+      + '<div class="kniu_modal_header"><h4 class="kniu_modal_confirm_title"></h4><button class="kniu_modal_close" type="button" aria-label="关闭"><svg viewBox="0 0 1024 1024" aria-hidden="true" focusable="false"><path fill="currentColor" d="M764.3 214.6 512 466.9 259.7 214.6a32 32 0 0 0-45.1 45.1L466.8 512 214.5 764.2a32 32 0 1 0 45.1 45.2L512 557.2l252.3 252.3a32 32 0 0 0 45.1-45.1L557.1 512l252.3-252.4a32 32 0 1 0-45.1-45.2z"/></svg></button></div>'
       + '<div class="kniu_modal_body"><span class="kniu_modal_confirm_icon"></span><p class="kniu_modal_confirm_message"></p></div>'
       + '<div class="kniu_modal_footer"><kniu-btn class="kniu_modal_cancel">取消</kniu-btn><kniu-btn type="primary" class="kniu_modal_confirm">确定</kniu-btn></div>'
       + '</div></div>';
@@ -992,7 +1590,7 @@ var KniuUI = (function () {
         this._closeTimer = null;
         this._prevBodyOverflow = undefined;
         this._handleKeydown = (e) => { if (e.key === 'Escape') this._onEscape(); };
-        this.attachShadow({ mode: 'open' });
+        attachComponentShadow(this);
       }
       connectedCallback() {
         this._render();
@@ -1094,10 +1692,10 @@ var KniuUI = (function () {
         const maskEl = this.shadowRoot && this.shadowRoot.querySelector('.kniu_modal_mask');
         if (!maskEl) return;
         const maskOn = (this.getAttribute('mask') || 'true') !== 'false';
-        if (!maskOn) { maskEl.style.background = 'transparent'; return; }
+        if (!maskOn) { maskEl.style.backgroundColor = 'transparent'; return; }
         const alpha = parseFloat(this.getAttribute('mask-alpha'));
         const a = isNaN(alpha) ? 0.6 : Math.min(1, Math.max(0, alpha));
-        maskEl.style.background = 'rgba(0,0,0,' + a + ')';
+        maskEl.style.backgroundColor = 'rgba(0,0,0,' + a + ')';
       }
       // 滚动条：scrollbar 控制模态框开启时是否允许浏览器滚动条（默认 true）；false 时锁定 body 滚动。
       _lockScrollbar() {
@@ -1158,7 +1756,7 @@ var KniuUI = (function () {
     const modal = document.createElement('kniu-modal');
     modal.confirm = true;
     if (options.width) modal.setAttribute('width', options.width);
-    else modal.style.setProperty('--kniu-modal-width', '420px');
+    // 未指定宽度时不设置 --kniu-modal-width：dialog 默认 auto 宽度（按内容自适应，最小 320px）
     modal.title = title;
     modal.message = message;
     if (options.confirmButtonText) modal.confirmText = options.confirmButtonText;
@@ -1186,6 +1784,11 @@ var KniuUI = (function () {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (!customElements.get('kniu-table-col')) {
       class KniuSysTableColumn extends HTMLElement {
+        constructor() {
+          super();
+          attachComponentShadow(this);
+          this.shadowRoot.innerHTML = '<slot></slot>';
+        }
         set onChange(value) { this._onChange = typeof value === 'function' ? value : null; }
         get onChange() { return this._onChange; }
         set formatter(value) { this._formatter = typeof value === 'function' ? value : null; }
@@ -1200,28 +1803,30 @@ var KniuUI = (function () {
     if (customElements.get('kniu-table')) return;
 
     class KniuSysTable extends HTMLElement {
+      // 2026-09-01：kniu-table 自身旧 attribute（height / max-height / stripe / border /
+      // size / fit / show-header / highlight-current-row / row-key / empty-text）全部作废，
+      // 唯一配置入口为 kniu:options；列定义来自 options.cols。
       static get observedAttributes() {
-        return ['height', 'max-height', 'stripe', 'border', 'size', 'fit', 'show-header', 'highlight-current-row', 'row-key', 'empty-text'];
+        return [];
       }
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
+        attachComponentShadow(this);
         this._config = {};
         this._table = null;
         this._columns = [];
         this._columnDefinitionsCleared = false;
         this._loading = false;
         this._loadingText = '';
+        this._renderQueued = false;
       }
 
       connectedCallback() {
-        queueMicrotask(() => {
-          if (this.isConnected) this._renderTable();
-        });
+        this._queueRender();
       }
 
       attributeChangedCallback() {
-        if (this.isConnected) this._renderTable();
+        if (this.isConnected) this._queueRender();
       }
 
       disconnectedCallback() {
@@ -1230,7 +1835,7 @@ var KniuUI = (function () {
 
       set config(value) {
         this._config = value && typeof value === 'object' ? value : null;
-        if (this.isConnected) this._renderTable();
+        if (this.isConnected) this._queueRender();
       }
 
       get config() {
@@ -1245,11 +1850,40 @@ var KniuUI = (function () {
         return this.config;
       }
 
+      // kniu:options 统一配置入口（2026-09-01）：data / rowKey / stripe / border / size / fit /
+      // showHeader / highlightCurrentRow / emptyText / height / maxHeight 全部收进 options；
+      // 旧 attribute 一律作废。options 对象整体替换即触发刷新（响应式通知 + 本 setter）。
+      set options(value) {
+        const opts = value && typeof value === 'object' ? value : {};
+        if (!this._config) this._config = {};
+        this._config = { ...this._config, ...opts };
+        if (Object.hasOwn(opts, 'loading')) this._loading = !!opts.loading;
+        if (Object.hasOwn(opts, 'loadingText')) this._loadingText = opts.loadingText == null ? '' : String(opts.loadingText);
+        if (this._table) this._table.setLoading(this._loading, this._loadingText);
+        if (this._table && Object.hasOwn(opts, 'maxHeight')) this._table.setMaxHeight(opts.maxHeight);
+        if (Array.isArray(opts.data)) {
+          if (this._table) {
+            // 列模板 content 内 switch 的 kniu:options 在 applyBindings 同步块内才写入 expando，
+            // 而首次 _readColumns（connectedCallback 的 microtask）早于绑定执行 → 快照为 null。
+            // 整体替换 options 时延迟到 microtask 重读列定义再 setData，让行内开关拿到配置；
+            // 重读走 _columnElements 缓存（列定义可能已被 _clearColumnDefinitions 移除）。
+            queueMicrotask(() => {
+              this._readColumns();
+              if (this._table) this._table.setData(this._config.data || []);
+            });
+          } else if (this.isConnected) this._queueRender();
+        } else if (this.isConnected) this._queueRender();
+        this._clearColumnDefinitions();
+      }
+      get options() {
+        return this._config;
+      }
+
       set data(value) {
         if (!this._config) this._config = {};
         this._config.data = Array.isArray(value) ? value : [];
         if (this._table) this._table.setData(this._config.data);
-        else if (this.isConnected) this._renderTable();
+        else if (this.isConnected) this._queueRender();
         this._clearColumnDefinitions();
       }
 
@@ -1286,10 +1920,20 @@ var KniuUI = (function () {
       }
 
       _readColumns() {
-        const columnElements = [...this.querySelectorAll(':scope > kniu-table-col')];
+        // 列定义可能已被 _clearColumnDefinitions 移除（options/data 后续更新时重读），
+        // 此时回退到首次读取缓存的列元素引用。
+        let columnElements = [...this.querySelectorAll(':scope > kniu-table-col')];
+        if (!columnElements.length && this._columnElements && this._columnElements.length) {
+          columnElements = this._columnElements;
+        }
         if (!columnElements.length) return;
-        this._columns = columnElements.map((element) => {
+        this._columnElements = columnElements;
+        const columns = columnElements.map((element) => {
           const fixedAttribute = element.getAttribute('fixed');
+          const template = element.querySelector('template');
+          const imageElement = template?.content.querySelector('kniu-image');
+          const tagElement = template?.content.querySelector('kniu-tag');
+          const statusElement = template?.content.querySelector('kniu-status');
           const column = {
             type: element.getAttribute('type') || 'default',
             field: element.getAttribute('field') || '',
@@ -1306,9 +1950,29 @@ var KniuUI = (function () {
             formatter: element.formatter,
             selectable: element.selectable,
             index: element.getAttribute('index') || 1,
-            editable: element.hasAttribute('editable'),
-            editType: element.getAttribute('edit-type') || 'text',
+            editable: element.hasAttribute('editable')
+              ? (element.getAttribute('editable') === 'number' ? 'number'
+                : element.getAttribute('editable') === 'text' ? 'text'
+                : element.getAttribute('editable') !== 'false')
+              : false,
             editMin: element.hasAttribute('edit-min') ? Number(element.getAttribute('edit-min')) : null,
+            image: imageElement ? {
+              attributes: Object.fromEntries([...imageElement.attributes].map(function (attribute) {
+                return [attribute.name, attribute.value];
+              })),
+              width: imageElement.style.width || '80px',
+              height: imageElement.style.height || '80px'
+            } : null,
+            tag: tagElement ? {
+              attributes: Object.fromEntries([...tagElement.attributes].map(function (attribute) {
+                return [attribute.name, attribute.value === '' ? true : attribute.value];
+              }))
+            } : null,
+            status: statusElement ? {
+              attributes: Object.fromEntries([...statusElement.attributes].map(function (attribute) {
+                return [attribute.name, attribute.value === '' ? true : attribute.value];
+              }))
+            } : null,
             onChange: (...args) => {
               if (typeof element.onChange === 'function') return element.onChange(...args);
               return true;
@@ -1317,25 +1981,33 @@ var KniuUI = (function () {
               ? (String(fixedAttribute).toLowerCase() === 'right' ? 'right' : 'left')
               : false
           };
-          const template = element.querySelector('template');
           const buttons = [
             ...element.querySelectorAll(':scope > kniu-btn'),
             ...(template ? template.content.querySelectorAll('kniu-btn') : [])
-          ];
+          ].filter(function (button) {
+            return !button.hasAttribute('data-kniu-if') || button.getAttribute('data-kniu-if') === 'true';
+          });
           const switchElement = element.querySelector(':scope > kniu-switch')
             || template?.content.querySelector('kniu-switch');
           if (switchElement) {
-            const attributeNames = ['disabled', 'width', 'active-icon-class', 'inactive-icon-class', 'active-text', 'inactive-text', 'active-value', 'inactive-value', 'active-color', 'inactive-color', 'name', 'validate-event'];
+            // 列内 kniu-switch 统一走 kniu:options：模板 content 内节点未被框架以 property 赋值时
+            // （未插入文档 → 自定义元素未升级 → 无 options property），框架会把配置存到
+            // __kniuOptionsValue expando（见 kniutemplate 的 kniu:options 绑定），此处两者都读。
+            // createTable 重建行内开关时整体赋回，旧 attribute 快照机制已作废。
+            const switchConfig = (switchElement && typeof switchElement.options === 'object' && switchElement.options)
+              || (switchElement && switchElement.__kniuOptionsValue && typeof switchElement.__kniuOptionsValue === 'object' ? switchElement.__kniuOptionsValue : null);
             column.switch = {
-              attributes: Object.fromEntries(attributeNames
-                .filter(function (name) { return switchElement.hasAttribute(name); })
-                .map(function (name) {
-                  const value = switchElement.getAttribute(name);
-                  return [name, value === '' ? true : value];
-                })),
+              options: switchConfig,
               onChange: (index, rows, value) => {
-                const handler = switchElement.__kniuTableScopedHandler;
+                // 处理器来自模板内 kniu-switch 的 kniu@change：框架在列被 kniu:if / kniu:for clone 后
+                // 会把 handler 重新绑定到克隆节点 / 克隆列宿主自身（见 kniutemplate 的 tableScopedControl
+                // 分支，刻意保留 kniu@change 属性以便克隆列重新解析），故此处直接读取克隆后的节点即可。
+                const handler = element.__kniuTableScopedSwitchHandler
+                  || switchElement.__kniuTableScopedHandler;
                 if (typeof handler === 'function') return handler(index, rows, value);
+                // 列级 on-change 不依赖 template 内节点的 expando，条件列被
+                // cloneNode() 重建后仍能稳定调用业务提交函数。
+                if (typeof element.onChange === 'function') return element.onChange(index, rows, value);
                 return true;
               }
             };
@@ -1354,6 +2026,7 @@ var KniuUI = (function () {
                 round: button.hasAttribute('round'),
                 circle: button.hasAttribute('circle'),
                 disabled: button.hasAttribute('disabled'),
+                condition: button.hasAttribute('kniu:if') ? button.getAttribute('kniu:if') : null,
                 icon: button.getAttribute('icon') || '',
                 onClick: ({ index, rows }) => {
                   const handler = button.__kniuTableScopedHandler;
@@ -1365,6 +2038,10 @@ var KniuUI = (function () {
           }
           return column;
         });
+        // 原地替换数组内容：_renderTable 已把 this._columns 引用传给 createTable，
+        // 重读（options 更新时）必须让既有表格实例看到新列定义，不能替换引用。
+        this._columns.length = 0;
+        this._columns.push(...columns);
       }
 
       _destroyTable() {
@@ -1373,26 +2050,36 @@ var KniuUI = (function () {
         this._table = null;
       }
 
+      _queueRender() {
+        if (this._renderQueued) return;
+        this._renderQueued = true;
+        queueMicrotask(() => {
+          this._renderQueued = false;
+          if (this.isConnected) this._renderTable();
+        });
+      }
+
       _renderTable() {
         this._readColumns();
         const columns = this._columns.length ? this._columns : this._config?.cols;
         if (!Array.isArray(columns) || !columns.length) return;
         this._destroyTable();
+        const cfg = this._config || {};
         this._table = createTable({
-          ...this._config,
+          ...cfg,
           cols: columns,
           data: this.data,
           host: this,
-          height: this.getAttribute('height'),
-          maxHeight: this.getAttribute('max-height') || this.style.maxHeight,
-          stripe: this.hasAttribute('stripe'),
-          border: this.hasAttribute('border'),
-          size: this.getAttribute('size') || 'default',
-          fit: this.getAttribute('fit') !== 'false',
-          showHeader: this.getAttribute('show-header') !== 'false',
-          highlightCurrentRow: this.hasAttribute('highlight-current-row'),
-          rowKey: this.getAttribute('row-key') || '',
-          emptyText: this.hasAttribute('empty-text') ? (this.getAttribute('empty-text') || '') : '暂无数据',
+          height: cfg.height,
+          maxHeight: cfg.maxHeight ?? this.style.maxHeight,
+          stripe: cfg.stripe === true,
+          border: cfg.border === true,
+          size: cfg.size || 'default',
+          fit: cfg.fit !== false,
+          showHeader: cfg.showHeader !== false,
+          highlightCurrentRow: cfg.highlightCurrentRow === true,
+          rowKey: cfg.rowKey || '',
+          emptyText: cfg.emptyText ?? '暂无数据',
           emptySlot: !!this.querySelector('[slot="empty"]'),
           loading: this._loading,
           loadingText: this._loadingText,
@@ -1401,6 +2088,9 @@ var KniuUI = (function () {
       }
 
       clearSelection() { return this._table?.clearSelection(); }
+      refreshColumns() {
+        if (this.isConnected) this._renderTable();
+      }
       getSelectionRows() { return this._table?.getSelectionRows() || []; }
       toggleRowSelection(row, selected) { return this._table?.toggleRowSelection(row, selected); }
       setCurrentRow(row) { return this._table?.setCurrentRow(row); }
@@ -1418,9 +2108,9 @@ var KniuUI = (function () {
     class KniuSysLoading extends HTMLElement {
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
+        attachComponentShadow(this);
         this._show = false;
-        this.shadowRoot.innerHTML = `<style>:host{display:contents}.kniu_sys_loading_mask{position:fixed;inset:0;z-index:50;display:grid;place-items:center;opacity:0;visibility:hidden;transition:opacity .4s ease,visibility .4s ease;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);background:#fff}.kniu_sys_loading_mask[data-show="true"]{opacity:1;visibility:visible;transition:none}.kniu_sys_loading_spinner{width:38px;height:38px;border:3px solid rgba(102,126,234,.25);border-top-color:#667eea;border-radius:50%;animation:kniu_sys_loading_spin .7s linear infinite}@keyframes kniu_sys_loading_spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.kniu_sys_loading_spinner{animation:none}}</style><div class="kniu_sys_loading_mask" data-show="true" role="status" aria-label="加载中"><span class="kniu_sys_loading_spinner"></span></div>`;
+        this.shadowRoot.innerHTML = `<style>:host{position:fixed;inset:0;z-index:2147483647;display:block;pointer-events:none}:host([contained]){position:absolute;z-index:50}.kniu_sys_loading_mask{position:absolute;inset:0;display:grid;place-items:center;opacity:0;visibility:hidden;transition:opacity .4s ease,visibility .4s ease;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);background-color:#fff}.kniu_sys_loading_mask[data-show="true"]{opacity:1;visibility:visible;transition:none;pointer-events:auto}:host([contained]) .kniu_sys_loading_mask{z-index:0}.kniu_sys_loading_spinner{width:38px;height:38px;border:3px solid rgba(102,126,234,.25);border-top-color:#667eea;border-radius:50%;animation:kniu_sys_loading_spin .7s linear infinite}@keyframes kniu_sys_loading_spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.kniu_sys_loading_spinner{animation:none}}</style><div class="kniu_sys_loading_mask" data-show="true" role="status" aria-label="加载中"><span class="kniu_sys_loading_spinner"></span></div>`;
         this._mask = this.shadowRoot.querySelector('.kniu_sys_loading_mask');
       }
       set show(value) {
@@ -1438,11 +2128,11 @@ var KniuUI = (function () {
     class KniuSysToast extends HTMLElement {
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
+        attachComponentShadow(this);
         this._message = '';
         this._type = 'info';
         this._visible = false;
-        this.shadowRoot.innerHTML = `<style>:host{display:contents}.kniu_sys_toast{position:fixed;right:28px;bottom:28px;z-index:60;padding:14px 18px;border:1px solid #ebeef5;border-radius:4px;opacity:0;pointer-events:none;transform:translateY(12px);background:#edf2fc;color:#909399;transition:.25s;box-shadow:0 12px 40px rgba(23,33,59,.18)}.kniu_sys_toast[data-type="success"]{border-color:#e1f3d8;background:#f0f9eb;color:#67c23a}.kniu_sys_toast[data-type="warning"]{border-color:#faecd8;background:#fdf6ec;color:#e6a23c}.kniu_sys_toast[data-type="error"]{border-color:#fde2e2;background:#fef0f0;color:#f56c6c}.kniu_sys_toast[data-visible="true"]{opacity:1;transform:none}</style><div class="kniu_sys_toast" data-visible="false" data-type="info" role="status" aria-live="polite"></div>`;
+        this.shadowRoot.innerHTML = `<style>:host{position:fixed;inset:0;z-index:2147483000;display:block;pointer-events:none}.kniu_sys_toast{position:absolute;right:28px;bottom:28px;padding:14px 18px;border:1px solid #ebeef5;border-radius:4px;opacity:0;pointer-events:none;transform:translateY(12px);background-color:#edf2fc;color:#909399;transition:.25s;box-shadow:0 12px 40px rgba(23,33,59,.18)}.kniu_sys_toast[data-type="success"]{border-color:#e1f3d8;background-color:#f0f9eb;color:#67c23a}.kniu_sys_toast[data-type="warning"]{border-color:#faecd8;background-color:#fdf6ec;color:#e6a23c}.kniu_sys_toast[data-type="error"]{border-color:#fde2e2;background-color:#fef0f0;color:#f56c6c}.kniu_sys_toast[data-visible="true"]{opacity:1;transform:none}</style><div class="kniu_sys_toast" data-visible="false" data-type="info" role="status" aria-live="polite"></div>`;
         this._toast = this.shadowRoot.querySelector('.kniu_sys_toast');
       }
       set message(value) {
@@ -1477,33 +2167,45 @@ var KniuUI = (function () {
     return arr;
   }
 
-  // 服务端分页所需的响应式 state 初始字段。
-  function paginationState(pageRows = 10) {
-    return {
-      currentPage: 1,
-      pageRows,
-      pageTotal: 1,
-      total: 0,
-      pageList: []
-    };
-  }
-
-  // 服务端分页控制器：对接后端列表接口，返回 loadList/changePage/prevPage/nextPage/changePageSize。
+  // 服务端分页控制器：对接后端列表接口，返回 loadList/changePage/changePageSize。
   // options.params 可选：函数（每次请求时求值）或对象，其键值会合并进请求 data，用于携带 keyword 等附加查询参数。
   function usePagination(options) {
-    const { state, self, url, field = 'id', sort = 'asc', params = null } = options;
+    const { state, self, url, field = 'id', sort = 'asc', params = null, transform = null, tableKey = null, pageKey = null } = options;
     if (!state || !self || !url) {
       throw new Error('usePagination 需要 state、self、url 三个参数');
     }
+    // 分页状态由 usePagination 集中初始化，业务 state 不再混入额外初始化函数。
+    const pageOptions = pageKey && state[pageKey] && typeof state[pageKey] === 'object' ? state[pageKey] : {};
+    const configuredPageSize = Number(pageOptions.pageSize);
+    state.pageRows = Math.max(1, Number.isFinite(configuredPageSize) ? configuredPageSize : 10);
+    state.currentPage = Math.max(1, Number(pageOptions.currentPage) || 1);
+    state.pageTotal = Math.max(1, Number(state.pageTotal) || 1);
+    state.total = Math.max(0, Number(pageOptions.total ?? state.total) || 0);
 
     function resolveExtraParams() {
       const extra = typeof params === 'function' ? params() : params;
       return extra && typeof extra === 'object' ? extra : {};
     }
 
+    // 加载完成后把分页结果同步进 options 化的 table / page 配置对象
+    // （kniu-table 的 kniu:options、kniu-page 的 kniu:options 直接消费这两个对象）。
+    // 注意：必须整体替换对象引用——kniu:options 的响应式订阅注册在表达式路径
+    // （如 state.userPage）上，原地改 total/data 等子属性不会触发组件刷新。
+    function syncOptions() {
+      if (tableKey && state[tableKey] && typeof state[tableKey] === 'object') {
+        const prev = state[tableKey];
+        state[tableKey] = { ...prev, data: state.list, loading: state.loading };
+      }
+      if (pageKey && state[pageKey] && typeof state[pageKey] === 'object') {
+        const prev = state[pageKey];
+        state[pageKey] = { ...prev, total: state.total, currentPage: state.currentPage, pageSize: state.pageRows };
+      }
+    }
+
     async function loadList(page) {
       const targetPage = Math.min(Math.max(Number(page) || 1, 1), state.pageTotal || 1);
       state.loading = true;
+      syncOptions();
       await REQUEST({
         url,
         type: 'POST',
@@ -1518,19 +2220,22 @@ var KniuUI = (function () {
           if (res.status !== 1) {
             state.error = res.msg || '加载失败';
             state.loading = false;
+            syncOptions();
             self.$msg({ content: state.error, type: 'error' });
             return;
           }
           const payload = res.data || {};
-          state.list = getResponseRecords(payload);
+          const records = getResponseRecords(payload);
+          state.list = typeof transform === 'function' ? transform(records) : records;
           state.currentPage = payload.page_current || 1;
           state.pageTotal = payload.page_total || 1;
           state.total = payload.total || 0;
-          state.pageList = buildPageList(state.currentPage, state.pageTotal);
           state.loading = false;
+          syncOptions();
         },
         fail(res) {
           state.loading = false;
+          syncOptions();
           state.error = res.msg || '加载失败';
           self.$msg({ content: state.error, type: 'error' });
         }
@@ -1543,14 +2248,6 @@ var KniuUI = (function () {
       loadList(page);
     }
 
-    function prevPage() {
-      if (state.currentPage > 1) loadList(state.currentPage - 1);
-    }
-
-    function nextPage() {
-      if (state.currentPage < state.pageTotal) loadList(state.currentPage + 1);
-    }
-
     function changePageSize(event) {
       const size = (event?.detail?.size ?? Number(event && event.target ? event.target.value : state.pageRows)) || 10;
       if (size === state.pageRows) return;
@@ -1559,7 +2256,215 @@ var KniuUI = (function () {
       loadList(1);
     }
 
-    return { loadList, changePage, prevPage, nextPage, changePageSize };
+    return { loadList, changePage, changePageSize };
+  }
+
+  function registerSelectComponent() {
+    if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
+    if (!customElements.get('kniu-option')) {
+      class KniuSysOption extends HTMLElement {
+        static get observedAttributes() { return ['label', 'value', 'disabled']; }
+        constructor() {
+          super();
+          attachComponentShadow(this);
+          this.shadowRoot.innerHTML = '<slot></slot>';
+        }
+        connectedCallback() { this._notifySelect(); }
+        attributeChangedCallback() { this._notifySelect(); }
+        get label() { return this.getAttribute('label') || this.textContent.trim(); }
+        set label(value) { this.setAttribute('label', value == null ? '' : String(value)); }
+        get value() { return this.getAttribute('value') || ''; }
+        set value(value) { this.setAttribute('value', value == null ? '' : String(value)); }
+        get disabled() { return this.hasAttribute('disabled'); }
+        set disabled(value) { value ? this.setAttribute('disabled', '') : this.removeAttribute('disabled'); }
+        _notifySelect() {
+          const select = this.closest('kniu-select');
+          if (select && typeof select.syncOptions === 'function') select.syncOptions();
+        }
+      }
+      customElements.define('kniu-option', KniuSysOption);
+    }
+    if (customElements.get('kniu-select')) return;
+    class KniuSysSelect extends HTMLElement {
+      static get observedAttributes() { return ['placeholder', 'name', 'disabled', 'required', 'size']; }
+      constructor() {
+        super();
+        attachComponentShadow(this);
+        this._value = '';
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;min-width:120px}.kniu_sys_select_wrap{position:relative;width:100%}.kniu_sys_select{display:flex;align-items:center;width:100%;height:40px;padding:0 34px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background:#fff;color:#606266;font:14px Arial,"Microsoft YaHei",sans-serif;cursor:pointer;box-sizing:border-box;white-space:nowrap}.kniu_sys_select:hover{border-color:#c0c4cc}.kniu_sys_select:focus-visible,.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select{border-color:#409eff}.kniu_sys_select:disabled{background:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_arrow{position:absolute;top:50%;right:12px;width:7px;height:7px;border-right:1px solid #909399;border-bottom:1px solid #909399;transform:translateY(-70%) rotate(45deg);transition:transform .2s;pointer-events:none}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_arrow{transform:translateY(-30%) rotate(225deg)}.kniu_sys_select_dropdown{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:10030;max-height:220px;overflow:auto;padding:5px 0;border:1px solid #e4e7ed;border-radius:4px;background:#fff;box-shadow:0 4px 14px rgba(0,0,0,.12);opacity:0;visibility:hidden;transform:translateY(-4px);transition:.16s}.kniu_sys_select_wrap[data-placement="top"] .kniu_sys_select_dropdown{top:auto;bottom:calc(100% + 6px);transform:translateY(4px)}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_dropdown{opacity:1;visibility:visible;transform:none}.kniu_sys_select_option{display:block;width:100%;height:32px;padding:0 12px;border:0;background:transparent;color:#606266;font:inherit;text-align:left;cursor:pointer}.kniu_sys_select_option:hover,.kniu_sys_select_option.is-selected{color:#409eff;background:#f5f7fa}.kniu_sys_select_option:disabled{color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_slot{display:none}</style><div class="kniu_sys_select_wrap" data-open="false" data-placement="bottom"><button type="button" class="kniu_sys_select" aria-haspopup="listbox" aria-expanded="false"></button><span class="kniu_sys_select_arrow" aria-hidden="true"></span><div class="kniu_sys_select_dropdown" role="listbox"></div></div><slot class="kniu_sys_select_slot"></slot>`;
+        this._wrap = this.shadowRoot.querySelector('.kniu_sys_select_wrap');
+        this._select = this.shadowRoot.querySelector('.kniu_sys_select');
+        this._dropdown = this.shadowRoot.querySelector('.kniu_sys_select_dropdown');
+        this._select.addEventListener('click', () => this._setOpen(this._wrap.dataset.open !== 'true'));
+        this._select.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' || event.key === 'Tab') this._setOpen(false);
+          else if (event.key === 'Enter' || event.key === ' ' || (event.altKey && event.key === 'ArrowDown')) this._setOpen(true);
+        });
+        this._dropdown.addEventListener('click', (event) => {
+          const option = event.target.closest('.kniu_sys_select_option');
+          if (!option || option.disabled) return;
+          this._value = option.dataset.value || '';
+          this.syncOptions();
+          this._setOpen(false);
+          this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          this.dispatchEvent(new CustomEvent('change', { detail: this._value, bubbles: true, composed: true }));
+        });
+        this._outside = (event) => { if (!event.composedPath().includes(this)) this._setOpen(false); };
+        this._observer = new MutationObserver(() => this.syncOptions());
+      }
+      connectedCallback() {
+        this._observer.observe(this, { childList: true, subtree: true, attributes: true, characterData: true });
+        this.syncOptions();
+        this._syncAttributes();
+        window.addEventListener('pointerdown', this._outside, true);
+      }
+      disconnectedCallback() { this._observer.disconnect(); window.removeEventListener('pointerdown', this._outside, true); }
+      attributeChangedCallback() { if (this._select) this._syncAttributes(); }
+      get value() { return this._value; }
+      set value(value) {
+        this._value = value == null ? '' : String(value);
+        if (this._select) this.syncOptions();
+      }
+      get disabled() { return this.hasAttribute('disabled'); }
+      set disabled(value) { value ? this.setAttribute('disabled', '') : this.removeAttribute('disabled'); }
+      _setOpen(open) {
+        const expanded = !!open && !this._select.disabled;
+        if (expanded) {
+          const rect = this.getBoundingClientRect();
+          const panelHeight = Math.min(this._dropdown.scrollHeight || 220, 220) + 6;
+          const below = window.innerHeight - rect.bottom;
+          this._wrap.dataset.placement = below >= panelHeight || below >= rect.top ? 'bottom' : 'top';
+        }
+        this._wrap.dataset.open = String(expanded);
+        this._select.setAttribute('aria-expanded', String(expanded));
+      }
+      syncOptions() {
+        if (!this._select) return;
+        const options = [];
+        const placeholder = this.getAttribute('placeholder') || '';
+        if (placeholder) {
+          const option = document.createElement('button');
+          option.type = 'button';
+          option.className = 'kniu_sys_select_option';
+          option.dataset.value = '';
+          option.textContent = placeholder;
+          option.disabled = this.hasAttribute('required');
+          options.push(option);
+        }
+        this.querySelectorAll(':scope > kniu-option').forEach(function (source) {
+          const option = document.createElement('button');
+          option.type = 'button';
+          option.className = 'kniu_sys_select_option';
+          option.dataset.value = source.value;
+          option.textContent = source.label;
+          option.disabled = source.disabled;
+          options.push(option);
+        });
+        options.forEach((option) => option.classList.toggle('is-selected', option.dataset.value === this._value));
+        replaceChildrenWithFragment(this._dropdown, options);
+        const selected = options.find((option) => option.dataset.value === this._value);
+        this._select.textContent = selected?.textContent || placeholder || '';
+      }
+      _syncAttributes() {
+        this._select.disabled = this.hasAttribute('disabled');
+        if (this._select.disabled) this._setOpen(false);
+        const size = this.getAttribute('size');
+        const height = size === 'small' ? 30 : (size === 'large' ? 48 : 40);
+        this._select.style.height = `${height}px`;
+        this._select.style.lineHeight = `${height - 2}px`;
+        this.syncOptions();
+      }
+    }
+    customElements.define('kniu-select', KniuSysSelect);
+  }
+
+  function registerRadioGroupComponent() {
+    if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
+    if (!customElements.get('kniu-radio')) {
+      class KniuSysRadio extends HTMLElement {
+        static get observedAttributes() { return ['label', 'value', 'disabled', 'size']; }
+        constructor() {
+          super();
+          attachComponentShadow(this);
+          this.shadowRoot.innerHTML = '<slot></slot>';
+        }
+        connectedCallback() { this._notifyGroup(); }
+        attributeChangedCallback() { this._notifyGroup(); }
+        get label() { return this.getAttribute('label') || this.textContent.trim(); }
+        get value() { return this.getAttribute('value') || ''; }
+        get disabled() { return this.hasAttribute('disabled'); }
+        _notifyGroup() {
+          const group = this.closest('kniu-radio-group');
+          if (group && typeof group.syncOptions === 'function') group.syncOptions();
+        }
+      }
+      customElements.define('kniu-radio', KniuSysRadio);
+    }
+    if (customElements.get('kniu-radio-group')) return;
+    class KniuSysRadioGroup extends HTMLElement {
+      static get observedAttributes() { return ['name', 'disabled', 'size']; }
+      constructor() {
+        super();
+        attachComponentShadow(this);
+        this._value = '';
+        this._radioName = `kniu-radio-${Math.random().toString(36).slice(2)}`;
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle}.kniu_sys_radio_group{display:flex;align-items:center;flex-wrap:wrap;gap:18px;min-height:40px}.kniu_sys_radio{display:inline-flex;align-items:center;gap:7px;color:#606266;font:14px/1.5 Arial,"Microsoft YaHei",sans-serif;cursor:pointer;user-select:none}.kniu_sys_radio_control{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none}.kniu_sys_radio_input{position:relative;-webkit-appearance:none;appearance:none;width:14px;height:14px;margin:0;border:1px solid #dcdfe6;border-radius:50%;outline:0;background-color:#fff;box-sizing:border-box;cursor:pointer;transition:border-color .2s,background-color .2s}.kniu_sys_radio_dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:5px;height:5px;border-radius:50%;background-color:#fff;display:none;pointer-events:none}.kniu_sys_radio_input:checked{border-color:#409eff;background-color:#409eff}.kniu_sys_radio_input:checked~.kniu_sys_radio_dot{display:block}.kniu_sys_radio_input:focus-visible{outline:2px solid rgba(64,158,255,.3);outline-offset:2px}.kniu_sys_radio:hover{color:#409eff}.kniu_sys_radio:hover .kniu_sys_radio_input{border-color:#409eff}.kniu_sys_radio[data-size="large"] .kniu_sys_radio_input{width:16px;height:16px}.kniu_sys_radio[data-size="large"] .kniu_sys_radio_dot{width:6px;height:6px}.kniu_sys_radio[data-size="small"]{font-size:12px}.kniu_sys_radio[data-size="small"] .kniu_sys_radio_input{width:12px;height:12px}.kniu_sys_radio[data-size="small"] .kniu_sys_radio_dot{width:4px;height:4px}.kniu_sys_radio[data-disabled="true"]{color:#c0c4cc;cursor:not-allowed}.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input{border-color:#dcdfe6;background-color:#f5f7fa;cursor:not-allowed}.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input:checked{border-color:#a0cfff;background-color:#a0cfff}</style><div class="kniu_sys_radio_group" role="radiogroup"></div><slot hidden></slot>`;
+        this._group = this.shadowRoot.querySelector('.kniu_sys_radio_group');
+        this._group.addEventListener('change', (event) => {
+          const input = event.target;
+          if (!(input instanceof HTMLInputElement) || input.type !== 'radio') return;
+          this._value = input.value;
+          this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          this.dispatchEvent(new CustomEvent('change', { detail: this._value, bubbles: true, composed: true }));
+        });
+        this._observer = new MutationObserver(() => this.syncOptions());
+      }
+      connectedCallback() {
+        this._observer.observe(this, { childList: true, subtree: true, attributes: true, characterData: true });
+        this.syncOptions();
+      }
+      disconnectedCallback() { this._observer.disconnect(); }
+      attributeChangedCallback() { if (this._group) this.syncOptions(); }
+      get value() { return this._value; }
+      set value(value) { this._value = value == null ? '' : String(value); this._syncChecked(); }
+      syncOptions() {
+        if (!this._group) return;
+        const groupDisabled = this.hasAttribute('disabled');
+        const groupSize = this.getAttribute('size') || '';
+        const name = this.getAttribute('name') || this._radioName;
+        const radios = Array.from(this.querySelectorAll(':scope > kniu-radio')).map((source) => {
+          const label = document.createElement('label');
+          label.className = 'kniu_sys_radio';
+          const disabled = groupDisabled || source.disabled;
+          label.dataset.disabled = String(disabled);
+          label.dataset.size = source.getAttribute('size') || groupSize;
+          const input = document.createElement('input');
+          input.className = 'kniu_sys_radio_input';
+          input.type = 'radio';
+          input.name = name;
+          input.value = source.value;
+          input.disabled = disabled;
+          input.checked = source.value === this._value;
+          const dot = document.createElement('span');
+          dot.className = 'kniu_sys_radio_dot';
+          const control = document.createElement('span');
+          control.className = 'kniu_sys_radio_control';
+          control.append(input, dot);
+          const text = document.createElement('span');
+          text.textContent = source.label;
+          label.append(control, text);
+          return label;
+        });
+        replaceChildrenWithFragment(this._group, radios);
+      }
+      _syncChecked() {
+        if (!this._group) return;
+        this._group.querySelectorAll('input[type="radio"]').forEach((input) => {
+          input.checked = input.value === this._value;
+        });
+      }
+    }
+    customElements.define('kniu-radio-group', KniuSysRadioGroup);
   }
 
   function registerPageComponent() {
@@ -1570,45 +2475,53 @@ var KniuUI = (function () {
       total: 'total', 总数: 'total',
       first: 'first', 首页: 'first',
       prev: 'prev', 上一页: 'prev',
-      pager: 'pager', 页码: 'pager',
+      pager: 'pager', page: 'pager', 页码: 'pager',
       next: 'next', 下一页: 'next',
       last: 'last', 末页: 'last', 尾页: 'last',
-      sizes: 'sizes', 条数: 'sizes'
+      sizes: 'sizes', rows: 'sizes', 条数: 'sizes',
+      jumper: 'jumper', jump: 'jumper', 跳转: 'jumper'
     };
 
     class KniuSysPage extends HTMLElement {
+      // 2026-09-01：所有旧 attribute（total / page-size / current-page / layout /
+      // background / first-text / prev-text / next-text / last-text）全部作废，
+      // 只认 kniu:options。
       static get observedAttributes() {
-        return ['total', 'page-size', 'current-page', 'layout', 'background', 'prev-text', 'next-text', 'first-text', 'last-text'];
+        return [];
       }
 
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
+        attachComponentShadow(this);
         this._total = 0;
         this._pageSize = 10;
-        this._baseSize = 10;        // 下拉步长基数（来自 controller 的 paginationState(n)），首次有效 pageSize 锁定后不再变
-        this._baseSizeLocked = false;
+        this._baseSize = 10;        // 下拉步长基数来自首次 options.pageSize
+        this._baseSizeInitialized = false;
         this._currentPage = 1;
         this._layout = 'total,prev,pager,next,sizes';
         this._background = false;
-        this._firstText = '';
-        this._prevText = '';
-        this._nextText = '';
-        this._lastText = '';
+        this._firstText = null;
+        this._prevText = null;
+        this._nextText = null;
+        this._lastText = null;
         this._sizes = [10, 20, 50, 100];
+        this._options = null;
         this.shadowRoot.innerHTML = `
           <style>
             :host{display:block}
             .kniu_sys_page{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:16px;font-size:13px;color:#606266}
             .kniu_sys_page[hidden]{display:none}
-            .kniu_sys_page_total{margin-right:8px}
             .kniu_sys_page_pager{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
-            .kniu_sys_page_btn{min-width:30px;height:30px;padding:0 8px;border:1px solid #dcdfe6;border-radius:4px;background:#fff;color:#606266;cursor:pointer;font-size:13px;font-family:inherit;transition:all .2s}
+            .kniu_sys_page_btn{min-width:30px;height:30px;padding:0 8px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;cursor:pointer;font-size:13px;font-family:inherit;transition:all .2s}
             .kniu_sys_page_btn:hover:not([disabled]):not(.is-active){color:#409eff;border-color:#c6e2ff}
-            .kniu_sys_page_btn.is-active{color:#fff;background:#409eff;border-color:#409eff;cursor:default}
-            .kniu_sys_page_btn[disabled]{color:#c0c4cc;cursor:not-allowed;background:#fff}
-            .kniu_sys_page_btn[data-background="true"]:not(.is-active):not([disabled]){background:#f4f4f5}
-            .kniu_sys_page_sizes{height:30px;border:1px solid #dcdfe6;border-radius:4px;padding:0 8px;margin-left:12px;font-size:13px;color:#606266;background:#fff;cursor:pointer;font-family:inherit}
+            .kniu_sys_page_btn.is-active{color:#fff;background-color:#409eff;border-color:#409eff;cursor:default}
+            .kniu_sys_page_btn[disabled]{color:#c0c4cc;cursor:not-allowed;background-color:#fff}
+            .kniu_sys_page_btn[data-background="true"]:not(.is-active):not([disabled]){background-color:#f4f4f5}
+            .kniu_sys_page_sizes{width:max-content;min-width:0;font-size:13px}
+            .kniu_sys_page_jumper{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+            .kniu_sys_page_jumper_input{width:46px;height:30px;padding:0 6px;border:1px solid #dcdfe6;border-radius:4px;outline:0;color:#606266;font:inherit;text-align:center;box-sizing:border-box}
+            .kniu_sys_page_jumper_input{-moz-appearance:textfield}.kniu_sys_page_jumper_input::-webkit-inner-spin-button,.kniu_sys_page_jumper_input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+            .kniu_sys_page_jumper_input:hover{border-color:#c0c4cc}.kniu_sys_page_jumper_input:focus{border-color:#409eff}
           </style>
           <div class="kniu_sys_page" hidden>
             <span class="kniu_sys_page_total">共 0 条</span>
@@ -1617,7 +2530,8 @@ var KniuUI = (function () {
             <span class="kniu_sys_page_pager"></span>
             <button class="kniu_sys_page_btn kniu_sys_page_next" type="button">下一页</button>
             <button class="kniu_sys_page_btn kniu_sys_page_last" type="button">末页</button>
-            <select class="kniu_sys_page_sizes"></select>
+            <kniu-select class="kniu_sys_page_sizes" size="small"></kniu-select>
+            <span class="kniu_sys_page_jumper"><span class="kniu_sys_page_jumper_prefix">去</span><input class="kniu_sys_page_jumper_input" type="number" min="1" step="1" aria-label="跳转页码"><span class="kniu_sys_page_jumper_suffix">页</span></span>
           </div>
         `;
         this._root = this.shadowRoot.querySelector('.kniu_sys_page');
@@ -1628,57 +2542,83 @@ var KniuUI = (function () {
         this._nextEl = this.shadowRoot.querySelector('.kniu_sys_page_next');
         this._lastEl = this.shadowRoot.querySelector('.kniu_sys_page_last');
         this._sizesEl = this.shadowRoot.querySelector('.kniu_sys_page_sizes');
+        this._jumperEl = this.shadowRoot.querySelector('.kniu_sys_page_jumper');
+        this._jumperInput = this.shadowRoot.querySelector('.kniu_sys_page_jumper_input');
+        this._jumperPrefix = this.shadowRoot.querySelector('.kniu_sys_page_jumper_prefix');
+        this._jumperSuffix = this.shadowRoot.querySelector('.kniu_sys_page_jumper_suffix');
+        this._sizesEl.options = { size: 'small' };
         this._firstEl.addEventListener('click', () => this._goto(1));
         this._prevEl.addEventListener('click', () => this._goto(this._currentPage - 1));
         this._nextEl.addEventListener('click', () => this._goto(this._currentPage + 1));
         this._lastEl.addEventListener('click', () => this._goto(this._pageTotal()));
         this._sizesEl.addEventListener('change', () => this._emit('size-change', { size: Number(this._sizesEl.value) || 10 }));
+        this._jumperInput.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          this._goto(this._jumperInput.value);
+          this._jumperInput.value = String(this._currentPage);
+        });
+        this._jumperInput.addEventListener('change', () => {
+          this._goto(this._jumperInput.value);
+          this._jumperInput.value = String(this._currentPage);
+        });
       }
 
-      connectedCallback() { this._sync(); }
-      attributeChangedCallback() { if (this._root) this._sync(); }
+      connectedCallback() { this._render(); }
 
       get total() { return this._total; }
-      set total(value) { this._total = Math.max(0, Number(value) || 0); this._sync(); }
+      set total(value) { this._total = Math.max(0, Number(value) || 0); this._render(); }
       get pageSize() { return this._pageSize; }
       set pageSize(value) {
         this._pageSize = Math.max(1, Number(value) || 10);
-        if (!this._baseSizeLocked) {
+        if (!this._baseSizeInitialized || this._pageSize < this._baseSize || this._pageSize % this._baseSize !== 0) {
           this._baseSize = this._pageSize;
-          this._baseSizeLocked = true;
+          this._baseSizeInitialized = true;
         }
-        // 走 _render 而非 _sync：避免 _sync 的 attribute 路径用旧字面量回写刚被 setter 更新的 _pageSize
         this._render();
       }
       get currentPage() { return this._currentPage; }
-      set currentPage(value) { this._currentPage = Math.max(1, Number(value) || 1); this._sync(); }
+      set currentPage(value) { this._currentPage = Math.max(1, Number(value) || 1); this._render(); }
 
-      _parseLayout() {
-        const raw = this.getAttribute('layout') || this._layout;
-        return raw.split(/[,，]/).map(function (item) { return LAYOUT_ALIASES[item.trim()] || item.trim(); }).filter(Boolean);
-      }
-
-      _sync() {
-        const totalAttr = this.getAttribute('total');
-        this._total = (totalAttr === null || totalAttr.includes('{{')) ? this._total : Math.max(0, Number(totalAttr) || 0);
-        const pageSizeAttr = this.getAttribute('page-size');
-        if (pageSizeAttr !== null && !pageSizeAttr.includes('{{')) {
-          const next = Math.max(1, Number(pageSizeAttr) || 10);
+      // kniu:options 统一配置入口（2026-09-01）：total / currentPage / pageSize / layout /
+      // background / firstText / prevText / nextText / lastText / sizes 全部收进 options；
+      // 旧 attribute 一律作废（整体替换 options 对象即可刷新）。
+      set options(value) {
+        const o = value && typeof value === 'object' ? value : {};
+        this._options = o;
+        if (o.total != null) this._total = Math.max(0, Number(o.total) || 0);
+        if (o.pageSize != null) {
+          const next = Math.max(1, Number(o.pageSize) || 10);
           this._pageSize = next;
-          if (!this._baseSizeLocked) {
+          if (!this._baseSizeInitialized || next < this._baseSize || next % this._baseSize !== 0) {
             this._baseSize = next;
-            this._baseSizeLocked = true;
+            this._baseSizeInitialized = true;
           }
         }
-        const currentPageAttr = this.getAttribute('current-page');
-        this._currentPage = (currentPageAttr === null || currentPageAttr.includes('{{')) ? this._currentPage : Math.max(1, Number(currentPageAttr) || 1);
-        this._layout = this.getAttribute('layout') || this._layout;
-        this._background = this.hasAttribute('background');
-        this._firstText = this.getAttribute('first-text') || this._firstText || '首页';
-        this._prevText = this.getAttribute('prev-text') || this._prevText || '上一页';
-        this._nextText = this.getAttribute('next-text') || this._nextText || '下一页';
-        this._lastText = this.getAttribute('last-text') || this._lastText || '末页';
+        if (o.currentPage != null) this._currentPage = Math.max(1, Number(o.currentPage) || 1);
+        if (o.layout != null) this._layout = String(o.layout);
+        if (o.background != null) this._background = !!o.background;
+        if (o.firstText != null) this._firstText = String(o.firstText);
+        if (o.prevText != null) this._prevText = String(o.prevText);
+        if (o.nextText != null) this._nextText = String(o.nextText);
+        if (o.lastText != null) this._lastText = String(o.lastText);
+        if (Array.isArray(o.sizes) && o.sizes.length) this._sizes = o.sizes.map(function (n) { return Number(n) || 10; });
         this._render();
+      }
+      get options() { return this._options; }
+
+      _parseLayout() {
+        return this._layout.split(/[,，]/).map(function (item) {
+          const token = item.trim();
+          return LAYOUT_ALIASES[token] || LAYOUT_ALIASES[token.toLowerCase()] || token.toLowerCase();
+        }).filter(Boolean);
+      }
+
+      _isEnglishLayout() {
+        const tokens = this._layout.split(/[,，]/).map(function (item) { return item.trim(); }).filter(Boolean);
+        return tokens.length > 0 && tokens.every(function (token) {
+          return ['first', 'prev', 'page', 'pager', 'next', 'last', 'total', 'rows', 'sizes', 'jumper', 'jump'].includes(token.toLowerCase());
+        });
       }
 
       _pageTotal() {
@@ -1686,12 +2626,11 @@ var KniuUI = (function () {
       }
 
       _buildSizes() {
-        // 基数由 controller 的 paginationState(n) 一次性锁定（首次有效 pageSize），
-        // 下拉永远是它的 1..5 倍。未满 100 追加 100 作上限。若当前 pageSize 不在序列里，临时补一个。
+        // 基数由首次 options.pageSize 确定，下拉严格生成它的 1..6 倍；
+        // 不再追加不属于倍数序列的特殊值。
         const base = this._baseSize;
         const arr = [];
-        for (let i = 1; i <= 5; i++) arr.push(base * i);
-        if (arr[arr.length - 1] < 100) arr.push(100);
+        for (let i = 1; i <= 6; i++) arr.push(base * i);
         const sizes = Array.from(new Set(arr)).sort(function (a, b) { return a - b; });
         if (sizes.indexOf(this._pageSize) < 0) {
           sizes.push(this._pageSize);
@@ -1719,19 +2658,25 @@ var KniuUI = (function () {
         const current = this._currentPage;
         const pageTotal = this._pageTotal();
         const layout = this._parseLayout();
+        const english = this._isEnglishLayout();
 
-        // 仅一页（含 0 条数据）时隐藏整个分页组件
+        // 总数文本先更新再判断隐藏：仅一页（含 0 条数据）时隐藏整个分页组件，
+        // 但 "共 X 条" 必须始终反映真实 total（2026-09-01：曾因提前 return 停留在初始 "共 0 条"）。
+        this._totalEl.textContent = english ? `Total ${total}` : `共 ${total} 条`;
         if (pageTotal <= 1) {
           this._root.hidden = true;
           return;
         }
         this._root.hidden = false;
-
-        this._totalEl.textContent = `共 ${total} 条`;
-        this._firstEl.textContent = this._firstText;
-        this._prevEl.textContent = this._prevText;
-        this._nextEl.textContent = this._nextText;
-        this._lastEl.textContent = this._lastText;
+        this._firstEl.textContent = this._firstText ?? (english ? 'First' : '首页');
+        this._prevEl.textContent = this._prevText ?? (english ? 'Prev' : '上一页');
+        this._nextEl.textContent = this._nextText ?? (english ? 'Next' : '下一页');
+        this._lastEl.textContent = this._lastText ?? (english ? 'Last' : '末页');
+        this._jumperPrefix.textContent = english ? 'Go to' : '去';
+        this._jumperSuffix.textContent = english ? 'Page' : '页';
+        this._jumperInput.max = String(pageTotal);
+        this._jumperInput.value = String(current);
+        this._jumperInput.setAttribute('aria-label', english ? 'Jump to page' : '跳转页码');
         this._firstEl.disabled = current <= 1;
         this._prevEl.disabled = current <= 1;
         this._nextEl.disabled = current >= pageTotal;
@@ -1741,19 +2686,19 @@ var KniuUI = (function () {
         this._nextEl.dataset.background = String(this._background);
         this._lastEl.dataset.background = String(this._background);
 
-        // 下拉选项为 page-size 的倍数（×1..×5），未满 100 时追加 100 作为上限
+        // 下拉选项严格为初始 pageSize 的 1..6 倍
         const sizes = this._buildSizes();
-        this._sizesEl.replaceChildren();
+        const sizesFragment = document.createDocumentFragment();
         sizes.forEach((s) => {
-          const opt = document.createElement('option');
+          const opt = document.createElement('kniu-option');
           opt.value = String(s);
-          opt.textContent = s + ' 条/页';
-          this._sizesEl.appendChild(opt);
+          opt.label = english ? `${s} rows/page` : `${s} 条/页`;
+          sizesFragment.appendChild(opt);
         });
+        this._sizesEl.replaceChildren(sizesFragment);
         this._sizesEl.value = String(pageSize);
 
-        // 清空 pager
-        this._pagerEl.replaceChildren();
+        const pagerFragment = document.createDocumentFragment();
         const pageList = buildPageList(current, pageTotal);
         const self = this;
         pageList.forEach(function (p) {
@@ -1764,21 +2709,24 @@ var KniuUI = (function () {
           btn.textContent = String(p);
           if (p === current) btn.classList.add('is-active');
           btn.addEventListener('click', function () { self._goto(p); });
-          self._pagerEl.append(btn);
+          pagerFragment.appendChild(btn);
         });
+        this._pagerEl.replaceChildren(pagerFragment);
 
         // 按 layout 顺序排列子元素
-        const orderMap = { total: this._totalEl, first: this._firstEl, prev: this._prevEl, pager: this._pagerEl, next: this._nextEl, last: this._lastEl, sizes: this._sizesEl };
+        const orderMap = { total: this._totalEl, first: this._firstEl, prev: this._prevEl, pager: this._pagerEl, next: this._nextEl, last: this._lastEl, sizes: this._sizesEl, jumper: this._jumperEl };
+        const layoutFragment = document.createDocumentFragment();
         layout.forEach(function (key) {
           const el = orderMap[key];
           if (el) {
             el.style.display = '';
-            self._root.append(el);
+            layoutFragment.appendChild(el);
           }
         });
         Object.keys(orderMap).forEach(function (key) {
           if (!layout.includes(key)) orderMap[key].style.display = 'none';
         });
+        this._root.replaceChildren(layoutFragment);
       }
     }
 
@@ -1792,9 +2740,9 @@ var KniuUI = (function () {
       static get observedAttributes() { return ['src', 'alt', 'fit']; }
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
-        this._fit = 'fill';
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;overflow:hidden;flex-shrink:0}.kniu_sys_image_group{display:flex;width:100%;align-items:stretch}.kniu_sys_image_content{position:relative;flex:1;min-width:0;display:flex;align-items:center;justify-content:flex-start;padding:0 12px;background:#fff;box-sizing:border-box;overflow:hidden}.kniu_sys_image_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_image_group[data-affix="true"] .kniu_sys_image_content{border:1px solid #dcdfe6}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_content{border-radius:0 4px 4px 0}.kniu_sys_image_group[data-has-append="true"] .kniu_sys_image_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_image_group[data-affix="true"]{height:40px}.kniu_sys_image_group:not([data-affix="true"]) .kniu_sys_image_content{padding:0;background:transparent}.kniu_sys_image_wrap{position:relative;width:100%;height:100%;overflow:hidden;background:#f5f7fa}.kniu_sys_image{display:block;width:100%;height:100%}.kniu_sys_image_status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#f5f7fa;color:#909399;font-size:12px}.kniu_sys_image_status[data-hidden="true"]{display:none}</style><div class="kniu_sys_image_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_image_affix kniu_sys_image_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_image_content"><div class="kniu_sys_image_wrap"><img class="kniu_sys_image"><span class="kniu_sys_image_status">加载中…</span></div></div><span class="kniu_sys_image_affix kniu_sys_image_append"><slot name="append"></slot></span></div>`;
+        attachComponentShadow(this);
+        this._fit = 'contain';
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;overflow:hidden;flex-shrink:0}.kniu_sys_image_group{display:flex;width:100%;height:100%;align-items:stretch}.kniu_sys_image_content{position:relative;flex:1;min-width:0;height:100%;display:flex;align-items:center;justify-content:flex-start;padding:0 12px;background-color:#fff;box-sizing:border-box;overflow:hidden}.kniu_sys_image_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_image_group[data-affix="true"] .kniu_sys_image_content{border:1px solid #dcdfe6}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_content{border-radius:0 4px 4px 0}.kniu_sys_image_group[data-has-append="true"] .kniu_sys_image_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_image_group[data-affix="true"]{height:40px}.kniu_sys_image_group:not([data-affix="true"]) .kniu_sys_image_content{padding:0;background-color:transparent}.kniu_sys_image_wrap{position:relative;width:100%;height:100%;overflow:hidden;background-color:#f5f7fa}.kniu_sys_image{display:block;width:100%;height:100%}.kniu_sys_image_status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background-color:#f5f7fa;color:#909399;font-size:12px}.kniu_sys_image_status[data-hidden="true"]{display:none}</style><div class="kniu_sys_image_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_image_affix kniu_sys_image_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_image_content"><div class="kniu_sys_image_wrap"><img class="kniu_sys_image"><span class="kniu_sys_image_status">加载中…</span></div></div><span class="kniu_sys_image_affix kniu_sys_image_append"><slot name="append"></slot></span></div>`;
         this._image = this.shadowRoot.querySelector('.kniu_sys_image');
         this._status = this.shadowRoot.querySelector('.kniu_sys_image_status');
         this._image.addEventListener('load', () => {
@@ -1829,7 +2777,7 @@ var KniuUI = (function () {
         wrap.style.height = h;
       }
       set fit(value) {
-        this._fit = ['fill', 'contain', 'cover', 'none', 'scale-down'].includes(value) ? value : 'fill';
+        this._fit = ['fill', 'contain', 'cover', 'none', 'scale-down'].includes(value) ? value : 'contain';
         this._image.style.objectFit = this._fit;
       }
       get fit() { return this._fit; }
@@ -1893,21 +2841,19 @@ var KniuUI = (function () {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (!customElements.get('kniu-input')) {
       class KniuSysInput extends HTMLElement {
-        static get observedAttributes() { return ['type', 'name', 'placeholder', 'autocomplete', 'maxlength', 'rows', 'disabled', 'readonly', 'required', 'show-password', 'clearable']; }
+        static get observedAttributes() { return ['type', 'name', 'placeholder', 'autocomplete', 'maxlength', 'rows', 'disabled', 'readonly', 'required', 'show-password', 'clearable', 'label-width']; }
         constructor() {
           super();
-          this.attachShadow({ mode: 'open' });
-          this.shadowRoot.innerHTML = `<style>:host{display:block;width:100%}.kniu_sys_input_group{display:flex;width:100%;height:40px}.kniu_sys_input_wrap{position:relative;display:block;flex:1;min-width:0}.kniu_sys_input{display:block;width:100%;height:40px;padding:0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background:#fff;color:#606266;font:14px/40px Arial,"Microsoft YaHei",sans-serif;box-sizing:border-box;transition:border-color .2s}.kniu_sys_input::placeholder{color:#c0c4cc}.kniu_sys_input:hover{border-color:#c0c4cc}.kniu_sys_input:focus{position:relative;z-index:1;border-color:#409eff}.kniu_sys_input:disabled{background:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_input_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input{border-radius:0 4px 4px 0}.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input{border-radius:4px 0 0 4px}.kniu_sys_input_group[data-has-prepend="true"][data-has-append="true"] .kniu_sys_input{border-radius:0}</style><span class="kniu_sys_input_group" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_input_affix kniu_sys_input_prepend"><slot name="prepend"></slot></span><input class="kniu_sys_input" type="text"><span class="kniu_sys_input_affix kniu_sys_input_append"><slot name="append"></slot></span></span>`;
-          const invalidStyle = document.createElement('style');
-          invalidStyle.textContent = ':host([data-invalid="true"]) .kniu_sys_input,:host([data-invalid="true"]) .kniu_sys_input_affix{border-color:#f56c6c}';
-          this.shadowRoot.append(invalidStyle);
-          const uploadLayoutStyle = document.createElement('style');
-          uploadLayoutStyle.textContent = '.kniu_sys_input_group[data-upload-append="true"]{height:auto;align-items:flex-start}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_wrap{display:none}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_append{display:block;flex:1;width:auto!important;flex-basis:auto!important;padding:0;border:0;background:transparent;line-height:normal;text-align:left}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_prepend{height:40px}';
-          this.shadowRoot.append(uploadLayoutStyle);
+          attachComponentShadow(this);
+          this.shadowRoot.innerHTML = `<style>:host{display:block;width:100%}.kniu_sys_input_group{display:flex;width:100%;height:40px}.kniu_sys_input_wrap{position:relative;display:block;flex:1;min-width:0}.kniu_sys_input{display:block;width:100%;height:40px;padding:0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px/40px Arial,"Microsoft YaHei",sans-serif;box-sizing:border-box;transition:border-color .2s}.kniu_sys_input::placeholder{color:#c0c4cc}.kniu_sys_input:hover{border-color:#c0c4cc}.kniu_sys_input:focus{position:relative;z-index:1;border-color:#409eff}.kniu_sys_input:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_input_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input{border-radius:0 4px 4px 0}.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input{border-radius:4px 0 0 4px}.kniu_sys_input_group[data-has-prepend="true"][data-has-append="true"] .kniu_sys_input{border-radius:0}.kniu_sys_input_group[data-has-append-btn="true"] .kniu_sys_input_append,.kniu_sys_input_group[data-has-prepend-btn="true"] .kniu_sys_input_prepend{padding:0;align-items:stretch}.kniu_sys_input_append::slotted(kniu-btn),.kniu_sys_input_prepend::slotted(kniu-btn){display:flex;flex:1;align-items:center;justify-content:center;margin:0;width:100%;height:100%}</style><span class="kniu_sys_input_group" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_input_affix kniu_sys_input_prepend"><slot name="prepend"></slot></span><input class="kniu_sys_input" type="text"><span class="kniu_sys_input_affix kniu_sys_input_append"><slot name="append"></slot></span></span>`;
+          adoptSharedStyle(this.shadowRoot, ':host([data-invalid="true"]) .kniu_sys_input,:host([data-invalid="true"]) .kniu_sys_input_affix{border-color:#f56c6c}');
+          adoptSharedStyle(this.shadowRoot, '.kniu_sys_input:read-only:hover,.kniu_sys_input:read-only:focus{z-index:auto;border-color:#dcdfe6;outline:0;box-shadow:none;cursor:default}');
+          adoptSharedStyle(this.shadowRoot, '.kniu_sys_input_affix{width:var(--kniu-input-label-width,auto);flex-basis:var(--kniu-input-label-width,auto)}');
+          adoptSharedStyle(this.shadowRoot, '.kniu_sys_input_group[data-upload-append="true"]{height:auto;align-items:flex-start}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_wrap{display:none}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_append{display:block;flex:1;width:auto!important;flex-basis:auto!important;padding:0;border:0;background-color:transparent;line-height:normal;text-align:left}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_prepend{height:40px}');
           this._input = this.shadowRoot.querySelector('.kniu_sys_input');
+          this._affixObserver = null;
           this._passwordVisible = false;
-          const passwordStyle = document.createElement('style');
-          passwordStyle.textContent = `.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input:not(textarea),.kniu_sys_input_wrap[data-clearable="true"] .kniu_sys_input:not(textarea){padding-right:40px}.kniu_sys_input_wrap[data-show-password="true"][data-clearable="true"] .kniu_sys_input:not(textarea){padding-right:72px}.kniu_sys_input_wrap[data-clearable="true"] textarea.kniu_sys_input{padding-right:32px}.kniu_sys_input_password,.kniu_sys_input_clear{position:absolute;z-index:2;top:0;right:0;display:flex;visibility:hidden;align-items:center;justify-content:center;width:36px;height:40px;padding:0;border:0;outline:0;background:transparent;color:#c0c4cc;font-size:17px;line-height:40px;text-align:center;cursor:pointer;opacity:0;pointer-events:none}.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input_password,.kniu_sys_input_wrap[data-clear-visible="true"] .kniu_sys_input_clear{visibility:visible;opacity:1;pointer-events:auto}.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input_clear{right:34px}.kniu_sys_input_wrap[data-clear-visible="true"] textarea.kniu_sys_input ~ .kniu_sys_input_clear{top:8px;right:8px;width:auto;height:auto;line-height:1}.kniu_sys_input_password:hover,.kniu_sys_input_password:focus,.kniu_sys_input_clear:hover,.kniu_sys_input_clear:focus{color:#409eff}.kniu_sys_input_password[aria-disabled="true"],.kniu_sys_input_clear[aria-disabled="true"]{cursor:not-allowed;color:#dcdfe6}.kniu_sys_input_password_icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}`;
+          const passwordStyle = `.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input:not(textarea),.kniu_sys_input_wrap[data-clearable="true"] .kniu_sys_input:not(textarea){padding-right:40px}.kniu_sys_input_wrap[data-show-password="true"][data-clearable="true"] .kniu_sys_input:not(textarea){padding-right:72px}.kniu_sys_input_wrap[data-clearable="true"] textarea.kniu_sys_input{padding-right:32px}.kniu_sys_input_password,.kniu_sys_input_clear{position:absolute;z-index:2;top:0;right:0;display:flex;visibility:hidden;align-items:center;justify-content:center;width:36px;height:40px;padding:0;border:0;outline:0;background-color:transparent;color:#c0c4cc;font-size:17px;line-height:40px;text-align:center;cursor:pointer;opacity:0;pointer-events:none}.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input_password,.kniu_sys_input_wrap[data-clear-visible="true"] .kniu_sys_input_clear{visibility:visible;opacity:1;pointer-events:auto}.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input_clear{right:34px}.kniu_sys_input_wrap[data-clear-visible="true"] textarea.kniu_sys_input ~ .kniu_sys_input_clear{top:8px;right:8px;width:auto;height:auto;line-height:1}.kniu_sys_input_password:hover,.kniu_sys_input_password:focus,.kniu_sys_input_clear:hover,.kniu_sys_input_clear:focus{color:#409eff}.kniu_sys_input_password[aria-disabled="true"],.kniu_sys_input_clear[aria-disabled="true"]{cursor:not-allowed;color:#dcdfe6}.kniu_sys_input_password_icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}`;
           const wrap = document.createElement('span');
           wrap.className = 'kniu_sys_input_wrap';
           const passwordButton = document.createElement('span');
@@ -1922,7 +2868,7 @@ var KniuUI = (function () {
           clearButton.setAttribute('aria-label', '清空输入内容');
           this._input.replaceWith(wrap);
           wrap.append(this._input, clearButton, passwordButton);
-          this.shadowRoot.append(passwordStyle);
+          adoptSharedStyle(this.shadowRoot, passwordStyle);
           this._wrap = wrap;
           this._passwordButton = passwordButton;
           this._clearButton = clearButton;
@@ -1945,9 +2891,7 @@ var KniuUI = (function () {
             if (this.shadowRoot.activeElement !== this._input) this._input.focus({ preventScroll: true });
           });
           this._bindControl(this._input);
-          const textareaStyle = document.createElement('style');
-          textareaStyle.textContent = 'textarea.kniu_sys_input{height:auto;min-height:42px;padding:8px 12px;line-height:1.5;font:14px/1.5 Arial,"Microsoft YaHei",sans-serif;resize:vertical;white-space:pre-wrap;overflow:auto}.kniu_sys_input_group[data-is-textarea="true"]{height:auto;min-height:40px;align-items:stretch}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{align-self:flex-start;height:40px;display:flex;align-items:center;padding-top:0;padding-bottom:0;box-sizing:border-box}';
-          this.shadowRoot.append(textareaStyle);
+          adoptSharedStyle(this.shadowRoot, 'textarea.kniu_sys_input{height:auto;min-height:42px;padding:8px 12px;line-height:1.5;font:14px/1.5 Arial,"Microsoft YaHei",sans-serif;resize:vertical;white-space:pre-wrap;overflow:auto}.kniu_sys_input_group[data-is-textarea="true"]{height:auto;min-height:40px;align-items:stretch}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{align-self:flex-start;height:40px;display:flex;align-items:center;padding-top:0;padding-bottom:0;box-sizing:border-box}');
         }
         connectedCallback() {
           if (!this.hasAttribute('autocomplete')) this.setAttribute('autocomplete', 'off');
@@ -1955,8 +2899,20 @@ var KniuUI = (function () {
           this._mountAffixes();
           this._sync();
           queueMicrotask(() => this._mountAffixes());
+          if (!this._affixObserver) {
+            this._affixObserver = new MutationObserver(() => this._mountAffixes());
+            this._affixObserver.observe(this, { childList: true });
+          }
         }
-        attributeChangedCallback() { if (this._input) this._sync(); }
+        disconnectedCallback() {
+          if (this._affixObserver) this._affixObserver.disconnect();
+          this._affixObserver = null;
+        }
+        attributeChangedCallback(name) {
+          if (!this._input) return;
+          if (name === 'label-width') this._mountAffixes();
+          this._sync();
+        }
         get value() { return this._input.value; }
         set value(value) { this._input.value = value == null ? '' : String(value); this._syncClearable(); }
         focus() { this._input.focus(); }
@@ -1992,22 +2948,35 @@ var KniuUI = (function () {
           this._input.value = value;
         }
         _mountAffixes() {
-          ['prepend', 'append'].forEach((name) => {
-            const template = Array.from(this.children).find((child) => child.tagName === 'TEMPLATE' && child.hasAttribute(`#${name}`));
-            if (!template) return;
-            const content = document.createElement('span');
-            content.slot = name;
-            const labelWidth = template.getAttribute('label-width');
-            if (labelWidth) content.dataset.labelWidth = labelWidth;
-            content.append(template.content.cloneNode(true));
-            template.replaceWith(content);
-          });
           const group = this.shadowRoot.querySelector('.kniu_sys_input_group');
           ['prepend', 'append'].forEach((name) => {
-            const content = this.querySelector(`[slot="${name}"]`);
             const affix = this.shadowRoot.querySelector(`.kniu_sys_input_${name}`);
-            const labelWidth = content?.dataset.labelWidth || '';
-            group.dataset[`has${name[0].toUpperCase()}${name.slice(1)}`] = String(Boolean(content));
+            const template = Array.from(this.children).find((child) => child.tagName === 'TEMPLATE' && child.hasAttribute(`#${name}`));
+            let templateLabelWidth = '';
+            if (template) {
+              templateLabelWidth = template.getAttribute('label-width') || '';
+              const frag = document.createDocumentFragment();
+              const nodes = Array.from(template.content.childNodes);
+              nodes.forEach((node) => {
+                if (node.nodeType === 1) {
+                  node.setAttribute('slot', name);
+                  if (templateLabelWidth) node.dataset.labelWidth = templateLabelWidth;
+                  frag.appendChild(node);
+                } else if (node.nodeType === 3 && node.textContent.trim()) {
+                  const span = document.createElement('span');
+                  span.setAttribute('slot', name);
+                  if (templateLabelWidth) span.dataset.labelWidth = templateLabelWidth;
+                  span.appendChild(node);
+                  frag.appendChild(span);
+                }
+              });
+              template.replaceWith(frag);
+            }
+            const slotContent = this.querySelector(`[slot="${name}"]`);
+            const hasSlot = Boolean(slotContent);
+            const labelWidth = this.getAttribute('label-width')
+              || templateLabelWidth
+              || (slotContent ? (slotContent.dataset.labelWidth || slotContent.getAttribute('label-width') || '') : '');
             if (labelWidth && CSS.supports('width', labelWidth)) {
               affix.style.width = labelWidth;
               affix.style.flexBasis = labelWidth;
@@ -2015,9 +2984,29 @@ var KniuUI = (function () {
               affix.style.removeProperty('width');
               affix.style.removeProperty('flex-basis');
             }
+            group.dataset[`has${name[0].toUpperCase()}${name.slice(1)}`] = String(hasSlot);
           });
-          const appendContent = this.querySelector('[slot="append"]');
-          group.dataset.uploadAppend = String(Boolean(appendContent && appendContent.querySelector('kniu-upload')));
+          ['prepend', 'append'].forEach((name) => {
+            const slots = this.querySelectorAll(`[slot="${name}"]`);
+            let hasUpload = false;
+            let hasButton = false;
+            slots.forEach((el) => {
+              if (el.matches && el.matches('kniu-upload')) hasUpload = true;
+              if (el.querySelector('kniu-upload')) hasUpload = true;
+              if (el.matches && el.matches('kniu-btn')) {
+                hasButton = true;
+                el.setAttribute('block', '');
+              }
+              const nestedButton = el.querySelector('kniu-btn');
+              if (nestedButton) {
+                hasButton = true;
+                nestedButton.setAttribute('block', '');
+              }
+            });
+            if (name === 'append') group.dataset.uploadAppend = String(hasUpload);
+            const cap = name[0].toUpperCase() + name.slice(1);
+            group.dataset[`has${cap}Btn`] = String(hasButton);
+          });
         }
         _sync() {
           this._ensureControl();
@@ -2068,18 +3057,49 @@ var KniuUI = (function () {
         static get observedAttributes() { return ['label', 'required', 'label-position', 'label-width']; }
         constructor() {
           super();
-          this.attachShadow({ mode: 'open' });
-          this.shadowRoot.innerHTML = `<style>:host{display:block}.kniu_sys_input_group{display:grid;grid-template-columns:var(--kniu-label-width,80px) minmax(0,1fr);align-items:stretch;border:1px solid #dcdfe6;border-radius:4px;overflow:hidden;background:#fff}.kniu_sys_input_label{padding:0 12px;background:#f5f7fa;border-right:1px solid #dcdfe6;color:#606266;font-size:14px;line-height:1.5;text-align:right;box-sizing:border-box;min-height:40px;display:flex;align-items:center;justify-content:flex-end}.kniu_sys_input_label[data-required="true"]::before{content:"*";margin-right:4px;color:#f56c6c}.kniu_sys_input_content{display:flex;align-items:center;min-width:0;min-height:40px;padding:0 12px;background:#fff}.kniu_sys_input_group[data-position="left"] .kniu_sys_input_label{justify-content:flex-start}.kniu_sys_input_group[data-position="right"] .kniu_sys_input_label{justify-content:flex-end}.kniu_sys_input_group[data-position="top"]{grid-template-columns:minmax(0,1fr);align-items:stretch}.kniu_sys_input_group[data-position="top"] .kniu_sys_input_label{padding:0 0 8px;min-height:auto;display:block;text-align:left;background:transparent;border-right:0}.kniu_sys_input_group[data-position="top"] .kniu_sys_input_content{padding:0}.kniu_sys_input_group[data-contains-input="true"]{border:0;border-radius:0;overflow:visible;background:transparent}.kniu_sys_input_group[data-has-label="false"]{border:0;border-radius:0;overflow:visible;background:transparent;grid-template-columns:minmax(0,1fr)}.kniu_sys_input_group[data-has-label="false"] .kniu_sys_input_label{background:transparent;border-right:0}.kniu_sys_input_group[data-contains-input="true"] .kniu_sys_input_content,.kniu_sys_input_group[data-has-label="false"] .kniu_sys_input_content{padding:0;background:transparent}</style><label class="kniu_sys_input_group" data-position="right" data-has-label="false" data-contains-input="false"><span class="kniu_sys_input_content"><slot></slot></span></label>`;
+          attachComponentShadow(this);
+          this._templateObserver = null;
+          this.shadowRoot.innerHTML = `<style>:host{display:block}.kniu_sys_input_group{display:grid;grid-template-columns:var(--kniu-label-width,80px) minmax(0,1fr);align-items:stretch;border:1px solid #dcdfe6;border-radius:4px;overflow:hidden;background-color:#fff}.kniu_sys_input_label{padding:0 12px;background-color:#f5f7fa;border-right:1px solid #dcdfe6;color:#606266;font-size:14px;line-height:1.5;text-align:right;box-sizing:border-box;min-height:40px;display:flex;align-items:center;justify-content:flex-end}.kniu_sys_input_label[data-required="true"]::before{content:"*";margin-right:4px;color:#f56c6c}.kniu_sys_input_content{display:flex;align-items:center;min-width:0;min-height:40px;padding:0 12px;background-color:#fff}.kniu_sys_input_group[data-position="left"] .kniu_sys_input_label{justify-content:flex-start}.kniu_sys_input_group[data-position="right"] .kniu_sys_input_label{justify-content:flex-end}:host([data-template-affix="true"]) .kniu_sys_input_label{justify-content:center;text-align:center}.kniu_sys_input_group[data-position="top"]{grid-template-columns:minmax(0,1fr);align-items:stretch}.kniu_sys_input_group[data-position="top"] .kniu_sys_input_label{padding:0 0 8px;min-height:auto;display:block;text-align:left;background-color:transparent;border-right:0}.kniu_sys_input_group[data-position="top"] .kniu_sys_input_content{padding:0}.kniu_sys_input_group[data-contains-input="true"]{border:0;border-radius:0;overflow:visible;background-color:transparent}.kniu_sys_input_group[data-has-label="false"]{border:0;border-radius:0;overflow:visible;background-color:transparent;grid-template-columns:minmax(0,1fr)}.kniu_sys_input_group[data-has-label="false"] .kniu_sys_input_label{background-color:transparent;border-right:0}.kniu_sys_input_group[data-contains-input="true"] .kniu_sys_input_content,.kniu_sys_input_group[data-has-label="false"] .kniu_sys_input_content{padding:0;background-color:transparent}</style><label class="kniu_sys_input_group" data-position="right" data-has-label="false" data-contains-input="false"><span class="kniu_sys_input_content"><slot></slot></span></label>`;
         }
         connectedCallback() {
+          this._mountTemplates();
           this._sync();
           this._detectInput();
           this.shadowRoot.querySelector('slot').addEventListener('slotchange', () => this._detectInput());
+          if (!this._templateObserver) {
+            this._templateObserver = new MutationObserver(() => {
+              this._mountTemplates();
+              this._sync();
+              this._detectInput();
+            });
+            this._templateObserver.observe(this, { childList: true });
+          }
           this._syncSiblingMargin();
         }
+        disconnectedCallback() {
+          if (this._templateObserver) this._templateObserver.disconnect();
+          this._templateObserver = null;
+        }
         attributeChangedCallback() { if (this.shadowRoot) this._sync(); }
+        _mountTemplates() {
+          const prepend = Array.from(this.children).find((child) => child.tagName === 'TEMPLATE' && child.hasAttribute('#prepend'));
+          if (prepend) {
+            const label = prepend.content.textContent.trim();
+            const labelWidth = prepend.getAttribute('label-width');
+            this.setAttribute('data-template-affix', 'true');
+            if (label) this.setAttribute('label', label);
+            if (labelWidth) this.setAttribute('label-width', labelWidth);
+            prepend.remove();
+          }
+          const append = Array.from(this.children).find((child) => child.tagName === 'TEMPLATE' && child.hasAttribute('#append'));
+          if (append) {
+            const content = document.createDocumentFragment();
+            content.append(...Array.from(append.content.childNodes));
+            append.replaceWith(content);
+          }
+        }
         _detectInput() {
-          const hasControl = this.querySelector(':scope > kniu-input, :scope > kniu-image, :scope > kniu-switch, :scope > kniu-editor') != null;
+          const hasControl = this.querySelector(':scope > kniu-input, :scope > kniu-date-picker, :scope > kniu-image, :scope > kniu-switch, :scope > kniu-editor') != null;
           this.shadowRoot.querySelector('.kniu_sys_input_group').dataset.containsInput = String(hasControl);
         }
         _sync() {
@@ -2101,6 +3121,7 @@ var KniuUI = (function () {
             }
             labelEl.textContent = label;
             labelEl.dataset.required = String(this.hasAttribute('required'));
+            labelEl.style.color = this.getAttribute('data-template-affix') === 'true' ? '#909399' : '';
           } else if (labelEl) {
             labelEl.remove();
           }
@@ -2122,20 +3143,765 @@ var KniuUI = (function () {
     }
   }
 
+  function registerDatePickerComponent() {
+    if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
+    if (customElements.get('kniu-date-picker')) return;
+    class KniuSysDatePicker extends HTMLElement {
+      static get observedAttributes() { return ['name']; }
+      constructor() {
+        super();
+        attachComponentShadow(this);
+        this.shadowRoot.innerHTML = `<style>
+          :host{display:block;width:100%}.group{display:flex;width:100%;height:40px}.input-wrap{position:relative;display:block;flex:1;min-width:0}.input{display:block;width:100%;height:40px;padding:0 38px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px Arial,"Microsoft YaHei",sans-serif;cursor:pointer;box-sizing:border-box;transition:border-color .2s}.input:hover{border-color:#c0c4cc}.input:focus,:host([data-open="true"]) .input{position:relative;z-index:1;border-color:#409eff}.input:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.calendar-icon{position:absolute;z-index:2;top:0;right:0;display:grid;width:38px;height:40px;place-items:center;color:#909399;pointer-events:none}.affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;white-space:nowrap;box-sizing:border-box}.group[data-has-prepend="true"] .prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.group[data-has-append="true"] .append{display:flex;border-left:0;border-radius:0 4px 4px 0}.group[data-has-prepend="true"] .input{border-radius:0 4px 4px 0}.group[data-has-append="true"] .input{border-radius:4px 0 0 4px}.group[data-has-prepend="true"][data-has-append="true"] .input{border-radius:0}
+          .panel{position:fixed;z-index:10020;width:322px;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.panel[hidden]{display:none}.panel[data-placement="bottom"]{transform-origin:center top}.panel[data-placement="top"]{transform-origin:center bottom}.panel[data-state="open"][data-placement="bottom"]{animation:kniu_date_in_bottom .18s ease-out both}.panel[data-state="open"][data-placement="top"]{animation:kniu_date_in_top .18s ease-out both}.panel[data-state="closing"][data-placement="bottom"]{animation:kniu_date_out_bottom .15s ease-in both}.panel[data-state="closing"][data-placement="top"]{animation:kniu_date_out_top .15s ease-in both}@keyframes kniu_date_in_bottom{from{opacity:0;transform:translateY(-8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_in_top{from{opacity:0;transform:translateY(8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_out_bottom{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(-6px) scaleY(.97)}}@keyframes kniu_date_out_top{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(6px) scaleY(.97)}}.head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.head button,.day,.chooser button,.title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.head>button{height:30px;border-radius:4px;font-size:17px}.head button:hover,.day:hover,.chooser button:hover,.title button:hover{color:#409eff}.title{display:flex;align-items:center;justify-content:center;gap:0;color:#303133;font-size:15px;font-weight:500}.title button{padding:6px 4px;border-radius:4px;font:inherit}.week,.days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.week[hidden],.days[hidden],.time[hidden]{display:none}.week{border-bottom:1px solid #ebeef5}.week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.day{justify-self:center;width:30px;height:30px;padding:0;border-radius:50%;font-size:12px}.day.other{color:#c0c4cc}.day.today{color:#409eff;font-weight:600}.day.selected,.chooser button.selected{background-color:#409eff;color:#fff}.chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.chooser[hidden]{display:none}.chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;padding:0;border-radius:4px;font-size:13px;text-align:center}.time{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:10px 12px;border-bottom:1px solid #ebeef5}.time::before{content:'选择时间';margin-right:auto;color:#606266;font-size:13px}.time-field{position:relative}.time-value{width:48px;height:30px;padding:0;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;cursor:pointer}.time-value:hover,.time-value:focus,.time-field[data-open="true"] .time-value{border-color:#409eff;outline:0}.time-options{position:absolute;top:34px;left:0;z-index:4;display:block;width:48px;max-height:168px;padding:4px 0;overflow-y:auto;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.time-options[hidden]{display:none}.time-option{display:block;width:100%;height:28px;padding:0;border:0;background-color:#fff;color:#606266;font-size:12px;text-align:center;cursor:pointer}.time-option:hover{background-color:#f5f7fa}.time-option.selected{background-color:#ecf5ff;color:#409eff;font-weight:600}.footer{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-top:1px solid #ebeef5}.date-preview{min-width:0;overflow:hidden;color:#606266;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.footer div{display:flex;flex:none;gap:3px}.action{height:28px;padding:0 5px;border:0;border-radius:3px;background-color:#fff;color:#409eff;cursor:pointer}.action:hover{background-color:#ecf5ff}.action.primary{border:1px solid #dcdfe6;background-color:#fff;color:#606266}.action.primary:hover{color:#409eff;border-color:#c6e2ff}@media(prefers-reduced-motion:reduce){.panel[data-state]{animation:none}}@media(max-width:360px){.panel{width:calc(100vw - 16px)}}
+        </style><span class="group" data-has-prepend="false" data-has-append="false"><span class="affix prepend"><slot name="prepend"></slot></span><span class="input-wrap"><input class="input" type="text" readonly placeholder="请选择日期时间"><span class="calendar-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M8 3v4M16 3v4M3 10h18"></path></svg></span></span><span class="affix append"><slot name="append"></slot></span></span><section class="panel" hidden><div class="head"><button type="button" data-action="prev-year">«</button><button type="button" data-action="prev-month">‹</button><div class="title"><button type="button" data-action="choose-year"></button><button type="button" data-action="choose-month"></button></div><button type="button" data-action="next-month">›</button><button type="button" data-action="next-year">»</button></div><div class="week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div class="days"></div><div class="chooser" hidden></div><div class="time"><span class="time-field" data-time-field="hour"><button class="time-value" type="button" aria-label="小时"></button><span class="time-options" hidden></span></span><span data-time-separator="minute">:</span><span class="time-field" data-time-field="minute"><button class="time-value" type="button" aria-label="分钟"></button><span class="time-options" hidden></span></span><span data-time-separator="second">:</span><span class="time-field" data-time-field="second"><button class="time-value" type="button" aria-label="秒"></button><span class="time-options" hidden></span></span></div><div class="footer"><span class="date-preview"></span><div><button class="action" type="button" data-action="reset">重置</button><button class="action" type="button" data-action="today">现在</button><button class="action" type="button" data-action="confirm">确定</button></div></div></section>`;
+        adoptSharedStyle(this.shadowRoot, '.day.disabled{color:#c0c4cc;cursor:not-allowed}.day.disabled:hover{color:#c0c4cc}');
+        adoptSharedStyle(this.shadowRoot, '.head[hidden]{display:none}.time::before{content:attr(data-label)}.day[data-mark]{position:relative;font-size:11px}.day[data-mark]::after{content:"";position:absolute;top:2px;right:2px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.day.selected[data-mark]::after{background-color:#fff}.panel[data-range="true"]{width:min(650px,calc(100vw - 16px))}.range-calendars{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));overflow-x:auto}.range-calendars[hidden]{display:none}.range-pane+ .range-pane{border-left:1px solid #ebeef5}.range-head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.range-head button,.range-day,.range-chooser button,.range-title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.range-head button{height:30px;border-radius:4px;font-size:17px}.range-head button:hover,.range-day:hover,.range-chooser button:hover,.range-title button:hover{color:#409eff}.range-title{display:flex;align-items:center;justify-content:center;color:#303133;font-size:15px;font-weight:500}.range-title button{padding:6px 4px;border-radius:4px;font:inherit}.range-week,.range-days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.range-week[hidden],.range-days[hidden],.range-chooser[hidden]{display:none}.range-week{border-bottom:1px solid #ebeef5}.range-week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.range-day{position:relative;justify-self:stretch;height:30px;padding:0;font-size:12px}.range-day.other{color:#c0c4cc}.range-day.in-range{background-color:#ecf5ff;color:#409eff}.range-day.range-start,.range-day.range-end{border-radius:4px;background-color:#409eff;color:#fff}.range-day[data-mark]{font-size:11px}.range-day[data-mark]::after{content:"";position:absolute;top:2px;right:4px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.range-day.range-start[data-mark]::after,.range-day.range-end[data-mark]::after{background-color:#fff}.range-chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.range-chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;border-radius:4px;font-size:13px}.range-chooser button.selected{background-color:#409eff;color:#fff}@media(max-width:620px){.range-calendars{grid-template-columns:repeat(2,280px)}}');
+        adoptSharedStyle(this.shadowRoot, '.panel,.panel[data-range="true"]{width:min(218px,calc(100vw - 16px))}.head,.range-head{grid-template-columns:24px 24px minmax(0,1fr) 24px 24px;padding:6px 6px 2px}.head>button,.range-head button{height:26px;font-size:14px}.title,.range-title{font-size:12px;white-space:nowrap}.title button,.range-title button{padding:4px 2px}.title[data-lang="en"] [data-action="choose-month"],.range-title[data-lang="en"] [data-range-choose="month"]{order:-1}.week,.days,.range-week,.range-days{gap:0;margin:0 6px}.days,.range-days{padding:4px 0}.week span,.range-week span{height:24px;font-size:10px;line-height:24px}.day,.range-day{height:26px;font-size:10px}.day{width:26px}.day[data-mark],.range-day[data-mark]{font-size:8px}.day.selected[data-mark]::after,.range-day.in-range[data-mark]::after,.range-day.range-start[data-mark]::after,.range-day.range-end[data-mark]::after{display:none}.chooser,.range-chooser{grid-template-columns:repeat(3,minmax(0,1fr));height:189px;min-height:0;padding:8px;gap:4px;box-sizing:border-box}.chooser[data-mode="year"],.range-chooser[data-mode="year"]{grid-template-rows:repeat(5,minmax(0,1fr))}.chooser[data-mode="month"],.range-chooser[data-mode="month"]{grid-template-rows:repeat(4,minmax(0,1fr))}.chooser button,.range-chooser button{min-height:0;font-size:11px}.time{gap:2px;padding:6px}.panel[data-type="datetime"] .time[hidden]{display:flex;visibility:hidden}.time::before{font-size:10px}.time-value{width:38px;height:26px;font-size:11px}.time-options{top:29px;width:38px;max-height:140px}.time-option{height:25px}.footer{padding:5px 6px}.action{width:42px;height:25px;padding:0;font-size:11px}.range-calendars{grid-template-columns:minmax(0,1fr);overflow:visible}.range-pane+ .range-pane{border-top:1px solid #ebeef5;border-left:0}');
+        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"]{display:grid;width:min(350px,calc(100vw - 16px));grid-template-columns:minmax(0,218px) minmax(0,132px)}.panel[data-type="datetime"]>.head{grid-column:1;grid-row:1}.panel[data-type="datetime"]>.week{grid-column:1;grid-row:2}.panel[data-type="datetime"]>.days{grid-column:1;grid-row:3}.panel[data-type="datetime"]>.chooser{grid-column:1;grid-row:2 / span 2}.panel[data-type="datetime"]>.range-calendars{grid-column:1;grid-row:1 / span 3}.panel[data-type="datetime"]>.time{display:grid;grid-column:2;grid-row:1 / span 3;align-self:start;width:100%;height:223px;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch;gap:0;padding:0;overflow:hidden;border-bottom:0;border-left:1px solid #ebeef5;box-sizing:border-box}.panel[data-type="datetime"]>.time[hidden]{display:grid;visibility:hidden}.panel[data-type="datetime"]>.time::before,.panel[data-type="datetime"]>.time>span:not(.time-field){display:none}.panel[data-type="datetime"] .time-field{display:flex;min-width:0;height:223px;overflow:hidden;flex-direction:column;border-left:1px solid #ebeef5;box-sizing:border-box}.panel[data-type="datetime"] .time-field:first-of-type{border-left:0}.panel[data-type="datetime"] .time-field::before{content:attr(data-label);display:block;flex:none;height:34px;border-bottom:1px solid #ebeef5;color:#606266;font-size:10px;line-height:34px;text-align:center;box-sizing:border-box}.panel[data-type="datetime"] .time-value{display:none}.panel[data-type="datetime"] .time-options,.panel[data-type="datetime"] .time-options[hidden]{position:static;display:block;width:100%;height:189px;max-height:189px;padding:0;overflow-x:hidden;overflow-y:auto;border:0;border-radius:0;background-color:#fff;box-shadow:none;box-sizing:border-box}.panel[data-type="datetime"] .time-option{height:25px}.panel[data-type="datetime"]>.footer{grid-column:1 / -1;grid-row:4}.panel[data-type="datetime"][data-range="true"]{width:min(350px,calc(100vw - 16px))}');
+        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"]:not([data-range="true"])>.head{grid-column:1 / -1;grid-row:1}.panel[data-type="datetime"]:not([data-range="true"])>.time{grid-column:2;grid-row:2 / span 2;height:189px}.panel[data-type="datetime"]:not([data-range="true"]) .time-field{height:189px}.panel[data-type="datetime"]:not([data-range="true"]) .time-field::before{height:25px;line-height:25px}.panel[data-type="datetime"]:not([data-range="true"]) .time-options,.panel[data-type="datetime"]:not([data-range="true"]) .time-options[hidden]{height:164px;max-height:164px}');
+        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"] .time-options{scrollbar-width:none}.panel[data-type="datetime"] .time-options:hover{scrollbar-width:thin;scrollbar-color:#c0c4cc transparent}.panel[data-type="datetime"] .time-options::-webkit-scrollbar{width:0}.panel[data-type="datetime"] .time-options:hover::-webkit-scrollbar{width:6px}.panel[data-type="datetime"] .time-options::-webkit-scrollbar-thumb{border-radius:6px;background-color:#c0c4cc}.panel[data-type="datetime"] .time-options::-webkit-scrollbar-track{background-color:transparent}');
+        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"]>.time{position:relative;border-left:0}.panel[data-type="datetime"] .time-field{border-left:0}.panel[data-type="datetime"] .time-field::before{border-bottom:0}.panel[data-type="datetime"] .time-field:not(:first-of-type) .time-options{border-left:1px solid #dcdfe6}.panel[data-type="datetime"]>.time::after{content:"";position:absolute;z-index:2;top:34px;right:0;bottom:0;left:0;border:1px solid #dcdfe6;pointer-events:none;box-sizing:border-box}.panel[data-type="datetime"]:not([data-range="true"])>.time::after{top:25px}');
+        adoptSharedStyle(this.shadowRoot, '.week,.range-week{border-bottom:0}');
+        adoptSharedStyle(this.shadowRoot, '.head,.range-head{border-bottom:1px solid #ebeef5}');
+        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"] .time-options,.panel[data-type="datetime"] .time-options[hidden]{border:1px solid #dcdfe6}.panel[data-type="datetime"]>.time::after{display:none}');
+        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"] .time-field:not(:first-of-type) .time-options{border-left:0}.panel[data-type="datetime"] .time-options,.panel[data-type="datetime"] .time-options[hidden]{height:185px;max-height:185px}.panel[data-type="datetime"]:not([data-range="true"]) .time-options,.panel[data-type="datetime"]:not([data-range="true"]) .time-options[hidden]{height:160px;max-height:160px}');
+        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"]>.time[data-show-hour="false"] [data-time-field="minute"] .time-options,.panel[data-type="datetime"]>.time[data-show-hour="false"][data-show-minute="false"] [data-time-field="second"] .time-options{border-left:1px solid #dcdfe6!important}');
+        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"]>.time{padding-right:4px}');
+        adoptSharedStyle(this.shadowRoot, '.panel[hidden]{display:none!important}');
+        adoptSharedStyle(this.shadowRoot, '.time[data-show-seconds="false"]{grid-template-columns:repeat(2,minmax(0,1fr))}.time[data-show-seconds="false"] [data-time-field="second"],.time[data-show-seconds="false"] [data-time-separator="second"]{display:none!important}');
+        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"][data-show-seconds="false"]{width:min(306px,calc(100vw - 16px));grid-template-columns:minmax(0,218px) minmax(0,88px)}.panel[data-type="datetime"][data-show-seconds="false"]>.time{grid-template-columns:repeat(2,minmax(0,1fr))}.panel[data-type="datetime"][data-range="true"][data-show-seconds="false"]{width:min(306px,calc(100vw - 16px))}');
+        adoptSharedStyle(this.shadowRoot, '.time[data-show-hour="false"] [data-time-field="hour"],.time[data-show-minute="false"] [data-time-field="minute"],.time[data-show-seconds="false"] [data-time-field="second"]{display:none!important}.time[data-show-minute-separator="false"] [data-time-separator="minute"],.time[data-show-second-separator="false"] [data-time-separator="second"]{display:none!important}.panel[data-type="datetime"][data-time-columns="1"]{width:min(262px,calc(100vw - 16px))!important;grid-template-columns:minmax(0,218px) minmax(0,44px)!important}.panel[data-type="datetime"][data-time-columns="2"]{width:min(306px,calc(100vw - 16px))!important;grid-template-columns:minmax(0,218px) minmax(0,88px)!important}.panel[data-type="datetime"][data-time-columns="3"]{width:min(350px,calc(100vw - 16px))!important;grid-template-columns:minmax(0,218px) minmax(0,132px)!important}.panel[data-type="datetime"]>.time[data-time-columns="1"]{grid-template-columns:minmax(0,1fr)!important}.panel[data-type="datetime"]>.time[data-time-columns="2"]{grid-template-columns:repeat(2,minmax(0,1fr))!important}.panel[data-type="datetime"]>.time[data-time-columns="3"]{grid-template-columns:repeat(3,minmax(0,1fr))!important}');
+        this._input = this.shadowRoot.querySelector('.input');
+        this._panel = this.shadowRoot.querySelector('.panel');
+        this._days = this.shadowRoot.querySelector('.days');
+        this._title = this.shadowRoot.querySelector('.title');
+        this._chooser = this.shadowRoot.querySelector('.chooser');
+        this._rangeCalendars = document.createElement('div');
+        this._rangeCalendars.className = 'range-calendars';
+        this._rangeCalendars.hidden = true;
+        this._rangeCalendars.innerHTML = `<section class="range-pane" data-range-pane="left"><div class="range-head"><button type="button" data-range-action="prev-year">«</button><button type="button" data-range-action="prev-month">‹</button><div class="range-title"><button type="button" data-range-choose="year"></button><button type="button" data-range-choose="month"></button></div><span></span><span></span></div><div class="range-week"></div><div class="range-days"></div><div class="range-chooser" hidden></div></section><section class="range-pane" data-range-pane="right"><div class="range-head"><span></span><span></span><div class="range-title"><button type="button" data-range-choose="year"></button><button type="button" data-range-choose="month"></button></div><button type="button" data-range-action="next-month">›</button><button type="button" data-range-action="next-year">»</button></div><div class="range-week"></div><div class="range-days"></div><div class="range-chooser" hidden></div></section>`;
+        this._chooser.after(this._rangeCalendars);
+        this._panel.insertBefore(this._panel.querySelector('.time'), this._panel.querySelector('.head'));
+        this._panelMode = 'day';
+        this._draft = new Date();
+        this._preferredDay = this._draft.getDate();
+        this._viewYear = this._draft.getFullYear();
+        this._viewMonth = this._draft.getMonth();
+        this._panelMode = 'day';
+        this._outsideHandler = (event) => {
+          const path = event.composedPath();
+          if (!path.includes(this) && !path.includes(this._panel)) this._close();
+        };
+        this._positionHandler = () => { if (!this._panel.hidden) this._positionPanel(); };
+        this._positionTimer = null;
+        this._positionFrame = 0;
+        this._lastAnchorRect = '';
+        this._animationTimer = null;
+        this._options = {};
+        this._rangeValue = ['', ''];
+        this._rangePhase = 'start';
+        this._rangeChooser = { pane: '', mode: '' };
+        this._input.addEventListener('click', () => this._open());
+        this._input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') { event.preventDefault(); this._open(); }
+          if (event.key === 'Escape') this._close();
+        });
+        this._panel.addEventListener('click', (event) => this._handleClick(event));
+        ['hour', 'minute', 'second'].forEach((unit) => {
+          const options = this._panel.querySelector(`[data-time-field="${unit}"] .time-options`);
+          const max = unit === 'hour' ? 23 : 59;
+          for (let number = 0; number <= max; number += 1) {
+            const option = document.createElement('button');
+            option.type = 'button'; option.className = 'time-option'; option.dataset.timeOption = unit; option.dataset.value = String(number);
+            option.textContent = String(number).padStart(2, '0');
+            options.appendChild(option);
+          }
+        });
+      }
+      connectedCallback() { this._mountAffixes(); this._mountPortal(); this._sync(); }
+      disconnectedCallback() {
+        this._removeGlobalListeners();
+        if (this._portal?.isConnected) {
+          this.shadowRoot.appendChild(this._panel);
+          this._portal.remove();
+        }
+        this._portal = null;
+      }
+      attributeChangedCallback() { if (this._input) { this._mountAffixes(); this._sync(); } }
+      get value() { return this._options.range === true ? [...this._rangeValue] : (this._input.dataset.value || ''); }
+      set value(value) {
+        if (this._options.range === true) {
+          const values = Array.isArray(value) ? value : String(value || '').split(this._options.rangeSeparator || ',').slice(0, 2);
+          this._rangeValue = [values[0] || '', values[1] || ''].map((item) => {
+            const parsed = this._parse(item);
+            return parsed ? this._format(parsed) : '';
+          });
+          this._syncRangeDisplay();
+          return;
+        }
+        const text = value == null ? '' : String(value);
+        const date = this._parse(text);
+        this._input.dataset.value = date ? this._format(date) : '';
+        this._input.value = date ? this._formatDisplay(date) : '';
+      }
+      focus() { this._input.focus(); }
+      open() { this._open(); }
+      close() { this._close(); }
+      get options() { return this._options; }
+      set options(value) {
+        const currentValue = this.value;
+        this._options = value && typeof value === 'object' ? value : {};
+        if ((Array.isArray(currentValue) && currentValue.some(Boolean)) || (!Array.isArray(currentValue) && currentValue)) this.value = currentValue;
+        else if (this._options.value != null) this.value = this._options.value;
+        if (this._input) this._sync();
+        if (this.isConnected && !this._panel.hidden) this._render();
+      }
+      _mountPortal() {
+        if (this._portal?.isConnected) return;
+        const portal = document.createElement('span');
+        portal.setAttribute('data-kniu-date-picker-portal', '');
+        portal.style.cssText = 'position:fixed;inset:0;z-index:10020;display:block;width:0;height:0;pointer-events:none';
+        const root = portal.attachShadow({ mode: 'open' });
+        if (supportsAdoptedStyleSheets(root) && this.shadowRoot.adoptedStyleSheets?.length) {
+          root.adoptedStyleSheets = [...this.shadowRoot.adoptedStyleSheets];
+        } else {
+          this.shadowRoot.querySelectorAll('style').forEach((style) => root.appendChild(style.cloneNode(true)));
+        }
+        this._panel.style.pointerEvents = 'auto';
+        root.appendChild(this._panel);
+        document.body.appendChild(portal);
+        this._portal = portal;
+      }
+      _mountAffixes() {
+        const group = this.shadowRoot.querySelector('.group');
+        ['prepend', 'append'].forEach((name) => {
+          const template = Array.from(this.children).find((child) => child.tagName === 'TEMPLATE' && child.hasAttribute(`#${name}`));
+          let templateWidth = '';
+          if (template) {
+            templateWidth = template.getAttribute('label-width') || '';
+            const fragment = document.createDocumentFragment();
+            Array.from(template.content.childNodes).forEach((node) => {
+              if (node.nodeType === 3 && !node.textContent.trim()) return;
+              const item = node.nodeType === 3 ? document.createElement('span') : node;
+              if (node.nodeType === 3) item.textContent = node.textContent;
+              item.setAttribute('slot', name);
+              if (templateWidth) item.dataset.labelWidth = templateWidth;
+              fragment.appendChild(item);
+            });
+            template.replaceWith(fragment);
+          }
+          const content = this.querySelector(`[slot="${name}"]`);
+          const affix = this.shadowRoot.querySelector(`.${name}`);
+          const width = templateWidth || content?.dataset.labelWidth || '';
+          group.dataset[`has${name[0].toUpperCase()}${name.slice(1)}`] = String(Boolean(content));
+          if (width && CSS.supports('width', width)) { affix.style.width = width; affix.style.flexBasis = width; }
+        });
+      }
+      _sync() {
+        const name = this._options.name;
+        if (name == null) this._input.removeAttribute('name'); else this._input.name = name;
+        this._input.placeholder = this._options.placeholder || (this._options.range === true ? '请选择开始和结束时间' : (this._options.type === 'datetime' ? '请选择日期时间' : (this._options.type === 'time' ? '请选择时间' : '请选择日期')));
+        this._input.disabled = this._options.disabled === true;
+        this._input.required = this._options.required === true;
+        if (this._options.disabled === true || this._options.readonly === true) this._close();
+      }
+      _parse(value) {
+        const timeMatch = String(value || '').trim().match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+        if (timeMatch) {
+          const now = new Date();
+          now.setHours(+timeMatch[1], +timeMatch[2], +(timeMatch[3] || 0), 0);
+          return now;
+        }
+        const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+        if (!match) return null;
+        const date = new Date(+match[1], +match[2] - 1, +match[3], +(match[4] || 0), +(match[5] || 0), +(match[6] || 0));
+        return Number.isNaN(date.getTime()) ? null : date;
+      }
+      _format(date) {
+        const pad = (number) => String(number).padStart(2, '0');
+        if (this._options.type === 'time') return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+        const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+        return this._options.type === 'datetime' ? `${day} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` : day;
+      }
+      _formatDisplay(date) {
+        const pad = (number) => String(number).padStart(2, '0');
+        const format = this._normalizeFormat(this._options.format || (this._options.type === 'datetime' ? 'yyyy-MM-dd HH:mm:ss' : (this._options.type === 'time' ? 'HH:mm:ss' : 'yyyy-MM-dd')));
+        return format
+          .replace(/yyyy/g, String(date.getFullYear()))
+          .replace(/MM/g, pad(date.getMonth() + 1))
+          .replace(/mm|ii/g, pad(date.getMinutes()))
+          .replace(/dd/g, pad(date.getDate()))
+          .replace(/HH|hh/g, pad(date.getHours()))
+          .replace(/ii/g, pad(date.getMinutes()))
+          .replace(/ss/g, pad(date.getSeconds()));
+      }
+      _normalizeFormat(value) {
+        const format = String(value || '');
+        const colonIndex = format.indexOf(':');
+        let timeStart = Number.POSITIVE_INFINITY;
+        if (colonIndex >= 0) {
+          const prefix = format.slice(0, colonIndex);
+          const separatorIndex = Math.max(prefix.lastIndexOf(' '), prefix.lastIndexOf('T'), prefix.lastIndexOf('t'));
+          if (separatorIndex >= 0) timeStart = separatorIndex + 1;
+          else if (this._options.type === 'time' || !/[yYdD]/.test(prefix)) timeStart = 0;
+          else {
+            const hourIndex = prefix.search(/[hH]/);
+            if (hourIndex >= 0) timeStart = hourIndex;
+          }
+        }
+        return format.replace(/(?:[yY]+|[mM]+|[iI]+|[dD]+|[hH]+|[sS]+)/g, (token, offset) => {
+          const unit = token[0].toLowerCase();
+          if (unit === 'y' || unit === 'i' || unit === 'd' || unit === 's') return token.toLowerCase();
+          if (unit === 'h') return token.toUpperCase();
+          if (unit === 'm') return offset >= timeStart ? token.toLowerCase() : token.toUpperCase();
+          return token;
+        });
+      }
+      _syncRangeDisplay() {
+        const display = this._rangeValue.map((item) => {
+          const parsed = this._parse(item);
+          return parsed ? this._formatDisplay(parsed) : '';
+        });
+        this._input.dataset.value = this._rangeValue.join(this._options.rangeSeparator || ',');
+        this._input.value = display.filter(Boolean).join(this._options.displaySeparator || ' 至 ');
+      }
+      _firstDayOfWeek() {
+        return Number(this._options.weekStart) === 0 ? 0 : 1;
+      }
+      _open() {
+        if (this._options.disabled === true || this._options.readonly === true) return;
+        if (this._animationTimer) globalThis.clearTimeout(this._animationTimer);
+        this._animationTimer = null;
+        this._mountPortal();
+        this._draft = this._parse(this.value) || new Date();
+        if (this._options.range === true) {
+          this._rangeChooser = { pane: '', mode: '' };
+          this._rangePhase = this._rangeValue[0] && !this._rangeValue[1] ? 'end' : 'start';
+          const activeValue = this._rangePhase === 'end' ? this._rangeValue[0] : this._rangeValue[0];
+          this._draft = this._parse(activeValue) || new Date();
+        }
+        this._preferredDay = this._draft.getDate();
+        this._viewYear = this._draft.getFullYear();
+        this._viewMonth = this._draft.getMonth();
+        this._render();
+        this._panel.hidden = false;
+        this.dataset.open = 'true';
+        this._positionPanel();
+        delete this._panel.dataset.state;
+        void this._panel.offsetWidth;
+        this._panel.dataset.state = 'open';
+        this._startPositionTracking();
+        // 用户可能在模态框 250ms 入场动画尚未结束时立即打开日历。
+        // 动画期间 transform 会临时改变 fixed 的坐标系，结束后再以视口坐标强制校正一次。
+        if (this._positionTimer) globalThis.clearTimeout(this._positionTimer);
+        this._positionTimer = globalThis.setTimeout(() => {
+          this._positionTimer = null;
+          if (!this._panel.hidden) this._positionPanel();
+        }, 280);
+        globalThis.addEventListener('pointerdown', this._outsideHandler, true);
+        globalThis.addEventListener('resize', this._positionHandler);
+        globalThis.addEventListener('scroll', this._positionHandler, true);
+      }
+      _close() {
+        if (this._panel.hidden || this._panel.dataset.state === 'closing') return;
+        delete this.dataset.open;
+        if (this._positionTimer) globalThis.clearTimeout(this._positionTimer);
+        this._positionTimer = null;
+        this._removeGlobalListeners();
+        this._closeTimeMenus();
+        const finish = () => {
+          if (this._animationTimer) globalThis.clearTimeout(this._animationTimer);
+          this._animationTimer = null;
+          this._panel.hidden = true;
+          delete this._panel.dataset.state;
+          if (this._positionFrame) globalThis.cancelAnimationFrame(this._positionFrame);
+          this._positionFrame = 0;
+          this._lastAnchorRect = '';
+        };
+        if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { finish(); return; }
+        this._panel.dataset.state = 'closing';
+        this._animationTimer = globalThis.setTimeout(finish, 170);
+      }
+      _removeGlobalListeners() {
+        globalThis.removeEventListener('pointerdown', this._outsideHandler, true);
+        globalThis.removeEventListener('resize', this._positionHandler);
+        globalThis.removeEventListener('scroll', this._positionHandler, true);
+      }
+      _positionPanel() {
+        const rect = this._input.getBoundingClientRect();
+        const width = Math.min(this._panel.offsetWidth || 322, globalThis.innerWidth - 16);
+        let left = Math.min(rect.left, globalThis.innerWidth - width - 8);
+        left = Math.max(8, left);
+        const panelHeight = this._panel.offsetHeight || 390;
+        const spaceBelow = globalThis.innerHeight - rect.bottom - 8;
+        const spaceAbove = rect.top - 8;
+        // 默认向下；仅下方不足且上方足够时向上。若上下都不足，仍按默认向下显示。
+        const placement = spaceBelow < panelHeight && spaceAbove >= panelHeight ? 'top' : 'bottom';
+        const viewportTop = placement === 'top' ? rect.top - panelHeight - 6 : rect.bottom + 6;
+        this._panel.dataset.placement = placement;
+        this._panel.style.left = `${left}px`;
+        this._panel.style.top = `${viewportTop}px`;
+      }
+      _startPositionTracking() {
+        if (this._positionFrame) globalThis.cancelAnimationFrame(this._positionFrame);
+        const track = () => {
+          if (this._panel.hidden || !this.isConnected) {
+            this._positionFrame = 0;
+            return;
+          }
+          const rect = this._input.getBoundingClientRect();
+          const key = `${rect.left},${rect.top},${rect.right},${rect.bottom},${globalThis.innerWidth},${globalThis.innerHeight}`;
+          if (key !== this._lastAnchorRect) {
+            this._lastAnchorRect = key;
+            this._positionPanel();
+          }
+          this._positionFrame = globalThis.requestAnimationFrame(track);
+        };
+        this._positionFrame = globalThis.requestAnimationFrame(track);
+      }
+      _render() {
+        const isEnglish = String(this._options.lang || 'cn').toLowerCase() === 'en';
+        const rangeMode = this._options.range === true;
+        const yearPageStart = this._viewYear - 7;
+        const yearTitle = this._title.querySelector('[data-action="choose-year"]');
+        const monthTitle = this._title.querySelector('[data-action="choose-month"]');
+        const monthNames = isEnglish ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] : null;
+        this._title.dataset.lang = isEnglish ? 'en' : 'cn';
+        yearTitle.textContent = isEnglish ? String(this._viewYear) : `${this._viewYear} 年`;
+        monthTitle.textContent = isEnglish ? monthNames[this._viewMonth] : `${this._viewMonth + 1} 月`;
+        monthTitle.hidden = false;
+        const timeOnly = this._options.type === 'time';
+        const choosing = this._panelMode !== 'day';
+        const week = this._panel.querySelector('.week');
+        const weekLabels = isEnglish
+          ? (this._firstDayOfWeek() === 1 ? ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'] : ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'])
+          : (this._firstDayOfWeek() === 1 ? ['一', '二', '三', '四', '五', '六', '日'] : ['日', '一', '二', '三', '四', '五', '六']);
+        week.replaceChildren(...weekLabels.map((label) => {
+          const item = document.createElement('span');
+          item.textContent = label;
+          return item;
+        }));
+        week.hidden = choosing || timeOnly || rangeMode;
+        this._days.hidden = choosing || timeOnly || rangeMode;
+        this._chooser.hidden = rangeMode || !choosing;
+        this._chooser.dataset.mode = this._panelMode;
+        this._rangeCalendars.hidden = !rangeMode;
+        this._chooser.replaceChildren();
+        if (this._panelMode === 'year') {
+          const startYear = yearPageStart;
+          for (let year = startYear; year < startYear + 15; year += 1) {
+            const button = document.createElement('button');
+            button.type = 'button'; button.textContent = isEnglish ? String(year) : `${year} 年`; button.dataset.year = String(year);
+            if (year === this._viewYear) button.classList.add('selected');
+            this._chooser.appendChild(button);
+          }
+        } else if (this._panelMode === 'month') {
+          for (let month = 0; month < 12; month += 1) {
+            const button = document.createElement('button');
+            button.type = 'button'; button.textContent = isEnglish ? monthNames[month] : `${month + 1} 月`; button.dataset.month = String(month);
+            if (month === this._viewMonth) button.classList.add('selected');
+            this._chooser.appendChild(button);
+          }
+        }
+        const first = new Date(this._viewYear, this._viewMonth, 1);
+        const leadingDays = (first.getDay() - this._firstDayOfWeek() + 7) % 7;
+        const start = new Date(this._viewYear, this._viewMonth, 1 - leadingDays);
+        const today = new Date();
+        this._days.replaceChildren();
+        for (let index = 0; index < 42; index += 1) {
+          const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index);
+          const button = document.createElement('button');
+          button.type = 'button'; button.className = 'day'; button.textContent = String(date.getDate());
+          button.dataset.date = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+          if (date.getMonth() !== this._viewMonth) button.classList.add('other');
+          if (this._isDateDisabled(date)) { button.disabled = true; button.classList.add('disabled'); }
+          if (this._sameDay(date, today)) button.classList.add('today');
+          const mark = this._resolveMark(date);
+          if (mark) { button.dataset.mark = mark; button.title = mark; button.textContent = mark; }
+          // 月份/年份翻页时保留已选“日号”，只高亮当前视图月份中的同一日，
+          // 避免相邻月份占位格出现重复高亮。
+          const selectedDay = Math.min(this._preferredDay, new Date(this._viewYear, this._viewMonth + 1, 0).getDate());
+          if (date.getFullYear() === this._viewYear
+            && date.getMonth() === this._viewMonth
+            && date.getDate() === selectedDay) button.classList.add('selected');
+          this._days.appendChild(button);
+        }
+        this._panel.querySelector('.head').hidden = timeOnly || rangeMode;
+        this._chooser.hidden = timeOnly || rangeMode || !choosing;
+        this._panel.dataset.range = String(rangeMode);
+        this._panel.dataset.type = this._options.type || 'date';
+        if (rangeMode) this._renderRangeCalendars(isEnglish);
+        const timePanel = this._panel.querySelector('.time');
+        const displayFormat = this._normalizeFormat(this._options.format || (this._options.type === 'datetime' ? 'yyyy-MM-dd HH:mm:ss' : 'HH:mm:ss'));
+        const showHour = /HH|hh/.test(displayFormat);
+        const showMinute = /mm|ii/.test(displayFormat);
+        const showSeconds = /ss/.test(displayFormat);
+        const timeColumns = Math.max(1, [showHour, showMinute, showSeconds].filter(Boolean).length);
+        timePanel.hidden = choosing || !['datetime', 'time'].includes(this._options.type);
+        timePanel.dataset.label = isEnglish ? 'Select time' : '选择时间';
+        timePanel.dataset.showHour = String(showHour);
+        timePanel.dataset.showMinute = String(showMinute);
+        timePanel.dataset.showSeconds = String(showSeconds);
+        timePanel.dataset.showMinuteSeparator = String(showHour && showMinute);
+        timePanel.dataset.showSecondSeparator = String(showSeconds && (showHour || showMinute));
+        timePanel.dataset.timeColumns = String(timeColumns);
+        this._panel.dataset.showSeconds = timePanel.dataset.showSeconds;
+        this._panel.dataset.timeColumns = String(timeColumns);
+        const timeLabels = isEnglish ? { hour: 'Hr', minute: 'Min', second: 'Sec' } : { hour: '时', minute: '分', second: '秒' };
+        Object.entries(timeLabels).forEach(([unit, label]) => {
+          this._panel.querySelector(`[data-time-field="${unit}"]`).dataset.label = label;
+        });
+        this._panel.querySelector('[data-action="reset"]').textContent = isEnglish ? 'Reset' : '重置';
+        this._panel.querySelector('[data-action="today"]').textContent = isEnglish ? 'Now' : '现在';
+        this._panel.querySelector('[data-action="confirm"]').textContent = isEnglish ? 'Confirm' : '确定';
+        const preview = this._panel.querySelector('.date-preview');
+        if (rangeMode) {
+          preview.textContent = this._rangeValue.map((item) => {
+            const parsed = this._parse(item);
+            return parsed ? this._formatDisplay(parsed) : '';
+          }).filter(Boolean).join(this._options.displaySeparator || ' 至 ');
+        } else {
+          const previewDate = new Date(this._draft);
+          const previewDay = Math.min(this._preferredDay, new Date(this._viewYear, this._viewMonth + 1, 0).getDate());
+          previewDate.setDate(1);
+          previewDate.setFullYear(this._viewYear, this._viewMonth, previewDay);
+          preview.textContent = this._formatDisplay(previewDate);
+        }
+        preview.title = preview.textContent;
+        const values = { hour: this._draft.getHours(), minute: this._draft.getMinutes(), second: this._draft.getSeconds() };
+        Object.entries(values).forEach(([unit, value]) => {
+          const field = this._panel.querySelector(`[data-time-field="${unit}"]`);
+          const button = field.querySelector('.time-value');
+          button.dataset.value = String(value);
+          button.textContent = String(value).padStart(2, '0');
+          field.querySelectorAll('.time-option').forEach((option) => option.classList.toggle('selected', Number(option.dataset.value) === value));
+          if (this._options.type === 'datetime' && !choosing) {
+            queueMicrotask(() => field.querySelector('.time-option.selected')?.scrollIntoView({ block: 'center' }));
+          }
+        });
+      }
+      _sameDay(left, right) { return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() && left.getDate() === right.getDate(); }
+      _resolveMark(date) {
+        const marks = this._options.mark && typeof this._options.mark === 'object' ? this._options.mark : {};
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        const day = date.getDate();
+        const keys = [`${year}-${month}-${day}`, `0-${month}-${day}`, `${year}-0-${day}`, `0-0-${day}`];
+        const key = keys.find((item) => marks[item] != null);
+        return key ? String(marks[key]) : '';
+      }
+      _renderRangeCalendars(isEnglish) {
+        const weekLabels = isEnglish
+          ? (this._firstDayOfWeek() === 1 ? ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'] : ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'])
+          : (this._firstDayOfWeek() === 1 ? ['一', '二', '三', '四', '五', '六', '日'] : ['日', '一', '二', '三', '四', '五', '六']);
+        const panes = [
+          { name: 'left', year: this._viewYear, month: this._viewMonth },
+          { name: 'right', year: this._viewMonth === 11 ? this._viewYear + 1 : this._viewYear, month: (this._viewMonth + 1) % 12 }
+        ];
+        const rangeStart = this._parse(this._rangeValue[0]);
+        const rangeEnd = this._parse(this._rangeValue[1]);
+        panes.forEach((paneData) => {
+          const pane = this._rangeCalendars.querySelector(`[data-range-pane="${paneData.name}"]`);
+          const monthNames = isEnglish ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] : null;
+          const choosing = this._rangeChooser.pane === paneData.name ? this._rangeChooser.mode : '';
+          const yearPageStart = paneData.year - 7;
+          const title = pane.querySelector('.range-title');
+          const yearButton = pane.querySelector('[data-range-choose="year"]');
+          const monthButton = pane.querySelector('[data-range-choose="month"]');
+          title.dataset.lang = isEnglish ? 'en' : 'cn';
+          yearButton.textContent = isEnglish ? String(paneData.year) : `${paneData.year} 年`;
+          monthButton.textContent = isEnglish ? monthNames[paneData.month] : `${paneData.month + 1} 月`;
+          monthButton.hidden = false;
+          const week = pane.querySelector('.range-week');
+          week.replaceChildren(...weekLabels.map((label) => {
+            const item = document.createElement('span'); item.textContent = label; return item;
+          }));
+          const days = pane.querySelector('.range-days');
+          days.replaceChildren();
+          week.hidden = Boolean(choosing);
+          days.hidden = Boolean(choosing);
+          const chooser = pane.querySelector('.range-chooser');
+          chooser.hidden = !choosing;
+          chooser.dataset.mode = choosing || 'day';
+          chooser.replaceChildren();
+          if (choosing === 'year') {
+            for (let year = yearPageStart; year < yearPageStart + 15; year += 1) {
+              const button = document.createElement('button');
+              button.type = 'button'; button.dataset.rangeYear = String(year); button.dataset.pane = paneData.name;
+              button.textContent = isEnglish ? String(year) : `${year} 年`;
+              if (year === paneData.year) button.classList.add('selected');
+              chooser.appendChild(button);
+            }
+          } else if (choosing === 'month') {
+            for (let month = 0; month < 12; month += 1) {
+              const button = document.createElement('button');
+              button.type = 'button'; button.dataset.rangeMonth = String(month); button.dataset.pane = paneData.name;
+              button.textContent = isEnglish ? monthNames[month] : `${month + 1} 月`;
+              if (month === paneData.month) button.classList.add('selected');
+              chooser.appendChild(button);
+            }
+          }
+          const first = new Date(paneData.year, paneData.month, 1);
+          const leadingDays = (first.getDay() - this._firstDayOfWeek() + 7) % 7;
+          const start = new Date(paneData.year, paneData.month, 1 - leadingDays);
+          for (let index = 0; index < 42; index += 1) {
+            const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index);
+            const button = document.createElement('button');
+            button.type = 'button'; button.className = 'range-day';
+            button.dataset.rangeDate = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+            button.textContent = String(date.getDate());
+            if (date.getMonth() !== paneData.month) button.classList.add('other');
+            if (this._isDateDisabled(date)) { button.disabled = true; button.classList.add('disabled'); }
+            if (rangeStart && this._sameDay(date, rangeStart)) button.classList.add('range-start');
+            if (rangeEnd && this._sameDay(date, rangeEnd)) button.classList.add('range-end');
+            if (rangeStart && rangeEnd && date > rangeStart && date < rangeEnd) button.classList.add('in-range');
+            const mark = this._resolveMark(date);
+            if (mark) { button.dataset.mark = mark; button.title = mark; button.textContent = mark; }
+            days.appendChild(button);
+          }
+        });
+      }
+      _isDateDisabled(date) {
+        const dayValue = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+        const rangeMin = this._options.range === true && this._rangePhase === 'end' ? this._rangeValue[0] : null;
+        const min = this._parse(rangeMin || this._options.min);
+        const max = this._parse(this._options.max);
+        const minValue = min ? new Date(min.getFullYear(), min.getMonth(), min.getDate()).getTime() : null;
+        const maxValue = max ? new Date(max.getFullYear(), max.getMonth(), max.getDate()).getTime() : null;
+        return (minValue != null && dayValue < minValue) || (maxValue != null && dayValue > maxValue);
+      }
+      _setDraftTime() {
+        const timePanel = this._panel.querySelector('.time');
+        const hours = timePanel.dataset.showHour === 'true' ? +this._panel.querySelector('[data-time-field="hour"] .time-value').dataset.value : 0;
+        const minutes = timePanel.dataset.showMinute === 'true' ? +this._panel.querySelector('[data-time-field="minute"] .time-value').dataset.value : 0;
+        const seconds = timePanel.dataset.showSeconds === 'true' ? +this._panel.querySelector('[data-time-field="second"] .time-value').dataset.value : 0;
+        this._draft.setHours(hours, minutes, seconds, 0);
+      }
+      _handleClick(event) {
+        const rangeChoose = event.target.closest('[data-range-choose]');
+        if (rangeChoose) {
+          const pane = rangeChoose.closest('[data-range-pane]').dataset.rangePane;
+          this._rangeChooser = { pane: pane, mode: rangeChoose.dataset.rangeChoose };
+          this._render();
+          return;
+        }
+        const rangeYear = event.target.closest('[data-range-year]');
+        if (rangeYear) {
+          const pane = rangeYear.dataset.pane;
+          const paneDate = this._getRangePaneDate(pane);
+          this._setRangePaneView(pane, Number(rangeYear.dataset.rangeYear), paneDate.month);
+          this._rangeChooser = { pane: pane, mode: 'month' };
+          this._render();
+          return;
+        }
+        const rangeMonth = event.target.closest('[data-range-month]');
+        if (rangeMonth) {
+          const pane = rangeMonth.dataset.pane;
+          const paneDate = this._getRangePaneDate(pane);
+          this._setRangePaneView(pane, paneDate.year, Number(rangeMonth.dataset.rangeMonth));
+          this._rangeChooser = { pane: '', mode: '' };
+          this._render();
+          return;
+        }
+        const rangeDay = event.target.closest('[data-range-date]');
+        if (rangeDay) {
+          const [year, month, day] = rangeDay.dataset.rangeDate.split('-').map(Number);
+          this._draft.setFullYear(year, month - 1, day);
+          this._preferredDay = day;
+          this._setDraftTime();
+          const selectedValue = this._format(this._draft);
+          if (this._rangePhase === 'start' || (this._rangeValue[0] && this._rangeValue[1])) {
+            this._rangeValue = [selectedValue, ''];
+            this._rangePhase = 'end';
+          } else {
+            this._rangeValue[1] = selectedValue;
+            if (this._rangeValue[1] < this._rangeValue[0]) this._rangeValue.reverse();
+            this._rangePhase = 'complete';
+          }
+          this._syncRangeDisplay();
+          this._render();
+          this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          this.dispatchEvent(new CustomEvent('change', { detail: { value: this.value, kind: this._rangePhase === 'end' ? 'start-change' : 'end-change' }, bubbles: true, composed: true }));
+          return;
+        }
+        const rangeAction = event.target.closest('[data-range-action]')?.dataset.rangeAction;
+        if (rangeAction) {
+          const pane = event.target.closest('[data-range-pane]').dataset.rangePane;
+          const paneDate = this._getRangePaneDate(pane);
+          const target = new Date(paneDate.year, paneDate.month, 1);
+          if (rangeAction === 'prev-year') target.setFullYear(target.getFullYear() - 1);
+          if (rangeAction === 'next-year') target.setFullYear(target.getFullYear() + 1);
+          if (rangeAction === 'prev-month') target.setMonth(target.getMonth() - 1);
+          if (rangeAction === 'next-month') target.setMonth(target.getMonth() + 1);
+          this._setRangePaneView(pane, target.getFullYear(), target.getMonth());
+          this._render();
+          return;
+        }
+        const timeOption = event.target.closest('[data-time-option]');
+        if (timeOption) {
+          const unit = timeOption.dataset.timeOption;
+          const field = this._panel.querySelector(`[data-time-field="${unit}"]`);
+          const button = field.querySelector('.time-value');
+          button.dataset.value = timeOption.dataset.value;
+          button.textContent = timeOption.textContent;
+          this._setDraftTime();
+          this._closeTimeMenus();
+          this._render();
+          return;
+        }
+        const timeButton = event.target.closest('.time-value');
+        if (timeButton) {
+          const field = timeButton.closest('.time-field');
+          const willOpen = field.dataset.open !== 'true';
+          this._closeTimeMenus();
+          if (willOpen) {
+            field.dataset.open = 'true';
+            const options = field.querySelector('.time-options');
+            options.hidden = false;
+            queueMicrotask(() => field.querySelector('.time-option.selected')?.scrollIntoView({ block: 'center' }));
+          }
+          return;
+        }
+        this._closeTimeMenus();
+        const yearChoice = event.target.closest('[data-year]');
+        if (yearChoice) {
+          this._viewYear = Number(yearChoice.dataset.year);
+          const dayOfMonth = this._preferredDay;
+          this._draft.setDate(1);
+          this._draft.setFullYear(this._viewYear);
+          this._draft.setDate(Math.min(dayOfMonth, new Date(this._viewYear, this._draft.getMonth() + 1, 0).getDate()));
+          this._panelMode = 'month'; this._render(); return;
+        }
+        const monthChoice = event.target.closest('[data-month]');
+        if (monthChoice) {
+          this._viewMonth = Number(monthChoice.dataset.month);
+          const dayOfMonth = this._preferredDay;
+          this._draft.setDate(1);
+          this._draft.setMonth(this._viewMonth);
+          this._draft.setDate(Math.min(dayOfMonth, new Date(this._viewYear, this._viewMonth + 1, 0).getDate()));
+          this._panelMode = 'day'; this._render(); return;
+        }
+        const day = event.target.closest('.day');
+        if (day) {
+          const [year, month, date] = day.dataset.date.split('-').map(Number);
+          this._draft.setFullYear(year, month - 1, date);
+          this._preferredDay = date;
+          this._viewYear = year; this._viewMonth = month - 1; this._render(); return;
+        }
+        let action = event.target.closest('[data-action]')?.dataset.action;
+        if (!action) return;
+        if (action === 'choose-year') this._panelMode = 'year';
+        if (action === 'choose-month') this._panelMode = 'month';
+        if (action === 'prev-year') this._viewYear -= 1;
+        if (action === 'next-year') this._viewYear += 1;
+        if (action === 'prev-month') {
+          this._viewMonth -= 1;
+          if (this._viewMonth < 0) { this._viewMonth = 11; this._viewYear -= 1; }
+        }
+        if (action === 'next-month') {
+          this._viewMonth += 1;
+          if (this._viewMonth > 11) { this._viewMonth = 0; this._viewYear += 1; }
+        }
+        if (action === 'today') {
+          this._draft = new Date();
+          this._preferredDay = this._draft.getDate();
+          this._viewYear = this._draft.getFullYear();
+          this._viewMonth = this._draft.getMonth();
+          this._panelMode = 'day';
+          if (this._options.range === true) {
+            this._rangeValue = ['', ''];
+            this._rangePhase = 'start';
+          }
+          this._render();
+          action = 'confirm';
+        }
+        if (action === 'reset') {
+          this._draft = new Date();
+          if (this._options.range === true) {
+            this._rangeValue = ['', ''];
+            this._syncRangeDisplay();
+            this._rangePhase = 'start';
+          } else {
+            this.value = '';
+          }
+          this._preferredDay = this._draft.getDate();
+          this._viewYear = this._draft.getFullYear();
+          this._viewMonth = this._draft.getMonth();
+          this._panelMode = 'day';
+          this._rangeChooser = { pane: '', mode: '' };
+        }
+        if (action === 'confirm') {
+          const actualDay = Math.min(this._preferredDay, new Date(this._viewYear, this._viewMonth + 1, 0).getDate());
+          this._draft.setDate(1);
+          this._draft.setFullYear(this._viewYear, this._viewMonth, actualDay);
+          this._setDraftTime();
+          const selectedValue = this._format(this._draft);
+          if (this._options.range === true) {
+            if (!this._rangeValue[0]) this._rangeValue[0] = selectedValue;
+            if (!this._rangeValue[1]) this._rangeValue[1] = this._rangeValue[0];
+            if (this._rangeValue[0] && this._rangeValue[1] < this._rangeValue[0]) this._rangeValue.reverse();
+            this._syncRangeDisplay();
+          } else {
+            this.value = selectedValue;
+          }
+          this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          this.dispatchEvent(new CustomEvent('change', { detail: this._options.range === true ? { value: this.value, kind: 'end-change' } : this.value, bubbles: true, composed: true }));
+          this._close(); return;
+        }
+        this._render();
+      }
+      _getRangePaneDate(pane) {
+        if (pane !== 'right') return { year: this._viewYear, month: this._viewMonth };
+        return { year: this._viewMonth === 11 ? this._viewYear + 1 : this._viewYear, month: (this._viewMonth + 1) % 12 };
+      }
+      _setRangePaneView(pane, year, month) {
+        if (pane !== 'right') {
+          this._viewYear = year;
+          this._viewMonth = month;
+          return;
+        }
+        const previous = new Date(year, month - 1, 1);
+        this._viewYear = previous.getFullYear();
+        this._viewMonth = previous.getMonth();
+      }
+      _closeTimeMenus() {
+        this._panel.querySelectorAll('.time-field').forEach((field) => {
+          delete field.dataset.open;
+          field.querySelector('.time-options').hidden = true;
+        });
+      }
+    }
+    customElements.define('kniu-date-picker', KniuSysDatePicker);
+  }
+
   function registerFormComponent() {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-form')) return;
+    // 表单内被视为「字段」的控件：带 name，或 kniu:model 指向 options 的某个字段。
+    const FORM_FIELD_SELECTOR = [
+      'kniu-input', 'kniu-textarea', 'kniu-select', 'kniu-switch', 'kniu-radio-group',
+      'kniu-checkbox-group', 'kniu-date-picker', 'kniu-upload', 'kniu-editor', 'kniu-slider'
+    ].join(',');
+    // options 里的表单级保留键：不是字段，不参与取值与验证。
+    const FORM_RESERVED_KEYS = ['labelPosition', 'labelWidth'];
+    // 字段对象约定：{ value, condition, message }——有 condition 才验证，value 为默认值/当前值。
+    const isFieldObject = function (value) {
+      return !!value && typeof value === 'object' && !Array.isArray(value) && 'value' in value;
+    };
+    const unwrapField = function (value) {
+      return isFieldObject(value) ? value.value : value;
+    };
+
     class KniuSysForm extends HTMLElement {
-      static get observedAttributes() { return ['label-position', 'label-width']; }
       constructor() {
         super();
+        attachComponentShadow(this);
+        this.shadowRoot.innerHTML = '<slot></slot>';
         this.style.display = 'contents';
-        this._formConfig = {};
+        this._options = {};
+        this._defaults = null;
         this._mountedForm = null;
-        this._hasConfig = false;
-        this._submitHandler = null;
-        this._data = null;
-        this._rules = {};
         this._validateHandler = null;
       }
       connectedCallback() {
@@ -2145,69 +3911,139 @@ var KniuUI = (function () {
           this._mountForm();
         });
       }
-      attributeChangedCallback() { if (this.isConnected) this._syncLayout(); }
-      set model(value) { this.data = value; }
-      get model() { return this.data; }
-      set rules(value) { this._rules = value && typeof value === 'object' ? value : {}; }
-      get rules() { return this._rules; }
+      static snapshotOptions(options) {
+        const out = {};
+        Object.keys(options).forEach(function (key) {
+          if (FORM_RESERVED_KEYS.indexOf(key) !== -1) return;
+          out[key] = unwrapField(options[key]);
+        });
+        return out;
+      }
+      // 唯一配置入口：kniu:options="{{xxxOptions}}"。
+      // 除 ref 与事件外，表单元素上不再有任何配置项属性（model / data / rules / formConfig /
+      // label-position / label-width 全部作废）。字段要么写成对象（可验证），要么直接给默认值。
+      set options(value) {
+        const next = value && typeof value === 'object' ? value : {};
+        this._options = next;
+        if (this._defaults === null) this._defaults = KniuSysForm.snapshotOptions(next);
+        if (this.isConnected) { this._syncLayout(); this._mountForm(); }
+      }
+      get options() { return this._options; }
+      // 当前表单值：字段对象摊平成值，供控制器直接提交。
+      get values() { return this._valuesOf(this._fieldNodes()); }
+      _valuesOf(entries) {
+        const options = this._options || {};
+        const out = {};
+        entries.forEach(function (entry) { out[entry.field] = entry.value; });
+        Object.keys(options).forEach(function (key) {
+          if (FORM_RESERVED_KEYS.indexOf(key) !== -1) return;
+          if (key in out) return;
+          out[key] = unwrapField(options[key]);
+        });
+        return out;
+      }
+      // 把所有字段恢复到 options 首次传入时的默认值。
+      reset() {
+        const defaults = this._defaults;
+        const options = this._options;
+        if (!defaults || !options) return;
+        Object.keys(defaults).forEach(function (field) {
+          if (isFieldObject(options[field])) options[field].value = defaults[field];
+          else options[field] = defaults[field];
+        });
+      }
       validate() {
+        const options = this._options || {};
+        const entries = this._fieldNodes();
+        const values = this._valuesOf(entries);
         let valid = true;
         let firstInvalid = null;
         let firstMessage = '';
-        this.querySelectorAll('kniu-input').forEach((input) => {
-          const field = input.getAttribute('name') || '';
-          const group = input.closest('kniu-input-group, kniu-form-cell');
-          const value = String(input.value ?? '');
-          const rule = this.rules ? this.rules[field] : null;
-          const hasRule = rule && typeof rule === 'object' && ('condition' in rule);
-          const requiredAttr = input.hasAttribute('required');
-          if (!hasRule && !requiredAttr) {
-            input.removeAttribute('data-invalid');
+        entries.forEach((entry) => {
+          const rule = options[entry.field];
+          const hasRule = isFieldObject(rule) && 'condition' in rule;
+          if (!hasRule) {
+            entry.node.removeAttribute('data-invalid');
             return;
           }
-          let ok = true;
-          let message = '';
-          if (hasRule) {
-            const condition = rule.condition;
-            if (condition instanceof RegExp) {
-              // rules 来自响应式代理，正则可能被 Proxy 包裹，需还原为真实 RegExp 才能调用 .test()
-              const re = typeof condition.source === 'string'
-                ? new RegExp(condition.source, condition.flags)
-                : condition;
-              ok = re.test(value);
-            } else if (typeof condition === 'function') {
-              ok = !!condition({ value: value, field: field, input: input });
-            } else {
-              ok = true;
-            }
-            message = rule.message || `${field}格式不正确`;
-          } else {
-            ok = value.trim().length > 0;
-            message = input.getAttribute('placeholder')
-              || `${group && group.getAttribute('label') ? group.getAttribute('label') : field}不能为空`;
-          }
-          const invalid = !ok;
-          input.toggleAttribute('data-invalid', invalid);
-          if (group) group.toggleAttribute('required', hasRule || requiredAttr);
-          if (invalid) {
-            valid = false;
-            if (!firstInvalid) { firstInvalid = input; firstMessage = message; }
+          const value = entry.value == null ? '' : String(entry.value);
+          const invalid = !this._testCondition(rule.condition, value, entry, values);
+          (entry.group || entry.node).toggleAttribute('required', true);
+          entry.node.toggleAttribute('data-invalid', invalid);
+          if (!invalid) return;
+          valid = false;
+          if (!firstInvalid) {
+            firstInvalid = entry.node;
+            firstMessage = rule.message || `${entry.field}格式不正确`;
           }
         });
         if (firstInvalid) {
-          firstInvalid.focus();
-          // 错误信息改用 $msg 全局提示，不再内联展示 kniu_sys_input_error 文本
+          if (typeof firstInvalid.focus === 'function') firstInvalid.focus();
           if (typeof this.$msg === 'function') this.$msg({ content: firstMessage, type: 'error' });
           else KniuUI.msg({ content: firstMessage, type: 'error' });
         }
         return valid;
       }
-      set formConfig(value) {
-        this._formConfig = value && typeof value === 'object' ? value : {};
-        this._hasConfig = true;
-        if (this.isConnected) this._mountForm();
+      _testCondition(condition, value, entry, values) {
+        if (condition === true) return value.trim().length > 0;
+        if (condition == null) return true;
+        // options 来自响应式代理，正则常被 Proxy 包裹：instanceof 仍为 true，
+        // 但原生 RegExp.prototype.test 以 Proxy 为 this 会抛
+        // "Method RegExp.prototype.exec called on incompatible receiver"。
+        // 因此只要能取到 source 就一律重建真实 RegExp 再 test。
+        if (condition && typeof condition.source === 'string') {
+          return new RegExp(condition.source, condition.flags || '').test(value);
+        }
+        if (condition instanceof RegExp) return condition.test(value);
+        if (typeof condition === 'function') {
+          const payload = {
+            value: value,
+            field: entry.field,
+            input: entry.node,
+            model: this._options,
+            options: this._options,
+            values: values || {}
+          };
+          // 同表单其它字段的当前值一并展开到入参上，condition 可直接写 v.password 之类
+          Object.keys(payload.values).forEach(function (key) {
+            if (!(key in payload)) payload[key] = payload.values[key];
+          });
+          return !!condition(payload);
+        }
+        return true;
       }
-      get formConfig() { return this._formConfig; }
+      // 字段清单 [{ field, node, group, value }]，同名只取首个控件。
+      _fieldNodes() {
+        const options = this._options || {};
+        const seen = new Set();
+        const out = [];
+        const self = this;
+        this.querySelectorAll(FORM_FIELD_SELECTOR).forEach(function (node) {
+          const field = self._fieldNameOf(node);
+          if (!field || seen.has(field)) return;
+          seen.add(field);
+          out.push({
+            field: field,
+            node: node,
+            group: node.closest('kniu-input-group, kniu-form-cell'),
+            value: self._readField(field, node, options)
+          });
+        });
+        return out;
+      }
+      _fieldNameOf(node) {
+        const name = node.getAttribute('name');
+        if (name) return name;
+        const path = node.__kniuModelPath;
+        if (path) return String(path).split('.').pop();
+        return '';
+      }
+      _readField(field, node, options) {
+        const option = options[field];
+        if (isFieldObject(option)) return option.value;
+        if (option !== undefined && option !== null && typeof option !== 'object') return option;
+        return node.value === undefined ? '' : node.value;
+      }
       _ensureNativeForm() {
         if (this.querySelector(':scope > form')) return;
         const form = (this.ownerDocument || document).createElement('form');
@@ -2217,102 +4053,20 @@ var KniuUI = (function () {
         this.append(form);
       }
       _syncLayout() {
-        const position = ['left', 'right', 'top'].includes(this.getAttribute('label-position'))
-          ? this.getAttribute('label-position')
+        const options = this._options || {};
+        const position = ['left', 'right', 'top'].indexOf(options.labelPosition) !== -1
+          ? options.labelPosition
           : 'right';
-        const width = this.getAttribute('label-width') || '80px';
+        const width = options.labelWidth || '80px';
+        // 标签位置落到 data 属性上供外部样式挂钩（label-position 属性已作废）
+        this.setAttribute('data-label-position', position);
         this.querySelectorAll('kniu-input-group, kniu-form-cell').forEach(function (group) {
           if (!group.hasAttribute('label-position')) group.setAttribute('label-position', position);
           if (!group.hasAttribute('label-width')) group.setAttribute('label-width', width);
         });
       }
-      _createField(field, model) {
-        const documentRef = this.ownerDocument || document;
-        const input = documentRef.createElement('input');
-        input.name = String(field.field || '');
-        input.type = field.type || 'text';
-        input.value = model[field.field] == null ? '' : String(model[field.field]);
-        if (field.placeholder) input.placeholder = field.placeholder;
-        input.autocomplete = field.autocomplete || 'off';
-        if (input.type === 'hidden') {
-          input.className = 'kniu_sys_form_hidden';
-          input.addEventListener('input', function () { model[field.field] = input.value; });
-          return input;
-        }
-        input.className = `kniu_input seo_form_input1${field.required ? ' kniu_required' : ''}`;
-        input.addEventListener('input', function () { model[field.field] = input.value; });
-
-        const label = documentRef.createElement('p');
-        label.className = 'kniu_input_text seo_form_text1';
-        label.textContent = field.title == null ? '' : String(field.title);
-        const inputGroup = documentRef.createElement('div');
-        inputGroup.className = 'kniu_input_group';
-        const suffix = documentRef.createElement('div');
-        suffix.className = 'kniu_input_aftfix';
-        const clear = documentRef.createElement('span');
-        clear.className = 'kniu_icon kniu_icon_circle_close_fill kniu_icon_1d3x kniu_input_btn_clear';
-        suffix.append(clear);
-        inputGroup.append(input, suffix);
-        const pane = documentRef.createElement('div');
-        pane.className = 'kniu_label kniu_label_pane';
-        pane.append(label, inputGroup);
-        const cell = documentRef.createElement('li');
-        cell.className = 'kniu_form_cell kniu_sys_form_cell';
-        cell.append(pane);
-        return cell;
-      }
-      _renderConfiguredForm() {
-        const config = this._formConfig;
-        if (!Array.isArray(config.fields)) return null;
-        const documentRef = this.ownerDocument || document;
-        const model = config.model && typeof config.model === 'object' ? config.model : {};
-        const form = documentRef.createElement('form');
-        form.className = 'kniu_form kniu_sys_form';
-        if (!form.hasAttribute('autocomplete')) form.setAttribute('autocomplete', 'off');
-        const group = documentRef.createElement('ul');
-        group.className = 'kniu_form_inputs_group kniu_sys_form_inputs_group';
-        config.fields.forEach((field) => group.append(this._createField(field, model)));
-
-        if (config.submit !== false) {
-          const cell = documentRef.createElement('li');
-          cell.className = 'kniu_form_cell kniu_sys_form_cell';
-          const pane = documentRef.createElement('div');
-          pane.className = 'kniu_label kniu_label_pane';
-          const spacer = documentRef.createElement('p');
-          spacer.className = 'kniu_space kniu_input_text seo_form_text1';
-          const buttonGroup = documentRef.createElement('div');
-          buttonGroup.className = 'kniu_input_group';
-          const button = documentRef.createElement('button');
-          button.className = 'kniu_btn seo_btn seo_btn1 kniu_sys_form_submit';
-          button.type = 'submit';
-          button.textContent = String(config.submit?.title || '提交');
-          buttonGroup.append(button);
-          pane.append(spacer, buttonGroup);
-          cell.append(pane);
-          group.append(cell);
-        }
-        form.append(group);
-        this.replaceChildren(form);
-        this._submitHandler = async (event) => {
-          event.preventDefault();
-          const required = [...form.querySelectorAll('.kniu_required')];
-          const invalid = required.find((input) => !String(input.value || '').trim());
-          if (invalid) {
-            invalid.classList.add('kniu_required_error');
-            invalid.focus();
-            return;
-          }
-          const handler = config.submit?.handler || config.onSubmit;
-          if (typeof handler !== 'function') return;
-          const button = form.querySelector('.kniu_sys_form_submit');
-          if (button) button.disabled = true;
-          try { await handler(model, event); } finally { if (button) button.disabled = false; }
-        };
-        form.addEventListener('submit', this._submitHandler);
-        return form;
-      }
       _mountForm() {
-        const form = this._renderConfiguredForm() || this.querySelector('form');
+        const form = this.querySelector('form');
         if (!form || this._mountedForm === form) return;
         form.noValidate = true;
         this._validateHandler = (event) => {
@@ -2320,9 +4074,6 @@ var KniuUI = (function () {
           if (!this.validate()) event.stopImmediatePropagation();
         };
         form.addEventListener('submit', this._validateHandler);
-        const formFactory = globalThis.kniu?.form;
-        if (typeof formFactory !== 'function') return;
-        formFactory({ ...this._formConfig, el: form });
         this._mountedForm = form;
       }
     }
@@ -2337,11 +4088,11 @@ var KniuUI = (function () {
       static get observedAttributes() { return ['accept', 'multiple', 'max-count', 'max-size', 'disabled']; }
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
+        attachComponentShadow(this);
         this._files = [];
         this._objectUrls = new Map();
         this.shadowRoot.innerHTML = `<style>
-          :host{display:block;width:100%;color:#606266;font:14px/1.5 Arial,"Microsoft YaHei",sans-serif}.kniu_upload_bar{display:flex;align-items:stretch;width:100%;min-height:40px}.kniu_upload_hint{display:flex;flex:1;align-items:center;min-width:0;padding:0 12px;border:1px solid #dcdfe6;border-right:0;background:#f5f7fa;color:#c0c4cc;box-sizing:border-box}.kniu_upload_btn{flex:none;padding:0 20px;border:1px solid #409eff;border-radius:0 4px 4px 0;background:#409eff;color:#fff;font:inherit;cursor:pointer}.kniu_upload_btn:hover{background:#66b1ff;border-color:#66b1ff}.kniu_upload_btn:focus-visible{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}.kniu_upload_btn:disabled{background:#a0cfff;border-color:#a0cfff;cursor:not-allowed}.kniu_upload_input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.kniu_upload_wall{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}.kniu_upload_item{position:relative;width:160px;height:160px;overflow:hidden;background:#f5f7fa}.kniu_upload_image{display:block;width:100%;height:100%;object-fit:cover}.kniu_upload_remove{position:absolute;top:8px;right:8px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background:#aab4c4;color:#fff;font:18px/1 Arial;cursor:pointer}.kniu_upload_remove:hover{background:#f56c6c}.kniu_upload_empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#c0c4cc;font-size:18px;background:linear-gradient(135deg,#f7f9fc,#f1f4fa)}.kniu_upload_empty svg{width:38px;height:38px;fill:none;stroke:currentColor;stroke-width:1.8}
+          :host{display:block;width:100%;color:#606266;font:14px/1.5 Arial,"Microsoft YaHei",sans-serif}:host([disabled]){background-color:transparent!important}.kniu_upload_bar{display:flex;align-items:stretch;width:100%;min-height:40px}.kniu_upload_hint{display:flex;flex:1;align-items:center;min-width:0;padding:0 12px;border:1px solid #dcdfe6;border-right:0;background-color:#f5f7fa;color:#c0c4cc;box-sizing:border-box}.kniu_upload_btn{flex:none;padding:0 20px;border:1px solid #409eff;border-radius:0 4px 4px 0;background-color:#409eff;color:#fff;font:inherit;cursor:pointer}.kniu_upload_btn:hover{background-color:#66b1ff;border-color:#66b1ff}.kniu_upload_btn:focus-visible{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}.kniu_upload_btn:disabled{background-color:#a0cfff;border-color:#a0cfff;cursor:not-allowed}.kniu_upload_input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.kniu_upload_wall{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}.kniu_upload_item{position:relative;width:160px;height:160px;overflow:hidden;background-color:#f5f7fa}.kniu_upload_image{display:block;width:100%;height:100%;object-fit:contain}.kniu_upload_remove{position:absolute;top:8px;right:8px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background-color:#aab4c4;color:#fff;font:18px/1 Arial;cursor:pointer}.kniu_upload_remove:hover{background-color:#f56c6c}.kniu_upload_empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#c0c4cc;font-size:18px;background-image:linear-gradient(135deg,#f7f9fc,#f1f4fa)}.kniu_upload_empty svg{width:38px;height:38px;fill:none;stroke:currentColor;stroke-width:1.8}
         </style><div class="kniu_upload_bar"><span class="kniu_upload_hint"></span><button class="kniu_upload_btn" type="button"><slot>选择图片</slot></button><input class="kniu_upload_input" type="file"></div><div class="kniu_upload_wall" aria-live="polite"></div>`;
         this._input = this.shadowRoot.querySelector('.kniu_upload_input');
         this._button = this.shadowRoot.querySelector('.kniu_upload_btn');
@@ -2350,6 +4101,7 @@ var KniuUI = (function () {
         this._button.addEventListener('click', () => this._input.click());
         this._input.addEventListener('change', () => this._select(Array.from(this._input.files || [])));
         this._wall.addEventListener('click', (event) => {
+          if (this.hasAttribute('disabled')) return;
           const target = event.target instanceof Element ? event.target : event.target.parentElement;
           const button = target && target.closest('.kniu_upload_remove');
           if (button) this.removeAt(Number(button.dataset.index));
@@ -2447,6 +4199,7 @@ var KniuUI = (function () {
           const remove = document.createElement('button');
           remove.className = 'kniu_upload_remove';
           remove.type = 'button';
+          remove.disabled = this.hasAttribute('disabled');
           remove.dataset.index = String(index);
           remove.setAttribute('aria-label', `删除 ${isStoredImage ? '已上传图片' : file.name}`);
           remove.textContent = '×';
@@ -2460,7 +4213,7 @@ var KniuUI = (function () {
           empty.innerHTML = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="6" width="24" height="20" rx="1"></rect><circle cx="21" cy="12" r="2"></circle><path d="m6 23 7-8 5 5 3-3 5 6"></path></svg><span>暂无图片</span>';
           previews.push(empty);
         }
-        this._wall.replaceChildren(...previews);
+        replaceChildrenWithFragment(this._wall, previews);
         this._wall.hidden = false;
         this._sync();
       }
@@ -2483,6 +4236,8 @@ var KniuUI = (function () {
     "arrow-right": ["M340.9 149.3a30.6 30.6 0 0 0 0 42.8L652.7 512 341 831.9a30.6 30.6 0 0 0 0 42.7 29 29 0 0 0 41.7 0l331.6-340.3a32 32 0 0 0 0-44.6L382.6 149.4a29 29 0 0 0-41.7 0z"],
     "arrow-up": ["M488.8 344.3 149 701a32 32 0 0 0 0 44.2l.4.3a29.4 29.4 0 0 0 42.7 0l320-335.8 319.8 335.8a29.4 29.4 0 0 0 42.7 0l.4-.3a32 32 0 0 0 0-44.2L535.2 344.3a32 32 0 0 0-46.4 0"],
     "check": ["M406.7 707 195.8 496.2a32 32 0 1 0-45.2 45.2l256 256 512-512a32 32 0 0 0-45.3-45.2L406.6 706.9z"],
+    "caret-bottom": ["m192 384 320 384 320-384z"],
+    "caret-top": ["M512 320 192 704h639.936z"],
     "circle-check": ["M512 896a384 384 0 1 0 0-768 384 384 0 0 0 0 768m0 64a448 448 0 1 1 0-896 448 448 0 0 1 0 896", "M745.3 361.3a32 32 0 0 1 45.4 45.4l-288 288a32 32 0 0 1-45.4 0l-160-160a32 32 0 1 1 45.4-45.4L480 626.8z"],
     "circle-close": ["m466.8 512-90.5-90.5a32 32 0 0 1 45.2-45.2l90.5 90.5 90.5-90.5a32 32 0 1 1 45.2 45.2L557.2 512l90.5 90.5a32 32 0 1 1-45.2 45.2L512 557.2l-90.5 90.5a32 32 0 0 1-45.2-45.2z", "M512 896a384 384 0 1 0 0-768 384 384 0 0 0 0 768m0 64a448 448 0 1 1 0-896 448 448 0 0 1 0 896"],
     "close": ["M764.3 214.6 512 466.9 259.7 214.6a32 32 0 0 0-45.1 45.1L466.8 512 214.5 764.2a32 32 0 1 0 45.1 45.2L512 557.2l252.3 252.3a32 32 0 0 0 45.1-45.1L557.1 512l252.3-252.4a32 32 0 1 0-45.1-45.2z"],
@@ -2558,7 +4313,7 @@ var KniuUI = (function () {
       static get observedAttributes() { return []; }
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
+        attachComponentShadow(this);
         this.shadowRoot.innerHTML =
           '<style>' +
           ':host{display:inline-flex;vertical-align:middle;line-height:0;width:1em;height:1em;font-size:inherit;flex-shrink:0}' +
@@ -2578,7 +4333,7 @@ var KniuUI = (function () {
       static get observedAttributes() { return ['icon']; }
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
+        attachComponentShadow(this);
         this.shadowRoot.innerHTML =
           '<style>' +
           ':host{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;line-height:0;font-size:inherit;flex-shrink:0}' +
@@ -2631,15 +4386,15 @@ var KniuUI = (function () {
       static get observedAttributes() { return ['value', 'max', 'is-dot', 'hidden', 'unstyled']; }
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
+        attachComponentShadow(this);
         this.shadowRoot.innerHTML =
           '<style>' +
           ':host{display:inline-flex;position:relative;vertical-align:middle;line-height:0;flex-shrink:0}' +
           ':host([hidden]){display:none}' +
-          ':host([unstyled]){background:transparent;border:0;padding:0}' +
+          ':host([unstyled]){background-color:transparent;border:0;padding:0}' +
           '.kniu_sys_badge_indicator{position:absolute;top:0;right:0;transform:translate(50%,-50%);box-sizing:border-box;pointer-events:none;display:flex;align-items:center;justify-content:center}' +
-          '.kniu_sys_badge_indicator[data-shape="dot"]{width:8px;height:8px;border-radius:50%;background:#f56c6c;border:1.5px solid #fff}' +
-          '.kniu_sys_badge_indicator[data-shape="sup"]{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#f56c6c;color:#fff;font-size:12px;line-height:18px;font-weight:600;border:1.5px solid #fff;white-space:nowrap}' +
+          '.kniu_sys_badge_indicator[data-shape="dot"]{width:8px;height:8px;border-radius:50%;background-color:#f56c6c;border:1.5px solid #fff}' +
+          '.kniu_sys_badge_indicator[data-shape="sup"]{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background-color:#f56c6c;color:#fff;font-size:12px;line-height:18px;font-weight:600;border:1.5px solid #fff;white-space:nowrap}' +
           ':host([unstyled]) .kniu_sys_badge_indicator{border-color:transparent}' +
           '</style>' +
           '<slot></slot>' +
@@ -2678,6 +4433,41 @@ var KniuUI = (function () {
     customElements.define('kniu-badge', KniuSysBadge);
   }
 
+  // 标签组件：用于状态、角色、权限等短文本标记，可独立使用，也可放入表格默认插槽。
+  function registerTagComponent() {
+    if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
+    if (customElements.get('kniu-tag')) return;
+    class KniuSysTag extends HTMLElement {
+      static get observedAttributes() { return ['type', 'size', 'effect', 'round', 'closable', 'disabled']; }
+      constructor() {
+        super();
+        attachComponentShadow(this);
+        this.shadowRoot.innerHTML = `<style>:host{--kniu-tag-color:#409eff;--kniu-tag-bg:#ecf5ff;--kniu-tag-border:#d9ecff;display:inline-flex;vertical-align:middle}.kniu_sys_tag{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:24px;padding:0 9px;border:1px solid var(--kniu-tag-border);border-radius:4px;background-color:var(--kniu-tag-bg);color:var(--kniu-tag-color);font:12px/1 Arial,"Microsoft YaHei",sans-serif;white-space:nowrap;box-sizing:border-box}:host([type="success"]){--kniu-tag-color:#67c23a;--kniu-tag-bg:#f0f9eb;--kniu-tag-border:#e1f3d8}:host([type="warning"]){--kniu-tag-color:#e6a23c;--kniu-tag-bg:#fdf6ec;--kniu-tag-border:#faecd8}:host([type="danger"]){--kniu-tag-color:#f56c6c;--kniu-tag-bg:#fef0f0;--kniu-tag-border:#fde2e2}:host([type="info"]){--kniu-tag-color:#909399;--kniu-tag-bg:#f4f4f5;--kniu-tag-border:#e9e9eb}:host([effect="dark"]){--kniu-tag-bg:var(--kniu-tag-color);--kniu-tag-border:var(--kniu-tag-color)}:host([effect="dark"]) .kniu_sys_tag{color:#fff}:host([effect="plain"]){--kniu-tag-bg:#fff}:host([size="large"]) .kniu_sys_tag{height:28px;padding:0 11px;font-size:13px}:host([size="small"]) .kniu_sys_tag{height:20px;padding:0 7px}:host([round]) .kniu_sys_tag{border-radius:999px}:host([disabled]){opacity:.55;pointer-events:none}.kniu_sys_tag_close{display:none;width:14px;height:14px;padding:0;border:0;border-radius:50%;background-color:transparent;color:inherit;font:14px/12px Arial;cursor:pointer}:host([closable]) .kniu_sys_tag_close{display:inline-flex;align-items:center;justify-content:center}</style><span class="kniu_sys_tag"><slot></slot><button class="kniu_sys_tag_close" type="button" aria-label="关闭">×</button></span>`;
+        this.shadowRoot.querySelector('.kniu_sys_tag_close').addEventListener('click', (event) => {
+          event.stopPropagation();
+          if (this.hasAttribute('disabled')) return;
+          this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
+        });
+      }
+    }
+    customElements.define('kniu-tag', KniuSysTag);
+  }
+
+  // 状态组件：使用彩色圆点表达状态类型，文字保持正文颜色。
+  function registerStatusComponent() {
+    if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
+    if (customElements.get('kniu-status')) return;
+    class KniuSysStatus extends HTMLElement {
+      static get observedAttributes() { return ['type', 'size']; }
+      constructor() {
+        super();
+        attachComponentShadow(this);
+        this.shadowRoot.innerHTML = `<style>:host{--kniu-status-color:#409eff;display:inline-flex;vertical-align:middle}:host([type="success"]){--kniu-status-color:#67c23a}:host([type="warning"]){--kniu-status-color:#e6a23c}:host([type="danger"]){--kniu-status-color:#f56c6c}:host([type="info"]){--kniu-status-color:#909399}.kniu_sys_status{display:inline-flex;align-items:center;gap:6px;color:#606266;font:14px/1.5 Arial,"Microsoft YaHei",sans-serif;white-space:nowrap}.kniu_sys_status_dot{width:6px;height:6px;border-radius:50%;background-color:var(--kniu-status-color);flex:none}:host([size="large"]) .kniu_sys_status{font-size:16px}:host([size="large"]) .kniu_sys_status_dot{width:8px;height:8px}:host([size="small"]) .kniu_sys_status{gap:5px;font-size:12px}:host([size="small"]) .kniu_sys_status_dot{width:5px;height:5px}</style><span class="kniu_sys_status"><i class="kniu_sys_status_dot" aria-hidden="true"></i><slot></slot></span>`;
+      }
+    }
+    customElements.define('kniu-status', KniuSysStatus);
+  }
+
   // 空状态组件：居中展示插画 + 文案（note 属性，默认“暂无数据”），可选投影 slot 放自定义内容。
   // 与 kniu:if 配合作为列表/表格的空状态占位，替代手写 .detail_empty 这类 div。
   function registerEmptyComponent() {
@@ -2707,7 +4497,7 @@ var KniuUI = (function () {
       static get observedAttributes() { return ['note']; }
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
+        attachComponentShadow(this);
         this.shadowRoot.innerHTML =
           '<style>' +
           ':host{display:flex;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box;padding:40px 0;color:#909399;font-size:14px;line-height:1.5;text-align:center}' +
@@ -2739,7 +4529,7 @@ var KniuUI = (function () {
     if (!documentRef) return;
 
     // 现代表情集（参考 KindEditor emoticons 功能设计，使用 Unicode 表情替代旧版 gif 图标）
-    var EMOJIS = ['😀','😄','😁','😆','😅','🤣','😂','🙂','😉','😊','😍','😘','😎','🤔','🤨','😐','😴','😭','😡','👍','👎','👌','✌️','🤝','👏','💪','🙏','👀','💡','🔥','⭐','✨','🎉','❤️','💔','💯','✅','❌','⚠️','❓','❗','💬','📌','📎','🔗','🚀','📝','📅','📈','📊','☕','🍀','🌟','🎯','🏆','💻','📱','🌈','🍻'];
+    var EMOJIS = ['😀', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😉', '😊', '😍', '😘', '😎', '🤔', '🤨', '😐', '😴', '😭', '😡', '👍', '👎', '👌', '✌️', '🤝', '👏', '💪', '🙏', '👀', '💡', '🔥', '⭐', '✨', '🎉', '❤️', '💔', '💯', '✅', '❌', '⚠️', '❓', '❗', '💬', '📌', '📎', '🔗', '🚀', '📝', '📅', '📈', '📊', '☕', '🍀', '🌟', '🎯', '🏆', '💻', '📱', '🌈', '🍻'];
 
     // 最大化 / 还原 图标（viewBox 16x16）。必须放在 EDITOR_TOOLBAR_ITEMS 之前，
     // 否则对象字面量内 + EDITOR_ICON_MAXIMIZE + 拼接时变量未赋值，得到字符串 "undefined"。
@@ -2783,7 +4573,7 @@ var KniuUI = (function () {
       'table': '<button type="button" class="kniu_sys_editor_btn" data-action="table" title="表格"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg></button>',
       'fontname': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_fontname" data-action="fontname" title="字体" aria-label="选择字体"><span class="kniu_sys_editor_font_icon">F</span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
       'fontsize': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_fontsize" data-action="fontsize" title="字号" aria-label="选择字号"><span class="kniu_sys_editor_size_icon"><small>T</small>T</span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
-      'forecolor': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="forecolor" title="文字颜色" aria-label="文字颜色"><span class="kniu_sys_editor_color_letter">A</span><span class="kniu_sys_editor_color_mark" style="background:#409eff"></span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+      'forecolor': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="forecolor" title="文字颜色" aria-label="文字颜色"><span class="kniu_sys_editor_color_letter">A</span><span class="kniu_sys_editor_color_mark" style="background-color:#409eff"></span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
       'hilitecolor': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="hilitecolor" title="文字背景" aria-label="文字背景"><span class="kniu_sys_editor_color_letter kniu_sys_editor_color_letter_bg">A</span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
       'link': '<button type="button" class="kniu_sys_editor_btn" data-action="link" title="链接"><svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M715.648 625.152 670.4 579.904l90.496-90.56c75.008-74.944 85.12-186.368 22.656-248.896-62.528-62.464-173.952-52.352-248.96 22.656L444.16 353.6l-45.248-45.248 90.496-90.496c100.032-99.968 251.968-110.08 339.456-22.656 87.488 87.488 77.312 239.424-22.656 339.456l-90.496 90.496zm-90.496 90.496-90.496 90.496C434.624 906.112 282.688 916.224 195.2 828.8c-87.488-87.488-77.312-239.424 22.656-339.456l90.496-90.496 45.248 45.248-90.496 90.56c-75.008 74.944-85.12 186.368-22.656 248.896 62.528 62.464 173.952 52.352 248.96-22.656l90.496-90.496zm0-362.048 45.248 45.248L398.848 670.4 353.6 625.152z"/></svg></button>',
       'image': '<button type="button" class="kniu_sys_editor_btn" data-action="image" title="插入图片" aria-label="插入图片"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m4 18 5-5 3 3 3-4 5 6"/></svg></button>',
@@ -2820,28 +4610,28 @@ var KniuUI = (function () {
       static get observedAttributes() { return ['name', 'placeholder', 'readonly', 'disabled', 'toolbar']; }
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
+        attachComponentShadow(this);
         this.shadowRoot.innerHTML = [
           '<style>',
           ':host{display:block;width:100%}',
           '.kniu_sys_editor_group{display:flex;width:100%}',
-          '.kniu_sys_editor_affix{display:none;align-items:center;justify-content:center;align-self:flex-start;flex:none;padding:0 20px;border:1px solid #dcdfe6;background:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}',
+          '.kniu_sys_editor_affix{display:none;align-items:center;justify-content:center;align-self:flex-start;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}',
           '.kniu_sys_editor_group[data-has-prepend="true"] .kniu_sys_editor_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}',
-          '.kniu_sys_editor_main{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;border:1px solid #dcdfe6;border-radius:4px;background:#fff;overflow:hidden}',
+          '.kniu_sys_editor_main{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;overflow:hidden}',
           '.kniu_sys_editor_group[data-has-prepend="true"] .kniu_sys_editor_main{border-radius:0 4px 4px 4px}',
-          '.kniu_sys_editor_toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:6px 8px;border-bottom:1px solid #ebeef5;background:#f5f7fa}',
-          '.kniu_sys_editor_btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:30px;padding:0;border:0;border-radius:4px;background:transparent;color:#606266;font-size:14px;font-weight:600;line-height:1;cursor:pointer;transition:background .15s,color .15s;flex:none;overflow:hidden}',
+          '.kniu_sys_editor_toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:6px 8px;border-bottom:1px solid #ebeef5;background-color:#f5f7fa}',
+          '.kniu_sys_editor_btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:30px;padding:0;border:0;border-radius:4px;background-color:transparent;color:#606266;font-size:14px;font-weight:600;line-height:1;cursor:pointer;transition:background-color .15s,color .15s;flex:none;overflow:hidden}',
           // 工具栏内统一图标视觉占位：SVG 强制 18×18，文字图标（<b>/<i>/<u>/<s>/裸文本）至少 18×18，flex 居中
           '.kniu_sys_editor_btn > svg{width:17px;height:17px;display:block;flex:none}',
           '.kniu_sys_editor_btn[data-cmd="removeFormat"] > svg{width:20px;height:20px}',
           '.kniu_sys_editor_btn > *{font-weight:600}',
           '.kniu_sys_editor_btn > b,.kniu_sys_editor_btn > i,.kniu_sys_editor_btn > u,.kniu_sys_editor_btn > s{display:inline-flex;align-items:center;justify-content:center;height:17px;min-width:17px;min-height:17px;font-size:14px;line-height:1;font-weight:700;text-align:center;letter-spacing:0}',
           '.kniu_sys_editor_btn > :not(svg):not(b):not(i):not(u):not(s){display:inline-flex;align-items:center;justify-content:center;min-width:17px;min-height:17px;font-size:14px;line-height:1;text-align:center}',
-          '.kniu_sys_editor_btn:hover{background:#ecf5ff;color:#409eff}',
-          '.kniu_sys_editor_btn:active{background:#d9ecff}',
-          '.kniu_sys_editor_btn[aria-pressed="true"]{background:#d9ecff;color:#409eff}',
+          '.kniu_sys_editor_btn:hover{background-color:#ecf5ff;color:#409eff}',
+          '.kniu_sys_editor_btn:active{background-color:#d9ecff}',
+          '.kniu_sys_editor_btn[aria-pressed="true"]{background-color:#d9ecff;color:#409eff}',
           '.kniu_sys_editor_btn:disabled{opacity:.5;cursor:not-allowed}',
-          '.kniu_sys_editor_divider{width:1px;height:20px;background:#dcdfe6;margin:5px 3px;flex:none}',
+          '.kniu_sys_editor_divider{width:1px;height:20px;background-color:#dcdfe6;margin:5px 3px;flex:none}',
           '.kniu_sys_editor_content{min-height:200px;max-height:400px;padding:10px 14px;outline:0;overflow-y:auto;font:14px/1.7 Arial,"Microsoft YaHei",sans-serif;color:#303133;word-break:break-word;cursor:text}',
           '.kniu_sys_editor_content:empty::before{content:attr(data-placeholder);color:#c0c4cc;pointer-events:none}',
           '.kniu_sys_editor_content h1{font-size:1.6em;margin:.5em 0}',
@@ -2849,18 +4639,18 @@ var KniuUI = (function () {
           '.kniu_sys_editor_content h3{font-size:1.2em;margin:.5em 0}',
           '.kniu_sys_editor_content p{margin:.3em 0}',
           '.kniu_sys_editor_content ul,.kniu_sys_editor_content ol{padding-left:2em;margin:.3em 0}',
-          '.kniu_sys_editor_content blockquote{margin:.5em 0;padding:.5em 1em;border-left:4px solid #dcdfe6;background:#f9fafc;color:#606266}',
-          '.kniu_sys_editor_content code{background:#f0f0f0;padding:2px 4px;border-radius:3px;font-family:Consolas,Monaco,monospace;font-size:.9em}',
-          '.kniu_sys_editor_content pre{margin:.5em 0;padding:.6em 1em;background:#f6f8fa;border-radius:4px;overflow-x:auto;font-family:Consolas,Monaco,monospace;font-size:.9em;line-height:1.5}',
-          '.kniu_sys_editor_content pre code{background:transparent;padding:0}',
+          '.kniu_sys_editor_content blockquote{margin:.5em 0;padding:.5em 1em;border-left:4px solid #dcdfe6;background-color:#f9fafc;color:#606266}',
+          '.kniu_sys_editor_content code{background-color:#f0f0f0;padding:2px 4px;border-radius:3px;font-family:Consolas,Monaco,monospace;font-size:.9em}',
+          '.kniu_sys_editor_content pre{margin:.5em 0;padding:.6em 1em;background-color:#f6f8fa;border-radius:4px;overflow-x:auto;font-family:Consolas,Monaco,monospace;font-size:.9em;line-height:1.5}',
+          '.kniu_sys_editor_content pre code{background-color:transparent;padding:0}',
           '.kniu_sys_editor_content a{color:#409eff;text-decoration:underline}',
           '.kniu_sys_editor_content img,.kniu_sys_editor_content video{display:block;max-width:100%;height:auto;margin:.5em 0}',
           '.kniu_sys_editor_content audio{display:block;max-width:100%;margin:.5em 0}',
           '.kniu_sys_editor_content .kniu_sys_editor_media_selected{outline:0;filter:brightness(.62) sepia(.65) saturate(5) hue-rotate(175deg);transition:filter .15s ease}',
-          '.kniu_sys_editor_source{display:none;min-height:200px;max-height:400px;width:100%;padding:10px 14px;border:0;outline:0;resize:vertical;font:13px/1.6 Consolas,Monaco,monospace;color:#303133;box-sizing:border-box;background:#fbfbfc}',
+          '.kniu_sys_editor_source{display:none;min-height:200px;max-height:400px;width:100%;padding:10px 14px;border:0;outline:0;resize:vertical;font:13px/1.6 Consolas,Monaco,monospace;color:#303133;box-sizing:border-box;background-color:#fbfbfc}',
           '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_content{display:none}',
           '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source{display:block}',
-          '.kniu_sys_editor_select{height:28px;max-width:120px;padding:0 4px;border:1px solid #dcdfe6;border-radius:3px;background:#fff;color:#606266;font-size:12px;cursor:pointer;flex:none;box-sizing:border-box}',
+          '.kniu_sys_editor_select{height:28px;max-width:120px;padding:0 4px;border:1px solid #dcdfe6;border-radius:3px;background-color:#fff;color:#606266;font-size:12px;cursor:pointer;flex:none;box-sizing:border-box}',
           '.kniu_sys_editor_fontname{position:relative;width:36px;padding-right:8px}',
           '.kniu_sys_editor_font_icon{font-family:Georgia,serif;font-size:15px!important;font-style:italic;font-weight:700}',
           '.kniu_sys_editor_fontsize{position:relative;width:36px;padding-right:8px}',
@@ -2868,11 +4658,11 @@ var KniuUI = (function () {
           '.kniu_sys_editor_size_icon small{font-size:9px;line-height:1.2}',
           '.kniu_sys_editor_color_btn{position:relative;width:36px;padding-right:8px}',
           '.kniu_sys_editor_color_letter{font-family:Arial,sans-serif;font-size:15px!important;font-weight:500;color:#409eff}',
-          '.kniu_sys_editor_color_letter_bg{padding:2px 3px;border-radius:2px;background:#ffd900;color:#222;font-size:12px!important;font-weight:700}',
+          '.kniu_sys_editor_color_letter_bg{padding:2px 3px;border-radius:2px;background-color:#ffd900;color:#222;font-size:12px!important;font-weight:700}',
           '.kniu_sys_editor_color_mark{position:absolute;left:8px;right:10px;bottom:3px;height:2px;min-width:0!important;min-height:0!important}',
           '.kniu_sys_editor_font_arrow{position:absolute;right:3px;bottom:3px;min-width:0!important;min-height:0!important;font-size:8px!important;color:#909399}',
           '.kniu_sys_editor_select:focus{outline:0;border-color:#409eff}',
-          '.kniu_sys_editor_color{width:30px;height:28px;padding:0;border:1px solid #dcdfe6;border-radius:3px;background:#fff;cursor:pointer;flex:none;box-sizing:border-box}',
+          '.kniu_sys_editor_color{width:30px;height:28px;padding:0;border:1px solid #dcdfe6;border-radius:3px;background-color:#fff;cursor:pointer;flex:none;box-sizing:border-box}',
           '.kniu_sys_editor_color::-webkit-color-swatch-wrapper{padding:2px}',
           '.kniu_sys_editor_color::-webkit-color-swatch{border:0;border-radius:2px}',
           '.kniu_sys_editor_content font[size="1"]{font-size:12px}',
@@ -2885,7 +4675,7 @@ var KniuUI = (function () {
           '.kniu_sys_editor_content table{border-collapse:collapse;width:100%;margin:.5em 0}',
           '.kniu_sys_editor_content td,.kniu_sys_editor_content th{border:1px solid #dcdfe6;padding:6px 10px;min-width:40px;height:22px}',
           '.kniu_sys_editor_toolbar{position:static}',
-          '.kniu_sys_editor_popover{position:absolute;top:0;left:0;z-index:30;background:#fff;border:1px solid #ebeef5;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:12px;min-width:210px;max-width:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;box-sizing:border-box}',
+          '.kniu_sys_editor_popover{position:absolute;top:0;left:0;z-index:30;background-color:#fff;border:1px solid #ebeef5;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:12px;min-width:210px;max-width:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;box-sizing:border-box}',
           '.kniu_sys_editor_popover[hidden]{display:none}',
           '.kniu_sys_editor_popover_row{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;color:#606266}',
           '.kniu_sys_editor_popover_row[hidden]{display:none}',
@@ -2899,35 +4689,35 @@ var KniuUI = (function () {
           '.kniu_sys_editor_popover_title{margin-bottom:12px;color:#303133;font-size:15px;font-weight:600}',
           '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row label{width:58px}',
           '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row input{flex:1;width:auto;min-width:0}',
-          '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row input[type="checkbox"]{flex:none;width:auto;height:auto}',
-          '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row select{flex:1;height:28px;padding:0 6px;border:1px solid #dcdfe6;border-radius:4px;background:#fff;color:#606266;font-size:13px;box-sizing:border-box}',
+          '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row input[type="checkbox"]{appearance:none;flex:none;width:14px;height:14px;margin:0;border:1px solid #dcdfe6;border-radius:2px;outline:0;background-color:#fff;background-position:center;background-repeat:no-repeat;background-size:10px 8px;box-sizing:border-box;cursor:pointer}.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row input[type="checkbox"]:checked{border-color:#409eff;background-color:#409eff;background-image:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 12 10\'%3E%3Cpath d=\'M1 5l3 3 7-7\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'/%3E%3C/svg%3E")}.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row input[type="checkbox"]:focus-visible{outline:2px solid rgba(64,158,255,.3);outline-offset:2px}',
+          '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row select{flex:1;height:28px;padding:0 6px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:13px;box-sizing:border-box}',
           '.kniu_sys_editor_popover_actions{display:flex;justify-content:flex-end;gap:8px;margin:2px 0 0}',
-          '.kniu_sys_editor_popover_cancel{height:30px;padding:0 14px;border:1px solid #dcdfe6;border-radius:4px;background:#fff;color:#606266;font-size:13px;cursor:pointer}',
-          '.kniu_sys_editor_popover_delete{height:30px;margin-right:auto;padding:0 14px;border:1px solid #f56c6c;border-radius:4px;background:#fff;color:#f56c6c;font-size:13px;cursor:pointer}',
-          '.kniu_sys_editor_popover_delete:hover{background:#fef0f0}',
+          '.kniu_sys_editor_popover_cancel{height:30px;padding:0 14px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:13px;cursor:pointer}',
+          '.kniu_sys_editor_popover_delete{height:30px;margin-right:auto;padding:0 14px;border:1px solid #f56c6c;border-radius:4px;background-color:#fff;color:#f56c6c;font-size:13px;cursor:pointer}',
+          '.kniu_sys_editor_popover_delete:hover{background-color:#fef0f0}',
           '.kniu_sys_editor_delete_tip{padding:14px 0 20px;color:#606266;font-size:14px;line-height:1.6}',
           '.kniu_sys_editor_popover_error{min-height:18px;margin:-4px 0 6px 66px;color:#f56c6c;font-size:12px}',
-          '.kniu_sys_editor_popover_btn{height:30px;padding:0 14px;border:0;border-radius:4px;background:#409eff;color:#fff;font-size:13px;cursor:pointer}',
-          '.kniu_sys_editor_popover_btn:hover{background:#66b1ff}',
+          '.kniu_sys_editor_popover_btn{height:30px;padding:0 14px;border:0;border-radius:4px;background-color:#409eff;color:#fff;font-size:13px;cursor:pointer}',
+          '.kniu_sys_editor_popover_btn:hover{background-color:#66b1ff}',
           '.kniu_sys_editor_popover_grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;max-height:208px;overflow:auto}',
           '.kniu_sys_editor_font_list{display:flex;flex-direction:column;width:190px;max-width:100%}',
-          '.kniu_sys_editor_font_item{display:flex;align-items:center;width:100%;min-height:32px;padding:5px 10px;border:0;border-radius:4px;background:transparent;color:#303133;font-size:14px;text-align:left;cursor:pointer}',
-          '.kniu_sys_editor_font_item:hover{background:#ecf5ff;color:#409eff}',
+          '.kniu_sys_editor_font_item{display:flex;align-items:center;width:100%;min-height:32px;padding:5px 10px;border:0;border-radius:4px;background-color:transparent;color:#303133;font-size:14px;text-align:left;cursor:pointer}',
+          '.kniu_sys_editor_font_item:hover{background-color:#ecf5ff;color:#409eff}',
           '.kniu_sys_editor_font_item[aria-checked="true"]::before{content:"✓";width:20px;color:#409eff;font-family:Arial,sans-serif}',
           '.kniu_sys_editor_font_item[aria-checked="false"]::before{content:"";width:20px}',
           '.kniu_sys_editor_size_list{display:flex;flex-direction:column;width:130px;max-width:100%}',
-          '.kniu_sys_editor_size_item{display:flex;align-items:center;width:100%;min-height:32px;padding:4px 12px;border:0;border-radius:4px;background:transparent;color:#303133;text-align:left;line-height:1.15;cursor:pointer}',
-          '.kniu_sys_editor_size_item:hover{background:#ecf5ff;color:#409eff}',
+          '.kniu_sys_editor_size_item{display:flex;align-items:center;width:100%;min-height:32px;padding:4px 12px;border:0;border-radius:4px;background-color:transparent;color:#303133;text-align:left;line-height:1.15;cursor:pointer}',
+          '.kniu_sys_editor_size_item:hover{background-color:#ecf5ff;color:#409eff}',
           '.kniu_sys_editor_palette{width:176px}',
-          '.kniu_sys_editor_no_color{display:block;width:100%;height:30px;margin-bottom:8px;border:0;border-radius:4px;background:transparent;color:#606266;font-size:13px;cursor:pointer}',
-          '.kniu_sys_editor_no_color:hover{background:#ecf5ff;color:#409eff}',
+          '.kniu_sys_editor_no_color{display:block;width:100%;height:30px;margin-bottom:8px;border:0;border-radius:4px;background-color:transparent;color:#606266;font-size:13px;cursor:pointer}',
+          '.kniu_sys_editor_no_color:hover{background-color:#ecf5ff;color:#409eff}',
           '.kniu_sys_editor_swatch_grid{display:grid;grid-template-columns:repeat(6,22px);gap:6px}',
           '.kniu_sys_editor_swatch{width:22px;height:22px;border:1px solid transparent;border-radius:2px;cursor:pointer;box-sizing:border-box}',
           '.kniu_sys_editor_swatch:hover{outline:2px solid #409eff;outline-offset:1px}',
-          '.kniu_sys_editor_emoji{display:flex;align-items:center;justify-content:center;height:32px;font-size:18px;border:0;background:transparent;border-radius:6px;cursor:pointer}',
-          '.kniu_sys_editor_emoji:hover{background:#ecf5ff}',
-          ':host([data-preview="true"]) .kniu_sys_editor_content{background:#fafafa;cursor:default}',
-          ':host([data-maximized="true"]){position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;width:auto;height:auto;background:#fff}',
+          '.kniu_sys_editor_emoji{display:flex;align-items:center;justify-content:center;height:32px;font-size:18px;border:0;background-color:transparent;border-radius:6px;cursor:pointer}',
+          '.kniu_sys_editor_emoji:hover{background-color:#ecf5ff}',
+          ':host([data-preview="true"]) .kniu_sys_editor_content{background-color:#fafafa;cursor:default}',
+          ':host([data-maximized="true"]){position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;width:auto;height:auto;background-color:#fff}',
           ':host([data-maximized="true"]) .kniu_sys_editor_group{height:100%;flex-direction:column}',
           ':host([data-maximized="true"]) .kniu_sys_editor_main{flex:1;max-height:none;border-radius:0;display:flex;flex-direction:column}',
           ':host([data-maximized="true"]) .kniu_sys_editor_content,:host([data-maximized="true"]) .kniu_sys_editor_source{flex:1;min-height:0;max-height:none}',
@@ -2993,7 +4783,7 @@ var KniuUI = (function () {
           // 字体
           '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_fontname" data-action="fontname" title="字体" aria-label="选择字体"><span class="kniu_sys_editor_font_icon">F</span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
           '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_fontsize" data-action="fontsize" title="字号" aria-label="选择字号"><span class="kniu_sys_editor_size_icon"><small>T</small>T</span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
-          '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="forecolor" title="文字颜色" aria-label="文字颜色"><span class="kniu_sys_editor_color_letter">A</span><span class="kniu_sys_editor_color_mark" style="background:#409eff"></span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+          '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="forecolor" title="文字颜色" aria-label="文字颜色"><span class="kniu_sys_editor_color_letter">A</span><span class="kniu_sys_editor_color_mark" style="background-color:#409eff"></span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
           '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="hilitecolor" title="文字背景" aria-label="文字背景"><span class="kniu_sys_editor_color_letter kniu_sys_editor_color_letter_bg">A</span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
           '<span class="kniu_sys_editor_divider"></span>',
           // 插入
@@ -3113,21 +4903,21 @@ var KniuUI = (function () {
           }
         }
         html.push('<div class="kniu_sys_editor_popover" hidden></div>');
-this._toolbar.innerHTML = html.join('');
-var linkBtn = this._toolbar.querySelector('[data-action="link"]');
-if (linkBtn) linkBtn.innerHTML = EDITOR_ICON_UNLINK;
-var clearFormatBtn = this._toolbar.querySelector('[data-cmd="removeFormat"]');
-if (clearFormatBtn) clearFormatBtn.innerHTML = EDITOR_ICON_CLEAR_FORMAT;
-// 兜底：若最大化按钮缺失 SVG（极端情况下变量未定义或缓存了旧产物），补回 MAXIMIZE 图标
-var mb = this._toolbar.querySelector('[data-action="maximize"]');
-if (mb && !mb.querySelector('svg')) mb.innerHTML = EDITOR_ICON_MAXIMIZE;
-if (this._maximized) {
-  var maxBtn = this._toolbar.querySelector('[data-action="maximize"]');
-  if (maxBtn) {
-    maxBtn.setAttribute('aria-pressed', 'true');
-    maxBtn.innerHTML = EDITOR_ICON_RESTORE;
-  }
-}
+        this._toolbar.innerHTML = html.join('');
+        var linkBtn = this._toolbar.querySelector('[data-action="link"]');
+        if (linkBtn) linkBtn.innerHTML = EDITOR_ICON_UNLINK;
+        var clearFormatBtn = this._toolbar.querySelector('[data-cmd="removeFormat"]');
+        if (clearFormatBtn) clearFormatBtn.innerHTML = EDITOR_ICON_CLEAR_FORMAT;
+        // 兜底：若最大化按钮缺失 SVG（极端情况下变量未定义或缓存了旧产物），补回 MAXIMIZE 图标
+        var mb = this._toolbar.querySelector('[data-action="maximize"]');
+        if (mb && !mb.querySelector('svg')) mb.innerHTML = EDITOR_ICON_MAXIMIZE;
+        if (this._maximized) {
+          var maxBtn = this._toolbar.querySelector('[data-action="maximize"]');
+          if (maxBtn) {
+            maxBtn.setAttribute('aria-pressed', 'true');
+            maxBtn.innerHTML = EDITOR_ICON_RESTORE;
+          }
+        }
         var self = this;
         this._toolbar.querySelectorAll('.kniu_sys_editor_btn').forEach(function (btn) {
           btn.addEventListener('pointerdown', function (e) { e.preventDefault(); });
@@ -3528,7 +5318,7 @@ if (this._maximized) {
           var node = sel.anchorNode;
           if (!node) return '';
           if (node.nodeType === 3) node = node.parentNode;
-          var blockTags = { pre:1, p:1, h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, blockquote:1, div:1, li:1, dd:1, dt:1, address:1, article:1, section:1, aside:1, figure:1, figcaption:1 };
+          var blockTags = { pre: 1, p: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1, blockquote: 1, div: 1, li: 1, dd: 1, dt: 1, address: 1, article: 1, section: 1, aside: 1, figure: 1, figcaption: 1 };
           while (node && node !== this._editor) {
             var tag = (node.tagName || '').toLowerCase();
             if (blockTags[tag]) return tag;
@@ -3638,12 +5428,12 @@ if (this._maximized) {
         }
         this._popover.innerHTML = action === 'table' ? this._tablePopoverHTML()
           : action === 'link' ? this._linkPopoverHTML()
-          : action === 'image' ? this._imagePopoverHTML()
-          : action === 'media' ? this._mediaPopoverHTML()
-          : action === 'fontname' ? this._fontPopoverHTML()
-          : action === 'fontsize' ? this._fontSizePopoverHTML()
-          : action === 'forecolor' || action === 'hilitecolor' ? this._colorPopoverHTML()
-          : this._emojiPopoverHTML();
+            : action === 'image' ? this._imagePopoverHTML()
+              : action === 'media' ? this._mediaPopoverHTML()
+                : action === 'fontname' ? this._fontPopoverHTML()
+                  : action === 'fontsize' ? this._fontSizePopoverHTML()
+                    : action === 'forecolor' || action === 'hilitecolor' ? this._colorPopoverHTML()
+                      : this._emojiPopoverHTML();
         this._popover.classList.toggle('kniu_sys_editor_popover_link', action === 'link' || action === 'image' || action === 'media');
         this._popover.hidden = false;
         this._positionPopover(btn);
@@ -3717,8 +5507,8 @@ if (this._maximized) {
 
       _tablePopoverHTML() {
         return '<div class="kniu_sys_editor_popover_row"><label>行数</label><input type="number" class="pop_rows" min="1" max="20" value="3"></div>' +
-               '<div class="kniu_sys_editor_popover_row"><label>列数</label><input type="number" class="pop_cols" min="1" max="20" value="3"></div>' +
-               '<div class="kniu_sys_editor_popover_row"><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="table">插入表格</button></div>';
+          '<div class="kniu_sys_editor_popover_row"><label>列数</label><input type="number" class="pop_cols" min="1" max="20" value="3"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="table">插入表格</button></div>';
       }
 
       _emojiPopoverHTML() {
@@ -3730,31 +5520,31 @@ if (this._maximized) {
       _linkPopoverHTML() {
         var selectedText = this._linkRange ? this._linkRange.toString() : '';
         return '<div class="kniu_sys_editor_popover_title">插入链接</div>' +
-               '<div class="kniu_sys_editor_popover_row"><label>链接地址</label><input type="url" class="pop_link_url" value="https://" autocomplete="off" placeholder="https://example.com"></div>' +
-               (selectedText ? '' : '<div class="kniu_sys_editor_popover_row"><label>链接文字</label><input type="text" class="pop_link_text" value="链接" autocomplete="off" placeholder="请输入链接文字"></div>') +
-               '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
-               '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">取消</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="link">确定</button></div>';
+          '<div class="kniu_sys_editor_popover_row"><label>链接地址</label><input type="url" class="pop_link_url" value="https://" autocomplete="off" placeholder="https://example.com"></div>' +
+          (selectedText ? '' : '<div class="kniu_sys_editor_popover_row"><label>链接文字</label><input type="text" class="pop_link_text" value="链接" autocomplete="off" placeholder="请输入链接文字"></div>') +
+          '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
+          '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">取消</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="link">确定</button></div>';
       }
 
       _imagePopoverHTML() {
         return '<div class="kniu_sys_editor_popover_title">插入图片</div>' +
-               '<div class="kniu_sys_editor_popover_row"><label>来源类型</label><select class="pop_image_source"><option value="cloud">云媒体</option><option value="local">本地上传</option></select></div>' +
-               '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>图片地址</label><input type="url" class="pop_image_url" autocomplete="off" placeholder="https://example.com/image.jpg"></div>' +
-               '<div class="kniu_sys_editor_popover_row pop_local_row" hidden><label>本地图片</label><input type="file" class="pop_image_file" accept="image/jpeg,image/png,image/gif,image/webp"></div>' +
-               '<div class="kniu_sys_editor_popover_row"><label>媒体名称</label><input type="text" class="pop_image_name" autocomplete="off" placeholder="请输入媒体名称"></div>' +
-               '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
-               '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">取消</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="image">确定</button></div>';
+          '<div class="kniu_sys_editor_popover_row"><label>来源类型</label><select class="pop_image_source"><option value="cloud">云媒体</option><option value="local">本地上传</option></select></div>' +
+          '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>图片地址</label><input type="url" class="pop_image_url" autocomplete="off" placeholder="https://example.com/image.jpg"></div>' +
+          '<div class="kniu_sys_editor_popover_row pop_local_row" hidden><label>本地图片</label><input type="file" class="pop_image_file" accept="image/jpeg,image/png,image/gif,image/webp"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>媒体名称</label><input type="text" class="pop_image_name" autocomplete="off" placeholder="请输入媒体名称"></div>' +
+          '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
+          '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">取消</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="image">确定</button></div>';
       }
 
       _mediaPopoverHTML() {
         return '<div class="kniu_sys_editor_popover_title">插入音视频</div>' +
-               '<div class="kniu_sys_editor_popover_row"><label>媒体类型</label><select class="pop_media_type"><option value="video">视频</option><option value="audio">音频</option></select></div>' +
-               '<div class="kniu_sys_editor_popover_row"><label>来源类型</label><select class="pop_media_source"><option value="cloud">云媒体</option><option value="local">本地上传</option></select></div>' +
-               '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>媒体地址</label><input type="url" class="pop_media_url" autocomplete="off" placeholder="https://example.com/media.mp4"></div>' +
-               '<div class="kniu_sys_editor_popover_row pop_local_row" hidden><label>本地文件</label><input type="file" class="pop_media_file" accept="video/mp4,video/webm,video/ogg,video/quicktime"></div>' +
-               '<div class="kniu_sys_editor_popover_row"><label>媒体名称</label><input type="text" class="pop_media_name" autocomplete="off" placeholder="请输入媒体名称"></div>' +
-               '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
-               '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">取消</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="media">确定</button></div>';
+          '<div class="kniu_sys_editor_popover_row"><label>媒体类型</label><select class="pop_media_type"><option value="video">视频</option><option value="audio">音频</option></select></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>来源类型</label><select class="pop_media_source"><option value="cloud">云媒体</option><option value="local">本地上传</option></select></div>' +
+          '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>媒体地址</label><input type="url" class="pop_media_url" autocomplete="off" placeholder="https://example.com/media.mp4"></div>' +
+          '<div class="kniu_sys_editor_popover_row pop_local_row" hidden><label>本地文件</label><input type="file" class="pop_media_file" accept="video/mp4,video/webm,video/ogg,video/quicktime"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>媒体名称</label><input type="text" class="pop_media_name" autocomplete="off" placeholder="请输入媒体名称"></div>' +
+          '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
+          '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">取消</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="media">确定</button></div>';
       }
 
       _openMediaSizeDialog(media) {
@@ -3770,7 +5560,7 @@ if (this._maximized) {
         var name = this._escapeEditorAttribute(media.getAttribute('data-media-name') || '');
         var accept = media.tagName === 'IMG' ? 'image/jpeg,image/png,image/gif,image/webp'
           : media.tagName === 'AUDIO' ? 'audio/mpeg,audio/ogg,audio/wav,audio/mp4'
-          : 'video/mp4,video/webm,video/ogg,video/quicktime';
+            : 'video/mp4,video/webm,video/ogg,video/quicktime';
         this._popover.innerHTML = '<div class="kniu_sys_editor_popover_title">编辑' + label + '</div>' +
           '<div class="kniu_sys_editor_popover_row"><label>来源类型</label><select class="pop_edit_source"><option value="cloud">云媒体</option><option value="local">本地上传</option></select></div>' +
           '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>媒体地址</label><input type="url" class="pop_edit_url" value="' + source + '" autocomplete="off" placeholder="请输入媒体地址"></div>' +
@@ -4068,7 +5858,7 @@ if (this._maximized) {
         ];
         return '<div class="kniu_sys_editor_palette"><button type="button" class="kniu_sys_editor_no_color" data-editor-color="">无颜色</button>' +
           '<div class="kniu_sys_editor_swatch_grid">' + colors.map(function (color) {
-            return '<button type="button" class="kniu_sys_editor_swatch" data-editor-color="' + color + '" title="' + color + '" aria-label="' + color + '" style="background:' + color + '"></button>';
+            return '<button type="button" class="kniu_sys_editor_swatch" data-editor-color="' + color + '" title="' + color + '" aria-label="' + color + '" style="background-color:' + color + '"></button>';
           }).join('') + '</div></div>';
       }
 
@@ -4107,8 +5897,8 @@ if (this._maximized) {
         if (toolbarBtn) {
           var mark = toolbarBtn.querySelector('.kniu_sys_editor_color_mark');
           var letter = toolbarBtn.querySelector('.kniu_sys_editor_color_letter_bg');
-          if (mark) mark.style.background = color || '#409eff';
-          if (letter) letter.style.background = color || '#ffd900';
+          if (mark) mark.style.backgroundColor = color || '#409eff';
+          if (letter) letter.style.backgroundColor = color || '#ffd900';
         }
         this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         this._syncToolbarState();
@@ -4322,10 +6112,10 @@ if (this._maximized) {
 
     if (!customElements.get('kniu-navbar-cell')) {
       class KniuNavbarCell extends HTMLElement {
-        static get observedAttributes() { return ['href', 'active', 'disabled', 'side']; }
+        static get observedAttributes() { return ['href', 'active', 'disabled', 'side', 'level']; }
         constructor() {
           super();
-          this.attachShadow({ mode: 'open' });
+          attachComponentShadow(this);
           this.shadowRoot.innerHTML = `
             <style>
               :host{display:block;min-width:0}
@@ -4335,7 +6125,7 @@ if (this._maximized) {
               :host([side]){width:100%}
               :host([side]) a{gap:8px;min-height:50px;width:100%;padding:0 12px;border-radius:11px;box-sizing:border-box;color:#9ca5bf}
               :host([side]) a:hover,:host([side][active]) a{background-color:#252b42;color:#fff}
-              @media(max-width:720px){a{width:100%;padding:0 12px;box-sizing:border-box}}
+              @media(max-width:720px){:host(:not([side])){width:100%;border-bottom:1px solid #e5e7eb}:host(:not([side])) a{width:100%;min-height:50px;padding:0 16px 0 calc(16px + var(--kniu-navbar-level,0) * 16px);border-radius:0;box-sizing:border-box}}
             </style>
             <a part="link"><slot></slot></a>`;
           this._link = this.shadowRoot.querySelector('a');
@@ -4354,20 +6144,32 @@ if (this._maximized) {
 
     if (!customElements.get('kniu-sub-navbar')) {
       class KniuSubNavbar extends HTMLElement {
+        static get observedAttributes() { return ['active', 'level']; }
         constructor() {
           super();
-          this.attachShadow({ mode: 'open' });
+          attachComponentShadow(this);
           this.shadowRoot.innerHTML = `
             <style>
               :host{position:relative;display:block}
               details{position:relative}
               summary{display:flex;align-items:center;min-height:44px;padding:0 18px;border-radius:8px;color:#4b5563;cursor:pointer;list-style:none;white-space:nowrap}
               summary::-webkit-details-marker{display:none}
-              summary::after{content:'⌄';margin-left:8px;font-size:12px}
-              .panel{position:absolute;top:100%;left:0;z-index:20;min-width:180px;padding:8px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;box-shadow:0 12px 30px rgba(15,23,42,.12)}
-              @media(max-width:720px){summary{padding:0 12px}.panel{position:static;border:0;padding:0 0 0 12px;box-shadow:none}}
+              summary::after{content:'⌄';margin-left:auto;padding-left:8px;font-size:12px;transition:transform .2s}
+              details[open]>summary::after{transform:rotate(180deg)}
+              summary:hover,:host([active])>details>summary{background-color:#f1f5f9;color:#111827}
+              .panel{position:absolute;top:100%;left:0;z-index:20;min-width:180px;padding:8px;border:1px solid #e5e7eb;border-radius:10px;background-color:#fff;box-shadow:0 12px 30px rgba(15,23,42,.12)}
+              :host([level="2"]) .panel,:host([level="3"]) .panel{top:0;left:100%}
+              @media(max-width:720px){:host{width:100%;border-bottom:1px solid #e5e7eb}summary{min-height:50px;padding:0 16px 0 calc(16px + (var(--kniu-navbar-level,1) - 1) * 16px);border-radius:0}.panel,:host([level="2"]) .panel,:host([level="3"]) .panel{position:static;min-width:0;padding:0;border:0;border-radius:0;background-color:#fff;box-shadow:none}}
             </style>
             <details><summary><slot name="title">菜单</slot></summary><div class="panel"><slot></slot></div></details>`;
+          this._details = this.shadowRoot.querySelector('details');
+        }
+        connectedCallback() { this._sync(); }
+        attributeChangedCallback() { this._sync(); }
+        _sync() {
+          const level = Math.max(1, Number(this.getAttribute('level')) || 1);
+          this.style.setProperty('--kniu-navbar-level', String(level));
+          if (this.hasAttribute('active')) this._details.open = true;
         }
       }
       customElements.define('kniu-sub-navbar', KniuSubNavbar);
@@ -4375,10 +6177,10 @@ if (this._maximized) {
 
     if (!customElements.get('kniu-navbar')) {
       class KniuNavbar extends HTMLElement {
-        static get observedAttributes() { return ['brand', 'home', 'active', 'type']; }
+        static get observedAttributes() { return ['brand', 'home', 'active', 'type', 'open']; }
         constructor() {
           super();
-          this.attachShadow({ mode: 'open' });
+          attachComponentShadow(this);
           this.shadowRoot.innerHTML = `
             <style>
               :host{display:block;width:100%;background-color:#fff;color:#111827}
@@ -4386,7 +6188,13 @@ if (this._maximized) {
               .brand{display:flex;align-items:center;overflow:hidden;color:#111827;text-decoration:none;font-size:clamp(22px,3vw,30px);line-height:1.3;text-overflow:ellipsis;white-space:nowrap}
               .brand-label{display:block}
               ::slotted([slot="brand"]){display:block;max-width:min(220px,40vw);max-height:48px}
-              .toggle{display:none;align-items:center;justify-content:center;width:44px;height:44px;border:0;border-radius:8px;background-color:transparent;color:#111827;font-size:25px;cursor:pointer}
+              .toggle{display:none;align-items:center;justify-content:center;width:44px;height:44px;border:0;border-radius:8px;background-color:transparent;color:#111827;cursor:pointer}
+              .toggle-icon{position:relative;display:block;width:24px;height:18px}
+              .toggle-icon i{position:absolute;left:0;display:block;width:24px;height:2px;border-radius:2px;background-color:currentColor;transition:top .28s ease,transform .28s ease,opacity .2s ease}
+              .toggle-icon i:nth-child(1){top:0}.toggle-icon i:nth-child(2){top:8px}.toggle-icon i:nth-child(3){top:16px}
+              :host([open]:not([closing])) .toggle-icon i:nth-child(1){top:8px;transform:rotate(45deg)}
+              :host([open]:not([closing])) .toggle-icon i:nth-child(2){opacity:0;transform:scaleX(0)}
+              :host([open]:not([closing])) .toggle-icon i:nth-child(3){top:8px;transform:rotate(-45deg)}
               .menu{display:flex;align-items:center;justify-content:flex-end;gap:4px;min-width:0}
               :host([type="side"]){color:#eef2ff;background-color:transparent}
               :host([type="side"]) .bar{display:block;max-width:none;min-height:0;padding:0}
@@ -4398,13 +6206,17 @@ if (this._maximized) {
               @media(max-width:720px){
                 .bar{position:relative;min-height:60px;padding:0 16px;flex-wrap:wrap;gap:0}
                 .brand{font-size:22px}.toggle{display:flex}
-                .menu{display:none;flex:0 0 100%;align-items:stretch;padding:8px 0 14px}
-                :host([open]) .menu{display:flex;flex-direction:column}
+                .menu{display:none;flex:0 0 100%;align-items:stretch;padding:0}
+                :host([open]:not([type="side"])) .menu{position:fixed;top:60px;right:0;bottom:0;left:0;z-index:1000;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:0;width:auto;margin:0;padding:0;overflow-y:auto;background-color:#fff;animation:kniu_navbar_mobile_slide_in .28s ease-out both}
+                :host([closing]:not([type="side"])) .menu{animation-name:kniu_navbar_mobile_slide_out;animation-timing-function:ease-in}
+                @keyframes kniu_navbar_mobile_slide_in{from{transform:translateX(-100%)}to{transform:translateX(0)}}
+                @keyframes kniu_navbar_mobile_slide_out{from{transform:translateX(0)}to{transform:translateX(-100%)}}
+                @media(prefers-reduced-motion:reduce){.toggle-icon i{transition:none}:host([open]:not([type="side"])) .menu{animation:none}}
               }
             </style>
             <nav class="bar" aria-label="主导航">
               <a class="brand"><slot name="brand"><span class="brand-label"></span></slot></a>
-              <button class="toggle" type="button" aria-label="展开导航" aria-expanded="false">☰</button>
+              <button class="toggle" type="button" aria-label="展开导航" aria-expanded="false"><span class="toggle-icon" aria-hidden="true"><i></i><i></i><i></i></span></button>
               <div class="menu"><slot name="append"></slot><slot></slot></div>
             </nav>`;
           this._brand = this.shadowRoot.querySelector('.brand');
@@ -4412,22 +6224,34 @@ if (this._maximized) {
           this._toggle = this.shadowRoot.querySelector('.toggle');
           this._slots = [...this.shadowRoot.querySelectorAll('slot')];
           this._handleHashChange = this._syncActive.bind(this);
-          this._handleMenuClick = function () { this.removeAttribute('open'); this._syncToggle(); }.bind(this);
+          this._handleToggleClick = function (event) {
+            event.stopPropagation();
+            if (this.hasAttribute('open')) this._closeMenu();
+            else this._openMenu();
+          }.bind(this);
+          this._handleMenuClick = function (event) {
+            if (event.composedPath?.().includes(this._toggle)) return;
+            const isNavigationLink = event.composedPath?.().some(function (node) {
+              return node?.tagName === 'KNIU-NAVBAR-CELL';
+            });
+            if (!isNavigationLink) return;
+            this._closeMenu();
+          }.bind(this);
         }
         connectedCallback() {
-          this._toggle.addEventListener('click', function () {
-            this.toggleAttribute('open');
-            this._syncToggle();
-          }.bind(this));
+          this._toggle.addEventListener('click', this._handleToggleClick);
           this._slots.forEach(function (slot) { slot.addEventListener('slotchange', this._handleHashChange); }, this);
           this.addEventListener('click', this._handleMenuClick);
           globalThis.addEventListener?.('hashchange', this._handleHashChange);
           this._sync();
         }
         disconnectedCallback() {
+          this._toggle.removeEventListener('click', this._handleToggleClick);
           globalThis.removeEventListener?.('hashchange', this._handleHashChange);
           this._slots.forEach(function (slot) { slot.removeEventListener('slotchange', this._handleHashChange); }, this);
           this.removeEventListener('click', this._handleMenuClick);
+          if (this._closeTimer) globalThis.clearTimeout(this._closeTimer);
+          this._closeTimer = null;
         }
         attributeChangedCallback() { this._sync(); }
         _sync() {
@@ -4438,10 +6262,28 @@ if (this._maximized) {
           this._syncToggle();
         }
         _syncToggle() {
-          const open = this.hasAttribute('open');
+          const open = this.hasAttribute('open') && !this.hasAttribute('closing');
           this._toggle.setAttribute('aria-expanded', String(open));
           this._toggle.setAttribute('aria-label', open ? '收起导航' : '展开导航');
-          this._toggle.textContent = open ? '×' : '☰';
+        }
+        _openMenu() {
+          if (this._closeTimer) globalThis.clearTimeout(this._closeTimer);
+          this._closeTimer = null;
+          this.removeAttribute('closing');
+          this.setAttribute('open', '');
+          this._syncToggle();
+        }
+        _closeMenu() {
+          if (!this.hasAttribute('open') || this.hasAttribute('closing')) return;
+          this.setAttribute('closing', '');
+          this._syncToggle();
+          const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+          this._closeTimer = globalThis.setTimeout(function () {
+            this.removeAttribute('open');
+            this.removeAttribute('closing');
+            this._closeTimer = null;
+            this._syncToggle();
+          }.bind(this), reducedMotion ? 0 : 280);
         }
         _syncActive() {
           const active = this.getAttribute('active') || (globalThis.location?.hash || '#/').replace(/^#/, '').split('?')[0] || '/';
@@ -4449,7 +6291,28 @@ if (this._maximized) {
             const index = cell.getAttribute('index') || cell.getAttribute('href')?.replace(/^#/, '').split('?')[0];
             cell.toggleAttribute('active', index === active);
             cell.toggleAttribute('side', this.getAttribute('type') === 'side');
+            let level = 0;
+            let parent = cell.parentElement?.closest('kniu-sub-navbar');
+            while (parent) {
+              level += 1;
+              parent = parent.parentElement?.closest('kniu-sub-navbar');
+            }
+            level = Math.min(3, level);
+            cell.setAttribute('level', String(level));
+            cell.style.setProperty('--kniu-navbar-level', String(level));
           }, this);
+          this.querySelectorAll('kniu-sub-navbar').forEach(function (subNavbar) {
+            let level = 1;
+            let parent = subNavbar.parentElement?.closest('kniu-sub-navbar');
+            while (parent) {
+              level += 1;
+              parent = parent.parentElement?.closest('kniu-sub-navbar');
+            }
+            level = Math.min(3, level);
+            subNavbar.setAttribute('level', String(level));
+            subNavbar.style.setProperty('--kniu-navbar-level', String(level));
+            subNavbar.toggleAttribute('active', Boolean(subNavbar.querySelector('kniu-navbar-cell[active]')));
+          });
         }
       }
       customElements.define('kniu-navbar', KniuNavbar);
@@ -4462,12 +6325,12 @@ if (this._maximized) {
       static get observedAttributes() { return ['right', 'bottom']; }
       constructor() {
         super();
-        this.attachShadow({ mode: 'open' });
+        attachComponentShadow(this);
         this.shadowRoot.innerHTML = `
           <style>
             :host{display:none;position:fixed;z-index:40;right:min(var(--right,40px),calc(100vw - 56px));bottom:min(var(--bottom,40px),calc(100vh - 56px))}
             :host([visible]){display:block}
-            button{display:grid;place-items:center;width:44px;height:44px;border:1px solid #e5e7eb;border-radius:50%;background:#fff;color:#374151;cursor:pointer;box-shadow:0 8px 24px rgba(15,23,42,.14);transition:transform .2s,box-shadow .2s}
+            button{display:grid;place-items:center;width:44px;height:44px;border:1px solid #e5e7eb;border-radius:50%;background-color:#fff;color:#374151;cursor:pointer;box-shadow:0 8px 24px rgba(15,23,42,.14);transition:transform .2s,box-shadow .2s}
             button svg{width:20px;height:20px;display:block}
             button:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(15,23,42,.18)}
             @media(max-width:720px){:host{right:16px!important;bottom:16px!important}button{width:40px;height:40px}button svg{width:18px;height:18px}}
@@ -4478,8 +6341,8 @@ if (this._maximized) {
               <path fill="currentColor" d="M488.8 344.3 149 701a32 32 0 0 0 0 44.2l.4.3a29.4 29.4 0 0 0 42.7 0l320-335.8 319.8 335.8a29.4 29.4 0 0 0 42.7 0l.4-.3a32 32 0 0 0 0-44.2L535.2 344.3a32 32 0 0 0-46.4 0"/>
             </svg>
           </button>`;
-          this._handleScroll = this._syncVisible.bind(this);
-          this._handleClick = this._scrollTop.bind(this);
+        this._handleScroll = this._syncVisible.bind(this);
+        this._handleClick = this._scrollTop.bind(this);
       }
       connectedCallback() {
         this._target = this._findScrollTarget();
@@ -4549,52 +6412,132 @@ if (this._maximized) {
     });
   }
 
+  function installOptionsOnlyProtocol(tagName) {
+    const Component = customElements.get(tagName);
+    if (!Component || Component.prototype.__kniuOptionsOnly) return;
+    const prototype = Component.prototype;
+    const ownDescriptor = Object.getOwnPropertyDescriptor(prototype, 'options');
+    const originalConnected = prototype.connectedCallback;
+    const originalAttributeChanged = prototype.attributeChangedCallback;
+    const allowedAttribute = function (name) {
+      return ['id', 'class', 'style', 'slot', 'ref', 'role', 'tabindex'].includes(name)
+        || name.startsWith('aria-') || name.startsWith('data-') || name.startsWith('kniu:')
+        || name.startsWith('kniu@') || name.startsWith('#');
+    };
+    const clearCallbacks = function (element) {
+      (element.__kniuOptionListeners || []).forEach(function ([name, handler]) { element.removeEventListener(name, handler); });
+      element.__kniuOptionListeners = [];
+    };
+    const bindCallbacks = function (element, options) {
+      clearCallbacks(element);
+      Object.entries(options || {}).forEach(function ([key, callback]) {
+        if (!/^on[A-Z]/.test(key) || typeof callback !== 'function') return;
+        const eventName = key.slice(2).replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+        const handler = function (event) { return callback(event.detail, event, element); };
+        element.addEventListener(eventName, handler);
+        element.__kniuOptionListeners.push([eventName, handler]);
+      });
+    };
+    const hasWritableProperty = function (element, key) {
+      let target = element;
+      while (target) {
+        const descriptor = Object.getOwnPropertyDescriptor(target, key);
+        if (descriptor) return typeof descriptor.set === 'function' || descriptor.writable === true;
+        target = Object.getPrototypeOf(target);
+      }
+      return false;
+    };
+    const reflectOptions = function (element, options) {
+      (element.__kniuOptionAttributes || []).forEach(function (name) { element.removeAttribute(name); });
+      element.__kniuOptionAttributes = [];
+      Object.entries(options || {}).forEach(function ([key, value]) {
+        if (/^on[A-Z]/.test(key) || value == null || typeof value === 'function' || typeof value === 'object') return;
+        // 有公开 property 的配置必须走 property setter。部分组件（例如 kniu-loading.show）
+        // 不观察同名 attribute，只在 setter 内更新 Shadow DOM；若一律反射 attribute，
+        // 全局 loading 会永远停留在构造时的 data-show="true"，表现为所有路由白屏。
+        if (key !== 'options' && hasWritableProperty(element, key)) {
+          const propertyAttribute = key.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+          // property setter 可能继续反射到 attribute；先登记为 options 内部写入，
+          // 避免 attributeChangedCallback 的旧属性门禁把合法反射拦截并移除。
+          element.__kniuOptionAttributes.push(propertyAttribute);
+          element[key] = value;
+          return;
+        }
+        const name = key.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+        element.__kniuOptionAttributes.push(name);
+        if (value === false) element.removeAttribute(name);
+        else element.setAttribute(name, value === true ? '' : String(value));
+      });
+    };
+    Object.defineProperty(prototype, 'options', {
+      configurable: true,
+      get() { return ownDescriptor?.get ? ownDescriptor.get.call(this) : (this.__kniuOptions || {}); },
+      set(value) {
+        const options = value && typeof value === 'object' ? value : {};
+        this.__kniuOptions = options;
+        bindCallbacks(this, options);
+        if (ownDescriptor?.set) ownDescriptor.set.call(this, options);
+        else reflectOptions(this, options);
+        this._sync?.();
+        this._render?.();
+      }
+    });
+    prototype.connectedCallback = function () {
+      [...this.attributes].forEach((attribute) => {
+        if (!allowedAttribute(attribute.name) && !(this.__kniuOptionAttributes || []).includes(attribute.name)) this.removeAttribute(attribute.name);
+      });
+      if (typeof originalConnected === 'function') originalConnected.call(this);
+    };
+    if (typeof originalAttributeChanged === 'function') {
+      prototype.attributeChangedCallback = function (name, oldValue, newValue) {
+        const internal = (this.__kniuOptionAttributes || []).includes(name);
+        if (!allowedAttribute(name) && !internal) {
+          if (this.isConnected && this.hasAttribute(name)) queueMicrotask(() => this.removeAttribute(name));
+          return;
+        }
+        return originalAttributeChanged.call(this, name, oldValue, newValue);
+      };
+    }
+    prototype.__kniuOptionsOnly = true;
+  }
+
   registerButtonComponent();
   registerSwitchComponent();
   registerModalComponent();
   registerTableComponent();
   registerLoadingComponent();
   registerMsgComponent();
+  registerSelectComponent();
+  registerRadioGroupComponent();
   registerPageComponent();
   registerImageComponent();
   registerInputComponent();
+  registerDatePickerComponent();
   registerFormComponent();
   registerUploadComponent();
   registerIconComponent();
   registerBadgeComponent();
+  registerTagComponent();
+  registerStatusComponent();
   registerEmptyComponent();
   registerEditorComponent();
   registerNavbarComponent();
   registerBacktopComponent();
   registerIcons(KNIU_ICON_SET);
+  [
+    'kniu-btn', 'kniu-switch', 'kniu-modal', 'kniu-table', 'kniu-table-col', 'kniu-loading', 'kniu-msg',
+    'kniu-option', 'kniu-select', 'kniu-radio', 'kniu-radio-group', 'kniu-page', 'kniu-image', 'kniu-input',
+    'kniu-input-group', 'kniu-form-cell', 'kniu-date-picker', 'kniu-form', 'kniu-upload', 'kniu-icon',
+    'kniu-badge', 'kniu-tag', 'kniu-status', 'kniu-empty', 'kniu-editor', 'kniu-navbar-cell',
+    'kniu-sub-navbar', 'kniu-navbar', 'kniu-backtop'
+  ].forEach(installOptionsOnlyProtocol);
 
   return {
     state: state,
     setLoading: setLoading,
     msg: msg,
     usePagination: usePagination,
-    paginationState: paginationState,
-    confirm: confirm,
-    registerButtonComponent: registerButtonComponent,
-    registerSwitchComponent: registerSwitchComponent,
-    registerModalComponent: registerModalComponent,
-    registerTableComponent: registerTableComponent,
-    registerLoadingComponent: registerLoadingComponent,
-    registerMsgComponent: registerMsgComponent,
-    registerPageComponent: registerPageComponent,
-    registerImageComponent: registerImageComponent,
-    registerIconComponent: registerIconComponent,
-    registerBadgeComponent: registerBadgeComponent,
-    registerEmptyComponent: registerEmptyComponent,
-    registerIconGlyph: registerIconGlyph,
-    registerIcons: registerIcons,
-    KNIU_ICON_SET: KNIU_ICON_SET,
-    registerInputComponent: registerInputComponent,
-    registerFormComponent: registerFormComponent,
-    registerUploadComponent: registerUploadComponent,
-    registerEditorComponent: registerEditorComponent,
-    registerNavbarComponent: registerNavbarComponent,
-    registerBacktopComponent: registerBacktopComponent
+    confirm: confirm
   };
 }());
 

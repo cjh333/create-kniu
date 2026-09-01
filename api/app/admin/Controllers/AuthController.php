@@ -54,7 +54,7 @@ class AuthController extends Controller
 
     $result = Db::name('tb_role')
       ->where('name', '=', htmlspecialchars($username, ENT_QUOTES))
-      ->field(['id', 'name', 'password', 'role', 'is_show'])
+      ->field(['id', 'name', 'password', 'role', 'role_auth', 'is_show'])
       ->select();
 
     if (empty($result)) {
@@ -80,12 +80,15 @@ class AuthController extends Controller
         'token' => $token,
         'name' => $userData['name'],
         'role' => $userData['role'] ?? '',
+        'role_auth' => $userData['role_auth'] ?? 0,
         'expire' => time() + $authConfig['TOKEN_EXPIRE']
       ];
 
       $this->json([
         'token' => $token,
-        'name' => $userData['name']
+        'name' => $userData['name'],
+        'role' => $userData['role'] ?? '',
+        'role_auth' => $userData['role_auth'] ?? 0
       ], '登录成功', 1);
       return;
     }

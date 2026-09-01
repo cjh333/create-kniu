@@ -79,6 +79,16 @@ var KniuTemplate = (function () {
     return m ? m[1].trim() : String(raw).trim();
   }
 
+  // kniu-form 的 options 字段对象：{ value, condition, message }。
+  // 判定必须保守（value 只能是标量），否则业务对象（数组、File、DOM 节点）会被误判成字段。
+  function isFormFieldObject(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    if (!('value' in value)) return false;
+    const v = value.value;
+    return v === null || v === undefined
+      || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+  }
+
   const GLOBAL_ATTRS = new Set([
     'id', 'class', 'style', 'title', 'lang', 'dir', 'tabindex', 'hidden', 'role',
     'draggable', 'contenteditable', 'translate', 'spellcheck', 'accesskey',
@@ -136,6 +146,7 @@ var KniuTemplate = (function () {
 
   const SPECIAL_KNIU = new Set([
     'model',
+    'options',
     'rules',
     'for', 'if', 'elseif', 'else',
     'for-index', 'for-item', 'key',
@@ -171,8 +182,8 @@ var KniuTemplate = (function () {
     touchstart: '*', touchend: '*', touchmove: '*', touchcancel: '*',
     animationstart: '*', animationend: '*', animationiteration: '*', transitionend: '*',
     select: '*',
-    input: ['input', 'textarea', 'select', 'button'],
-    change: ['input', 'textarea', 'select', 'button'],
+    input: ['input', 'textarea', 'select', 'button', 'kniu-input', 'kniu-switch', 'kniu-select', 'kniu-radio-group', 'kniu-upload', 'kniu-editor', 'kniu-date-picker'],
+    change: ['input', 'textarea', 'select', 'button', 'kniu-input', 'kniu-switch', 'kniu-select', 'kniu-radio-group', 'kniu-upload', 'kniu-editor', 'kniu-date-picker'],
     submit: ['form', 'kniu-form'],
     reset: ['form'],
     focus: ['input', 'select', 'textarea', 'button', 'a', 'area', 'iframe', 'object'],
@@ -351,6 +362,17 @@ var KniuTemplate = (function () {
     return expressions.size;
   }
 
+  let lazyProxyDepth = 0;
+
+  function lazyReactive(value) {
+    lazyProxyDepth++;
+    try {
+      return reactive(value);
+    } finally {
+      lazyProxyDepth--;
+    }
+  }
+
   function reactive(target) {
     if (!isObject(target)) return target;
     // File/Blob 等浏览器原生对象依赖内部槽，不能被 Proxy 包装；否则
@@ -360,7 +382,6 @@ var KniuTemplate = (function () {
       || (typeof Blob !== 'undefined' && target instanceof Blob)) return target;
     if (target[IS_REACTIVE]) return target;
     if (proxyCache.has(target)) return proxyCache.get(target);
-
     const subscribers = new Map();
     Object.defineProperty(target, SUBS, {
       value: subscribers,
@@ -381,7 +402,15 @@ var KniuTemplate = (function () {
         if (key === SUBS) return subscribers;
         if (key === IS_REACTIVE) return true;
         const val = obj[key];
-        return isObject(val) ? reactive(val) : val;
+        // 惰性代理（get handler 内的 reactive）：绝不触发 auto-bind。
+        // auto-bind 只保留给用户显式调用 reactive()（如 setup 的 state）。
+        // 否则 execute 同步段内（currentScope 非 null）首次访问任意嵌套对象
+        // （如 AUTH.getUser() 的 user、state.articleTable）都会以该对象为 base
+        // 对整棵视图树重新 applyBindings——防御虽挡了 options 写入，但会无条件
+        // 移除 kniu:options / kniu:model 属性，后续正确的 state 绑定无从处理
+        // （2026-09-01 修复：无 kniu_user 时 /system 响应后 setUser 才写入 user，
+        // setup 首访撞上 currentScope，articledetail 表格 options 变 {}）。
+        return isObject(val) ? lazyReactive(val) : val;
       },
       set(obj, key, value) {
         const had = Object.prototype.hasOwnProperty.call(obj, key);
@@ -429,7 +458,7 @@ var KniuTemplate = (function () {
     const proxy = new Proxy(target, handler);
     proxyCache.set(target, proxy);
 
-    if (currentScope && !binding) {
+    if (currentScope && !binding && lazyProxyDepth === 0) {
       binding = true;
       try {
         const { dispose } = bind(currentScope, proxy);
@@ -510,7 +539,7 @@ var KniuTemplate = (function () {
     _kniuLoadingStyleInjected = true;
   }
 
-  function bind(scope, source, refs = {}) {
+  function bind(scope, source, refs) {
     precompileTemplate(scope);
     let state;
     if (source && source[IS_REACTIVE]) {
@@ -650,19 +679,35 @@ var KniuTemplate = (function () {
         const nodes = collectBindingNodes(root);
         nodes.forEach(function (node) {
           if (node.nodeType !== 1) return;
-          if (node.hasAttribute('kniu:for') || node.hasAttribute('kniu:if') || node.hasAttribute('kniu:elseif') || node.hasAttribute('kniu:else')) return;
+          if (node.hasAttribute('kniu:for') || node.hasAttribute('kniu:if') || node.hasAttribute('kniu:elseif') || node.hasAttribute('kniu:else')) {
+            // 表格列模板（<kniu-table-col><template #default>）内的节点带 kniu:if 时，
+            // 显示由 kniu-table 的 condition 机制按行求值（resolveTableRowTemplate，作用域仅
+            // scope.row / $index），kniu:if 属性不会被 setupIf 处理（content 在 DocumentFragment）。
+            // 但这类节点的事件绑定（kniu-btn 的 kniu@click、kniu-switch 的 kniu@change）仍需在此
+            // 绑定，否则列内条件按钮永远无 handler。非列模板的普通控制流节点仍整体跳过，
+            // 交给 setupIf / setupFor 渲染。
+            if (!node.__kniuTableColumn) return;
+          }
           if (hasAncestor(node, '[kniu\\:for],[kniu\\:if],[kniu\\:elseif],[kniu\\:else]')) return;
 
           const refAttr = node.hasAttribute('kniu:ref') ? 'kniu:ref' : (node.hasAttribute('ref') ? 'ref' : '');
-          if (refAttr) {
+          // ref 收集只发生在「显式 bind」（controller mount 传入 refs）时：
+          // reactive() auto-bind（setup/脚本阶段的 bind(currentScope, proxy)）不带 refs，
+          // 若在此收集会把 ref 写进一次性对象并移除 DOM 属性，导致后续显式 bind 永远收不到。
+          if (refAttr && refs) {
             const refName = node.getAttribute(refAttr);
             if (refName) refs[refName] = node;
             node.removeAttribute(refAttr);
           }
 
           if (node.hasAttribute('kniu:model')) {
-            const path = stripBraces(node.getAttribute('kniu:model'));
+            const rawPath = stripBraces(node.getAttribute('kniu:model'));
             const isBool = node.type === 'checkbox' || node.type === 'radio';
+            // kniu:model 指向 kniu-form options 的字段对象（{ value, condition, message }）时，
+            // 双向绑定落到字段的 value 上：控件显示值、回写值，options 结构本身不动。
+            // 例：kniu:model="{{userFormOptions.name}}" === kniu:model="{{userFormOptions.name.value}}"
+            const fieldObject = isFormFieldObject(resolve(rawPath));
+            const path = fieldObject ? `${rawPath}.value` : rawPath;
             const render = function () {
               const v = resolve(path);
               if (isBool) {
@@ -675,26 +720,51 @@ var KniuTemplate = (function () {
             };
             render();
             subscribe(path, render);
+            // 字段对象被整体替换（options.name = {...}）时 rawPath 层也会通知，此处一并订阅保证刷新
+            if (fieldObject) subscribe(rawPath, render);
             const onInput = function () { return write(path, isBool ? node.checked : node.value); };
             const evt = isBool ? 'change' : 'input';
             node.addEventListener(evt, onInput);
             listeners.push([node, evt, onInput]);
             node.removeAttribute('kniu:model');
+            if (fieldObject) node.__kniuModelPath = rawPath;
           }
 
-          if (node.hasAttribute('kniu:rules')) {
+          if (node.hasAttribute('kniu:options')) {
+            const expr = stripBraces(node.getAttribute('kniu:options'));
+            // 自定义元素可能尚未升级：列模板 content 内的节点（如 <kniu-table-col><template>
+            // 里的 kniu-switch）从未插入文档，customElements 自动升级与手动 upgrade 均不生效
+            // （Chrome 对 disconnected 节点 upgrade 静默无效），'options' in node 为 false。
+            // 已定义组件但未升级时，把 options 值存到 expando（__kniuOptionsValue），
+            // kniu-table 的 _readColumns 读取列内 switch 快照时回退读取；已升级节点走 property。
             const tag = node.tagName.toLowerCase();
-            const expr = stripBraces(node.getAttribute('kniu:rules'));
-            if (tag !== 'form' && tag !== 'kniu-form') {
-              warn(`kniu:rules 只能用在 <form> 或 <kniu-form> 上，当前元素为 <${tag}>。`);
-            } else {
-              const renderRules = function () {
-                const rules = resolve(expr);
-                node.rules = rules && typeof rules === 'object' ? rules : {};
-              };
-              renderRules();
-              subscribe(expr, renderRules);
-            }
+            const componentCtor = tag.includes('-') && typeof customElements !== 'undefined'
+              ? customElements.get(tag) : null;
+            const isUnupgradedComponent = !!componentCtor && !(node instanceof componentCtor);
+            const renderOptions = function () {
+              const value = resolve(expr);
+              // 只有解析出真实对象才写入；解析不到（undefined/null/非对象）时保持原值，
+              // 防止重复/伪绑定（如异步间隙里用数据对象当 state 的 auto-bind）把
+              // 已写入的 expando 覆盖成 {}（2026-09-01 修复）。
+              if (value && typeof value === 'object') {
+                if ('options' in node) node.options = value;
+                else if (isUnupgradedComponent) node.__kniuOptionsValue = value;
+                else warn(`kniu:options 不能用在 <${node.tagName.toLowerCase()}> 上（组件未提供 options property）。`);
+              }
+            };
+            renderOptions();
+            subscribe(expr, renderOptions);
+            // 列模板内节点（__kniuTableColumn）刻意保留 kniu:options 属性：kniu:if / kniu:for
+            // 克隆列时 expando 不随 cloneNode 复制，保留属性让克隆列在递归 applyBindings 中
+            // 重新解析并写入 expando（与 kniu@change 同策略，见本文件事件绑定处注释）；
+            // 普通节点直接移除属性，避免二次绑定重复订阅。
+            if (!node.__kniuTableColumn) node.removeAttribute('kniu:options');
+          }
+
+          // kniu:rules 已随 kniu-form 的 options 化重构作废（2026-09-01）：
+          // 字段验证统一写在 kniu:options 里——字段对象带 condition 即需验证，message 为提示。
+          if (node.hasAttribute('kniu:rules')) {
+            warn('kniu:rules 已作废，请改用 kniu:options，在字段上声明 value / condition / message。');
             node.removeAttribute('kniu:rules');
           }
 
@@ -894,13 +964,35 @@ var KniuTemplate = (function () {
             if (tableScopedControl) {
               const handlerMatch = expr.match(/^([A-Za-z_$][\w$]*)\s*\(/);
               const handlerName = handlerMatch?.[1] || expr;
+              const columnEl = node.__kniuTableColumn || node.closest('kniu-table-col');
               const renderScopedHandler = function () {
                 const { value } = evalExpr(handlerName, base, extra);
-                node.__kniuTableScopedHandler = typeof value === 'function' ? value.bind(base) : null;
+                const fn = typeof value === 'function' ? value.bind(base) : null;
+                // 只在解析到真实函数时才写入。applyBindings 会随嵌套组件 / 重渲染递归执行，
+                // 表格内 kniu-switch / kniu-btn 的 kniu@change / kniu@click 节点可能被「非控制器作用域」
+                // 的那一轮重复处理，此时 handlerName 在 base 上解析不到（返回 undefined），fn 为 null。
+                // 若无条件写入会把上一轮已绑好的提交函数覆盖成 null，导致点击开关 / 按钮不再发请求。
+                // 仅当 fn 为函数时落盘，可保证最后存活的是正确的业务提交函数。
+                if (fn) {
+                  node.__kniuTableScopedHandler = fn;
+                  if (columnEl) columnEl.__kniuTableScopedSwitchHandler = fn;
+                }
+                // kniu:if / kniu:for 会 clone 列节点，expando 随 cloneNode 丢失；而 _readColumns 直接读取
+                // 克隆后的列宿主 / 模板内 switch，因此这里【不移除】kniu@change / kniu@click 属性，
+                // 让克隆后的列在 applyBindings 时重新解析并绑定到克隆节点自身，从而保证提交函数随列存活。
+                if (node.matches('kniu-switch')) {
+                  // 解析 disabled 绑定（控制器作用域）：避免把 {{...}} 字面量当作属性，导致开关始终禁用
+                  const disabledRaw = node.getAttribute('disabled');
+                  if (disabledRaw && disabledRaw.includes('{{')) {
+                    const { value: dv } = evalExpr(disabledRaw.replace(/^\{\{|\}\}$/g, '').trim(), base, extra);
+                    if (dv) node.setAttribute('disabled', ''); else node.removeAttribute('disabled');
+                  }
+                }
               };
               renderScopedHandler();
               subscribe(handlerName, renderScopedHandler);
-              node.removeAttribute(attr.name);
+              // 注意：此处刻意不 removeAttribute，理由见上。kniu@change / kniu@click 不在
+              // _readColumns 的 switch.attributes 白名单内，不会被复制到行内真实 switch / button。
               return;
             }
             const handlers = eventState.get(node) || new Map();
@@ -985,6 +1077,13 @@ var KniuTemplate = (function () {
           if (node.nodeType !== 1) return;
           if (node.hasAttribute('kniu:for') || node.hasAttribute('kniu:if') || node.hasAttribute('kniu:elseif') || node.hasAttribute('kniu:else')) return;
           if (hasAncestor(node, '[kniu\\:for],[kniu\\:if],[kniu\\:elseif],[kniu\\:else]')) return;
+          // 表格列模板（<kniu-table-col><template #default> 内的元素）的属性插值必须交给
+          // kniu-table 逐行解析（resolveTableRowTemplate 用 scope.row 求值）。若在此用控制器
+          // 作用域提前求值，scope.row 不存在会把 {{ }} 解析成空值并移除属性（如 type），导致
+          // type="{{scope.row.role_text == '管理员' ? 'success' : 'primary'}}" 这类按行绑定失效。
+          // __kniuTableColumn 由 collectBindingNodes 深入列模板时标记，且不含列元素自身，
+          // 故只跳过列模板内部元素，保留列元素自身的 on-change / editable / data 等绑定。
+          if (node.__kniuTableColumn) return;
           [...node.attributes].forEach(function (attr) {
             const name = attr.name;
             if (name.startsWith('kniu:') || name.startsWith('kniu@')) return;

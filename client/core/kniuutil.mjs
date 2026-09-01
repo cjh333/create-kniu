@@ -20,29 +20,6 @@ export function getCurrentRoutePath() {
   return hash.split('?')[0].split('#')[0] || '/';
 }
 
-// 根据路由路径解析导航高亮索引（纯函数，导航配置由调用方传入）。
-export function getNavigationIndex(path, navigationPaths, routeMap = {}) {
-  const mapped = routeMap[path];
-  if (mapped !== undefined) {
-    const index = navigationPaths.indexOf(mapped);
-    if (index >= 0) return index;
-  }
-  const index = navigationPaths.indexOf(path);
-  return index >= 0 ? index : 0;
-}
-
-// 将路由路径按映射表解析为实际导航路径（未命中映射则原样返回）。
-export function resolveActivePath(path, routeMap = {}) {
-  return routeMap[path] || path;
-}
-
-// 根据路由路径解析导航应用名称（纯函数，导航配置由调用方传入）。
-export function getApplicationName(path, navigationItems, routeMap = {}, defaultName = '控制台') {
-  const activePath = resolveActivePath(path, routeMap);
-  const item = navigationItems.find(function (it) { return it.path === activePath; });
-  return (item && item.name) || defaultName;
-}
-
 /**
  * 将普通表单模型与一个单文件字段组装为 multipart/form-data。
  * 新选择的 File 优先于数据库回显 URL；两者都没有时提交空值。
@@ -92,12 +69,36 @@ export function assignModelFields(target, source, emptyValue = '') {
   return target;
 }
 
-// 读取接口首条记录并填充模型，适用于单记录设置表单。
-export function fillModelFromResponse(target, payload, emptyValue = '') {
+// 把接口记录写回 kniu-form 的 options：字段对象（{ value, condition, message }）写 .value，
+// 直接值字段整体替换。语义与 assignModelFields 一致（记录缺失的字段按 emptyValue 清空）。
+export function assignOptionFields(options, source, emptyValue = '') {
+  if (!options || typeof options !== 'object' || !source || typeof source !== 'object') return options;
+  Object.keys(options).forEach(function (field) {
+    const value = source[field] == null ? emptyValue : source[field];
+    const slot = options[field];
+    if (slot && typeof slot === 'object' && 'value' in slot) slot.value = value;
+    else options[field] = value;
+  });
+  return options;
+}
+
+// 读取接口首条记录并填充 kniu-form 的 options，适用于单记录设置表单。
+export function fillOptionsFromResponse(options, payload, emptyValue = '') {
   const record = getFirstResponseRecord(payload);
   if (!record) return null;
-  assignModelFields(target, record, emptyValue);
+  assignOptionFields(options, record, emptyValue);
   return record;
+}
+
+// 把 options 摊平成纯值对象（字段对象取 value），用于构造提交数据。
+export function optionsToValues(options) {
+  const out = {};
+  if (!options || typeof options !== 'object') return out;
+  Object.keys(options).forEach(function (field) {
+    const slot = options[field];
+    out[field] = slot && typeof slot === 'object' && 'value' in slot ? slot.value : slot;
+  });
+  return out;
 }
 
 // 将数据库单图 URL 转成上传组件使用的文件列表。
@@ -119,4 +120,41 @@ export function removeListRecord(list, record, key = 'id') {
   return list.filter(function (item) {
     return !item || item[key] !== record[key];
   });
+}
+
+// 高频事件防抖：wait 毫秒内连续触发只执行最后一次。典型用于搜索输入框，
+// 避免每次按键都打接口。纯函数、零依赖，浏览器与 Node 两侧通用。
+export function debounce(fn, wait = 200) {
+  if (typeof fn !== 'function') return fn;
+  let timer = 0;
+  return function (...args) {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(function () {
+      timer = 0;
+      fn.apply(this, args);
+    }, wait);
+  };
+}
+
+// 高频事件节流：wait 毫秒内最多执行一次，首跳立即执行、尾跳补执行。
+// 典型用于 resize / scroll 等布局相关事件。纯函数、零依赖。
+export function throttle(fn, wait = 120) {
+  if (typeof fn !== 'function') return fn;
+  let last = 0;
+  let timer = 0;
+  return function (...args) {
+    const now = Date.now();
+    const remain = wait - (now - last);
+    if (remain <= 0) {
+      if (timer) { clearTimeout(timer); timer = 0; }
+      last = now;
+      fn.apply(this, args);
+    } else if (!timer) {
+      timer = setTimeout(function () {
+        last = Date.now();
+        timer = 0;
+        fn.apply(this, args);
+      }, remain);
+    }
+  };
 }

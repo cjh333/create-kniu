@@ -35,5 +35,11 @@ class Env
       $_ENV[$name] = $value;
       $_SERVER[$name] = $value;
     }
+    $processEnv = getenv('PROCESS_ENV');
+    if ($processEnv !== false && getenv('APP_ENV') === false) {
+      putenv('APP_ENV=' . $processEnv);
+      $_ENV['APP_ENV'] = $processEnv;
+      $_SERVER['APP_ENV'] = $processEnv;
+    }
   }
 }

@@ -16,6 +16,5 @@ app.mount('#app')
     console.error('[kniubase] 应用挂载失败：', err);
   })
   .finally(function () {
-    // 顶部固定头部占位补偿：固定头部脱离文档流后，注入等高占位撑开内容区。
     initHeadFixed();
   });

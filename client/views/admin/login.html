@@ -139,7 +139,7 @@
     font-size: 12px
   }
 
-  kniu-form[label-position="top"] .captcha_tip {
+  kniu-form[data-label-position="top"] .captcha_tip {
     margin-left: 0
   }
 
@@ -236,21 +236,21 @@
       <p class="login_subtitle">原生多应用工作台 · 管理后台</p>
     </div>
     <div class="login_body">
-      <kniu-form kniu@submit.prevent="onSubmit" ref="form" model="{{loginform}}" rules="{{rules}}" label-position="top" label-width="auto">
-        <kniu-form-cell label="用户名">
-          <kniu-input kniu:model="{{loginform.username}}" name="username" placeholder="请输入用户名" />
+      <kniu-form ref="form" kniu:options="{{({...(loginModel)})}}" kniu@submit.prevent="onSubmit">
+        <kniu-form-cell kniu:options="{{({label:'用户名'})}}">
+          <kniu-input kniu:model="{{loginModel.username}}" kniu:options="{{({name:'username',placeholder:'请输入用户名'})}}" />
         </kniu-form-cell>
-        <kniu-form-cell label="密码">
-          <kniu-input kniu:model="{{loginform.password}}" name="password" placeholder="请输入密码" show-password type="password" />
+        <kniu-form-cell kniu:options="{{({label:'密码'})}}">
+          <kniu-input kniu:model="{{loginModel.password}}" kniu:options="{{({name:'password',placeholder:'请输入密码',showPassword:true,type:'password'})}}" />
         </kniu-form-cell>
-        <kniu-form-cell label="验证码">
-          <kniu-input kniu:model="{{loginform.gvcode}}" name="gvcode" placeholder="请输入验证码" maxlength="4" />
-          <kniu-image style="border-radius:3px;margin-left:5px;min-width:120px;min-height:40px;cursor:pointer;" kniu@click="refreshCaptcha" src="{{captchaImageUrl}}" fit="contain" />
+        <kniu-form-cell kniu:options="{{({label:'验证码'})}}">
+          <kniu-input kniu:model="{{loginModel.gvcode}}" kniu:options="{{({name:'gvcode',placeholder:'请输入验证码',maxlength:'4'})}}" />
+          <kniu-image style="border-radius:3px;margin-left:5px;min-width:120px;min-height:40px;cursor:pointer;" kniu:options="{{({src:(captchaImageUrl),fit:'contain'})}}" kniu@click="refreshCaptcha"/>
         </kniu-form-cell>
         <p class="captcha_tip">请输入图片中算术题的计算结果</p>
         <div class="kniu_btn_group">
-          <kniu-btn disabled="{{isSubmitting}}" native-type="submit" block>
-            <kniu-icon kniu:if="{{isSubmitting}}" icon="Loading" />
+          <kniu-btn kniu:options="{{({disabled:(isSubmitting),nativeType:'submit',block:true})}}">
+            <kniu-icon kniu:if="{{isSubmitting}}" kniu:options="{{({icon:'Loading'})}}" />
             <template kniu:else>登 录</template>
           </kniu-btn>
         </div>

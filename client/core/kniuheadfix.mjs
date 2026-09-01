@@ -1,21 +1,23 @@
-const PLACEHOLDER_CLASS = 'kniu_web_head_placeholder';
-const headObservers = new WeakMap();
+import { throttle } from './kniuutil.mjs';
 
-function deepQueryAll(selector, root) {
-  const results = [];
-  const walk = function (node) {
-    if (node && node.nodeType === 1) {
-      const el = node;
-      if (typeof el.matches === 'function' && el.matches(selector)) results.push(el);
-      if (el.shadowRoot) walk(el.shadowRoot);
-    }
-    const kids = node && node.children;
-    if (kids) {
-      for (let i = 0; i < kids.length; i++) walk(kids[i]);
-    }
-  };
-  walk(root || document);
-  return results;
+const PLACEHOLDER_CLASS = 'kniu_web_head_placeholder';
+const HEAD_SELECTOR = '.kniu_web_head';
+const headObservers = new WeakMap();
+// 已发现的头部元素登记表。避免每次 DOM 变更都全树深度遍历（表格批量渲染时会被放大成 O(节点数) 热点）。
+const knownHeads = new Set();
+
+// 在给定子树内登记头部元素（穿透 Shadow DOM）。
+// 注意：nodeType !== 1 的节点（document / DocumentFragment / ShadowRoot）也有 children，
+// 不能提前 return，否则跨 Shadow DOM 后什么都查不到。
+function collectHeads(node) {
+  if (!node) return;
+  if (node.nodeType === 1 && typeof node.matches === 'function' && node.matches(HEAD_SELECTOR)) {
+    knownHeads.add(node);
+  }
+  if (node.shadowRoot) collectHeads(node.shadowRoot);
+  const kids = node.children;
+  if (!kids) return;
+  for (let i = 0; i < kids.length; i += 1) collectHeads(kids[i]);
 }
 
 function syncOneHead(head) {
@@ -54,38 +56,69 @@ function syncOneHead(head) {
   }
 }
 
-export function syncHeadPlaceholder() {
+// deep=true 时重新全树扫描登记（仅在初始化 / 路由切换等结构性变化后需要）；
+// deep=false 只同步已登记的头部，成本与头部数量成正比，与页面节点数无关。
+export function syncHeadPlaceholder(deep = true) {
   try {
-    const heads = deepQueryAll('.kniu_web_head');
-    heads.forEach(syncOneHead);
+    if (deep) collectHeads(document);
+    knownHeads.forEach(function (head) {
+      // 元素可能随路由切换被移除，及时从登记表剔除，避免无限增长
+      if (!head.isConnected) {
+        knownHeads.delete(head);
+        return;
+      }
+      syncOneHead(head);
+    });
   } catch (e) {
     console.warn('[headfix] 同步头部占位失败：', e);
   }
 }
 
-function scheduleSync() {
-  syncHeadPlaceholder();
-  requestAnimationFrame(syncHeadPlaceholder);
-  setTimeout(syncHeadPlaceholder, 60);
-  setTimeout(syncHeadPlaceholder, 300);
+// 同一帧内的多次变更合并为一次同步，避免「改一个节点就扫一遍全树」。
+let syncFrame = 0;
+let pendingDeep = false;
+function scheduleSync(deep) {
+  if (deep) pendingDeep = true;
+  if (syncFrame) return;
+  syncFrame = requestAnimationFrame(function () {
+    syncFrame = 0;
+    const useDeep = pendingDeep;
+    pendingDeep = false;
+    syncHeadPlaceholder(useDeep);
+  });
+}
+
+function scheduleInitialSync() {
+  syncHeadPlaceholder(true);
+  scheduleSync(true);
+  // 首屏字体/样式异步到位后头部高度会变，补两次延迟校正
+  setTimeout(function () { syncHeadPlaceholder(false); }, 60);
+  setTimeout(function () { syncHeadPlaceholder(false); }, 300);
 }
 
 export function initHeadFixed() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
-  scheduleSync();
-  window.addEventListener('load', scheduleSync);
-  let resizeTimer = 0;
-  window.addEventListener('resize', function () {
-    if (resizeTimer) clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(scheduleSync, 120);
-  });
+  scheduleInitialSync();
+  window.addEventListener('load', scheduleInitialSync);
+  const onResize = throttle(function () { scheduleSync(true); }, 120);
+  window.addEventListener('resize', onResize);
 
-  window.addEventListener('hashchange', scheduleSync);
-  window.addEventListener('popstate', scheduleSync);
+  window.addEventListener('hashchange', function () { scheduleSync(true); });
+  window.addEventListener('popstate', function () { scheduleSync(true); });
   const host = document.querySelector('#app') || document.body;
   if (host && typeof MutationObserver !== 'undefined') {
-    const mo = new MutationObserver(function () {
-      scheduleSync();
+    const mo = new MutationObserver(function (records) {
+      // 只扫描新增节点子树（浅层），主线程成本与「本次新增量」成正比，而非整页节点数
+      let touched = false;
+      records.forEach(function (record) {
+        record.addedNodes.forEach(function (node) {
+          if (node.nodeType !== 1) return;
+          if (typeof node.matches === 'function' && node.matches(HEAD_SELECTOR)) knownHeads.add(node);
+          if (node.querySelector && node.querySelector(HEAD_SELECTOR)) collectHeads(node);
+          touched = true;
+        });
+      });
+      scheduleSync(!touched);
     });
     mo.observe(host, { childList: true, subtree: true });
   }

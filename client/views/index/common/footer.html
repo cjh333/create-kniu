@@ -3,7 +3,7 @@
   @import url("@style/index/global.min.css");
 </style>
 <!-- 返回顶部 -->
-<kniu-backtop right="100" bottom="100" />
+<kniu-backtop kniu:options="{{({right:'100',bottom:'100'})}}" />
 <!-- 3.底部 -->
 <footer class="kniu_web_foot">
   <div class="kniu_container">
@@ -19,4 +19,4 @@
     </dl>
   </div>
 </footer>
-<kniu-loading show="{{loading}}" />
+<kniu-loading kniu:options="{{({show:(loading)})}}" />

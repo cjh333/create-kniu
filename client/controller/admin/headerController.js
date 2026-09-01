@@ -1,11 +1,13 @@
 import KniuMvvm from '../../core/kniumvvm.mjs';
 import { getCurrentRoutePath } from '../../core/kniuutil.mjs';
+import AUTH from '../../core/kniuauth.mjs';
 
 const { controller, onMounted, reactive } = KniuMvvm;
 
 function getAdminPageName(path) {
   if (path === '/seo') return '网站信息';
   if (path === '/nav' || path === '/dailydetail' || path === '/articledetail') return '栏目管理';
+  if (path === '/users') return '用户管理';
   return '控制台';
 }
 
@@ -15,12 +17,17 @@ const headerController = controller(({ navigateTo, onRouteChange }) => {
       brandMark: 'K',
       workspaceLabel: '工作台',
       currentPath: initialPath,
-      currentApp: { name: getAdminPageName(initialPath) }
+      currentApp: { name: getAdminPageName(initialPath) },
+      showUserManagement: false
     });
 
     function updateCurrentApplication(path) {
       state.currentPath = path;
       state.currentApp = { name: getAdminPageName(path) };
+    }
+
+    function updateUserNavigation(user) {
+      state.showUserManagement = !!String(user?.name || '').trim();
     }
 
     function handleNavigation(event) {
@@ -44,7 +51,10 @@ const headerController = controller(({ navigateTo, onRouteChange }) => {
     }
 
     onMounted(function () {
-      return onRouteChange(updateCurrentApplication);
+      updateUserNavigation(AUTH.getUser());
+      const stopRoute = onRouteChange(updateCurrentApplication);
+      const stopAuth = AUTH.subscribe(function (authState) { updateUserNavigation(authState.user); });
+      return function () { stopRoute(); stopAuth(); };
     });
 
     return {

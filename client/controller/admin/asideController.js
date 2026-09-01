@@ -18,13 +18,16 @@ const asideController = controller(({ eventTo, navigateTo, onRouteChange }) => {
       activeNavigationPath: getActiveNavigationPath(getCurrentRoutePath()),
       userAvatar: '·',
       userName: '—',
-      userRole: '—'
+      userRole: '—',
+      showUserManagement: false
     });
 
     function updateUser(info) {
+      info = info || {};
       state.userName = info.name || '—';
       state.userAvatar = info.avatar || (info.name ? info.name.charAt(0) : '·');
       state.userRole = info.role || '管理员';
+      state.showUserManagement = !!String(info.name || '').trim();
     }
 
     async function handleLogout() {

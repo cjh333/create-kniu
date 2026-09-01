@@ -17,11 +17,11 @@
   }
 </style>
 <header class="kniu_web_head kniu_head_fixed">
-  <kniu-navbar home="#/">
+  <kniu-navbar kniu:options="{{({home:'#/'})}}">
     <template #brand>KniuSystem</template>
     <template #append>
-      <kniu-navbar-cell index="/" href="#/">首页</kniu-navbar-cell>
-      <kniu-navbar-cell index="/about" href="#/about">关于我</kniu-navbar-cell>
+      <kniu-navbar-cell kniu:options="{{({index:'/',href:'#/'})}}">首页</kniu-navbar-cell>
+      <kniu-navbar-cell kniu:options="{{({index:'/about',href:'#/about'})}}">关于我</kniu-navbar-cell>
     </template>
   </kniu-navbar>
 </header>

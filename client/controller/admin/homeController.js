@@ -6,7 +6,7 @@ import AUTH from '../../core/kniuauth.mjs';
 const { controller, onMounted, reactive } = KniuMvvm;
 
 const SYSTEM_FIELDS = [
-  'username', 'role', 'platform', 'arch', 'server', 'ip', 'rootDir', 'mysqlVer', 'uptime', 'totalMemory', 'currentMemory'
+  'username', 'role', 'role_id', 'role_auth', 'platform', 'arch', 'server', 'ip', 'rootDir', 'mysqlVer', 'uptime', 'totalMemory', 'currentMemory'
 ];
 
 const homeController = controller(({ formatTime, getTimeInZone, navigateTo, setInterval }) => {
@@ -19,6 +19,8 @@ const homeController = controller(({ formatTime, getTimeInZone, navigateTo, setI
       error: null,
       username: '—',
       role: '—',
+      role_id: 0,
+      role_auth: 0,
       platform: '—',
       arch: '—',
       server: '—',
@@ -54,7 +56,13 @@ const homeController = controller(({ formatTime, getTimeInZone, navigateTo, setI
           state.loading = false;
           state.isAuthenticated = true;
           if (state.username !== '—') {
-            AUTH.setUser({ name: state.username, avatar: state.username.charAt(0), role: state.role !== '—' ? state.role : '管理员' });
+            AUTH.setUser({
+              name: state.username,
+              avatar: state.username.charAt(0),
+              role: state.role !== '—' ? state.role : '管理员',
+              roleId: Number(state.role_id || 0),
+              roleAuth: Number(state.role_auth || 0)
+            });
           }
         },
         fail() { navigateTo('/login'); }

@@ -12,9 +12,37 @@ class RoleController extends AdminBaseController
     parent::__construct();
   }
 
+  private function hasManagePermission(): bool
+  {
+    return (int)($_SESSION['admin_token']['role'] ?? 0) === 1
+      || (int)($_SESSION['admin_token']['role_auth'] ?? 0) === 1;
+  }
+
+  private function currentUserId(): int
+  {
+    $name = (string)($_SESSION['admin_token']['name'] ?? '');
+    return (int)(Db::name('tb_role')->where('name', '=', $name)->value('id') ?? 0);
+  }
+
+  private function denyPermission(): void
+  {
+    http_response_code(403);
+    $this->json([], '权限不足', 0);
+  }
+
+  // 角色权限同步：管理员(role=1)权限为 1，普通用户(role=2)权限为 2。
+  private function syncRoleAuth($role): int
+  {
+    return (int)$role === 1 ? 1 : 2;
+  }
+
   // 增加。
   public function roleAdd(): void
   {
+    if (!$this->hasManagePermission()) {
+      $this->denyPermission();
+      return;
+    }
     $data = [
       'sid' => $this->input('post.sid') ?? 0,
       'name' => $this->input('post.name') ?? '',
@@ -23,6 +51,7 @@ class RoleController extends AdminBaseController
       'role_auth' => $this->input('post.role_auth') ?? 0,
       'is_show' => $this->input('post.is_show') ?? 1
     ];
+    $data['role_auth'] = $this->syncRoleAuth($data['role']);
     $data = $this->encodeFields($data, ['name']);
     Db::name('tb_role')->insert($data);
     $this->json([], '添加成功', 1);
@@ -31,6 +60,10 @@ class RoleController extends AdminBaseController
   // 删除。
   public function roleDelete(): void
   {
+    if (!$this->hasManagePermission()) {
+      $this->denyPermission();
+      return;
+    }
     $id = $this->input('post.id') ?? '';
     Db::name('tb_role')
       ->where('id', '=', $id)
@@ -53,9 +86,41 @@ class RoleController extends AdminBaseController
       'role_auth' => $this->input('post.role_auth') ?? null,
       'is_show' => $this->input('post.is_show') ?? null
     ];
+    $hasManagePermission = $this->hasManagePermission();
+    $oldPassword = (string)($this->input('post.old_password') ?? '');
+    if (!$hasManagePermission) {
+      $newPassword = (string)($this->input('post.new_password') ?? '');
+      $currentUserId = $this->currentUserId();
+      if ((int)$id !== $currentUserId || $oldPassword === '' || $newPassword === '') {
+        $this->denyPermission();
+        return;
+      }
+      $storedPassword = (string)(Db::name('tb_role')->where('id', '=', $currentUserId)->value('password') ?? '');
+      if ($storedPassword === '' || !$this->verifyPassword($oldPassword, $storedPassword)) {
+        $this->json([], '旧密码不正确', 0);
+        return;
+      }
+      $type = null;
+      $data = ['password' => $newPassword];
+    } elseif ($id !== null && (string)($data['password'] ?? '') !== '') {
+      // 管理员修改任意账号密码时也必须验证该账号的当前密码。
+      // 仅修改用户名、角色、排序或启用状态时不要求原密码。
+      if ($oldPassword === '') {
+        $this->json([], '修改密码时请输入原密码', 0);
+        return;
+      }
+      $storedPassword = (string)(Db::name('tb_role')->where('id', '=', $id)->value('password') ?? '');
+      if ($storedPassword === '' || !$this->verifyPassword($oldPassword, $storedPassword)) {
+        $this->json([], '原密码不正确', 0);
+        return;
+      }
+    }
     $data = array_filter($data, function ($value) {
       return $value !== null && $value !== '';
     });
+    if (array_key_exists('role', $data)) {
+      $data['role_auth'] = $this->syncRoleAuth($data['role']);
+    }
     if (empty($data)) {
       $this->json([], '没有提供任何要更新的数据', 0);
       return;
@@ -73,17 +138,17 @@ class RoleController extends AdminBaseController
       }
     }
     if ($type === 'KNIU_TABLE_EVENT_CHECKALL') {
-      $selectallResult = Db::name('tb_selectall')
-        ->where('name', '=', 'role')
-        ->update(['is_select' => $data['is_selectall']]);
+      $selectallResult = array_key_exists('is_selectall', $data)
+        ? Db::name('tb_selectall')->where('name', '=', 'role')->update(['is_select' => $data['is_selectall']])
+        : 0;
       $roleResult = Db::name('tb_role')
         ->whereIn('id', explode(',', $id))
         ->update(['is_select' => $data['is_select']]);
       $result = $selectallResult + $roleResult;
     } else {
-      $selectallResult = Db::name('tb_selectall')
-        ->where('name', '=', 'role')
-        ->update(['is_select' => $data['is_selectall']]);
+      $selectallResult = array_key_exists('is_selectall', $data)
+        ? Db::name('tb_selectall')->where('name', '=', 'role')->update(['is_select' => $data['is_selectall']])
+        : 0;
       $roleResult = Db::name('tb_role')
         ->where('id', '=', $id)
         ->field(['is_select', 'sid', 'name', 'password', 'role', 'role_auth', 'is_show'])
@@ -109,8 +174,15 @@ class RoleController extends AdminBaseController
     $sort = $this->input('post.sort') ?? 'asc';
     $pageCurrent = (int)($this->input('post.page_current') ?? 1);
     $pageRow = (int)($this->input('post.page_rows') ?? 10);
+    $keyword = trim((string)($this->input('post.keyword') ?? ''));
     $selectall = Db::name('tb_selectall')->where('name', '=', 'role')->value('is_select') ?? 0;
-    $result = Db::name($table)
+    $query = Db::name($table);
+    if ($keyword !== '') {
+      $pattern = '%' . mb_strtolower(htmlspecialchars($keyword, ENT_QUOTES), 'UTF-8') . '%';
+      $query->where('LOWER(`name`)', 'LIKE', $pattern);
+    }
+    $result = $query
+      ->field(['id', 'sid', 'name', 'role', 'role_auth', 'is_show', 'create_time'])
       ->order($field, $sort)
       ->page($pageCurrent, $pageRow);
     $result['data'] = $this->decodeFields($result['data'] ?? [], ['name']);
@@ -122,6 +194,10 @@ class RoleController extends AdminBaseController
   public function roleDetail(): void
   {
     $id = $this->input('post.id') ?? '';
+    if (!$this->hasManagePermission() && (int)$id !== $this->currentUserId()) {
+      $this->denyPermission();
+      return;
+    }
     $result = Db::name('tb_role')
       ->where('id', '=', $id)
       ->find();

@@ -15,6 +15,7 @@ class DailyController extends AdminBaseController
   // 增加。
   public function dailyAdd(): void
   {
+    if (!$this->requireManagePermission()) return;
     $data = [
       'sid' => $this->input('post.sid') ?? 0,
       'cn' => $this->input('post.cn') ?? '',
@@ -29,6 +30,7 @@ class DailyController extends AdminBaseController
   // 删除。
   public function dailyDelete(): void
   {
+    if (!$this->requireManagePermission()) return;
     $id = $this->input('post.id') ?? '';
     Db::name('tb_daily')
       ->where('id', '=', $id)
@@ -39,6 +41,7 @@ class DailyController extends AdminBaseController
   // 修改。
   public function dailyUpdate(): void
   {
+    if (!$this->requireManagePermission()) return;
     $type = $this->input('post.type') ?? null;
     $id = $this->input('post.id') ?? null;
     $data = [

@@ -22,7 +22,7 @@ npm install
 npm run dev
 ```
 
-`npm run dev` 通过 `--env-file=.env`（内含 `PROCESS_ENV=development`）启动开发服务并反向代理 `/api` → `http://localhost:9900`。访问 `http://localhost:6173`。Windows 下结束遗留 Node 进程：`npm run kill`。
+前端服务、预览和构建入口通过核心 `kniudotenv.mjs` 先读取项目根目录 `.env`，再应用命令行已有环境变量；`npm run dev` 启动开发服务并按项目配置反向代理 `/api`。Windows 下结束遗留 Node 进程：`npm run kill`。
 
 ### 3. 生产构建
 
@@ -81,4 +81,6 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 - `/article_update` 的封面字段为 `cover`；`/article_media_upload` 的即时媒体字段为 `file`。
 - 上传同时校验扩展名、客户端 MIME、`finfo` 真实 MIME 和大小，文件名由服务端生成。
 - 后台依赖 Session、同源 CSRF 校验和角色授权；角色及缓存管理仅管理员可用。
+- Session Cookie 名优先读取项目 `.env` 的 `SESSION_NAME`；未设置或格式不正确时，由核心 `SessionName` 首次生成 `KNIU_` 加 48 位随机哈希并保存到 `api/runtime/session/session.name`，后续稳定复用，避免同一主机上的项目互相覆盖登录态。
+- 前后端入口都会先读取项目根目录 `.env`；`PROCESS_ENV` 同时作为前端运行环境和后端 `APP_ENV` 的默认来源，外部进程已显式设置的同名变量优先。
 - 排序字段只能是合法 SQL 标识符，方向只能是 `ASC` 或 `DESC`。
