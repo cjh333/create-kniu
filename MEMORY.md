@@ -134,3 +134,5 @@
 132. `paginationState()` 已删除；分页的 `currentPage/pageTotal/total/pageRows` 由 `usePagination()` 根据对应 `pageOptions` 集中初始化。页码窗口只由 `kniu-page` 渲染时计算，不再在 Controller state 中重复保存 `pageList`。Controller 只声明 `pageOptions` 并调用 `usePagination`。
 133. 清理组件公共 API 时区分“初始化必需函数”和“无用对外出口”：`registerXxxComponent`、图标注册函数仍由 `kniuui.js` 模块内部自动调用，但项目没有二次注册需求，因此不再从 `KniuUI` 暴露；`usePagination` 不再返回无人调用的 `prevPage/nextPage`，页面只消费 `changePage/changePageSize`。无引用的 util 包装函数应连同其仅服务于该包装的辅助函数一起删除。
 134. 表格编辑配置只保留 `editable`，删除且不兼容 `editType`：`editable: true` 或 `'text'` 表示文本输入，`editable: 'number'` 表示数字输入，`editable: false` 关闭编辑；权限条件写成 `editable: canEdit ? 'number' : false`，数字最小值继续使用 `editMin`。
+135. 所有下拉类弹框（日期选择器、分页条数选择器、评论表情面板等）的浮层位置**默认统一显示在触发元素下方**；仅当下方空间不足以容纳完整面板、且上方空间足够时切换到上方，上方也不足时保持默认下方。上下切换通过容器/宿主 `data-placement` 或面板自身的 `above` 类控制，方向动画与展开方向一致。新增任何下拉弹框都必须遵循此定位约定，不能默认浮在上方。
+136. 评论表情面板（`.kniu_sys_comment_emoji_panel`）默认 `top:calc(100% + 6px)` 显示在输入区下方；打开时用 `getBoundingClientRect()` 测量下方剩余空间（仅用户点击时测一次，非渲染热路径），不足时加 `.kniu_sys_comment_above` 类切换到 `bottom:calc(100% + 6px)` 上方。间距 `6px` 与分页下拉一致，保证三类下拉弹框定位统一。

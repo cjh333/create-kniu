@@ -6424,7 +6424,8 @@ var KniuUI = (function () {
       .kniu_sys_comment_submit{background-color:#28a745;color:#fff;border:0;border-radius:4px;padding:7px 20px;cursor:pointer;font-size:14px;transition:background-color .2s}
       .kniu_sys_comment_submit:hover{background-color:#23903d}
       .kniu_sys_comment_submit:disabled{background-color:#c0c4cc;cursor:not-allowed}
-      .kniu_sys_comment_emoji_panel{position:absolute;right:0;bottom:42px;width:260px;max-height:220px;overflow-y:auto;overflow-x:hidden;background-color:#fff;border:1px solid #e4e7ed;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1);padding:8px;z-index:10;display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+      .kniu_sys_comment_emoji_panel{position:absolute;right:0;top:calc(100% + 6px);width:260px;max-height:220px;overflow-y:auto;overflow-x:hidden;background-color:#fff;border:1px solid #e4e7ed;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1);padding:8px;z-index:10;display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+      .kniu_sys_comment_emoji_panel.kniu_sys_comment_above{top:auto;bottom:calc(100% + 6px)}
       .kniu_sys_comment_emoji_panel.kniu_sys_comment_hidden{display:none}
       .kniu_sys_comment_emoji_item{background-color:#fff;border:1px solid transparent;border-radius:4px;padding:4px 2px;cursor:pointer;font-size:20px;text-align:center;line-height:1}
       .kniu_sys_comment_emoji_item:hover{background-color:#f5f7fa;border-color:#dcdfe6}
@@ -6559,6 +6560,20 @@ var KniuUI = (function () {
             e.stopPropagation();
             self._showEmoji = !self._showEmoji;
             emojiPanel.classList.toggle('kniu_sys_comment_hidden', !self._showEmoji);
+            if (self._showEmoji) {
+              // 弹框位置默认在下方；下方空间不足时翻转到上方。
+              // 仅在用户点击打开时测量一次（非渲染热路径，允许同步布局）。
+              emojiPanel.classList.remove('kniu_sys_comment_above');
+              const area = emojiPanel.closest('.kniu_sys_comment_input_area');
+              const rect = area ? area.getBoundingClientRect() : null;
+              if (rect) {
+                const panelHeight = emojiPanel.offsetHeight || 220;
+                const spaceBelow = (globalThis.innerHeight || 0) - rect.bottom;
+                if (spaceBelow < panelHeight + 6) {
+                  emojiPanel.classList.add('kniu_sys_comment_above');
+                }
+              }
+            }
           });
           // 全局点击关闭 emoji 面板
           if (this._closeEmojiHandler) documentRefLocal.removeEventListener('click', this._closeEmojiHandler);

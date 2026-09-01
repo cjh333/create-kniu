@@ -832,6 +832,14 @@ box-shadow: 0 2px 12px rgba(0,0,0,.1);
 
 网格型面板（表情）额外声明 `overflow-y:auto; overflow-x:hidden`，去除横向滚动条。**以后凡新增这类下拉面板，样式一律对齐此基准。**
 
+### 下拉弹框定位约定（默认下方，不足翻上方）
+
+所有下拉类弹框浮层（日期选择器、分页条数选择器、评论表情面板）**默认显示在触发元素下方**；仅当下方空间不足且上方空间足够容纳完整面板时切换到上方，上方也不足时保持默认下方。
+
+- 表情面板默认 `top:calc(100% + 6px)`（下方）；打开时用 `getBoundingClientRect()` 测量下方剩余空间（仅用户点击打开时测一次，非渲染热路径），不足时加 `.kniu_sys_comment_above` 类切换 `bottom:calc(100% + 6px)`（上方）。
+- 间距统一 `6px`，与分页下拉一致，保证三类下拉弹框定位统一。
+- 方向切换通过容器/面板自身的 `data-placement` 或 `above` 类控制，动画方向与展开方向一致。
+
 ### 组件实现要点（2026-09-01）
 
 - 必须定义本组件自己的 `options` accessor（存储到 `_options` 并触发 `_render`），否则 `installOptionsOnlyProtocol` 因无 `ownDescriptor.set` 会退回属性反射，`_options` 恒空、渲染不出内容——对齐 kniu-switch/kniu-select/kniu-date-picker 既有模式。
