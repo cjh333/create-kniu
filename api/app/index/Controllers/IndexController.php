@@ -19,7 +19,10 @@ class IndexController extends Controller
 
   public function getArticle(): void
   {
-    $result = Db::name('tb_article')->select();
+    // 前台首页文章列表对所有人开放、无归属条件；仅排除后台置为不显示(is_show=0)的文章。
+    $result = Db::name('tb_article')
+      ->where('is_show', '=', 1)
+      ->select();
     $result = $this->decodeFields($result, ['title', 'subtitle', 'summary', 'content']);
     $this->json($result);
   }

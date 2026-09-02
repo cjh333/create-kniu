@@ -1,7 +1,6 @@
 import KniuMvvm from '../../core/kniumvvm.mjs';
 import KniuUI from '../../core/kniuui.js';
 import REQUEST from '../../core/kniurequest.mjs';
-import AUTH from '../../core/kniuauth.mjs';
 import { assignModelFields, buildMultipartFormData, toSingleFileList, debounce } from '../../core/kniuutil.mjs';
 
 const { controller, onMounted, reactive } = KniuMvvm;
@@ -9,7 +8,10 @@ const { usePagination } = KniuUI;
 
 const articledetailController = controller(function () {
   const self = this;
-  const canEditContent = Number(AUTH.getUser()?.roleId || AUTH.getUser()?.role || 0) === 1 || Number(AUTH.getUser()?.roleAuth || 0) === 1;
+  // 文章管理页对所有后台账号开放增删改查：管理员可管理全部文章，
+  // 普通账号的列表/详情/更新/删除已由后端按 user_id 归属隔离到自己的文章，
+  // 因此操作列与「显示」开关无需按角色隐藏。
+  const canEditContent = true;
   const state = reactive({
     canEditContent,
     list: [],

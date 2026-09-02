@@ -15,7 +15,6 @@ class ArticleController extends AdminBaseController
   // 编辑器图片、音频和视频上传。
   public function articleMediaUpload(): void
   {
-    if (!$this->requireManagePermission()) return;
     if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
       $this->json([], '请选择需要上传的媒体文件', 0);
       return;
@@ -31,7 +30,6 @@ class ArticleController extends AdminBaseController
   // 增加。
   public function articleAdd(): void
   {
-    if (!$this->requireManagePermission()) return;
     $coverPath = '';
     if (isset($_FILES['cover']) && $_FILES['cover']['error'] === UPLOAD_ERR_OK) {
       $coverPath = $this->uploadFile($_FILES['cover'], 'article');
@@ -57,10 +55,9 @@ class ArticleController extends AdminBaseController
     $this->json([], '添加成功', 1);
   }
 
-  // 删除。
+  // 删除。普通用户仅能删除自己发布的文章；管理员可删除任意文章。
   public function articleDelete(): void
   {
-    if (!$this->requireManagePermission()) return;
     $id = $this->input('post.id') ?? '';
     if (!$this->isAdmin()) {
       // 普通用户仅能删除自己发布的文章。
@@ -77,10 +74,9 @@ class ArticleController extends AdminBaseController
     $this->json([], '删除成功', 1);
   }
 
-  // 修改。
+  // 修改。普通用户仅能修改自己发布的文章；管理员可修改任意文章，批量操作仅管理员。
   public function articleUpdate(): void
   {
-    if (!$this->requireManagePermission()) return;
     $isAdmin = $this->isAdmin();
     $type = $this->input('post.type') ?? null;
     $id = $this->input('post.id') ?? null;
