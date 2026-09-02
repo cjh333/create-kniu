@@ -68,7 +68,7 @@ const detailController = controller(({ navigateTo, getRouteData }) => {
   // 未登录：初次访客引导去注册，本机注册过账号的直接去登录。
   function requireSignin(pending) {
     savePendingComment(pending);
-    navigateTo('/signin', {
+    navigateTo('/login', {
       tab: IDENTITY.hasAccount() ? 'login' : 'register',
       redirect: '/detail',
       id: getArticleId()
@@ -124,7 +124,7 @@ const detailController = controller(({ navigateTo, getRouteData }) => {
   async function toggleFavorite() {
     const identity = IDENTITY.getIdentity();
     if (!identity.nickname) {
-      navigateTo('/signin', {
+      navigateTo('/login', {
         tab: IDENTITY.hasAccount() ? 'login' : 'register',
         redirect: '/detail',
         id: getArticleId()

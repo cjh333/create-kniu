@@ -666,7 +666,31 @@ class IndexController extends Controller
 
     $roleId = (int)(Db::name('tb_role')->where('name', '=', $encodedName)->value('id') ?? 0);
     $this->createFrontSession($roleId, $username);
-    $this->json(['id' => $id, 'nickname' => $username], '注册成功', 1);
+    // 注册即进后台：与前台会话一并建立 admin_token（role=2 受限工作台），
+    // 使「合并登录页」注册成功后可直接进入 /admin，无需二次登录。
+    if (session_status() === PHP_SESSION_NONE) {
+      session_start();
+    }
+    session_regenerate_id(true);
+    $authConfig = require __DIR__ . '/../../../config/auth.php';
+    $loginExpireSeconds = max(1, (int)($authConfig['LOGIN_EXPIRE_DAYS'] ?? 7)) * 86400;
+    $_SESSION['admin_token'] = [
+      'id' => $roleId,
+      'token' => bin2hex(random_bytes(32)),
+      'name' => $username,
+      'role' => '2',
+      'role_auth' => 2,
+      'expire' => time() + $loginExpireSeconds
+    ];
+    $this->json([
+      'id' => $id,
+      'role_id' => $roleId,
+      'token' => $_SESSION['admin_token']['token'],
+      'name' => $username,
+      'role' => '2',
+      'role_auth' => 2,
+      'nickname' => $username
+    ], '注册成功', 1);
   }
 
   /**

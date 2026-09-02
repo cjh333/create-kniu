@@ -7275,7 +7275,7 @@ var KniuUI = (function () {
                 <a href="#/profile" role="menuitem">${t('userLogin.profile')}</a>
                 <a href="#/login" target="_blank" rel="noopener noreferrer" role="menuitem">${t('userLogin.admin')}</a>
                 <button class="logout" type="button" role="menuitem" ${this._logoutLoading ? 'disabled' : ''}>${t('userLogin.logout')}</button>` : `
-                <a href="#/signin" role="menuitem">${t('userLogin.login')}</a>`}
+                <a href="#/login" role="menuitem">${t('userLogin.login')}</a>`}
             </div>
           </div>`;
         const hello = this.shadowRoot.querySelector('.hello');

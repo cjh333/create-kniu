@@ -21,7 +21,7 @@ const profileController = controller(({ navigateTo }) => {
   function toBack() { navigateTo('/'); }
 
   function toSignin() {
-    navigateTo('/signin', { tab: IDENTITY.hasAccount() ? 'login' : 'register' });
+    navigateTo('/login', { tab: IDENTITY.hasAccount() ? 'login' : 'register', redirect: '/profile' });
   }
 
   function toFavorite(event) {
