@@ -227,7 +227,7 @@ const dailydetailController = controller(function () {
   }
 
   function goBack() {
-    self.navigateTo('/nav');
+    self.navigateTo('/admin');
   }
 
   onMounted(function () { loadList(1); });

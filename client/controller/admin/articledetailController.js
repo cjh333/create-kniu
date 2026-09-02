@@ -298,7 +298,7 @@ const articledetailController = controller(function () {
   }
 
   function goBack() {
-    self.navigateTo('/nav');
+    self.navigateTo('/admin');
   }
 
   // 获取当前日期和时间。

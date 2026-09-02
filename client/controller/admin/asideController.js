@@ -5,7 +5,7 @@ import AUTH from '../../core/kniuauth.mjs';
 const { controller, onMounted, reactive } = KniuMvvm;
 
 function getActiveNavigationPath(path) {
-  return path === '/dailydetail' || path === '/articledetail' ? '/nav' : path;
+  return path;
 }
 
 const asideController = controller(({ eventTo, navigateTo, onRouteChange }) => {

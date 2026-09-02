@@ -6,7 +6,9 @@ const { controller, onMounted, reactive } = KniuMvvm;
 
 function getAdminPageName(path) {
   if (path === '/seo') return '网站信息';
-  if (path === '/nav' || path === '/dailydetail' || path === '/articledetail') return '栏目管理';
+  if (path === '/aboutedit') return '关于我';
+  if (path === '/dailydetail') return '每日一句';
+  if (path === '/articledetail') return '文章管理';
   if (path === '/users') return '用户管理';
   if (path === '/comment') return '评论管理';
   if (path === '/reply') return '回复管理';
