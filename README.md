@@ -116,13 +116,14 @@ MVVM 提供 `ref()`、`computed()`、getter/多来源 `watch()` 和 `watchEffect
 
 ### 鉴权与请求链路
 
-1. `AUTH.restoreSession()` 根据 `sessionStorage.kniu_authed` 和 `kniu_user` 乐观恢复前端状态；缺少用户信息时请求 `/api/system`。
+1. `AUTH.restoreSession()` 在应用启动时请求 `/api/system` 校验服务端持久会话；会话有效则恢复账号信息，访问登录页时直接进入后台。
 2. `ROUTER.auth()` 内注册的路由标记为 `authRequired`，未登录访问时跳转 `#/login`。
 3. `REQUEST` 自动为相对接口添加 `/api` 前缀，默认携带 Cookie，并将响应归一为 `{ status, msg, data, httpStatus, request }`。
 4. 任意接口返回 HTTP 401 时，`AUTH.markLoggedOut()` 清理本地登录态并跳转登录页。
 5. 退出登录调用 `POST /api/logout`，销毁后端 Session 并复位前端状态。
 
 前端守卫只负责即时体验，后端 Session 与接口鉴权仍是最终权限边界。
+登录有效期通过 `api/config/auth.php` 的 `LOGIN_EXPIRE_DAYS` 配置，默认开发和生产环境均为 7 天；该值同时控制 Session Cookie、服务端 Session 回收期限和后台令牌过期时间。
 
 ## 后端架构
 

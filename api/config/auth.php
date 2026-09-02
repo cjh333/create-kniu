@@ -4,7 +4,7 @@ $env = getenv('APP_ENV') ?: 'development';
 $config = [
   'development' => [
     'ENABLE' => true,  // 开发环境开启认证。
-    'TOKEN_EXPIRE' => 3600 * 24 * 7,  // token 过期时间：7 天（秒）。
+    'LOGIN_EXPIRE_DAYS' => 7,  // 登录状态有效天数。
     'TOKEN_KEY' => 'KNIU_USER_TOKEN',  // token 存储键名。
     'SESSION_KEY' => 'KNIU_USER_SESSION',  // session 存储键名。
     'USERNAME_KEY' => 'KNIU_USERNAME',  // 用户名存储键名。
@@ -13,7 +13,7 @@ $config = [
   ],
   'production' => [
     'ENABLE' => true,  // 生产环境开启认证。
-    'TOKEN_EXPIRE' => 3600 * 24 * 7,  // token 过期时间：7 天（秒）。
+    'LOGIN_EXPIRE_DAYS' => 7,  // 登录状态有效天数。
     'TOKEN_KEY' => 'KNIU_USER_TOKEN',  // token 存储键名。
     'SESSION_KEY' => 'KNIU_USER_SESSION',  // session 存储键名。
     'USERNAME_KEY' => 'KNIU_USERNAME',  // 用户名存储键名。

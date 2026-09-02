@@ -4,6 +4,31 @@ namespace Core;
 
 class AdminBaseController extends Controller
 {
+  /**
+   * 当前登录账号的 tb_role.id。
+   *
+   * 优先读会话中的 id（logup 后写入）；旧会话（无 id 字段）按 name
+   * 查库并回填，避免重复查询。
+   */
+  protected function currentUserId(): int
+  {
+    if (isset($_SESSION['admin_token']['id']) && (int)$_SESSION['admin_token']['id'] > 0) {
+      return (int)$_SESSION['admin_token']['id'];
+    }
+    $name = (string)($_SESSION['admin_token']['name'] ?? '');
+    $id = (int)(Db::name('tb_role')->where('name', '=', $name)->value('id') ?? 0);
+    if ($id > 0) {
+      $_SESSION['admin_token']['id'] = $id;
+    }
+    return $id;
+  }
+
+  /** 是否为管理员（role=1）。 */
+  protected function isAdmin(): bool
+  {
+    return (int)($_SESSION['admin_token']['role'] ?? 0) === 1;
+  }
+
   protected function requireManagePermission(): bool
   {
     $role = (int)($_SESSION['admin_token']['role'] ?? 0);
@@ -41,8 +66,9 @@ class AdminBaseController extends Controller
       $sessionName = (string)($_SESSION['admin_token']['name'] ?? '');
       $sessionUser = Db::name('tb_role')
         ->where('name', '=', $sessionName)
-        ->field(['role', 'role_auth'])
+        ->field(['id', 'role', 'role_auth'])
         ->find();
+      $_SESSION['admin_token']['id'] = $sessionUser['id'] ?? 0;
       $_SESSION['admin_token']['role'] = $sessionUser['role'] ?? ($_SESSION['admin_token']['role'] ?? 0);
       $_SESSION['admin_token']['role_auth'] = $sessionUser['role_auth'] ?? 0;
     }

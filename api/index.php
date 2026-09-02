@@ -19,7 +19,10 @@ if (!is_dir($sessionPath)) {
 }
 session_save_path($sessionPath);
 session_name(SessionName::resolve(getenv('SESSION_NAME') ?: null, $sessionPath));
-session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => !empty($_SERVER['HTTPS']), 'httponly' => true, 'samesite' => 'Strict']);
+$authConfig = require __DIR__ . '/config/auth.php';
+$loginExpireSeconds = max(1, (int)($authConfig['LOGIN_EXPIRE_DAYS'] ?? 7)) * 86400;
+ini_set('session.gc_maxlifetime', (string)$loginExpireSeconds);
+session_set_cookie_params(['lifetime' => $loginExpireSeconds, 'path' => '/', 'secure' => !empty($_SERVER['HTTPS']), 'httponly' => true, 'samesite' => 'Strict']);
 session_start();
 
 // 加载应用配置。

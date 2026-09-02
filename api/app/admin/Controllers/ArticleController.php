@@ -41,6 +41,7 @@ class ArticleController extends AdminBaseController
       }
     }
     $data = [
+      'user_id' => $this->currentUserId(),
       'sid' => $this->input('post.sid') ?? 0,
       'title' => $this->input('post.title') ?? '',
       'subtitle' => $this->input('post.subtitle') ?? '',
@@ -61,9 +62,18 @@ class ArticleController extends AdminBaseController
   {
     if (!$this->requireManagePermission()) return;
     $id = $this->input('post.id') ?? '';
-    Db::name('tb_article')
-      ->where('id', '=', $id)
-      ->delete();
+    if (!$this->isAdmin()) {
+      // 普通用户仅能删除自己发布的文章。
+      $exists = Db::name('tb_article')
+        ->where(['id' => $id, 'user_id' => $this->currentUserId()])
+        ->find();
+      if (!$exists) {
+        http_response_code(403);
+        $this->json([], '只能删除自己发布的文章', 0);
+        return;
+      }
+    }
+    Db::name('tb_article')->where('id', '=', $id)->delete();
     $this->json([], '删除成功', 1);
   }
 
@@ -71,6 +81,7 @@ class ArticleController extends AdminBaseController
   public function articleUpdate(): void
   {
     if (!$this->requireManagePermission()) return;
+    $isAdmin = $this->isAdmin();
     $type = $this->input('post.type') ?? null;
     $id = $this->input('post.id') ?? null;
 
@@ -108,6 +119,12 @@ class ArticleController extends AdminBaseController
     }
     $data = $this->encodeFields($data, ['title', 'subtitle', 'summary', 'content']);
     if ($type === 'KNIU_TABLE_EVENT_CHECKALL') {
+      // 批量操作（含全局勾选）仅管理员可用。
+      if (!$isAdmin) {
+        http_response_code(403);
+        $this->json([], '权限不足', 0);
+        return;
+      }
       $selectallResult = Db::name('tb_selectall')
         ->where('name', '=', 'article')
         ->update(['is_select' => $data['is_selectall']]);
@@ -116,11 +133,26 @@ class ArticleController extends AdminBaseController
         ->update(['is_select' => $data['is_select']]);
       $result = $selectallResult + $articleResult;
     } else {
+      if (!$isAdmin) {
+        // 普通用户仅能更新自己发布的文章。
+        $owned = Db::name('tb_article')
+          ->where(['id' => $id, 'user_id' => $this->currentUserId()])
+          ->find();
+        if (!$owned) {
+          http_response_code(403);
+          $this->json([], '只能编辑自己发布的文章', 0);
+          return;
+        }
+      }
       $selectallResult = Db::name('tb_selectall')
         ->where('name', '=', 'article')
         ->update(['is_select' => $data['is_selectall']]);
-      $articleResult = Db::name('tb_article')
-        ->where('id', '=', $id)
+      $articleQuery = Db::name('tb_article')
+        ->where('id', '=', $id);
+      if (!$isAdmin) {
+        $articleQuery->where('user_id', '=', $this->currentUserId());
+      }
+      $articleResult = $articleQuery
         ->field(['is_select', 'sid', 'title', 'subtitle', 'summary', 'content', 'cover', 'create_time', 'url', 'is_show'])
         ->update($data);
       $result = $selectallResult + $articleResult;
@@ -147,6 +179,10 @@ class ArticleController extends AdminBaseController
     $keyword = trim((string)($this->input('post.keyword') ?? ''));
     $selectall = Db::name('tb_selectall')->where('name', '=', 'article')->value('is_select') ?? 0;
     $query = Db::name($table);
+    if (!$this->isAdmin()) {
+      // 普通用户仅能查看自己发布的文章。
+      $query->where('user_id', '=', $this->currentUserId());
+    }
     if ($keyword !== '') {
       // 关键词按入库规则编码（htmlspecialchars ENT_QUOTES）后统一小写，
       // 配合 SQL 侧 LOWER() 实现不依赖排序规则的字母大小写不敏感模糊搜索。
@@ -165,9 +201,13 @@ class ArticleController extends AdminBaseController
   public function articleDetail(): void
   {
     $id = $this->input('post.id') ?? '';
-    $result = Db::name('tb_article')
-      ->where('id', '=', $id)
-      ->find();
+    $query = Db::name('tb_article')
+      ->where('id', '=', $id);
+    if (!$this->isAdmin()) {
+      // 普通用户仅能查看（编辑回填）自己的文章。
+      $query->where('user_id', '=', $this->currentUserId());
+    }
+    $result = $query->find();
     $result = $this->decodeFields($result, ['title', 'subtitle', 'summary', 'content']);
     $this->json($result);
   }

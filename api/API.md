@@ -65,18 +65,23 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 
 ## 四、接口清单（当前注册于 `api/config/router.php`，均 POST）
 
-- 公共内容：`/getDaily`、`/getArticle`、`/getInfo`、`/getDetail`、`/getComments`、`/submitComment`、`/likeComment`、`/likeArticle`
-- 会话与系统：`/logup`、`/logout`、`/captcha`、`/admin`、`/system`
-- 后台业务（需登录）：SEO、导航、每日内容、文章、角色、评论管理的增删改查，以及 `/clearCache`
+- 公共内容：`/getDaily`、`/getArticle`、`/getInfo`、`/getAbout`、`/getDetail`、`/getComments`、`/submitComment`、`/likeComment`、`/deleteComment`、`/likeArticle`、`/favoriteArticle`、`/frontProfile`、`/frontProfileSave`、`/frontProfileClear`
+- 会话与系统：`/logup`、`/logout`、`/captcha`、`/frontBind`、`/admin`、`/system`
+- 后台业务（需登录）：SEO、导航、每日内容、文章、角色、评论管理的增删改查，以及 `/about_detail`、`/about_save`、`/clearCache`
 
 ### 评论接口（公开，POST）
 
 | 端点 | 入参 | 说明 |
 | --- | --- | --- |
-| `/getComments` | `article_id`（必填） | 返回该文章全部**已审核**评论（含回复，`parent_id` 区分），`is_show=1` 过滤，按 `id` 升序；`data` 为数组，每项 `{id,parentId,username,avatar,time,content,likes,liked}` |
-| `/submitComment` | `article_id`、`parent_id`、`name`、`message` | 提交评论或回复，**提交即待审核（`is_show=0`）**，后台审核通过（`is_show=1`）后才在 `/getComments` 显示；`message` 写库前 `encodeFields` 转义，成功后返回 `{id}` |
-| `/likeComment` | `comment_id`、`liked`（bool） | 点赞（`true` 加 1）或取消（`false` 减 1，不低于 0），返回最新 `{likes}` |
-| `/likeArticle` | `article_id`、`liked`（bool） | 文章点赞（`true` 加 1）或取消（`false` 减 1，不低于 0），返回最新 `{likes}`；`tb_article.likes` 默认 0 |
+| `/getComments` | `article_id`（必填）、`identity_token`（可选） | 返回该文章全部**已审核**评论（含回复，`parent_id` 区分），`is_show=1` 过滤，按 `id` 升序；每项含 `{id,userId,isOwn,parentId,replyTo,username,avatar,time,content,likes,liked}`。旧评论 `user_id=0` 时按当前唯一昵称识别本人 |
+| `/submitComment` | `article_id`、`parent_id`、`identity_token`、`message` | 提交评论或回复；后端按身份令牌从 `tb_front_user` 读取昵称并写入 `user_id/name`，不接受前端伪造昵称；提交即待审核，成功返回 `{id}` |
+| `/likeComment` | `comment_id`、`liked`（bool）、`identity_token` | 点赞（`true` 加 1）或取消（`false` 减 1，不低于 0）；服务端拒绝给本人评论点赞，返回最新 `{likes}` |
+| `/deleteComment` | `comment_id`、`identity_token` | 仅允许删除当前身份自己的评论或回复；兼容以唯一昵称识别 `user_id=0` 的旧评论，删除顶层评论时同时删除其回复 |
+| `/likeArticle` | `article_id`、`liked`（bool） | 文章点赞（`true` 加 1）或取消（`false` 减 1，不低于 0）；后台作者会话不能给自己的文章点赞，返回最新 `{likes}` |
+| `/favoriteArticle` | `article_id`、`favorited`、`identity_token` | 当前前台用户收藏或取消收藏文章；未登录时拒绝 |
+| `/frontProfile` | `identity_token` | 返回昵称、获赞数、评论数、收藏文章和近一年浏览历史 `{id,nickname,likes,commentCount,favorites,history}` |
+| `/frontProfileSave` | `identity_token`、`nickname`、`gvcode`（首次创建必填） | 昵称只在首次评论时设置并校验验证码；全站唯一，重复统一返回“该昵称已存在”。首次设置同时创建同名 `tb_role` 后台账号，固定普通用户/查看权限，初始密码 `000000`；已绑定身份通过接口修改时距离上次修改必须满一个月并同步后台用户名 |
+| `/frontProfileClear` | `identity_token` | 退出当前前台登录状态，不删除数据库身份、不释放昵称 |
 
 `/getDetail` 除文章字段外还返回 `previous` 和 `next`，有相邻已显示文章时为 `{id,title}`，没有时为 `null`。相邻顺序按文章 `id`，并过滤 `is_show=1`。
 
@@ -89,7 +94,25 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 | `/comment_delete` | `id` | 删除评论；**删除顶层评论会级联删除其下全部回复**；需管理权限 |
 | `/comment_detail` | `id` | 查询单条评论（`decodeFields` 后返回） |
 
-`tb_comment` 为评论表，`article_id` 关联 `tb_article.id`；`parent_id` 为 0 表示顶层评论，大于 0 表示对该评论的回复。`name`/`message`/`article_title` 走 HTML 编解码铁律（前端渲染时再 `commentEscape` 双保险）。
+`tb_comment` 为评论表，`article_id` 关联 `tb_article.id`，`user_id` 关联前台身份 `tb_front_user.id`；`parent_id` 为 0 表示顶层评论，大于 0 表示回复。后台 `/comment` 固定管理顶层评论，`/reply` 固定管理回复，两页共用接口但分别传 `type=comment/reply`。
+`tb_article_favorite` 记录前台用户与文章的收藏关系，`user_id + article_id` 使用唯一索引防止重复收藏。
+`tb_article_history` 记录用户最后浏览文章的时间，同一用户同一文章只保留一条；读取个人中心或新增浏览时自动删除一年前的记录。
+
+前台昵称账号与后台 `tb_role.name` 一一对应。访客首次设置昵称时事务创建后台普通用户账号（与 `test` 相同的 `role=2`、`role_auth=2`），只有管理员可以更改角色和权限；普通用户可在后台用户管理中修改自己的密码。
+
+`tb_seo.about_content` 保存后台“网站信息”中的“关于我”富文本；`/seo_list` 和 `/seo_update` 负责后台读取、保存，公开接口 `/getAbout` 返回 `{content}` 供前台关于页面展示。
+
+## 权限与数据归属（2026-09-02 多账号重构）
+
+系统由单一管理员扩展为多账号按角色隔离数据：
+
+- `tb_role.role=1` 为管理员（`role_auth=1`），可见全量数据；`role=2` 为普通用户（`role_auth=2`），只能查看和操作自己的数据。
+- 数据归属：`tb_article.user_id` 关联 `tb_role.id`（文章作者）；`tb_front_user.role_id` 关联 `tb_role.id`（前台昵称绑定后台账号）；`tb_user_about.user_id` 关联 `tb_role.id`（“关于我”按账号存储，`uk_user_about_user` 唯一键防重复）。
+- 后台会话 `admin_token` 内含 `id`，核心辅助 `AdminBaseController::currentUserId()` / `isAdmin()`；`/logup` 登录响应同样返回 `id`。
+- 普通用户：文章列表/详情按 `user_id` 过滤，增改删只能操作自己的文章；角色列表只见自己；评论列表只见自己的评论（行内附 `is_own`），只能删除自己的评论；批量删除仅管理员可用。
+- “关于我”：后台 `/about_detail` 读本人 `tb_user_about`、`/about_save` 保存本人内容（存在更新、不存在插入）；前台 `/getAbout` 在浏览器持有合法 `identity_token` 且账号已绑定（`role_id>0`）时返回本人内容，否则回退 `tb_seo.about_content`。
+- 身份绑定：`POST /frontBind`（入参账号密码与 `identity_token`）校验账号密码后绑定前台身份并建立前台会话（个人中心入口，无需验证码）；前台会话 `front_token` 与后台 `admin_token` 完全独立。
+- 数据迁移与回填见 `api/database/20260902_role_permission.sql` 及同目录回填脚本。
 
 ## 五、新增接口
 
@@ -104,5 +127,6 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 - 上传同时校验扩展名、客户端 MIME、`finfo` 真实 MIME 和大小，文件名由服务端生成。
 - 后台依赖 Session、同源 CSRF 校验和角色授权；角色及缓存管理仅管理员可用。
 - Session Cookie 名优先读取项目 `.env` 的 `SESSION_NAME`；未设置或格式不正确时，由核心 `SessionName` 首次生成 `KNIU_` 加 48 位随机哈希并保存到 `api/runtime/session/session.name`，后续稳定复用，避免同一主机上的项目互相覆盖登录态。
+- 后台登录有效期统一读取 `api/config/auth.php` 的 `LOGIN_EXPIRE_DAYS`（默认 7 天），并同步用于持久 Session Cookie、Session 回收期限和 `admin_token.expire`；应用启动时以 `/system` 返回结果恢复登录状态。
 - 前后端入口都会先读取项目根目录 `.env`；`PROCESS_ENV` 同时作为前端运行环境和后端 `APP_ENV` 的默认来源，外部进程已显式设置的同名变量优先。
 - 排序字段只能是合法 SQL 标识符，方向只能是 `ASC` 或 `DESC`。

@@ -34,9 +34,45 @@ class IndexController extends Controller
     $this->json($result);
   }
 
+  /**
+   * 前台「关于我」内容。
+   *
+   * 按账号存储：带有效身份令牌且已绑定 tb_role 账号时，展示该账号在
+   * tb_user_about 中的本人内容；未登录或无本人内容时回退全局 SEO 配置。
+   */
+  public function getAbout(): void
+  {
+    $content = '';
+    $token = $this->validIdentityToken();
+    if ($token !== '') {
+      $frontUser = Db::name('tb_front_user')
+        ->where('identity_token', '=', hash('sha256', $token))
+        ->find();
+      $roleId = $frontUser ? (int)($frontUser['role_id'] ?? 0) : 0;
+      if ($roleId > 0) {
+        $about = Db::name('tb_user_about')
+          ->where('user_id', '=', $roleId)
+          ->find();
+        $about = $this->decodeFields($about, ['content']);
+        $content = (string)($about['content'] ?? '');
+      }
+    }
+    if ($content === '') {
+      $result = Db::name('tb_seo')
+        ->field(['about_content'])
+        ->order('is_select', 'desc')
+        ->order('id', 'asc')
+        ->find();
+      $result = $this->decodeFields($result, ['about_content']);
+      $content = (string)($result['about_content'] ?? '');
+    }
+    $this->json(['content' => $content]);
+  }
+
   public function getDetail(): void
   {
     $id = $this->input('post.id/d', 1);
+    $identityToken = strtolower(trim((string)$this->input('post.identity_token/s', '')));
 
     if ($id <= 0) {
       $this->json([], 'ID参数错误', 0);
@@ -59,6 +95,21 @@ class IndexController extends Controller
       }
 
       $result = $this->decodeFields($result, ['title', 'subtitle', 'summary', 'content']);
+      $result[0]['isOwn'] = $this->validateToken();
+      $frontUser = $this->frontUserByToken($identityToken);
+      if ($frontUser) {
+        $userId = (int)$frontUser['id'];
+        Db::name('tb_article_history')->where('last_view_time', '<', date('Y-m-d H:i:s', strtotime('-1 year')))->delete();
+        $history = Db::name('tb_article_history')->where(['user_id' => $userId, 'article_id' => $id])->find();
+        if ($history) {
+          Db::name('tb_article_history')->where('id', '=', (int)$history['id'])->update(['last_view_time' => date('Y-m-d H:i:s')]);
+        } else {
+          Db::name('tb_article_history')->insert(['user_id' => $userId, 'article_id' => $id, 'last_view_time' => date('Y-m-d H:i:s')]);
+        }
+      }
+      $result[0]['favorited'] = $frontUser
+        ? Db::name('tb_article_favorite')->where(['user_id' => (int)$frontUser['id'], 'article_id' => $id])->count() > 0
+        : false;
       $previous = Db::name('tb_article')
         ->where('is_show', '=', 1)
         ->where('id', '<', $id)
@@ -96,12 +147,18 @@ class IndexController extends Controller
   public function getComments(): void
   {
     $articleId = $this->input('post.article_id/d', 0);
+    $identityToken = strtolower(trim((string)$this->input('post.identity_token/s', '')));
     if ($articleId <= 0) {
       $this->json([], '文章ID参数错误', 0);
       return;
     }
 
     try {
+      $currentUser = $this->frontUserByToken($identityToken);
+      $currentUserId = $currentUser ? (int)$currentUser['id'] : 0;
+      $currentUserNickname = $currentUser
+        ? $this->normalizeFrontNickname(html_entity_decode((string)$currentUser['nickname'], ENT_QUOTES))
+        : '';
       $result = Db::name('tb_comment')
         ->where('article_id', '=', $articleId)
         ->where('is_show', '=', 1)
@@ -109,11 +166,22 @@ class IndexController extends Controller
         ->select();
       $result = $this->decodeFields($result, ['name', 'message']);
 
-      $list = array_map(function ($row) {
+      $commentNames = [];
+      foreach ($result as $row) {
+        $commentNames[(int)$row['id']] = $this->normalizeFrontNickname($row['name'] ?: '匿名');
+      }
+
+      $list = array_map(function ($row) use ($commentNames, $currentUserId, $currentUserNickname) {
+        $parentId = (int)$row['parent_id'];
+        $userId = (int)$row['user_id'];
+        $username = $this->normalizeFrontNickname($row['name'] ?: '匿名');
         return [
           'id' => (int)$row['id'],
-          'parentId' => (int)$row['parent_id'],
-          'username' => $row['name'] ?: '匿名',
+          'userId' => $userId,
+          'isOwn' => $currentUserId > 0 && ($userId === $currentUserId || $username === $currentUserNickname),
+          'parentId' => $parentId,
+          'replyTo' => $parentId > 0 ? ($commentNames[$parentId] ?? '') : '',
+          'username' => $username,
           'avatar' => '',
           'time' => $row['create_time'] ?: '',
           'content' => $row['message'] ?: '',
@@ -138,7 +206,7 @@ class IndexController extends Controller
   {
     $articleId = $this->input('post.article_id/d', 0);
     $parentId = $this->input('post.parent_id/d', 0);
-    $name = $this->input('post.name/s', '匿名');
+    $identityToken = strtolower(trim((string)$this->input('post.identity_token/s', '')));
     $message = $this->input('post.message/s', '');
 
     if ($articleId <= 0) {
@@ -149,10 +217,37 @@ class IndexController extends Controller
       $this->json([], '评论内容不能为空', 0);
       return;
     }
+    if (!preg_match('/^[a-f0-9]{64}$/', $identityToken)) {
+      $this->json([], '请先在个人中心设置用户昵称', 0);
+      return;
+    }
 
     try {
+      $frontUser = Db::name('tb_front_user')
+        ->where('identity_token', '=', hash('sha256', $identityToken))
+        ->find();
+      if (!$frontUser || trim((string)$frontUser['nickname']) === '') {
+        $this->json([], '请先在个人中心设置用户昵称', 0);
+        return;
+      }
+      if ($parentId > 0) {
+        $parentComment = Db::name('tb_comment')
+          ->where('id', '=', $parentId)
+          ->where('article_id', '=', $articleId)
+          ->find();
+        if (!$parentComment) {
+          $this->json([], '回复目标不存在', 0);
+          return;
+        }
+        if ((int)$parentComment['user_id'] === (int)$frontUser['id']) {
+          $this->json([], '不能回复自己的评论', 0);
+          return;
+        }
+      }
+      $name = html_entity_decode((string)$frontUser['nickname'], ENT_QUOTES);
       $data = $this->encodeFields([
         'article_id' => $articleId,
+        'user_id' => (int)$frontUser['id'],
         'parent_id' => $parentId,
         'name' => $name,
         'email' => '',
@@ -182,6 +277,7 @@ class IndexController extends Controller
   {
     $commentId = $this->input('post.comment_id/d', 0);
     $liked = $this->input('post.liked/b', true);
+    $identityToken = strtolower(trim((string)$this->input('post.identity_token/s', '')));
 
     if ($commentId <= 0) {
       $this->json([], '评论ID参数错误', 0);
@@ -189,18 +285,66 @@ class IndexController extends Controller
     }
 
     try {
-      $current = Db::name('tb_comment')->where('id', '=', $commentId)->value('likes');
-      if ($current === null) {
+      $comment = Db::name('tb_comment')->where('id', '=', $commentId)->find();
+      if (!$comment) {
         $this->json([], '评论不存在', 0);
         return;
       }
+      $frontUser = $this->frontUserByToken($identityToken);
+      $legacyOwner = $frontUser
+        && $this->normalizeFrontNickname(html_entity_decode((string)$comment['name'], ENT_QUOTES))
+          === $this->normalizeFrontNickname(html_entity_decode((string)$frontUser['nickname'], ENT_QUOTES));
+      if ($frontUser && ((int)$comment['user_id'] === (int)$frontUser['id'] || $legacyOwner)) {
+        $this->json([], '不能给自己的评论点赞', 0);
+        return;
+      }
 
-      $next = $liked ? ((int)$current + 1) : max(0, (int)$current - 1);
+      $next = $liked ? ((int)$comment['likes'] + 1) : max(0, (int)$comment['likes'] - 1);
       Db::name('tb_comment')->where('id', '=', $commentId)->update(['likes' => $next]);
 
       $this->json(['likes' => (int)$next], '操作成功', 1);
     } catch (\Exception $e) {
       $this->json([], '点赞失败', 0);
+    }
+  }
+
+  /** 删除当前访客自己发表的评论或回复。 */
+  public function deleteComment(): void
+  {
+    $commentId = $this->input('post.comment_id/d', 0);
+    $identityToken = strtolower(trim((string)$this->input('post.identity_token/s', '')));
+    if ($commentId <= 0) {
+      $this->json([], '评论ID参数错误', 0);
+      return;
+    }
+
+    try {
+      $frontUser = $this->frontUserByToken($identityToken);
+      if (!$frontUser) {
+        $this->json([], '用户身份无效，请重新设置昵称', 0);
+        return;
+      }
+      $comment = Db::name('tb_comment')
+        ->where('id', '=', $commentId)
+        ->field(['id', 'user_id', 'parent_id', 'name'])
+        ->find();
+      if (!$comment) {
+        $this->json([], '评论不存在', 0);
+        return;
+      }
+      $legacyOwner = $this->normalizeFrontNickname(html_entity_decode((string)$comment['name'], ENT_QUOTES))
+          === $this->normalizeFrontNickname(html_entity_decode((string)$frontUser['nickname'], ENT_QUOTES));
+      if ((int)$comment['user_id'] !== (int)$frontUser['id'] && !$legacyOwner) {
+        $this->json([], '只能删除自己的评论', 0);
+        return;
+      }
+      if ((int)$comment['parent_id'] === 0) {
+        Db::name('tb_comment')->where('parent_id', '=', $commentId)->delete();
+      }
+      Db::name('tb_comment')->where('id', '=', $commentId)->delete();
+      $this->json([], '删除成功', 1);
+    } catch (\Exception $e) {
+      $this->json([], '删除失败', 0);
     }
   }
 
@@ -214,7 +358,10 @@ class IndexController extends Controller
       $this->json([], '文章ID参数错误', 0);
       return;
     }
-
+    if ($this->validateToken()) {
+      $this->json([], '不能给自己的文章点赞', 0);
+      return;
+    }
     try {
       $current = Db::name('tb_article')->where('id', '=', $articleId)->value('likes');
       if ($current === null) {
@@ -227,5 +374,477 @@ class IndexController extends Controller
     } catch (\Exception $e) {
       $this->json([], '点赞失败', 0);
     }
+  }
+
+  /** 收藏或取消收藏文章。 */
+  public function favoriteArticle(): void
+  {
+    $articleId = $this->input('post.article_id/d', 0);
+    $favorited = $this->input('post.favorited/b', true);
+    $frontUser = $this->frontUserByToken($this->validIdentityToken());
+    if ($articleId <= 0 || !$frontUser) {
+      $this->json([], '请先登录后再收藏文章', 0);
+      return;
+    }
+    try {
+      $query = Db::name('tb_article_favorite')->where([
+        'user_id' => (int)$frontUser['id'],
+        'article_id' => $articleId
+      ]);
+      $existing = $query->find();
+      if ($favorited && !$existing) {
+        Db::name('tb_article_favorite')->insert([
+          'user_id' => (int)$frontUser['id'],
+          'article_id' => $articleId,
+          'create_time' => date('Y-m-d H:i:s')
+        ]);
+      } elseif (!$favorited && $existing) {
+        Db::name('tb_article_favorite')->where('id', '=', (int)$existing['id'])->delete();
+      }
+      $this->json(['favorited' => $favorited], '操作成功', 1);
+    } catch (\Exception $e) {
+      $this->json([], '收藏操作失败', 0);
+    }
+  }
+
+  private function validIdentityToken(): string
+  {
+    $token = strtolower(trim((string)$this->input('post.identity_token/s', '')));
+    return preg_match('/^[a-f0-9]{64}$/', $token) ? $token : '';
+  }
+
+  private function frontUserByToken(string $token)
+  {
+    if (!preg_match('/^[a-f0-9]{64}$/', $token)) return null;
+    return Db::name('tb_front_user')
+      ->where('identity_token', '=', hash('sha256', $token))
+      ->find();
+  }
+
+  private function normalizeFrontNickname(string $nickname): string
+  {
+    $nickname = trim($nickname);
+    if ($nickname === '') return '';
+    return mb_strtolower(mb_substr($nickname, 0, 1, 'UTF-8'), 'UTF-8')
+      . mb_substr($nickname, 1, null, 'UTF-8');
+  }
+
+  public function frontProfile(): void
+  {
+    $token = $this->validIdentityToken();
+    if ($token === '') {
+      $this->json([], '身份令牌无效', 0);
+      return;
+    }
+    $user = Db::name('tb_front_user')
+      ->where('identity_token', '=', hash('sha256', $token))
+      ->find();
+    $nickname = $user ? $this->normalizeFrontNickname(html_entity_decode((string)$user['nickname'], ENT_QUOTES)) : '';
+    if (!$user) {
+      $this->json(['id' => 0, 'nickname' => '', 'likes' => 0, 'commentCount' => 0, 'favorites' => [], 'history' => []]);
+      return;
+    }
+    $userId = (int)$user['id'];
+    $likeRows = Db::query('SELECT COALESCE(SUM(`likes`), 0) AS total, COUNT(*) AS comments FROM `tb_comment` WHERE `user_id` = ' . $userId);
+    $favorites = Db::query('SELECT a.`id`, a.`title`, f.`create_time` FROM `tb_article_favorite` f INNER JOIN `tb_article` a ON a.`id` = f.`article_id` WHERE f.`user_id` = ' . $userId . ' AND a.`is_show` = 1 ORDER BY f.`id` DESC');
+    $favorites = $this->decodeFields($favorites, ['title']);
+    Db::name('tb_article_history')->where('last_view_time', '<', date('Y-m-d H:i:s', strtotime('-1 year')))->delete();
+    $history = Db::query('SELECT a.`id`, a.`title`, h.`last_view_time` FROM `tb_article_history` h INNER JOIN `tb_article` a ON a.`id` = h.`article_id` WHERE h.`user_id` = ' . $userId . ' AND a.`is_show` = 1 ORDER BY h.`last_view_time` DESC');
+    $history = $this->decodeFields($history, ['title']);
+    $this->json([
+      'id' => $userId,
+      'nickname' => $nickname,
+      'likes' => (int)($likeRows[0]['total'] ?? 0),
+      'commentCount' => (int)($likeRows[0]['comments'] ?? 0),
+      'favorites' => $favorites,
+      'history' => $history
+    ]);
+  }
+
+  public function frontProfileSave(): void
+  {
+    $token = $this->validIdentityToken();
+    $nickname = $this->normalizeFrontNickname((string)$this->input('post.nickname/s', ''));
+    if ($token === '') {
+      $this->json([], '身份令牌无效', 0);
+      return;
+    }
+    if ($nickname === '' || mb_strlen($nickname, 'UTF-8') > 30) {
+      $this->json([], '用户昵称必填且不能超过30个字', 0);
+      return;
+    }
+    $tokenHash = hash('sha256', $token);
+    $encodedNickname = htmlspecialchars($nickname, ENT_QUOTES);
+    $accountCreated = false;
+    $transactionStarted = false;
+    try {
+      $user = Db::name('tb_front_user')->where('identity_token', '=', $tokenHash)->find();
+      if (!$user) {
+        $submittedCaptcha = trim((string)$this->input('post.gvcode/s', ''));
+        $expectedCaptcha = isset($_SESSION['captcha']) ? (string)$_SESSION['captcha'] : '';
+        unset($_SESSION['captcha']);
+        if ($expectedCaptcha === '' || !preg_match('/^-?\d+$/', $submittedCaptcha) || (int)$submittedCaptcha !== (int)$expectedCaptcha) {
+          $this->json([], '验证码错误', 0);
+          return;
+        }
+      }
+      $duplicateQuery = Db::name('tb_front_user')->where('nickname', '=', $encodedNickname);
+      if ($user) $duplicateQuery->where('id', '<>', (int)$user['id']);
+      if ($duplicateQuery->find()) {
+        $this->json([], '该昵称已存在', 0);
+        return;
+      }
+      $currentEncodedNickname = $user ? (string)$user['nickname'] : '';
+      $roleDuplicate = Db::name('tb_role')->where('name', '=', $encodedNickname)->find();
+      if ($roleDuplicate && (!$user || $encodedNickname !== $currentEncodedNickname)) {
+        $this->json([], '该昵称已存在', 0);
+        return;
+      }
+      Db::beginTrans();
+      $transactionStarted = true;
+      if ($user) {
+        $currentNickname = $this->normalizeFrontNickname(html_entity_decode((string)$user['nickname'], ENT_QUOTES));
+        if ($currentNickname === $nickname) {
+          if (!$roleDuplicate) {
+            Db::name('tb_role')->insert([
+              'sid' => 0,
+              'name' => $encodedNickname,
+              'password' => $this->hashPassword('000000'),
+              'role' => 2,
+              'role_auth' => 2,
+              'is_show' => 1
+            ]);
+            $accountCreated = true;
+          }
+          Db::commit();
+          $transactionStarted = false;
+          $this->json([
+            'id' => (int)$user['id'],
+            'nickname' => $currentNickname,
+            'accountCreated' => $accountCreated,
+            'initialPassword' => $accountCreated ? '000000' : ''
+          ], $accountCreated ? '账号创建成功，后台初始密码为000000' : '昵称未变更', 1);
+          return;
+        }
+        $lastChangedAt = strtotime((string)($user['update_time'] ?? $user['create_time'] ?? '')) ?: 0;
+        if ($lastChangedAt > strtotime('-1 month')) {
+          Db::rollback();
+          $transactionStarted = false;
+          $this->json([], '昵称一个月内只能修改一次', 0);
+          return;
+        }
+        Db::name('tb_front_user')->where('id', '=', $user['id'])->update([
+          'nickname' => $encodedNickname,
+          'update_time' => date('Y-m-d H:i:s')
+        ]);
+        if ($roleDuplicate) {
+          Db::name('tb_role')->where('id', '=', (int)$roleDuplicate['id'])->update(['name' => $encodedNickname]);
+        } else {
+          $oldRole = Db::name('tb_role')->where('name', '=', $currentEncodedNickname)->find();
+          if ($oldRole) {
+            Db::name('tb_role')->where('id', '=', (int)$oldRole['id'])->update(['name' => $encodedNickname]);
+          } else {
+            Db::name('tb_role')->insert([
+              'sid' => 0,
+              'name' => $encodedNickname,
+              'password' => $this->hashPassword('000000'),
+              'role' => 2,
+              'role_auth' => 2,
+              'is_show' => 1
+            ]);
+            $accountCreated = true;
+          }
+        }
+        $id = (int)$user['id'];
+      } else {
+        $id = (int)Db::name('tb_front_user')->insert([
+          'identity_token' => $tokenHash,
+          'nickname' => $encodedNickname,
+          'create_time' => date('Y-m-d H:i:s'),
+          'update_time' => date('Y-m-d H:i:s')
+        ]);
+        Db::name('tb_role')->insert([
+          'sid' => 0,
+          'name' => $encodedNickname,
+          'password' => $this->hashPassword('000000'),
+          'role' => 2,
+          'role_auth' => 2,
+          'is_show' => 1
+        ]);
+        $accountCreated = true;
+      }
+      Db::commit();
+      $transactionStarted = false;
+    } catch (\Exception $e) {
+      if ($transactionStarted) Db::rollback();
+      $this->json([], '该昵称已存在', 0);
+      return;
+    }
+    $this->json([
+      'id' => $id,
+      'nickname' => $nickname,
+      'accountCreated' => $accountCreated,
+      'initialPassword' => $accountCreated ? '000000' : ''
+    ], $accountCreated ? '账号创建成功，后台初始密码为000000' : '昵称保存成功', 1);
+  }
+
+  public function frontProfileClear(): void
+  {
+    $token = $this->validIdentityToken();
+    if ($token === '') {
+      $this->json([], '身份令牌无效', 0);
+      return;
+    }
+    $this->json([], '已退出登录', 1);
+  }
+
+  /**
+   * 前台注册：账号 + 密码 + 确认密码 + 算术验证码。
+   *
+   * 账号写入 tb_role（与后台共用账号表，role=2 普通用户），
+   * 并把当前浏览器的身份令牌绑定到该账号上，注册后即处于登录态。
+   */
+  public function frontRegister(): void
+  {
+    $token = $this->validIdentityToken();
+    if ($token === '') {
+      $this->json([], '身份令牌无效', 0);
+      return;
+    }
+    if (!$this->verifyFrontCaptcha()) {
+      $this->json([], '验证码错误', 0);
+      return;
+    }
+
+    $username = $this->normalizeFrontNickname((string)$this->input('post.username/s', ''));
+    $password = (string)$this->input('post.password/s', '');
+    $confirm = (string)$this->input('post.confirm/s', '');
+
+    if (!$this->validFrontAccount($username)) {
+      $this->json([], '账号为2-30位中文、字母、数字、下划线或短横线', 0);
+      return;
+    }
+    if (!$this->validFrontPassword($password)) {
+      $this->json([], '密码为6-20位非空白字符', 0);
+      return;
+    }
+    if (!hash_equals($password, $confirm)) {
+      $this->json([], '两次输入的密码不一致', 0);
+      return;
+    }
+
+    $encodedName = htmlspecialchars($username, ENT_QUOTES);
+    if (Db::name('tb_role')->where('name', '=', $encodedName)->find()) {
+      $this->json([], '该账号已存在', 0);
+      return;
+    }
+    if (Db::name('tb_front_user')->where('nickname', '=', $encodedName)->find()) {
+      $this->json([], '该账号已存在', 0);
+      return;
+    }
+
+    $transactionStarted = false;
+    try {
+      Db::beginTrans();
+      $transactionStarted = true;
+      Db::name('tb_role')->insert([
+        'sid' => 0,
+        'name' => $encodedName,
+        'password' => $this->hashPassword($password),
+        'role' => 2,
+        'role_auth' => 2,
+        'is_show' => 1
+      ]);
+      $id = $this->bindFrontUser(hash('sha256', $token), $encodedName);
+      Db::commit();
+      $transactionStarted = false;
+    } catch (\Exception $e) {
+      if ($transactionStarted) Db::rollback();
+      $this->json([], '注册失败，请稍后重试', 0);
+      return;
+    }
+
+    $roleId = (int)(Db::name('tb_role')->where('name', '=', $encodedName)->value('id') ?? 0);
+    $this->createFrontSession($roleId, $username);
+    $this->json(['id' => $id, 'nickname' => $username], '注册成功', 1);
+  }
+
+  /**
+   * 前台登录：账号 + 密码 + 算术验证码。
+   *
+   * 校验 tb_role 账号，通过后把当前浏览器的身份令牌绑定到该账号，
+   * 使本机处于登录态；不写 admin_token 会话，不会串进后台。
+   */
+  public function frontLogin(): void
+  {
+    $token = $this->validIdentityToken();
+    if ($token === '') {
+      $this->json([], '身份令牌无效', 0);
+      return;
+    }
+    if (!$this->verifyFrontCaptcha()) {
+      $this->json([], '验证码错误', 0);
+      return;
+    }
+
+    $username = $this->normalizeFrontNickname((string)$this->input('post.username/s', ''));
+    $password = (string)$this->input('post.password/s', '');
+    if ($username === '' || $password === '') {
+      $this->json([], '账号和密码不能为空', 0);
+      return;
+    }
+
+    $rows = Db::name('tb_role')
+      ->where('name', '=', htmlspecialchars($username, ENT_QUOTES))
+      ->field(['id', 'name', 'password', 'is_show'])
+      ->select();
+    if (empty($rows)) {
+      $this->json([], '账号不存在', 0);
+      return;
+    }
+    $account = $rows[0];
+    if (isset($account['is_show']) && (int)$account['is_show'] === 0) {
+      $this->json([], '该账号已被禁用，请联系管理员', 0);
+      return;
+    }
+    if (!$this->verifyPassword($password, (string)$account['password'])) {
+      $this->json([], '账号或密码错误', 0);
+      return;
+    }
+
+    $id = $this->bindFrontUser(hash('sha256', $token), (string)$account['name']);
+    $this->createFrontSession((int)$account['id'], $username);
+    $this->json([
+      'id' => $id,
+      'nickname' => $this->normalizeFrontNickname(html_entity_decode((string)$account['name'], ENT_QUOTES))
+    ], '登录成功', 1);
+  }
+
+  /**
+   * 前台绑定账号：把当前浏览器身份令牌绑定到指定 tb_role 账号。
+   *
+   * 与 frontLogin 的区别：不校验验证码，供个人中心「绑定账号」入口使用；
+   * 校验账号密码通过后绑定身份并建立前台会话。
+   */
+  public function frontBind(): void
+  {
+    $token = $this->validIdentityToken();
+    if ($token === '') {
+      $this->json([], '身份令牌无效', 0);
+      return;
+    }
+
+    $username = $this->normalizeFrontNickname((string)$this->input('post.username/s', ''));
+    $password = (string)$this->input('post.password/s', '');
+    if ($username === '' || $password === '') {
+      $this->json([], '账号和密码不能为空', 0);
+      return;
+    }
+
+    $rows = Db::name('tb_role')
+      ->where('name', '=', htmlspecialchars($username, ENT_QUOTES))
+      ->field(['id', 'name', 'password', 'is_show'])
+      ->select();
+    if (empty($rows)) {
+      $this->json([], '账号不存在', 0);
+      return;
+    }
+    $account = $rows[0];
+    if (isset($account['is_show']) && (int)$account['is_show'] === 0) {
+      $this->json([], '该账号已被禁用，请联系管理员', 0);
+      return;
+    }
+    if (!$this->verifyPassword($password, (string)$account['password'])) {
+      $this->json([], '账号或密码错误', 0);
+      return;
+    }
+
+    $id = $this->bindFrontUser(hash('sha256', $token), (string)$account['name']);
+    $this->createFrontSession((int)$account['id'], $username);
+    $this->json([
+      'id' => $id,
+      'nickname' => $this->normalizeFrontNickname(html_entity_decode((string)$account['name'], ENT_QUOTES))
+    ], '绑定成功', 1);
+  }
+
+  /**
+   * 建立前台登录会话（front_token）。
+   *
+   * 与后台 admin_token 完全独立，不会串进后台鉴权；存 tb_role 账号 id 与昵称。
+   */
+  private function createFrontSession(int $userId, string $name): void
+  {
+    if (session_status() === PHP_SESSION_NONE) {
+      session_start();
+    }
+    $_SESSION['front_token'] = [
+      'id' => $userId,
+      'name' => $name,
+      'expire' => time() + 86400 * 7
+    ];
+  }
+
+  /**
+   * 校验并消费前台算术验证码（一次一验，用过即失效）。
+   */
+  private function verifyFrontCaptcha(): bool
+  {
+    if (session_status() === PHP_SESSION_NONE) {
+      session_start();
+    }
+    $submitted = trim((string)$this->input('post.gvcode/s', ''));
+    $expected = isset($_SESSION['captcha']) ? (string)$_SESSION['captcha'] : '';
+    unset($_SESSION['captcha']);
+    return $expected !== ''
+      && preg_match('/^-?\d+$/', $submitted) === 1
+      && (int)$submitted === (int)$expected;
+  }
+
+  /**
+   * 把当前浏览器身份令牌绑定到指定账号上。
+   *
+   * tb_front_user 以 identity_token 唯一，一个账号同一时刻只绑一个设备；
+   * 换设备登录时身份行随之迁移，旧设备的匿名身份行会被回收。
+   */
+  private function bindFrontUser(string $tokenHash, string $encodedName): int
+  {
+    $now = date('Y-m-d H:i:s');
+    $accountRow = Db::name('tb_front_user')->where('nickname', '=', $encodedName)->find();
+    $tokenRow = Db::name('tb_front_user')->where('identity_token', '=', $tokenHash)->find();
+    // 关联 tb_role 账号 id，供 getAbout 等按账号读取本人数据。
+    $roleId = (int)(Db::name('tb_role')->where('name', '=', $encodedName)->value('id') ?? 0);
+
+    if ($accountRow) {
+      if ($tokenRow && (int)$tokenRow['id'] !== (int)$accountRow['id']) {
+        Db::name('tb_front_user')->where('id', '=', (int)$tokenRow['id'])->delete();
+      }
+      $updateData = ['identity_token' => $tokenHash, 'update_time' => $now];
+      if ($roleId > 0) $updateData['role_id'] = $roleId;
+      Db::name('tb_front_user')->where('id', '=', (int)$accountRow['id'])->update($updateData);
+      return (int)$accountRow['id'];
+    }
+    if ($tokenRow) {
+      $updateData = ['nickname' => $encodedName, 'update_time' => $now];
+      if ($roleId > 0) $updateData['role_id'] = $roleId;
+      Db::name('tb_front_user')->where('id', '=', (int)$tokenRow['id'])->update($updateData);
+      return (int)$tokenRow['id'];
+    }
+    return (int)Db::name('tb_front_user')->insert([
+      'identity_token' => $tokenHash,
+      'nickname' => $encodedName,
+      'role_id' => $roleId,
+      'create_time' => $now,
+      'update_time' => $now
+    ]);
+  }
+
+  private function validFrontAccount(string $account): bool
+  {
+    return preg_match('/^[\x{4e00}-\x{9fa5}A-Za-z0-9_-]{2,30}$/u', $account) === 1;
+  }
+
+  private function validFrontPassword(string $password): bool
+  {
+    return preg_match('/^\S{6,20}$/', $password) === 1;
   }
 }

@@ -31,7 +31,12 @@ class AuthController extends Controller
     }
 
     if ($this->validateToken()) {
-      $this->json([], '您已登录', 1);
+      $this->json([
+        'id' => (int)($_SESSION['admin_token']['id'] ?? 0),
+        'name' => $_SESSION['admin_token']['name'] ?? '',
+        'role' => $_SESSION['admin_token']['role'] ?? '',
+        'role_auth' => $_SESSION['admin_token']['role_auth'] ?? 0
+      ], '您已登录', 1);
       return;
     }
 
@@ -75,16 +80,19 @@ class AuthController extends Controller
 
       // 加载认证配置
       $authConfig = require __DIR__ . '/../../../config/auth.php';
+      $loginExpireSeconds = max(1, (int)($authConfig['LOGIN_EXPIRE_DAYS'] ?? 7)) * 86400;
 
       $_SESSION['admin_token'] = [
+        'id' => (int)$userData['id'],
         'token' => $token,
         'name' => $userData['name'],
         'role' => $userData['role'] ?? '',
         'role_auth' => $userData['role_auth'] ?? 0,
-        'expire' => time() + $authConfig['TOKEN_EXPIRE']
+        'expire' => time() + $loginExpireSeconds
       ];
 
       $this->json([
+        'id' => (int)$userData['id'],
         'token' => $token,
         'name' => $userData['name'],
         'role' => $userData['role'] ?? '',

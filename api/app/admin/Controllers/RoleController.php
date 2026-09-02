@@ -18,12 +18,6 @@ class RoleController extends AdminBaseController
       || (int)($_SESSION['admin_token']['role_auth'] ?? 0) === 1;
   }
 
-  private function currentUserId(): int
-  {
-    $name = (string)($_SESSION['admin_token']['name'] ?? '');
-    return (int)(Db::name('tb_role')->where('name', '=', $name)->value('id') ?? 0);
-  }
-
   private function denyPermission(): void
   {
     http_response_code(403);
@@ -177,6 +171,10 @@ class RoleController extends AdminBaseController
     $keyword = trim((string)($this->input('post.keyword') ?? ''));
     $selectall = Db::name('tb_selectall')->where('name', '=', 'role')->value('is_select') ?? 0;
     $query = Db::name($table);
+    if (!$this->hasManagePermission()) {
+      // 普通用户仅能查看自己的账号行。
+      $query->where('id', '=', $this->currentUserId());
+    }
     if ($keyword !== '') {
       $pattern = '%' . mb_strtolower(htmlspecialchars($keyword, ENT_QUOTES), 'UTF-8') . '%';
       $query->where('LOWER(`name`)', 'LIKE', $pattern);

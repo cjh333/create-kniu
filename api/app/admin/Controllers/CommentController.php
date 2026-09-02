@@ -28,6 +28,13 @@ class CommentController extends AdminBaseController
     $keyword = trim((string)($this->input('post.keyword') ?? ''));
 
     $query = Db::name('tb_comment');
+    $isAdmin = $this->isAdmin();
+    $currentUserId = $this->currentUserId();
+
+    if (!$isAdmin) {
+      // 普通用户仅能查看自己发表的评论/回复。
+      $query->where('user_id', '=', $currentUserId);
+    }
 
     if ($type === 'comment') {
       $query->where('parent_id', '=', 0);
@@ -69,7 +76,10 @@ class CommentController extends AdminBaseController
       }
     }
     foreach ($result['data'] as &$row) {
-      $row['article_title'] = $articleTitles[(int)$row['article_id']] ?? '';
+      $row['article_title'] = $articleTitles[(int)$row['article_id']] ?? '未关联文章';
+      $row['status_text'] = (int)$row['is_show'] === 1 ? '已通过' : '待审核';
+      // 是否本人发表：管理员列表含他人评论时按 user_id 比对；普通用户列表只含自己的，恒为 true。
+      $row['is_own'] = (int)$row['user_id'] === $currentUserId;
     }
     unset($row);
     // 文章标题同样按入库规则解码。
@@ -103,9 +113,14 @@ class CommentController extends AdminBaseController
     // 删除顶层评论时，一并删除其下所有回复（parent_id 指向该评论）。
     $comment = Db::name('tb_comment')
       ->where('id', '=', $id)
-      ->field(['id', 'parent_id'])
+      ->field(['id', 'parent_id', 'user_id'])
       ->find();
     if ($comment) {
+      if (!$this->isAdmin() && (int)$comment['user_id'] !== $this->currentUserId()) {
+        http_response_code(403);
+        $this->json([], '只能删除自己发表的评论', 0);
+        return;
+      }
       if ((int)$comment['parent_id'] === 0) {
         Db::name('tb_comment')
           ->where('parent_id', '=', $id)
