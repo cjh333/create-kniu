@@ -1,0 +1,83 @@
+<style scoped>
+  @import url("@kniu/kniu.min.css");
+  @import url("@style/admin/admin.min.css");
+  @import url("@style/admin/admin_home.min.css");
+
+  .detail_head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 10px 10px;
+    flex-wrap: wrap;
+    gap: 10px
+  }
+
+  .detail_title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #303133
+  }
+
+  .detail_head_actions {
+    display: flex;
+    align-items: center;
+    gap: 12px
+  }
+
+  .filter_bar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 0 10px 12px;
+    flex-wrap: wrap
+  }
+
+  .filter_item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #606266
+  }
+
+  .filter_item kniu-radio-group {
+    display: inline-flex;
+    align-items: center
+  }
+
+  .detail_wrap {
+    position: relative;
+    background-color: #fff
+  }
+</style>
+<section class="index_cells">
+  <div class="admin_content_body index_cell index_cell_2">
+    <div class="detail_head">
+      <span class="detail_title">{{pageTitle}}</span>
+      <div class="detail_head_actions">
+        <kniu-input kniu:model="{{keyword}}" kniu:options="{{({name:'keyword',placeholder:'请输入昵称或回复内容'})}}" kniu@keydown.enter="searchList" kniu@input="debouncedSearch">
+          <template #append label-width="48px">
+            <kniu-btn aria-label="搜索" kniu:options="{{({text:true})}}" kniu@click="searchList">
+              <kniu-icon kniu:options="{{({icon:'Search'})}}" />
+            </kniu-btn>
+          </template>
+        </kniu-input>
+        <kniu-btn kniu:options="{{({link:true,type:'primary',size:'small'})}}" kniu@click="goBack">返回</kniu-btn>
+      </div>
+    </div>
+    <div class="filter_bar">
+      <div class="filter_item">
+        <span>审核</span>
+        <kniu-radio-group kniu:model="{{audit}}" kniu@change="onFilterChange">
+          <kniu-radio kniu:options="{{({value:'',size:'small'})}}">全部</kniu-radio>
+          <kniu-radio kniu:options="{{({value:'0',size:'small'})}}">待审核</kniu-radio>
+          <kniu-radio kniu:options="{{({value:'1',size:'small'})}}">已通过</kniu-radio>
+        </kniu-radio-group>
+      </div>
+    </div>
+    <div class="detail_wrap">
+      <kniu-table ref="table" kniu:options="{{commentTable}}" />
+      <kniu-page ref="page" kniu:options="{{commentPage}}" />
+    </div>
+  </div>
+</section>

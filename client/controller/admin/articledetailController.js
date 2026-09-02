@@ -94,6 +94,13 @@ const articledetailController = controller(function () {
           showOverflowTooltip: true
         },
         {
+          field: 'likes',
+          label: '点赞数',
+          width: 100,
+          align: 'center',
+          sortable: true
+        },
+        {
           field: 'create_time',
           label: '发布时间',
           width: 160,
@@ -165,7 +172,8 @@ const articledetailController = controller(function () {
       }
     }
   });
-  state.articleTable.cols[8].switch.options = state.switchOptions;
+  const articleShowColumn = state.articleTable.cols.find((column) => column.switch);
+  if (articleShowColumn) articleShowColumn.switch.options = state.switchOptions;
 
   const { loadList, changePage, changePageSize } = usePagination({
     state,

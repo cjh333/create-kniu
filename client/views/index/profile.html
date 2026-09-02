@@ -1,0 +1,230 @@
+<style scoped>
+  @import url("@kniu/kniu.min.css");
+
+  .profile_cells {
+    padding: 32px 0
+  }
+
+  .profile_card {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 28px;
+    border: 1px solid #ebeef5;
+    border-radius: 8px;
+    background-color: #fff;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, .06)
+  }
+
+  .profile_header {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid #ebeef5
+  }
+
+  .profile_avatar {
+    display: grid;
+    place-items: center;
+    flex: 0 0 72px;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background-color: #d9e8f8;
+    color: #5b86b2;
+    font-size: 28px
+  }
+
+  .profile_identity {
+    min-width: 0
+  }
+
+  .profile_title {
+    margin: 0 0 8px;
+    color: #303133;
+    font-size: 22px
+  }
+
+  .profile_note {
+    margin: 6px 0 0;
+    color: #909399;
+    font-size: 14px;
+    line-height: 1.7
+  }
+
+  .profile_stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    margin: 22px 0;
+    border: 1px solid #ebeef5;
+    border-radius: 6px
+  }
+
+  .profile_stat {
+    padding: 16px;
+    text-align: center
+  }
+
+  .profile_stat+.profile_stat {
+    border-left: 1px solid #ebeef5
+  }
+
+  .profile_stat_value {
+    display: block;
+    color: #303133;
+    font-size: 22px;
+    font-weight: 600
+  }
+
+  .profile_stat_label {
+    display: block;
+    margin-top: 6px;
+    color: #909399;
+    font-size: 13px
+  }
+
+  .profile_section_title {
+    margin: 26px 0 14px;
+    color: #303133;
+    font-size: 16px
+  }
+
+  .profile_favorites {
+    border-top: 1px solid #ebeef5
+  }
+
+  .profile_favorite {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    padding: 13px 4px;
+    border: 0;
+    border-bottom: 1px solid #ebeef5;
+    background-color: transparent;
+    color: #606266;
+    text-align: left;
+    cursor: pointer
+  }
+
+  .profile_favorite:hover {
+    color: #409eff
+  }
+
+  .profile_favorite_time {
+    flex-shrink: 0;
+    color: #909399;
+    font-size: 12px
+  }
+
+  .profile_empty {
+    padding: 22px 0;
+    color: #909399;
+    text-align: center
+  }
+
+  .profile_field {
+    display: flex;
+    align-items: center;
+    gap: 12px
+  }
+
+  .profile_field_label {
+    flex: 0 0 72px;
+    color: #606266
+  }
+
+  .profile_field_value {
+    color: #303133
+  }
+
+  .profile_signin {
+    margin-top: 18px
+  }
+
+  .profile_back {
+    margin-top: 28px;
+    text-align: center
+  }
+
+  @media(max-width:600px) {
+    .profile_cells {
+      padding: 16px
+    }
+
+    .profile_card {
+      padding: 20px
+    }
+
+    .profile_field {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 8px
+    }
+
+    .profile_field_label {
+      flex: auto
+    }
+
+    .profile_stats {
+      grid-template-columns: 1fr
+    }
+
+    .profile_stat+.profile_stat {
+      border-top: 1px solid #ebeef5;
+      border-left: 0
+    }
+  }
+</style>
+<div class="kniu_web">
+  <include src="./common/header.html" />
+  <main class="kniu_web_body">
+    <section class="profile_cells">
+      <div class="kniu_container">
+        <div class="profile_card">
+          <div class="profile_header">
+            <div class="profile_avatar">{{avatarText}}</div>
+            <div class="profile_identity">
+              <h1 class="profile_title">{{nickname || '访客用户'}}</h1>
+              <p class="profile_note">个人中心</p>
+            </div>
+          </div>
+          <div class="profile_stats">
+            <div class="profile_stat"><span class="profile_stat_value">{{likes}}</span><span class="profile_stat_label">获赞数</span></div>
+            <div class="profile_stat"><span class="profile_stat_value">{{commentCount}}</span><span class="profile_stat_label">评论数</span></div>
+            <div class="profile_stat"><span class="profile_stat_value">{{favorites.length}}</span><span class="profile_stat_label">收藏文章</span></div>
+          </div>
+          <h2 class="profile_section_title">账号信息</h2>
+          <div class="profile_field">
+            <label class="profile_field_label">用户昵称</label>
+            <span class="profile_field_value">{{nickname || '未设置'}}</span>
+          </div>
+          <p class="profile_note">{{profileHint}}</p>
+          <div class="profile_signin" kniu:if="{{nickname === ''}}">
+            <kniu-btn kniu:options="{{({type:'primary'})}}" kniu@click="toSignin">登录 / 注册</kniu-btn>
+          </div>
+          <h2 class="profile_section_title">收藏的文章</h2>
+          <div class="profile_favorites">
+            <template kniu:for="{{favorites}}" kniu:key="id">
+              <button type="button" class="profile_favorite" kniu:[article-id]="{{item.id}}" kniu@click="toFavorite">
+                <span>{{item.title}}</span><span class="profile_favorite_time">{{item.create_time}}</span>
+              </button>
+            </template>
+            <div class="profile_empty" kniu:if="{{favorites.length === 0}}">暂无收藏文章</div>
+          </div>
+          <h2 class="profile_section_title">浏览历史</h2>
+          <div class="profile_favorites">
+            <template kniu:for="{{history}}" kniu:key="id">
+              <button type="button" class="profile_favorite" kniu:[article-id]="{{item.id}}" kniu@click="toFavorite">
+                <span>{{item.title}}</span><span class="profile_favorite_time">{{item.last_view_time}}</span>
+              </button>
+            </template>
+            <div class="profile_empty" kniu:if="{{history.length === 0}}">暂无浏览记录</div>
+          </div>
+          <div class="profile_back"><a class="kniu_btn" kniu@click="toBack" href="#/">返回首页</a></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <include src="./common/footer.html" />
+</div>

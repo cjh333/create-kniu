@@ -8,6 +8,8 @@ function getAdminPageName(path) {
   if (path === '/seo') return '网站信息';
   if (path === '/nav' || path === '/dailydetail' || path === '/articledetail') return '栏目管理';
   if (path === '/users') return '用户管理';
+  if (path === '/comment') return '评论管理';
+  if (path === '/reply') return '回复管理';
   return '控制台';
 }
 

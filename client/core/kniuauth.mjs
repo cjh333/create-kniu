@@ -67,39 +67,30 @@ var KniuAuth = (function () {
     });
   }
 
-  /**
-   * 应用启动期恢复登录态：仅凭会话标记乐观置位，真正的鉴权仍由后端 401 兜底。
-   * 用于刷新页面后不让已登录用户被前端守卫误踢回登录页。
-   */
+  /** 应用启动期向服务端校验持久会话，并恢复当前登录用户。 */
   async function restoreSession() {
     try {
-      if (sessionStorage.getItem('kniu_authed')) {
-        state.loggedIn = true;
-        var savedUser = sessionStorage.getItem('kniu_user');
-        state.user = savedUser ? JSON.parse(savedUser) : null;
-        if (!state.user || state.user.roleAuth == null) {
-          await REQUEST({
-            url: '/system',
-            type: 'POST',
-            redirectOnUnauthorized: false,
-            success(res) {
-              if (res.status !== 1) return;
-              var systemInfo = res.data || {};
-              var userName = systemInfo.username || '';
-              setUser({
-                name: userName,
-                avatar: userName ? userName.charAt(0) : '·',
-                role: systemInfo.role || '管理员',
-                roleId: Number(systemInfo.role_id || 0),
-                roleAuth: Number(systemInfo.role_auth || 0)
-              });
-            },
-            fail(res) {
-              if (res.httpStatus === 401) markLoggedOut();
-            }
+      await REQUEST({
+        url: '/system',
+        type: 'POST',
+        redirectOnUnauthorized: false,
+        success(res) {
+          if (res.status !== 1) {
+            markLoggedOut();
+            return;
+          }
+          var systemInfo = res.data || {};
+          var userName = systemInfo.username || '';
+          setUser({
+            name: userName,
+            avatar: userName ? userName.charAt(0) : '·',
+            role: systemInfo.role || '管理员',
+            roleId: Number(systemInfo.role_id || 0),
+            roleAuth: Number(systemInfo.role_auth || 0)
           });
-        }
-      }
+        },
+        fail() { markLoggedOut(); }
+      });
     } catch (e) { }
   }
 

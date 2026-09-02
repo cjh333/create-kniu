@@ -16,7 +16,8 @@
       <div class="about_cell about_cell1">
         <div class="kniu_container">
           <div class="about_group1">
-            <kniu-empty kniu:options="{{({note:'暂无数据'})}}" />
+            <div kniu:if="{{content}}" class="about_content">{{@ content}}</div>
+            <kniu-empty kniu:elseif="{{!loading}}" kniu:options="{{({note:'暂无数据'})}}" />
           </div>
         </div>
       </div>

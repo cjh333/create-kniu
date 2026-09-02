@@ -1,0 +1,267 @@
+<style>
+  @import url("@kniu/kniu.min.css");
+
+  :host {
+    display: block;
+    width: 100%;
+    min-height: 100vh;
+    background-color: #667eea;
+    background-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%)
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0
+  }
+
+  .signin_group {
+    position: fixed;
+    top: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: #667eea;
+    background-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%)
+  }
+
+  .signin_wrap {
+    width: 400px;
+    max-width: 92vw;
+    margin: 24px 0;
+    background-color: #fff;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+    overflow: hidden
+  }
+
+  .signin_header {
+    padding: 32px 40px 0;
+    text-align: center
+  }
+
+  .signin_brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px
+  }
+
+  .signin_brandmark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    background-color: #23262e;
+    color: #fff;
+    font-size: 19px;
+    font-weight: 700;
+    border-radius: 8px
+  }
+
+  .signin_brandname {
+    font-size: 21px;
+    font-weight: 700;
+    color: #23262e
+  }
+
+  .signin_brandname strong {
+    color: #667eea
+  }
+
+  .signin_subtitle {
+    margin-top: 6px;
+    color: #999;
+    font-size: 13px
+  }
+
+  .signin_tabs {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    margin-top: 22px;
+    border-bottom: 1px solid #ebeef5
+  }
+
+  .signin_tab {
+    position: relative;
+    padding: 0 2px 12px;
+    border: 0;
+    background-color: transparent;
+    color: #909399;
+    font: 15px/1 Arial, "Microsoft YaHei", sans-serif;
+    cursor: pointer
+  }
+
+  .signin_tab:hover {
+    color: #667eea
+  }
+
+  .signin_tab[data-active="true"] {
+    color: #23262e;
+    font-weight: 600
+  }
+
+  .signin_tab[data-active="true"]::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: -1px;
+    left: 0;
+    height: 2px;
+    background-color: #667eea;
+    border-radius: 2px
+  }
+
+  .signin_body {
+    padding: 24px 40px 32px
+  }
+
+  .signin_pane {
+    display: none
+  }
+
+  .signin_pane[data-active="true"] {
+    display: block
+  }
+
+  .signin_captcha_image {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+    overflow: hidden;
+    border: 1px solid #dcdfe6;
+    border-radius: 4px;
+    background-color: #f5f7fa;
+    color: #909399;
+    font-size: 12px
+  }
+
+  .signin_captcha_image img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    cursor: pointer
+  }
+
+  .signin_tip {
+    margin: 14px 0 18px;
+    color: #909399;
+    font-size: 12px
+  }
+
+  .signin_submit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 44px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background-color: #667eea;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color .2s
+  }
+
+  .signin_submit:hover {
+    background-color: #5a6fd6
+  }
+
+  .signin_submit:disabled {
+    background-color: #a0aec0;
+    cursor: not-allowed
+  }
+
+  .signin_footer {
+    padding: 0 40px 26px;
+    color: #bbb;
+    font-size: 12px;
+    text-align: center
+  }
+
+  .signin_footer a {
+    color: #bbb;
+    text-decoration: none
+  }
+
+  .signin_footer a:hover {
+    color: #667eea
+  }
+
+  @media (max-width:480px) {
+
+    .signin_header,
+    .signin_body {
+      padding-left: 24px;
+      padding-right: 24px
+    }
+  }
+</style>
+
+<div class="signin_group">
+  <div class="signin_wrap">
+    <div class="signin_header">
+      <div class="signin_brand">
+        <span class="signin_brandmark">K</span>
+        <span class="signin_brandname">Kniu<strong>System</strong></span>
+      </div>
+      <p class="signin_subtitle">{{subtitle}}</p>
+    </div>
+    <div class="signin_tabs">
+      <button type="button" class="signin_tab" kniu:[active]="{{tab === 'login'}}" kniu@click="toLogin">登录</button>
+      <button type="button" class="signin_tab" kniu:[active]="{{tab === 'register'}}" kniu@click="toRegister">注册</button>
+    </div>
+    <div class="signin_body">
+      <div class="signin_pane" kniu:[active]="{{tab === 'login'}}">
+        <kniu-form kniu:options="{{loginModel}}" kniu@submit.prevent="onSubmit">
+          <kniu-form-cell kniu:options="{{({label:'账号'})}}">
+            <kniu-input kniu:model="{{loginModel.username}}" kniu:options="{{({name:'username',placeholder:'请输入账号',maxlength:'30',clearable:true})}}" />
+          </kniu-form-cell>
+          <kniu-form-cell kniu:options="{{({label:'密码'})}}">
+            <kniu-input kniu:model="{{loginModel.password}}" kniu:options="{{({name:'password',placeholder:'请输入密码',showPassword:true,type:'password'})}}" />
+          </kniu-form-cell>
+          <kniu-form-cell kniu:options="{{({label:'验证码'})}}">
+            <kniu-input kniu:model="{{loginModel.gvcode}}" kniu:options="{{({name:'gvcode',placeholder:'计算结果',maxlength:'4'})}}" />
+            <kniu-image style="border-radius:3px;margin-left:5px;min-width:120px;min-height:40px;cursor:pointer;" kniu:options="{{({src:(captchaImageUrl),fit:'contain'})}}" kniu@click="refreshCaptcha" />
+          </kniu-form-cell>
+          <p class="signin_tip">请输入图片中算术题的计算结果</p>
+          <div class="kniu_btn_group">
+            <kniu-btn kniu:options="{{({disabled:(isSubmitting),nativeType:'submit',block:true})}}">登 录</kniu-btn>
+          </div>
+        </kniu-form>
+      </div>
+      <div class="signin_pane" kniu:[active]="{{tab === 'register'}}">
+        <kniu-form kniu:options="{{registerModel}}" kniu@submit.prevent="onSubmit">
+          <kniu-form-cell kniu:options="{{({label:'账号'})}}">
+            <kniu-input kniu:model="{{registerModel.username}}" kniu:options="{{({name:'username',placeholder:'2-30位中文/字母/数字',maxlength:'30',clearable:true})}}" />
+          </kniu-form-cell>
+          <kniu-form-cell kniu:options="{{({label:'密码'})}}">
+            <kniu-input kniu:model="{{registerModel.password}}" kniu:options="{{({name:'password',placeholder:'6-20位非空白字符',showPassword:true,type:'password'})}}" />
+          </kniu-form-cell>
+          <kniu-form-cell kniu:options="{{({label:'确认密码'})}}">
+            <kniu-input kniu:model="{{registerModel.confirm}}" kniu:options="{{({name:'confirm',placeholder:'请再次输入密码',showPassword:true,type:'password'})}}" />
+          </kniu-form-cell>
+          <kniu-form-cell kniu:options="{{({label:'验证码'})}}">
+            <kniu-input kniu:model="{{registerModel.gvcode}}" kniu:options="{{({name:'gvcode',placeholder:'计算结果',maxlength:'4'})}}" />
+            <kniu-image style="border-radius:3px;margin-left:5px;min-width:120px;min-height:40px;cursor:pointer;" kniu:options="{{({src:(captchaImageUrl),fit:'contain'})}}" kniu@click="refreshCaptcha" />
+          </kniu-form-cell>
+          <p class="signin_tip">请输入图片中算术题的计算结果</p>
+          <div class="kniu_btn_group">
+            <kniu-btn kniu:options="{{({disabled:(isSubmitting),nativeType:'submit',block:true})}}">注 册</kniu-btn>
+          </div>
+        </kniu-form>
+      </div>
+    </div>
+    <div class="signin_footer"><a href="#/">返回首页</a> · Kniu System &copy; 2026</div>
+  </div>
+</div>

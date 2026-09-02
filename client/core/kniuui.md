@@ -19,6 +19,8 @@
 <kniu-page kniu:options="{{userPage}}"></kniu-page>
 ```
 
+两个及以上按钮统一使用 `<kniu-btn-group>` 包裹，组件内置 `display:inline-flex; align-items:center; gap:10px`，页面不得再用零散 margin 拼按钮间距。
+
 表格的 `cols`、`data`、loading、编辑、开关、操作按钮和回调均属于 `tableOptions`，不再使用 `kniu-table-col`。options 数据变化时必须整体替换对象引用。以后新增组件也必须先实现本协议。
 
 ### 双语配置（lang，强制约定）
@@ -197,7 +199,7 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 - `show-password` 仅在 `type="password"` 时生效。
 - 清除和密码显示控件使用 `span[role="button"][tabindex="-1"]`，按 Tab 时会跳过，仅响应鼠标或触摸点击。
 - 密码隐藏时显示闭眼图标，密码显示时显示睁眼图标。
-- 支持 `name`、`placeholder`、`autocomplete`、`maxlength`、`disabled`、`readonly`、`required`。
+- 支持 `name`、`placeholder`、`autocomplete`、`autocapitalize`、`maxlength`、`disabled`、`readonly`、`required`；昵称等需要保留用户输入大小写的字段可在 `options` 中配置 `autocapitalize: 'none'`。
 - 提供 `focus()` 和 `select()` 方法。
 - Input 中按 Enter 会触发所属表单提交。
 - `readonly` 状态点击或聚焦时保持默认边框色，不显示可编辑状态的蓝色高亮。
@@ -414,6 +416,8 @@ state.switchOptions = {
 ## Table
 
 表格数据、列布局和回调全部由控制器 options 提供。旧 attribute 与 `kniu-table-col` 声明全部作废：
+
+内部原生 `.kniu_sys_table` 固定使用 `width:100%`；列配置的总宽度仅生成 `min-width`，超出父容器时由 viewport 横向滚动，不会写入内联像素 `width` 覆盖 100%。
 
 ```html
 <kniu-table ref="table" kniu:options="{{tableOptions}}"></kniu-table>
@@ -809,13 +813,15 @@ format 字母大小写不敏感，组件会在内部自动规范化：日期部�
 
 前台文章底部的评论留言组件，配置只通过 `kniu:options` 传入。
 
+前台业务必须提供真实的 `currentUser` 昵称，不能用“游客”作为兜底直接提交。未设置昵称时，详情页打开昵称与算术验证码模态框，验证码由 `/captcha` 生成，后端在首次创建身份时强制校验；保存唯一昵称后继续提交原评论。本人评论通过 `onDelete` 接收 `{ commentId }`，业务确认后调用删除接口并刷新列表；非本人不渲染删除按钮，服务端仍需校验所有权。
+
 ```html
 <kniu-comment kniu:options="{{commentOptions}}" />
 ```
 
 ```js
 state.commentOptions = {
-  list: [],                          // 评论列表：{id,parentId,username,avatar,time,content,likes,liked}
+  list: [],                          // 评论列表：{id,parentId,replyTo,username,avatar,time,content,likes,liked}
   placeholder: '请输入评论...',
   maxLength: 500,                     // 最大字数；配置后显示实时“已输入 / 上限”
   submitText: '发表评论',
@@ -830,16 +836,18 @@ state.commentOptions = {
 
 | options 字段 | 说明 |
 | --- | --- |
-| `list` | 评论列表，每项含 `id`（评论ID）、`parentId`（回复的父评论ID，0 为顶层）、`username`、`avatar`（可选）、`time`、`content`、`likes`（点赞数）、`liked`（当前是否已赞） |
+| `list` | 评论列表，每项含 `id`、`userId`、`isOwn`、`parentId`、`replyTo`、`username`、`avatar`、`time`、`content`、`likes`、`liked`；本人评论只显示常驻删除按钮，不渲染回复和点赞操作 |
 | `placeholder` | 输入框占位文字 |
-| `maxLength` | 评论最大字数；大于 0 时限制输入、表情插入与提交，并在工具栏左侧实时显示“当前字数 / 上限” |
+| `maxLength` | 评论最大字数；大于 0 时限制输入、表情插入与提交，并在输入框内部右下角实时显示“当前字数/上限” |
+| `filter` | 逗号分隔的敏感词，例如 `B,逼,屌,操`；提交事件派发前进行不区分大小写匹配，命中后提示“您的评论涉及敏感字不可提交评论”并直接终止 |
+| `currentUserId` | 当前访客数据库用户 ID；与列表 `userId/isOwn` 一起识别本人评论 |
 | `submitText` | 提交按钮文字，默认“评论” |
 | `emptyText` | 空态提示文字 |
 | `emojis` | 表情面板内可选表情数组，默认内置 46 个常用表情 |
 | `currentUser` | 当前用户昵称，提交评论时作为 `name` 传给后端 |
 | `onSubmit` | 提交评论回调，`detail` 含 `content` 与 `parentId`（回复目标） |
 | `onLike` | 点赞/取消点赞回调，`detail` 含 `commentId` 与 `liked` |
-| `onDelete` | 删除按钮回调，`detail` 含 `commentId`；删除按钮默认隐藏，鼠标移入或键盘聚焦 actions 区域时显示 |
+| `onDelete` | 删除按钮回调，`detail` 含 `commentId`；评论操作组与昵称、时间处于同一信息行并靠右，删除按钮固定在“回复”左侧且默认隐藏，鼠标移入或键盘聚焦 actions 区域时显示 |
 
 事件回调（`onSubmit`/`onLike`/`onDelete`）由统一 options 协议映射为组件内部派发的 `submit`/`like`/`delete` 事件，回调收到的 `detail` 即事件负载。
 
@@ -879,20 +887,25 @@ box-shadow: 0 2px 12px rgba(0,0,0,.1);
 
 - 必须定义本组件自己的 `options` accessor（存储到 `_options` 并触发 `_render`），否则 `installOptionsOnlyProtocol` 因无 `ownDescriptor.set` 会退回属性反射，`_options` 恒空、渲染不出内容——对齐 kniu-switch/kniu-select/kniu-date-picker 既有模式。
 - 必须把 `kniu-comment` 加入统一 options 协议组件清单，否则 `onSubmit`/`onLike` 事件回调不会绑定。
-- 后端返回的 `list` 项字段为 `{id, parentId, username, avatar, time, content, likes, liked}`；前端渲染时 `commentEscape()` 转义，后端已 `decodeFields` 一次，安全且显示正确。
+- 后端返回的 `list` 项字段含 `{id,userId,isOwn,parentId,replyTo,username,avatar,time,content,likes,liked}`；`replyTo` 和 `isOwn` 均由服务端按身份关联生成。前端渲染时 `commentEscape()` 转义，后端已 `decodeFields` 一次。
 
-## 点赞组件 kniu-thumbs
+## 前台登录状态 kniu-user-login
 
-文章点赞组件只通过 `kniu:options` 配置，按钮显示大拇指图标及括号包裹的点赞数，例如“大拇指图标 (360)”。
+前台公共头部始终使用 `<kniu-user-login></kniu-user-login>`。未建立昵称时显示“你好，访客！”，不显示箭头和下拉菜单；昵称只能在首次发表评论时设置，个人中心只读展示。建立昵称后显示头像、“你好，昵称”和下拉箭头。点击账号区域展开菜单，菜单内提供“个人中心”“后台管理”和“退出”；“后台管理”在新标签页打开后台登录页。退出调用 `/frontProfileClear` 保留数据库身份和昵称，仅刷新本地随机令牌并返回首页。组件监听 `kniu-identity-change` 实时更新。
+
+## 点赞组件 kniu-like
+
+文章点赞组件只通过 `kniu:options` 配置，按钮显示大拇指图标及括号包裹的点赞数，例如“大拇指图标 (360)”。组件始终渲染；`own=true` 时按钮禁用但仍显示点赞数，不能把整个组件隐藏。组件在内容区域水平居中并保留 `24px` 上下间距；按钮最小高度 `44px`，图标 `24px`，文字 `16px`。点击未点赞的大拇指后立即向上飘出蓝色 `+1`；组件重渲染时保留正在播放的动画节点，取消点赞不播放，并遵循 `prefers-reduced-motion`。
 
 ```html
-<kniu-thumbs kniu:options="{{thumbsOptions}}" />
+<kniu-like kniu:options="{{likeOptions}}" />
 ```
 
 ```js
-state.thumbsOptions = {
+state.likeOptions = {
   count: 360,
   liked: false,
+  own: false,
   loading: false,
   disabled: false,
   onChange: async ({ liked, count }) => { /* 提交后以服务端计数覆盖 count */ }
@@ -903,6 +916,7 @@ state.thumbsOptions = {
 | --- | --- |
 | `count` | 当前点赞数，组件保证显示为不小于 0 的整数 |
 | `liked` | 当前是否已点赞；为 `true` 时显示主色高亮 |
+| `own` | 当前内容是否属于本人；为 `true` 时不渲染点赞按钮 |
 | `loading` | 提交中禁用按钮，防止连续点击造成重复请求 |
 | `disabled` | 禁用点赞 |
 | `onChange` | 点击回调，收到 `{liked, count}`；`liked` 是本次期望提交的新状态 |
@@ -923,12 +937,11 @@ state.articleTabOptions = {
   next: { id: 3, title: '下一篇文章标题' },
   previousLabel: '上一篇',
   nextLabel: '下一篇',
-  emptyText: '返回列表',
-  onChange: ({ direction, id }) => { /* id=null 时返回列表 */ }
+  onChange: ({ direction, id }) => { /* 切换到对应文章 */ }
 };
 ```
 
-组件按上下两行排列，标题允许换行；点击派发 `change`，负载为 `{direction:'previous'|'next', id:number|null}`。
+组件按上下两行排列，标题允许换行；缺少上一篇或下一篇时不渲染对应项，两项都缺少时隐藏整个组件。点击派发 `change`，负载为 `{direction:'previous'|'next', id:number}`。
 
 ## 默认导出
 

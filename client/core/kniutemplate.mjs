@@ -524,7 +524,7 @@ var KniuTemplate = (function () {
     style.id = 'kniu_loading_directive_style';
     style.textContent = [
       '.kniu_loading_mask{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;',
-      'align-items:center;justify-content:center;gap:8px;background:#fff;',
+      'align-items:center;justify-content:center;gap:8px;background-color:#fff;',
       'backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;visibility:hidden;pointer-events:none;',
       'transition:opacity .4s ease,visibility .4s ease}',
       '.kniu_loading_mask[data-active="true"]{opacity:1;visibility:visible;pointer-events:auto;transition:none}',

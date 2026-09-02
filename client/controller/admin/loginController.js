@@ -102,6 +102,10 @@ const loginController = controller(({ navigateTo }) => {
     }
 
     onMounted(() => {
+      if (AUTH.isLoggedIn()) {
+        navigateTo('/admin');
+        return;
+      }
       refreshCaptcha();
     });
 

@@ -90,7 +90,7 @@
       <kniu-form-cell kniu:if="{{canAdministerUsers}}">
         <template #prepend label-width="120px">角色</template>
         <template #append>
-          <kniu-radio-group kniu:model="{{userModel.role}}" kniu:options="{{({})}}" kniu@change="onRoleChange">
+          <kniu-radio-group kniu:model="{{userModel.role}}" kniu@change="onRoleChange">
             <kniu-radio kniu:options="{{({value:'1',size:'large'})}}">管理员</kniu-radio>
             <kniu-radio kniu:options="{{({value:'2',size:'large'})}}">普通用户</kniu-radio>
           </kniu-radio-group>
@@ -109,7 +109,7 @@
     </kniu-form>
   </template>
   <template #footer>
-    <kniu-btn kniu:options="{{({})}}" kniu@click="closeDialog">取 消</kniu-btn>
+    <kniu-btn kniu@click="closeDialog">取 消</kniu-btn>
     <kniu-btn style="margin-left:10px;" kniu:options="{{({type:'primary'})}}" kniu@click="saveEdit">保 存</kniu-btn>
   </template>
 </kniu-modal>

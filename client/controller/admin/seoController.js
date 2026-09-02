@@ -56,8 +56,12 @@ const seoController = controller(() => {
         value: '',
         condition: /^(?=.*\S).+$/,
         message: '请输入邮箱'
+      },
+      about_content: {
+        value: ''
       }
-    }
+    },
+    aboutToolbar: 'code | undo redo | bold italic underline strikeThrough | justifyLeft justifyCenter justifyRight justifyFull | insertOrderedList insertUnorderedList | h1 h2 h3 p | blockquote pre hr table | fontname fontsize forecolor hilitecolor | link unlink image media emoticons | removeFormat clearhtml selectAll | maximize'
   });
 
   async function getSeoList() {

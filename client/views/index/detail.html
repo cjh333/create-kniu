@@ -7,6 +7,12 @@
       width: calc(100vw - 320 / var(--kniu_vw) * 2);
     }
   }
+
+  .detail_favorite {
+    display: flex;
+    justify-content: center;
+    margin-top: 12px
+  }
 </style>
 <div class="kniu_web">
   <include src="./common/header.html" />
@@ -21,9 +27,12 @@
             </div>
             <div class="detail_content1">{{@ content}}</div>
           </div>
-          <kniu-thumbs kniu:options="{{thumbsOptions}}" />
-          <kniu-article-tab kniu:options="{{articleTabOptions}}" />
-          <kniu-comment kniu:options="{{commentOptions}}" />
+          <kniu-like class="kniu_md_mt_30" kniu:options="{{likeOptions}}" />
+          <div class="detail_favorite">
+            <kniu-btn kniu:options="{{favoriteOptions}}" kniu@click="toggleFavorite">{{favoriteText}}</kniu-btn>
+          </div>
+          <kniu-article-tab class="kniu_md_mt_30" kniu:options="{{articleTabOptions}}" />
+          <kniu-comment class="kniu_md_mt_30" kniu:options="{{commentOptions}}" />
         </div>
       </div>
       <div class="detail_cell detail_cell2">

@@ -27,8 +27,11 @@ const usersController = controller(function () {
       sid: 0,
       name: {
         value: '',
-        condition: /^[A-Za-z][A-Za-z0-9]*$/,
-        message: '您未填写用户名或用户名格式不正确'
+        condition: function (v) {
+          const name = String(v.value || '').trim();
+          return name.length > 0 && Array.from(name).length <= 30;
+        },
+        message: '用户名必填且不能超过30个字'
       },
       password: {
         value: '',
@@ -280,7 +283,7 @@ const usersController = controller(function () {
       await REQUEST({
         url: '/role_update',
         type: 'POST',
-        data: { old_password: form.old_password, new_password: form.new_password },
+        data: { id: form.id, old_password: form.old_password, new_password: form.new_password },
         async success(res) {
           if (res.status !== 1) {
             self.$msg({ content: res.msg, type: 'error' });
