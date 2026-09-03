@@ -19,7 +19,6 @@ function createCommentManagementController(managementType = 'comment') {
       keyword: '',
       pageTitle: managementType === 'reply' ? '回复管理' : '评论管理',
       type: managementType,
-      // 审核状态：'0'=待审核 / '1'=已通过 / ''=全部
       audit: '',
       commentTable: {
         data: [],
@@ -130,10 +129,10 @@ function createCommentManagementController(managementType = 'comment') {
         onSizeChange: (detail) => changePageSize({ detail })
       },
       switchOptions: {
-      name: 'is_show',
-      activeValue: 1,
-      inactiveValue: 0,
-      activeColor: '#13ce66',
+        name: 'is_show',
+        activeValue: 1,
+        inactiveValue: 0,
+        activeColor: '#13ce66',
         inactiveColor: '#ff4949',
         disabled: !canEditContent
       },
@@ -171,6 +170,30 @@ function createCommentManagementController(managementType = 'comment') {
       const row = list[index];
       if (!row) return;
       await auditRequest(row.id, value);
+    }
+
+    async function toggleReadState(index, list, value) {
+      const row = list[index];
+      if (!row) return;
+      await REQUEST({
+        url: '/reply_notification_update',
+        type: 'POST',
+        data: { id: row.id, is_read: Number(value) === 1 ? 1 : 0 },
+        success(res) {
+          if (res.status !== 1) {
+            self.$msg({ content: res.msg, type: 'error' });
+            loadList(state.currentPage);
+            return;
+          }
+          self.$msg({ content: res.msg, type: 'success' });
+          globalThis.dispatchEvent(new CustomEvent('kniu:reply-notification-change'));
+          loadList(state.currentPage);
+        },
+        fail(res) {
+          self.$msg({ content: res.msg, type: 'error' });
+          loadList(state.currentPage);
+        }
+      });
     }
 
     async function auditRequest(id, audit) {
@@ -223,7 +246,7 @@ function createCommentManagementController(managementType = 'comment') {
     }
 
     onMounted(function () { loadList(1); });
-    return { state, changePage, changePageSize, searchList, debouncedSearch, onFilterChange, toggleAudit, deleteRow, goBack };
+    return { state, changePage, changePageSize, searchList, debouncedSearch, onFilterChange, toggleAudit, toggleReadState, deleteRow, goBack };
   });
 }
 
