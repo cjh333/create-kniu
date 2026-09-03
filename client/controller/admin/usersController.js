@@ -256,6 +256,7 @@ const usersController = controller(function () {
     state.isAddDialog = false;
     const model = createUserModel();
     assignOptionFields(model, row);
+    model.id = row.id;
     model.role = Number(row.role == null ? 2 : row.role);
     model.role_auth = Number(deriveRoleAuth(row.role));
     model.is_show = Number(row.is_show == null ? 1 : row.is_show);
