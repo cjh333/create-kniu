@@ -40,7 +40,7 @@ const usersController = controller(function () {
           if (!state.isAddDialog && password === '') return true;
           return /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,./?])[^<>]{8,}$/.test(password);
         },
-        message: '您未填写密码或密码格式不正确'
+        message: '密码需 8 位以上，含大小写字母、数字和特殊字符'
       },
       repassword: {
         value: '',
@@ -66,7 +66,7 @@ const usersController = controller(function () {
           if (!state.isAddDialog && password === '') return true;
           return /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,./?])[^<>]{8,}$/.test(password);
         },
-        message: '您未填写新密码或新密码格式不正确'
+        message: '密码需 8 位以上，含大小写字母、数字和特殊字符'
       },
       confirm_password: {
         value: '',
