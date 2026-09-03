@@ -85,8 +85,20 @@ class RoleController extends AdminBaseController
     if (!$hasManagePermission) {
       $newPassword = (string)($this->input('post.new_password') ?? '');
       $currentUserId = $this->currentUserId();
-      if ((int)$id !== $currentUserId || $oldPassword === '' || $newPassword === '') {
+      if ($currentUserId <= 0) {
         $this->denyPermission();
+        return;
+      }
+      // 修改自己密码：一律以会话身份为准，不依赖前端传来的 id
+      // （前端 id 缺失或过期缓存发错值时不应导致"权限不足"）。
+      // 仅在前端显式带了他人 id 时才按越权拒绝。
+      if ($id !== null && (string)$id !== '' && (int)$id !== $currentUserId) {
+        $this->denyPermission();
+        return;
+      }
+      $id = $currentUserId;
+      if ($oldPassword === '' || $newPassword === '') {
+        $this->json([], '请输入原密码和新密码', 0);
         return;
       }
       $storedPassword = (string)(Db::name('tb_role')->where('id', '=', $currentUserId)->value('password') ?? '');
