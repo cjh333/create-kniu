@@ -384,6 +384,7 @@ var KniuBase = (function () {
         return lock;
       },
       eventBus: eventBus,
+      navigateTo: navigateTo,
     };
   }
 

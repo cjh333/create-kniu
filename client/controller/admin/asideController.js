@@ -19,6 +19,8 @@ const asideController = controller(({ eventTo, navigateTo, onRouteChange }) => {
       userAvatar: '·',
       userName: '—',
       userRole: '—',
+      showWebsiteInfo: false,
+      showDaily: false,
       showUserManagement: false
     });
 
@@ -27,6 +29,8 @@ const asideController = controller(({ eventTo, navigateTo, onRouteChange }) => {
       state.userName = info.name || '—';
       state.userAvatar = info.avatar || (info.name ? info.name.charAt(0) : '·');
       state.userRole = info.role || '管理员';
+      state.showWebsiteInfo = Number(info.roleId || info.role || 0) === 1 || Number(info.roleAuth || 0) === 1;
+      state.showDaily = state.showWebsiteInfo;
       state.showUserManagement = !!String(info.name || '').trim();
     }
 

@@ -2,10 +2,10 @@
 
 namespace App\Admin\Controllers;
 
-use Core\AdminBaseController;
+use Core\Base;
 use Core\Db;
 
-class ArticleController extends AdminBaseController
+class ArticleController extends Base
 {
   public function __construct()
   {
@@ -180,15 +180,17 @@ class ArticleController extends AdminBaseController
       $query->where('user_id', '=', $this->currentUserId());
     }
     if ($keyword !== '') {
-      // 关键词按入库规则编码（htmlspecialchars ENT_QUOTES）后统一小写，
-      // 配合 SQL 侧 LOWER() 实现不依赖排序规则的字母大小写不敏感模糊搜索。
-      $pattern = '%' . mb_strtolower(htmlspecialchars($keyword, ENT_QUOTES), 'UTF-8') . '%';
-      $query->where('LOWER(`title`)', 'LIKE', $pattern);
+      $query->where('LOWER(`title`)', 'LIKE', $this->likeEncodedPattern($keyword));
     }
     $result = $query
       ->order($field, $sort)
       ->page($pageCurrent, $pageRow);
     $result['data'] = $this->decodeFields($result['data'] ?? [], ['title', 'subtitle', 'summary', 'content']);
+    foreach ($result['data'] as &$article) {
+      $role = Db::name('tb_role')->where('id', '=', (int)($article['user_id'] ?? 0))->find();
+      $article['publisher'] = (string)($role['name'] ?? '');
+    }
+    unset($article);
     $result['selectall'] = $selectall;
     $this->json($result);
   }

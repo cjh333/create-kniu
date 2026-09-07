@@ -2,43 +2,56 @@
 
 .index_cell_2 {
   border: 1px solid #ebeef5;
-  margin: calc(10 / var(--kniu_vw));
-  padding: calc(10 / var(--kniu_vw));
+  margin: 8px;
+  padding: 6px;
   background-color: #fff;
 }
 
-@media (max-width: 480px) {
-  .index_cell_2 {
-    margin: 8px;
-    padding: 6px;
-  }
+.detail_head {
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+  padding-right: 0!important;
+  padding-bottom: 10px;
+  padding-left: 0!important;
+}
 
-  .detail_head {
-    flex-wrap: wrap;
-    gap: 8px;
-    padding-top: 4px;
-    padding-right: 0!important;
-    padding-bottom: 10px;
-    padding-left: 0!important;
+.detail_head_actions {
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 0;
+  gap: 6px;
+}
+
+.detail_head_actions kniu-input,
+.detail_head_actions kniu-input-group {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+@media (min-width: 341px) {
+  .detail_head_actions {
+    flex-basis: 220px;
+    width: auto;
+  }
+}
+
+@media (min-width: 481px) {
+  .index_cell_2 {
+    margin: calc(10 / var(--kniu_vw));
+    padding: calc(10 / var(--kniu_vw));
   }
 
   .detail_head_actions {
-    flex: 1 1 220px;
-    min-width: 0;
-    gap: 6px;
+    flex: 0 1 auto;
+    width: auto;
   }
 
   .detail_head_actions kniu-input,
   .detail_head_actions kniu-input-group {
-    flex: 1 1 auto;
-    width: auto;
-    min-width: 0;
-  }
-}
-
-@media (max-width: 340px) {
-  .detail_head_actions {
-    flex-basis: 100%;
-    width: 100%;
+    flex: 0 1 280px;
+    width: 280px;
+    max-width: 100%;
   }
 }

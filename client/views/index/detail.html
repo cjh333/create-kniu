@@ -2,16 +2,36 @@
   @import url("@kniu/kniu.min.css");
   @import url("@style/index/detail.min.css");
 
+  .detail_btn_group {
+    justify-content: center;
+  }
+
+  .detail_btn_group kniu-like,
+  .detail_btn_group kniu-btn {
+    flex: 0 0 auto;
+    width: 120px;
+    min-width: 120px;
+  }
+
+  .detail_btn_group kniu-btn {
+    height: 48px !important;
+  }
+
+  .detail_article_info {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center;
+    gap: 24px;
+    margin-top: 12px;
+    color: #a0a0a0 !important;
+    font-size: 13px;
+    text-align: center;
+  }
+
   @media (min-width: calc(1280px - 60px)) {
     .kniu_web_body .kniu_container {
       width: calc(100vw - 320 / var(--kniu_vw) * 2);
     }
-  }
-
-  .detail_favorite {
-    display: flex;
-    justify-content: center;
-    margin-top: 12px
   }
 </style>
 <div class="kniu_web">
@@ -19,23 +39,28 @@
   <!-- 2.内容 -->
   <main class="kniu_web_body">
     <section class="detail_cells">
-      <div class="detail_cell detail_cell1">
+      <div class="detail_cell detail_cell_1">
         <div class="kniu_container">
-          <div class="detail_group1">
-            <div class="detail_title_group1">
-              <h1 class="detail_title1">{{title}}</h1>
+          <div class="detail_group_1">
+            <div class="detail_title_group_1">
+              <h1 class="detail_title_1">{{title}}</h1>
             </div>
-            <div class="detail_content1">{{@ content}}</div>
+            <div class="detail_article_info">
+              <span>发布人：{{publisher}}</span>
+              <span>发布于：{{create_time}}</span>
+              <span>浏览次数：{{hits}}次</span>
+            </div>
+            <div class="detail_content_1">{{@ content}}</div>
           </div>
-          <kniu-like class="kniu_md_mt_30" kniu:options="{{likeOptions}}" />
-          <div class="detail_favorite">
+          <div class="kniu_btn_group detail_btn_group" kniu:if="{{!isOwn}}">
+            <kniu-like kniu:options="{{likeOptions}}" />
             <kniu-btn kniu:options="{{favoriteOptions}}" kniu@click="toggleFavorite">{{favoriteText}}</kniu-btn>
           </div>
           <kniu-article-tab class="kniu_md_mt_30" kniu:options="{{articleTabOptions}}" />
           <kniu-comment class="kniu_md_mt_30" kniu:options="{{commentOptions}}" />
         </div>
       </div>
-      <div class="detail_cell detail_cell2">
+      <div class="detail_cell detail_cell_2">
         <div class="kniu_container">
           <div class="kniu_btn_group detail_btn_group">
             <a class="kniu_btn detail_btn" kniu@click="toBack" href="#/">返回</a>

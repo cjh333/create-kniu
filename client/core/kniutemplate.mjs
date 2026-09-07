@@ -1347,8 +1347,12 @@ var KniuTemplate = (function () {
               node.querySelectorAll('[kniu\\:for]').forEach(function (n) { return setupFor(n, parentExtra, bc); });
               node.querySelectorAll('[kniu\\:if]').forEach(function (n) { return setupIf(n, parentExtra, bc); });
             }
-            applyBindings(node, state, parentExtra, bc, refs);
+            // 必须先插入文档再 applyBindings：kniu:if / kniu:for 分支内渲染的 kniu-table /
+            // kniu-page 等自定义元素在 insertBefore 之前尚未连接升级，此时处理 kniu:options
+            // 会因 'options' in node 为 false 把值存进 __kniuOptionsValue expando 而非实例
+            // _config，连接后也永不回填，导致组件 options 恒空（表无行、页无数据）。
             anchor.parentNode.insertBefore(node, anchor);
+            applyBindings(node, state, parentExtra, bc, refs);
             rendered.push(node);
           });
         }

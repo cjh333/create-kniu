@@ -16,14 +16,21 @@ Router::post('/favoriteArticle', 'IndexController@favoriteArticle');
 Router::post('/frontProfile', 'IndexController@frontProfile');
 Router::post('/frontProfileSave', 'IndexController@frontProfileSave');
 Router::post('/frontProfileClear', 'IndexController@frontProfileClear');
+Router::post('/frontSessionSync', 'IndexController@frontSessionSync');
 Router::post('/frontRegister', 'IndexController@frontRegister');
 Router::post('/frontLogin', 'IndexController@frontLogin');
 Router::post('/frontBind', 'IndexController@frontBind');
+// 邮箱验证码与找回密码。
+Router::post('/email_code', 'IndexController@emailCode');
+Router::post('/password_reset', 'IndexController@passwordReset');
+// 数据版本号（公开，供前端 SSE 信号丢失时兜底比对）。
+Router::post('/data_revision', 'IndexController@dataRevision');
 // ------------------------------------------------------------------------------------------------
 // 登录。
 Router::post('/logup', 'AuthController@logup');
 Router::post('/logout', 'AuthController@logout');
 Router::post('/captcha', 'AuthController@captcha');
+Router::post('/session_status', 'AuthController@sessionStatus');
 Router::post('/admin', 'AdminController@admin');
 // 系统信息。
 Router::post('/system', 'AdminController@system');
@@ -55,6 +62,9 @@ Router::post('/comment_list', 'CommentController@commentList');
 Router::post('/comment_audit', 'CommentController@commentAudit');
 Router::post('/comment_delete', 'CommentController@commentDelete');
 Router::post('/comment_detail', 'CommentController@commentDetail');
+Router::post('/reply_notification_state', 'CommentController@replyNotificationState');
+Router::post('/reply_notification_read', 'CommentController@replyNotificationRead');
+Router::post('/reply_notification_update', 'CommentController@replyNotificationUpdate');
 // 角色。
 Router::post('/role_add', 'RoleController@roleAdd');
 Router::post('/role_delete', 'RoleController@roleDelete');

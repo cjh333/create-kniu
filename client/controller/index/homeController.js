@@ -3,7 +3,7 @@ import REQUEST from '../../core/kniurequest.mjs';
 
 const { controller, onMounted, reactive } = KniuMvvm;
 
-const homeController = controller(({ navigateTo }) => {
+const homeController = controller(({ navigateTo, autoSync }) => {
   const state = reactive({
     dailys: [],
     articles: [],
@@ -15,9 +15,13 @@ const homeController = controller(({ navigateTo }) => {
     error: ''
   });
 
-  async function loadPage() {
-    state.loading = true;
-    state.error = '';
+  // reason 为字符串时表示由数据变更信号自动重放：静默刷新，不闪 loading、不清错误态。
+  async function loadPage(reason) {
+    const silent = typeof reason === 'string';
+    if (!silent) {
+      state.loading = true;
+      state.error = '';
+    }
     const results = await REQUEST([
       { url: '/getDaily', type: 'POST', data: {}, redirectOnUnauthorized: false },
       { url: '/getArticle', type: 'POST', data: {}, redirectOnUnauthorized: false },
@@ -48,6 +52,8 @@ const homeController = controller(({ navigateTo }) => {
   }
 
   onMounted(loadPage);
+  // 后台改文章/每日一句/站点信息后，在线前台自动重放，页面不刷新即可看到新数据。
+  autoSync(loadPage);
   return { state, loadPage, toDetail };
 });
 

@@ -5,7 +5,7 @@ import { buildMultipartFormData, fillOptionsFromResponse, optionsToValues, toSin
 
 const { controller, reactive, onMounted } = KniuMvvm;
 
-const seoController = controller(() => {
+const seoController = controller(({ autoSync }) => {
   const state = reactive({
     canEditContent: Number(AUTH.getUser()?.roleId || AUTH.getUser()?.role || 0) === 1 || Number(AUTH.getUser()?.roleAuth || 0) === 1,
     isSubmitting: false,
@@ -57,11 +57,7 @@ const seoController = controller(() => {
         condition: /^(?=.*\S).+$/,
         message: '请输入邮箱'
       },
-      about_content: {
-        value: ''
-      }
-    },
-    aboutToolbar: 'code | undo redo | bold italic underline strikeThrough | justifyLeft justifyCenter justifyRight justifyFull | insertOrderedList insertUnorderedList | h1 h2 h3 p | blockquote pre hr table | fontname fontsize forecolor hilitecolor | link unlink image media emoticons | removeFormat clearhtml selectAll | maximize'
+    }
   });
 
   async function getSeoList() {
@@ -111,6 +107,8 @@ const seoController = controller(() => {
   onMounted(() => {
     getSeoList();
   });
+  // 多标签/多端同时维护 SEO 时，本页自动跟随最新数据。
+  autoSync(getSeoList);
 
   return { state, onSubmit };
 });

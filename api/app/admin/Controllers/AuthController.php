@@ -23,6 +23,24 @@ class AuthController extends Controller
     $this->setCaptcha();
   }
 
+  /** 安静检查后台会话；未登录也返回 HTTP 200，避免启动探测产生 401。 */
+  public function sessionStatus(): void
+  {
+    if (!$this->validateToken()) {
+      $this->json(['loggedIn' => false]);
+      return;
+    }
+    $roleId = (int)($_SESSION['admin_token']['role'] ?? 0);
+    $roles = require __DIR__ . '/../../../config/role.php';
+    $this->json([
+      'loggedIn' => true,
+      'username' => (string)($_SESSION['admin_token']['name'] ?? ''),
+      'role' => $roles[$roleId] ?? (string)$roleId,
+      'role_id' => $roleId,
+      'role_auth' => (int)($_SESSION['admin_token']['role_auth'] ?? 0)
+    ]);
+  }
+
   // 登录。
   public function logup(): void
   {
@@ -31,26 +49,29 @@ class AuthController extends Controller
     }
 
     if ($this->validateToken()) {
+      $front = $this->syncFrontIdentity(
+        (string)$this->input('post.identity_token/s', ''),
+        (int)($_SESSION['admin_token']['id'] ?? 0),
+        (string)($_SESSION['admin_token']['name'] ?? '')
+      );
       $this->json([
         'id' => (int)($_SESSION['admin_token']['id'] ?? 0),
         'name' => $_SESSION['admin_token']['name'] ?? '',
         'role' => $_SESSION['admin_token']['role'] ?? '',
-        'role_auth' => $_SESSION['admin_token']['role_auth'] ?? 0
+        'role_auth' => $_SESSION['admin_token']['role_auth'] ?? 0,
+        'front_user_id' => $front['id'],
+        'nickname' => $front['nickname']
       ], '您已登录', 1);
       return;
     }
 
     $username = $this->input('post.username') ?? '';
     $password = $this->input('post.password') ?? '';
-    $gvcode = $this->input('post.gvcode') ?? '';
 
-    $submittedCaptcha = trim((string)$gvcode);
-    $expectedCaptcha = isset($_SESSION['captcha']) ? (string)$_SESSION['captcha'] : '';
-    if ($expectedCaptcha === '' || !preg_match('/^-?\d+$/', $submittedCaptcha) || (int)$submittedCaptcha !== (int)$expectedCaptcha) {
+    if (!$this->verifyArithmeticCaptcha()) {
       $this->json([], '验证码错误', 0);
       return;
     }
-    unset($_SESSION['captcha']);
 
     if (empty($username) || empty($password)) {
       $this->json([], '用户名和密码不能为空', 0);
@@ -91,12 +112,20 @@ class AuthController extends Controller
         'expire' => time() + $loginExpireSeconds
       ];
 
+      $front = $this->syncFrontIdentity(
+        (string)$this->input('post.identity_token/s', ''),
+        (int)$userData['id'],
+        html_entity_decode((string)$userData['name'], ENT_QUOTES)
+      );
+
       $this->json([
         'id' => (int)$userData['id'],
         'token' => $token,
         'name' => $userData['name'],
         'role' => $userData['role'] ?? '',
-        'role_auth' => $userData['role_auth'] ?? 0
+        'role_auth' => $userData['role_auth'] ?? 0,
+        'front_user_id' => $front['id'],
+        'nickname' => $front['nickname']
       ], '登录成功', 1);
       return;
     }
@@ -112,5 +141,54 @@ class AuthController extends Controller
     unset($_SESSION['admin_token']);
     session_destroy();
     $this->json([], '退出登录成功', 1);
+  }
+
+  /** 后台登录成功后同步建立前台身份，保证前后台登录状态一致。 */
+  private function syncFrontIdentity(string $token, int $roleId, string $name): array
+  {
+    $nickname = trim(html_entity_decode($name, ENT_QUOTES));
+    if (!preg_match('/^[a-f0-9]{64}$/i', $token) || $roleId <= 0 || $nickname === '') {
+      return ['id' => 0, 'nickname' => $nickname];
+    }
+    $tokenHash = hash('sha256', strtolower($token));
+    $encodedName = htmlspecialchars($nickname, ENT_QUOTES);
+    $now = date('Y-m-d H:i:s');
+    $account = Db::name('tb_front_user')->where('role_id', '=', $roleId)->find();
+    if (!$account) $account = Db::name('tb_front_user')->where('nickname', '=', $encodedName)->find();
+    $tokenUser = Db::name('tb_front_user')->where('identity_token', '=', $tokenHash)->find();
+
+    if ($account) {
+      if ($tokenUser && (int)$tokenUser['id'] !== (int)$account['id']) {
+        Db::name('tb_front_user')->where('id', '=', (int)$tokenUser['id'])->delete();
+      }
+      Db::name('tb_front_user')->where('id', '=', (int)$account['id'])->update([
+        'role_id' => $roleId,
+        'identity_token' => $tokenHash,
+        'nickname' => $encodedName,
+        'update_time' => $now
+      ]);
+      $frontUserId = (int)$account['id'];
+    } elseif ($tokenUser) {
+      Db::name('tb_front_user')->where('id', '=', (int)$tokenUser['id'])->update([
+        'role_id' => $roleId,
+        'nickname' => $encodedName,
+        'update_time' => $now
+      ]);
+      $frontUserId = (int)$tokenUser['id'];
+    } else {
+      $frontUserId = (int)Db::name('tb_front_user')->insert([
+        'role_id' => $roleId,
+        'identity_token' => $tokenHash,
+        'nickname' => $encodedName,
+        'create_time' => $now,
+        'update_time' => $now
+      ]);
+    }
+    $_SESSION['front_token'] = [
+      'id' => $roleId,
+      'name' => $nickname,
+      'expire' => $_SESSION['admin_token']['expire'] ?? (time() + 86400 * 7)
+    ];
+    return ['id' => $frontUserId, 'nickname' => $nickname];
   }
 }

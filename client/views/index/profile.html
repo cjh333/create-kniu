@@ -2,13 +2,13 @@
   @import url("@kniu/kniu.min.css");
 
   .profile_cells {
-    padding: 32px 0
+    padding: 16px
   }
 
   .profile_card {
     max-width: 760px;
     margin: 0 auto;
-    padding: 28px;
+    padding: 20px;
     border: 1px solid #ebeef5;
     border-radius: 8px;
     background-color: #fff;
@@ -54,7 +54,7 @@
 
   .profile_stats {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: 1fr;
     margin: 22px 0;
     border: 1px solid #ebeef5;
     border-radius: 6px
@@ -66,7 +66,7 @@
   }
 
   .profile_stat+.profile_stat {
-    border-left: 1px solid #ebeef5
+    border-top: 1px solid #ebeef5
   }
 
   .profile_stat_value {
@@ -125,12 +125,13 @@
 
   .profile_field {
     display: flex;
-    align-items: center;
+    align-items: stretch;
+    flex-direction: column;
     gap: 12px
   }
 
   .profile_field_label {
-    flex: 0 0 72px;
+    flex: auto;
     color: #606266
   }
 
@@ -147,32 +148,32 @@
     text-align: center
   }
 
-  @media(max-width:600px) {
+  @media(min-width:601px) {
     .profile_cells {
-      padding: 16px
+      padding: 32px 0
     }
 
     .profile_card {
-      padding: 20px
+      padding: 28px
     }
 
     .profile_field {
-      align-items: stretch;
-      flex-direction: column;
-      gap: 8px
+      align-items: center;
+      flex-direction: row;
+      gap: 12px
     }
 
     .profile_field_label {
-      flex: auto
+      flex: 0 0 72px
     }
 
     .profile_stats {
-      grid-template-columns: 1fr
+      grid-template-columns: repeat(3, 1fr)
     }
 
     .profile_stat+.profile_stat {
-      border-top: 1px solid #ebeef5;
-      border-left: 0
+      border-top: 0;
+      border-left: 1px solid #ebeef5
     }
   }
 </style>
@@ -201,7 +202,7 @@
           </div>
           <p class="profile_note">{{profileHint}}</p>
           <div class="profile_signin" kniu:if="{{nickname === ''}}">
-            <kniu-btn kniu:options="{{({type:'primary'})}}" kniu@click="toSignin">登录 / 注册</kniu-btn>
+            <kniu-btn kniu:options="{{type:'primary'}}" kniu@click="toSignin">登录 / 注册</kniu-btn>
           </div>
           <h2 class="profile_section_title">收藏的文章</h2>
           <div class="profile_favorites">

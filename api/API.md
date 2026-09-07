@@ -66,8 +66,10 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 ## 四、接口清单（当前注册于 `api/config/router.php`，均 POST）
 
 - 公共内容：`/getDaily`、`/getArticle`、`/getInfo`、`/getAbout`、`/getDetail`、`/getComments`、`/submitComment`、`/likeComment`、`/deleteComment`、`/likeArticle`、`/favoriteArticle`、`/frontProfile`、`/frontProfileSave`、`/frontProfileClear`
-- 会话与系统：`/logup`、`/logout`、`/captcha`、`/frontBind`、`/admin`、`/system`
+- 会话与系统：`/logup`、`/logout`、`/captcha`、`/session_status`、`/frontBind`、`/frontSessionSync`、`/admin`、`/system`
 - 后台业务（需登录）：SEO、导航、每日内容、文章、角色、评论管理的增删改查，以及 `/about_detail`、`/about_save`、`/clearCache`
+
+所有已登录后台账号均可调用 `/article_add` 新增文章，并可使用 `/article_media_upload` 上传正文媒体；文章编辑、删除、显示状态修改及其他管理操作继续遵循原有权限和文章归属限制。
 
 ### 评论接口（公开，POST）
 
@@ -81,7 +83,7 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 | `/favoriteArticle` | `article_id`、`favorited`、`identity_token` | 当前前台用户收藏或取消收藏文章；未登录时拒绝 |
 | `/frontProfile` | `identity_token` | 返回昵称、获赞数、评论数、收藏文章和近一年浏览历史 `{id,nickname,likes,commentCount,favorites,history}` |
 | `/frontProfileSave` | `identity_token`、`nickname`、`gvcode`（首次创建必填） | 昵称只在首次评论时设置并校验验证码；全站唯一，重复统一返回“该昵称已存在”。首次设置同时创建同名 `tb_role` 后台账号，固定普通用户/查看权限，初始密码 `000000`；已绑定身份通过接口修改时距离上次修改必须满一个月并同步后台用户名 |
-| `/frontProfileClear` | `identity_token` | 退出当前前台登录状态，不删除数据库身份、不释放昵称 |
+| `/frontProfileClear` | `identity_token` | 统一退出前后台：销毁 `front_token`、`admin_token` 和 Session；不删除数据库账号、不释放昵称 |
 
 `/getDetail` 除文章字段外还返回 `previous` 和 `next`，有相邻已显示文章时为 `{id,title}`，没有时为 `null`。相邻顺序按文章 `id`，并过滤 `is_show=1`。
 
@@ -89,12 +91,21 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 
 | 端点 | 入参 | 说明 |
 | --- | --- | --- |
-| `/comment_list` | `type`(`all`/`comment`/`reply`)、`audit`(`''`/`0`/`1`)、`keyword`、分页 `page_current`/`page_rows`、`field`/`sort` | 评论/回复列表，按 `parent_id` 区分顶层评论与回复，按 `is_show` 筛待审核/已通过，`name`/`message` 关键词模糊搜索（大小写不敏感）；`data` 每项含 `{id,parent_id,name,email,ip,message,likes,is_show,article_id,article_title,create_time,...}` |
+| `/comment_list` | `type`(`all`/`comment`/`reply`)、`audit`(`''`/`0`/`1`)、`keyword`、分页 `page_current`/`page_rows`、`field`/`sort` | 评论/回复列表，按 `parent_id` 区分顶层评论与回复，按 `is_show` 筛待审核/已通过，`name`/`message` 关键词模糊搜索（大小写不敏感）；管理员可看全部，普通用户仅返回其 `tb_front_user.id` 或唯一昵称匹配的本人内容 |
 | `/comment_audit` | `id`、`audit`(`0`/`1`) | 审核评论：`audit=1` 通过（前台可见）、`0` 隐藏/撤回；需管理权限 |
 | `/comment_delete` | `id` | 删除评论；**删除顶层评论会级联删除其下全部回复**；需管理权限 |
 | `/comment_detail` | `id` | 查询单条评论（`decodeFields` 后返回） |
+| `/reply_notification_state` | 无 | 返回当前账号收到的已审核未读回复 `{has_unread,unread_count}`；只统计其他用户直接回复本人评论或回复的记录 |
+| `/reply_notification_read` | 无 | 将当前账号已经收到的全部已审核回复标记为已读 |
+| `/reply_notification_update` | `id`、`is_read`(`0`/`1`) | 修改单条回复对其接收人的读取状态；管理员可管理全部，普通用户只能修改发给本人的回复 |
 
-`tb_comment` 为评论表，`article_id` 关联 `tb_article.id`，`user_id` 关联前台身份 `tb_front_user.id`；`parent_id` 为 0 表示顶层评论，大于 0 表示回复。后台 `/comment` 固定管理顶层评论，`/reply` 固定管理回复，两页共用接口但分别传 `type=comment/reply`。
+`tb_comment` 为评论表，`article_id` 关联 `tb_article.id`，`user_id` 关联前台身份 `tb_front_user.id`；`parent_id` 为 0 表示顶层评论，大于 0 表示回复。后台 `/comment` 固定管理顶层评论，`/reply` 固定管理回复，两页共用接口但分别传 `type=comment/reply`。权限过滤必须通过 `tb_front_user.role_id` 将后台 `tb_role.id` 映射到评论的前台用户 ID，不得直接拿两种 ID 比较。
+
+`tb_reply_notification_status` 按“回复 ID + 接收人 ID”保存逐条读取状态。后台头部每分钟及页面重新可见时检查一次；红点仅表示存在其他用户发给本人的已审核新回复，点击后进入回复管理并将当前已接收回复批量设为已读。回复管理中的读取状态开关与红点使用同一份数据。
+
+后台 `/logup` 收到 `identity_token` 并验证账号成功后，同时写入 `admin_token`、`front_token`，并把该浏览器令牌绑定到对应 `tb_front_user`，因此后台登录成功即同步为前台登录状态。
+前台 `kniu-user-login` 初始化时调用 `/frontSessionSync`；若后台 Session 仍有效，则服务端按当前 `tb_role` 账号恢复前台身份。这样从后台“前端首页”新标签打开时不依赖旧标签的本地状态传播。
+应用启动使用公开的 `/session_status` 安静探测后台会话；未登录返回 HTTP 200 和 `{loggedIn:false}`。受保护的 `/system` 只在已登录后台读取，不再承担登录探测，避免正常未登录状态产生 401 控制台错误。
 `tb_article_favorite` 记录前台用户与文章的收藏关系，`user_id + article_id` 使用唯一索引防止重复收藏。
 `tb_article_history` 记录用户最后浏览文章的时间，同一用户同一文章只保留一条；读取个人中心或新增浏览时自动删除一年前的记录。
 
@@ -108,7 +119,7 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 
 - `tb_role.role=1` 为管理员（`role_auth=1`），可见全量数据；`role=2` 为普通用户（`role_auth=2`），只能查看和操作自己的数据。
 - 数据归属：`tb_article.user_id` 关联 `tb_role.id`（文章作者）；`tb_front_user.role_id` 关联 `tb_role.id`（前台昵称绑定后台账号）；`tb_user_about.user_id` 关联 `tb_role.id`（“关于我”按账号存储，`uk_user_about_user` 唯一键防重复）。
-- 后台会话 `admin_token` 内含 `id`，核心辅助 `AdminBaseController::currentUserId()` / `isAdmin()`；`/logup` 登录响应同样返回 `id`。
+- 后台会话 `admin_token` 内含 `id`，核心辅助 `Base::currentUserId()` / `isAdmin()`；`/logup` 登录响应同样返回 `id`。
 - 普通用户：文章列表/详情按 `user_id` 过滤，增改删只能操作自己的文章；角色列表只见自己；评论列表只见自己的评论（行内附 `is_own`），只能删除自己的评论；批量删除仅管理员可用。
 - “关于我”：后台 `/about_detail` 读本人 `tb_user_about`、`/about_save` 保存本人内容（存在更新、不存在插入）；前台 `/getAbout` 在浏览器持有合法 `identity_token` 且账号已绑定（`role_id>0`）时返回本人内容，否则回退 `tb_seo.about_content`。
 - 身份绑定：`POST /frontBind`（入参账号密码与 `identity_token`）校验账号密码后绑定前台身份并建立前台会话（个人中心入口，无需验证码）；前台会话 `front_token` 与后台 `admin_token` 完全独立。
@@ -130,3 +141,34 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 - 后台登录有效期统一读取 `api/config/auth.php` 的 `LOGIN_EXPIRE_DAYS`（默认 7 天），并同步用于持久 Session Cookie、Session 回收期限和 `admin_token.expire`；应用启动时以 `/system` 返回结果恢复登录状态。
 - 前后端入口都会先读取项目根目录 `.env`；`PROCESS_ENV` 同时作为前端运行环境和后端 `APP_ENV` 的默认来源，外部进程已显式设置的同名变量优先。
 - 排序字段只能是合法 SQL 标识符，方向只能是 `ASC` 或 `DESC`。
+
+## 七、邮件与邮箱验证码
+
+### 配置项（项目根 `.env`，PHP 由 `Core\Env::load()` 自己读取，不依赖 Node 注入）
+
+| 变量 | 说明 | QQ 邮箱示例 |
+|---|---|---|
+| `MAIL_HOST` | SMTP 主机 | `smtp.qq.com` |
+| `MAIL_PORT` | 端口 | `465` |
+| `MAIL_ENCRYPTION` | `ssl`（465 直连 TLS）/ `tls`（587 STARTTLS）/ `none` | `ssl` |
+| `MAIL_USERNAME` | 发信邮箱账号 | `123456@qq.com` |
+| `MAIL_AUTH_CODE` | **授权码**，不是邮箱登录密码 | 16 位授权码 |
+| `MAIL_FROM_ADDRESS` | 发件地址，留空则取 `MAIL_USERNAME` | 同账号 |
+| `MAIL_FROM_NAME` | 发件人显示名 | `KniuSystem` |
+| `MAIL_CAFILE` | 根证书包路径，留空则用内置 `api/config/cert/cacert.pem` | 一般不用改 |
+
+- `MAIL_USERNAME` 或 `MAIL_AUTH_CODE` 为空时走兜底：开发环境把邮件内容写入 `api/runtime/mail/mail-YYYY-MM-DD.log` 并返回 `dev=true`，生产环境直接失败。接口 `dev=true` 时前端必须以 warning 提示「邮件未实际发送」，不能显示「已发送」误导用户。
+- QQ 邮箱需在「设置 → 账户」开启 SMTP 服务并生成 16 位授权码；`MAIL_AUTH_CODE` 填的是授权码。
+
+### 接口
+
+| 接口 | 用途 | 关键校验 |
+|---|---|---|
+| `POST /email_code` | 发验证码：`email` + `scene`（`register`/`reset`） | register 场景拒绝已注册邮箱，reset 场景拒绝未注册邮箱；同邮箱同场景 60 秒重发限频 |
+| `POST /password_reset` | 重置密码：`email` + `code` + `password` + `confirm` | 按邮箱定位账号、校验验证码、成功后直接设新密码，不需要原密码 |
+
+### 实现要点
+
+- `Core\Mailer`：原生 socket SMTP，无第三方依赖；`AUTH LOGIN` 认证，主题与正文 UTF-8 走 base64 编码避免中文乱码。
+- `Core\EmailCode`：验证码只以 sha256 摘要入库，明文仅出现在邮件正文；同邮箱同场景只保留最新一条；`verify()` 只校验不消费，业务成功后才 `consume()` 落库标记已用。
+- **TLS 必须用项目自带根证书包**：Windows 版 PHP 常未配置 `openssl.cafile`，此时 `stream_socket_client('ssl://...')` 会静默失败（返回 false、`errno=0`、`errstr` 为空字符串），现象是「无法连接邮件服务器」但 TCP 其实是通的。`Mailer::sslContext()` 会显式挂上 `api/config/cert/cacert.pem`（可由 `MAIL_CAFILE` 覆盖）并强制 `verify_peer=true`。证书过期或换机器时，重新导出系统信任根证书到该路径即可。

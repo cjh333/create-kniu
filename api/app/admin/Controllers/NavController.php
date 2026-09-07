@@ -2,10 +2,10 @@
 
 namespace App\Admin\Controllers;
 
-use Core\AdminBaseController;
+use Core\Base;
 use Core\Db;
 
-class NavController extends AdminBaseController
+class NavController extends Base
 {
   public function __construct()
   {

@@ -2,11 +2,11 @@
 
 namespace App\Admin\Controllers;
 
-use Core\AdminBaseController;
+use Core\Base;
 use Core\Db;
 use Core\SystemHelper;
 
-class AdminController extends AdminBaseController
+class AdminController extends Base
 {
   public function __construct()
   {

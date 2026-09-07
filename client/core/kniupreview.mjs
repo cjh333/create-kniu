@@ -4,6 +4,7 @@ import { request as httpRequest } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import SERVER from '../config/server.js';
+import { NO_CACHE, sendStaticBody, staticCacheHeaders } from './kniustatic.mjs';
 
 const ROOT = normalize(join(process.cwd(), 'dist'));
 const VIEW_INDEX = join(ROOT, 'index.html');
@@ -71,10 +72,6 @@ const types = {
   '.ogg': 'application/ogg',
   '.mov': 'video/quicktime',
 };
-const NO_CACHE = {
-  'Cache-Control': 'no-store, no-cache, must-revalidate',
-  'Pragma': 'no-cache',
-};
 function resolveRequestProtocol(request) {
   const forwardedProtocol = request.headers['x-forwarded-proto'];
   const protocol = Array.isArray(forwardedProtocol)
@@ -103,8 +100,9 @@ const server = createServer(async function (request, response) {
       : normalize(join(ROOT, PATH_NAME.replace(/^\/+/, '')));
     if (!file.startsWith(`${ROOT}\\`) && file !== ROOT) throw new Error('Invalid path');
     if ((await stat(file)).isDirectory()) file = join(file, 'index.html');
-    response.writeHead(200, { 'Content-Type': types[extname(file)] || 'application/octet-stream', ...NO_CACHE });
-    response.end(await readFile(file));
+    const mime = types[extname(file)] || 'application/octet-stream';
+    const cacheHeaders = staticCacheHeaders(file, PATH_NAME, mime);
+    await sendStaticBody(request, response, { 'Content-Type': mime, ...cacheHeaders }, await readFile(file));
   } catch (err) {
     if (err.code === 'ENOENT' && extname(PATH_NAME) && extname(PATH_NAME) !== '.html') {
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -113,7 +111,7 @@ const server = createServer(async function (request, response) {
     }
     if (err.code !== 'ENOENT') console.error('[Server Error]', err.message);
     try {
-      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...NO_CACHE });
       response.end(await readFile(VIEW_INDEX));
     } catch {
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });

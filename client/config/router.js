@@ -11,8 +11,8 @@ ROUTER.auth(function (router) {
   router.addRoute('seo', 'admin/seoController');
   router.addRoute('aboutedit', 'admin/abouteditController');
   router.addRoute('users', 'admin/usersController');
-  router.addRoute('dailydetail', 'admin/dailydetailController');
-  router.addRoute('articledetail', 'admin/articledetailController');
+  router.addRoute('daily', 'admin/dailyController');
+  router.addRoute('article', 'admin/articleController');
   router.addRoute('comment', 'admin/commentController');
   router.addRoute('reply', 'admin/replyController');
 });

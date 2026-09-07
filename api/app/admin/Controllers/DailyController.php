@@ -2,10 +2,10 @@
 
 namespace App\Admin\Controllers;
 
-use Core\AdminBaseController;
+use Core\Base;
 use Core\Db;
 
-class DailyController extends AdminBaseController
+class DailyController extends Base
 {
   public function __construct()
   {
@@ -101,10 +101,7 @@ class DailyController extends AdminBaseController
     $selectall = Db::name('tb_selectall')->where('name', '=', 'daily')->value('is_select') ?? 0;
     $query = Db::name($table);
     if ($keyword !== '') {
-      // 关键词按入库规则编码（htmlspecialchars ENT_QUOTES）后统一小写，
-      // 配合 SQL 侧 LOWER() 实现不依赖排序规则的字母大小写不敏感模糊搜索。
-      $pattern = '%' . mb_strtolower(htmlspecialchars($keyword, ENT_QUOTES), 'UTF-8') . '%';
-      $query->where('LOWER(`cn`)', 'LIKE', $pattern);
+      $query->where('LOWER(`cn`)', 'LIKE', $this->likeEncodedPattern($keyword));
     }
     $result = $query
       ->order($field, $sort)

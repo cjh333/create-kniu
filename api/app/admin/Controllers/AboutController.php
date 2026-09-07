@@ -2,7 +2,7 @@
 
 namespace App\Admin\Controllers;
 
-use Core\AdminBaseController;
+use Core\Base;
 use Core\Db;
 
 /**
@@ -11,7 +11,7 @@ use Core\Db;
  * 每个 tb_role 账号在 tb_user_about 中至多一行（uk_user_about_user），
  * 普通用户只能读写本人的内容；前台 #/about 按登录账号展示对应内容。
  */
-class AboutController extends AdminBaseController
+class AboutController extends Base
 {
   public function __construct()
   {

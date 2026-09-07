@@ -7,167 +7,173 @@
   }
 
   .kniu_web_aside_head {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) auto;
     align-items: center;
+    gap: 5px;
     border-bottom: 1px solid var(--line);
-    padding: 0 18px;
-    height: 72px;
+    padding: 8px 6px;
+    height: 58px;
+    min-height: 58px;
     background-color: #fff;
   }
 
-  @media (max-width: 850px) {
-    .kniu_web_aside_mdnav_wrap {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 6px;
-      padding: 8px;
-      box-shadow: 0 6px 16px rgba(23, 33, 59, .06);
-    }
+  .kniu_web_aside_mdnav_wrap {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px;
+    box-shadow: 0 6px 16px rgba(23, 33, 59, .06);
+  }
 
-    .kniu_web_aside_mdnav {
-      min-width: 0;
-      padding: 0;
-      font-size: 13px;
-    }
+  .kniu_web_aside_mdnav {
+    min-width: 0;
+    padding: 0;
+    font-size: 12px;
+  }
 
-    .kniu_web_aside_mdnav_title {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
+  .kniu_web_aside_mdnav_title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
+  .kniu_web_aside_brand {
+    margin-right: 0;
+  }
+
+  .kniu_web_aside_crumb_wrap {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
+  }
+
+  .kniu_web_aside_head_actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    width: auto;
+    margin-right: 4px;
+  }
+
+  .kniu_web_aside_head_actions kniu-badge,
+  .kniu_web_aside_head_actions>kniu-btn {
+    display: inline-block;
+  }
+
+  .kniu_web_aside_front_text {
+    display: none;
+  }
+
+  .kniu_web_aside_front_link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 36px;
+    min-height: 36px;
+    padding: 0;
+    white-space: nowrap;
+  }
+
+  .kniu_web_aside_note {
+    display: inline-grid!important;
+    place-items: center;
+    width: 28px;
+    height: 36px;
+  }
+
+  .admin_tab_refresh1 {
+    width: 36px;
+    height: 36px;
+  }
+
+  @media (min-width: 341px) {
     .kniu_web_aside_head {
-      display: grid;
       grid-template-columns: 40px minmax(0, 1fr) auto;
       gap: 8px;
-      height: 58px;
-      min-height: 58px;
       padding: 8px 10px;
     }
 
-    .kniu_web_aside_brand {
-      margin-right: 0;
-    }
-
-    .kniu_web_aside_crumb_wrap {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 14px;
+    .kniu_web_aside_note {
+      width: 32px;
     }
 
     .kniu_web_aside_head_actions {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 6px;
-      width: auto;
       margin-right: 8px;
-    }
-
-    .kniu_web_aside_head_actions kniu-badge,
-    .kniu_web_aside_head_actions>kniu-btn {
-      display: inline-block;
-    }
-
-    .kniu_web_aside_front_link {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 5px;
-      min-height: 36px;
-      padding: 0 10px;
-      white-space: nowrap;
-    }
-
-    .kniu_web_aside_note {
-      display: inline-grid!important;
-      place-items: center;
-      width: 32px;
-      height: 36px;
-    }
-
-    .admin_tab_refresh1 {
-      width: 36px;
-      height: 36px;
     }
   }
 
-  @media (max-width: 480px) {
+  @media (min-width: 481px) {
     .kniu_web_aside_mdnav_wrap {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
     .kniu_web_aside_mdnav {
-      font-size: 12px;
+      font-size: 13px;
     }
 
     .kniu_web_aside_front_text {
-      display: none;
+      display: inline;
     }
 
     .kniu_web_aside_front_link {
-      width: 36px;
-      padding: 0;
+      width: auto;
+      padding: 0 10px;
     }
   }
 
-  @media (max-width: 340px) {
+  @media (min-width: 851px) {
     .kniu_web_aside_head {
-      grid-template-columns: 36px minmax(0, 1fr) auto;
-      padding-inline: 6px;
-      gap: 5px;
-    }
-
-    .kniu_web_aside_note {
-      width: 28px;
-    }
-
-    .kniu_web_aside_head_actions {
-      margin-right: 4px;
+      display: flex;
+      justify-content: space-between;
+      height: 72px;
+      min-height: 0;
+      padding: 0 18px;
     }
   }
 </style>
 <nav class="kniu_web_aside_mdnav_wrap" aria-label="移动端应用导航">
-  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/admin' ? ' active' : ''}}" data-nav="/admin" kniu:options="{{({block:true,nativeType:'button'})}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{({icon:'House'})}}" /><span class="kniu_web_aside_mdnav_title">控制台</span>
+  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/admin' ? ' active' : ''}}" data-nav="/admin" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'House'}}" /><span class="kniu_web_aside_mdnav_title">控制台</span>
   </kniu-btn>
-  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/seo' ? ' active' : ''}}" data-nav="/seo" kniu:options="{{({block:true,nativeType:'button'})}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{({icon:'Document'})}}" /><span class="kniu_web_aside_mdnav_title">网站信息</span>
+  <kniu-btn kniu:if="{{showWebsiteInfo}}" class="kniu_web_aside_mdnav{{currentPath === '/seo' ? ' active' : ''}}" data-nav="/seo" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'Document'}}" /><span class="kniu_web_aside_mdnav_title">网站信息</span>
   </kniu-btn>
-  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/aboutedit' ? ' active' : ''}}" data-nav="/aboutedit" kniu:options="{{({block:true,nativeType:'button'})}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{({icon:'View'})}}" /><span class="kniu_web_aside_mdnav_title">关于我</span>
+  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/aboutedit' ? ' active' : ''}}" data-nav="/aboutedit" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'View'}}" /><span class="kniu_web_aside_mdnav_title">关于我</span>
   </kniu-btn>
-  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/dailydetail' ? ' active' : ''}}" data-nav="/dailydetail" kniu:options="{{({block:true,nativeType:'button'})}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{({icon:'Bell'})}}" /><span class="kniu_web_aside_mdnav_title">每日一句</span>
+  <kniu-btn kniu:if="{{showDaily}}" class="kniu_web_aside_mdnav{{currentPath === '/dailydetail' ? ' active' : ''}}" data-nav="/dailydetail" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'Bell'}}" /><span class="kniu_web_aside_mdnav_title">每日一句</span>
   </kniu-btn>
-  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/articledetail' ? ' active' : ''}}" data-nav="/articledetail" kniu:options="{{({block:true,nativeType:'button'})}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{({icon:'File'})}}" /><span class="kniu_web_aside_mdnav_title">文章管理</span>
+  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/articledetail' ? ' active' : ''}}" data-nav="/articledetail" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'File'}}" /><span class="kniu_web_aside_mdnav_title">文章管理</span>
   </kniu-btn>
-  <kniu-btn kniu:if="{{showUserManagement}}" class="kniu_web_aside_mdnav{{currentPath === '/users' ? ' active' : ''}}" data-nav="/users" kniu:options="{{({block:true,nativeType:'button'})}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{({icon:'User'})}}" /><span class="kniu_web_aside_mdnav_title">用户管理</span>
+  <kniu-btn kniu:if="{{showUserManagement}}" class="kniu_web_aside_mdnav{{currentPath === '/users' ? ' active' : ''}}" data-nav="/users" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'User'}}" /><span class="kniu_web_aside_mdnav_title">用户管理</span>
   </kniu-btn>
-  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/comment' ? ' active' : ''}}" data-nav="/comment" kniu:options="{{({block:true,nativeType:'button'})}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{({icon:'ChatDotRound'})}}" /><span class="kniu_web_aside_mdnav_title">评论管理</span>
+  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/comment' ? ' active' : ''}}" data-nav="/comment" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'ChatDotRound'}}" /><span class="kniu_web_aside_mdnav_title">评论管理</span>
   </kniu-btn>
-  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/reply' ? ' active' : ''}}" data-nav="/reply" kniu:options="{{({block:true,nativeType:'button'})}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{({icon:'ChatDotRound'})}}" /><span class="kniu_web_aside_mdnav_title">回复管理</span>
+  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/reply' ? ' active' : ''}}" data-nav="/reply" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'ChatDotRound'}}" /><span class="kniu_web_aside_mdnav_title">回复管理</span>
   </kniu-btn>
 </nav>
 <header class="kniu_web_aside_head">
-  <kniu-btn class="kniu_web_aside_brand" aria-label="返回总览" kniu:options="{{({nativeType:'button'})}}" kniu@click="handleHomeNavigation">{{brandMark}}</kniu-btn>
+  <kniu-btn class="kniu_web_aside_brand" aria-label="返回总览" kniu:options="{{nativeType:'button'}}" kniu@click="handleHomeNavigation">{{brandMark}}</kniu-btn>
   <div class="kniu_web_aside_crumb_wrap">
     <span class="kniu_web_aside_crumb">{{workspaceLabel}} / </span>
     <strong>{{currentApp.name}}</strong>
   </div>
   <div class="kniu_web_aside_head_actions">
-    <a class="kniu_btn kniu_web_aside_front_link" href="#/" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开前端首页"><kniu-icon style="font-size:16px;" kniu:options="{{({icon:'House'})}}" /><span class="kniu_web_aside_front_text">前端首页</span></a>
-    <kniu-badge class="kniu_web_aside_note" kniu:options="{{({isDot:true})}}" kniu@click="handleNotificationRequest">
-      <kniu-icon style="font-size:16px;color:#ff5c35;" kniu:options="{{({icon:'ChatDotRound'})}}" />
+    <a class="kniu_btn kniu_web_aside_front_link" href="#/" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开前端首页"><kniu-icon style="font-size:16px;" kniu:options="{{icon:'House'}}" /><span class="kniu_web_aside_front_text">前端首页</span></a>
+    <kniu-badge class="kniu_web_aside_note" title="回复消息" kniu:options="{{notificationBadge}}" kniu@click="handleNotificationRequest">
+      <kniu-icon style="font-size:16px;color:#ff5c35;" kniu:options="{{icon:'ChatDotRound'}}" />
     </kniu-badge>
     <kniu-btn class="admin_tab_refresh1" kniu@click="handleRefresh">
-      <kniu-icon kniu:options="{{({icon:'Refresh'})}}" />
+      <kniu-icon kniu:options="{{icon:'Refresh'}}" />
     </kniu-btn>
   </div>
 </header>

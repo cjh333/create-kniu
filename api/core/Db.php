@@ -4,7 +4,7 @@ namespace Core;
 
 class Db
 {
-  protected static $connection;
+  protected static ?\mysqli $connection = null;
   protected $name;
   protected $options = [];
   protected $increment = [];
@@ -107,7 +107,7 @@ class Db
    */
   public function where($field, $operator = null, $value = null)
   {
-    if (is_string($field) && strpos($field, ' ') !== false && $operator === null) {
+    if (is_string($field) && strpos($field, ' ') !== false && $operator === null && $value === null) {
       $this->options['where'][] = $field;
     } elseif (is_array($field)) {
       foreach ($field as $key => $val) {
@@ -124,6 +124,11 @@ class Db
         $this->options['where'][] = '(' . implode(' AND ', $query->options['where']) . ')';
       }
     } else {
+      // 当传入两参数时，默认操作符为等号。
+      if ($value === null && $operator !== null) {
+        $value = $operator;
+        $operator = '=';
+      }
       if (is_numeric($value)) {
         $this->options['where'][] = "{$field} {$operator} {$value}";
       } else {
@@ -429,6 +434,7 @@ class Db
     if ($result === false) {
       throw new \Exception(\mysqli_error(($this->connect())));
     }
+    \Core\DataSignal::touch((string)$this->name);
     return \mysqli_insert_id(($this->connect()));
   }
 
@@ -482,6 +488,7 @@ class Db
     if ($result === false) {
       throw new \Exception(\mysqli_error(($this->connect())));
     }
+    \Core\DataSignal::touch((string)$this->name);
     return \mysqli_affected_rows(($this->connect()));
   }
 
@@ -544,6 +551,7 @@ class Db
     if ($result === false) {
       throw new \Exception(\mysqli_error(($this->connect())));
     }
+    \Core\DataSignal::touch((string)$this->name);
     return \mysqli_affected_rows(($this->connect()));
   }
 
@@ -600,6 +608,7 @@ class Db
       if ($result === false) {
         throw new \Exception(\mysqli_error($this->connect()));
       }
+      \Core\DataSignal::touch((string)$this->name);
 
       $affected = \mysqli_affected_rows($this->connect());
       if ($affected !== false) {
@@ -633,12 +642,13 @@ class Db
     if ($result === false) {
       throw new \Exception(\mysqli_error(($this->connect())));
     }
+    \Core\DataSignal::touch((string)$this->name);
     return \mysqli_affected_rows(($this->connect()));
   }
 
   /**
    * 增加字段值。
-   *。
+   *
    * @param string $field 字段名。
    * @param int $step 步长，默认为 1。
    * @return Db 当前实例。
@@ -693,7 +703,45 @@ class Db
     if ($result === false) {
       throw new \Exception(\mysqli_error($instance->connect()));
     }
+    if (self::isWriteSql((string)$sql)) \Core\DataSignal::touch(self::tableOfSql((string)$sql));
     return \mysqli_affected_rows($instance->connect());
+  }
+
+  /**
+   * 判断原生 SQL 是否为写操作（DML 写）。
+   *
+   * @param string $sql 原始 SQL。
+   * @return bool
+   */
+  private static function isWriteSql(string $sql): bool
+  {
+    return (bool)preg_match('/^\s*(INSERT\s+INTO|REPLACE\s+INTO|DELETE\s+FROM|UPDATE)\s/i', $sql);
+  }
+
+  /**
+   * 从原生 SQL 粗略解析写操作的目标表名（仅用于变更信号的静默表判断）。
+   *
+   * 仅供 isWriteSql() 判定为写操作后调用；解析不出来时返回空字符串，
+   * 由 DataSignal 按"来源未知"处理（宁可多刷一次也不能漏刷）。
+   *
+   * @param string $sql 原始 SQL。
+   * @return string 小写表名；解析失败返回 ''。
+   */
+  private static function tableOfSql(string $sql): string
+  {
+    $sql = ltrim($sql);
+    // UPDATE 可能带 LOW_PRIORITY / IGNORE 修饰符，统一跳过再取表名。
+    $stripped = preg_replace('/^(INSERT\s+INTO|REPLACE\s+INTO|DELETE\s+FROM)\s+/i', '', $sql)
+      ?? preg_replace('/^UPDATE\s+(LOW_PRIORITY\s+|IGNORE\s+)*/i', '', $sql)
+      ?? $sql;
+    if ($stripped === $sql) {
+      $stripped = preg_replace('/^UPDATE\s+(LOW_PRIORITY\s+|IGNORE\s+)*/i', '', $sql) ?? $sql;
+    }
+    if (!preg_match('/^`?([a-zA-Z0-9_$.]+)`?/', $stripped, $matches)) return '';
+    $table = strtolower($matches[1]);
+    $dot = strrpos($table, '.');
+    if ($dot !== false) $table = substr($table, $dot + 1);
+    return $table;
   }
 
   /**

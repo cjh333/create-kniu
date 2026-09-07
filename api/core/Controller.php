@@ -334,8 +334,9 @@ class Controller
     }
 
     // 精确居中：以文本边界框中心对齐图片中心，修正左侧 bearing 偏移。
-    $x = $width / 2 - ($bbox[0] + $bbox[4]) / 2;
-    $y = $height / 2 - ($bbox[1] + $bbox[5]) / 2;
+    // 显式取整，避免 PHP 8.1+ 浮点到整数的隐式转换被废弃。
+    $x = (int)($width / 2 - ($bbox[0] + $bbox[4]) / 2);
+    $y = (int)($height / 2 - ($bbox[1] + $bbox[5]) / 2);
 
     imagettftext($image, $fontSize, $angle, $x, $y, $textColor, $fontFile, $code);
     $this->addInterferenceLines($image, $width, $height, $textColor);
@@ -750,6 +751,76 @@ class Controller
     $result = Db::query("SELECT COUNT(*) as count FROM {$table} WHERE sid > 0");
     $hasValidSid = ($result[0]['count'] ?? 0) > 0;
     return $hasValidSid ? 'sid' : 'id';
+  }
+
+  /**
+   * 生成关键词模糊搜索的 LIKE 匹配串。
+   *
+   * 关键词按入库规则编码（htmlspecialchars ENT_QUOTES）后统一小写，
+   * 配合 SQL 侧 LOWER() 实现不依赖排序规则的字母大小写不敏感模糊搜索。
+   * 各处列表搜索共用同一编码范式，避免重复实现。
+   *
+   * @param string $keyword 原始关键词。
+   * @return string 包裹 % 的匹配串，如 "%abc%"。
+   */
+  protected function likeEncodedPattern(string $keyword): string
+  {
+    return '%' . mb_strtolower(htmlspecialchars($keyword, ENT_QUOTES), 'UTF-8') . '%';
+  }
+
+  /**
+   * 校验并消费算术验证码（一次一验，用过即失效）。
+   *
+   * 从请求的 post.gvcode 读取用户输入，与会话中 setCaptcha() 写入的答案比较；
+   * 无论通过与否都会清除会话验证码，防止重放。登录/找回密码/改绑等
+   * 多处共用同一校验范式，避免各自重复实现。
+   *
+   * @return bool 验证码是否匹配。
+   */
+  protected function verifyArithmeticCaptcha(): bool
+  {
+    if (session_status() === PHP_SESSION_NONE) {
+      session_start();
+    }
+    $submitted = trim((string)$this->input('post.gvcode/s', ''));
+    $expected = isset($_SESSION['captcha']) ? (string)$_SESSION['captcha'] : '';
+    unset($_SESSION['captcha']);
+    return $expected !== ''
+      && preg_match('/^-?\d+$/', $submitted) === 1
+      && (int)$submitted === (int)$expected;
+  }
+
+  /**
+   * 解析某前台会话绑定的 tb_role 账号对应的前台用户 ID。
+   *
+   * tb_front_user.role_id → tb_role.id，一处定位，多处复用；
+   * 未绑定前台账号时返回 0。
+   *
+   * @param int $roleId tb_role 账号 id。
+   * @return int 对应的前台用户 id，未绑定时为 0。
+   */
+  protected function frontUserIdByRoleId(int $roleId): int
+  {
+    if ($roleId <= 0) return 0;
+    return (int)(Db::name('tb_front_user')->where('role_id', '=', $roleId)->value('id') ?? 0);
+  }
+
+  /**
+   * 触发一次服务端通知广播（供 SSE 通道使用，内网回环，非阻塞）。
+   *
+   * 当发生"别人回复了我/审核通过了一条回复"等会让某个在线账号的红点变化时，
+   * 业务控制器调用本方法向 Node 的 /__notify 发一个极短超时的信号；
+   * Node 据此对 SSE 客户端广播一条"去刷新"空消息，客户端再走带鉴权的
+   * /api 拉真实状态。通知地址由 api/config/app.php 的 NOTIFY_URL 配置。
+   *
+   * 失败静默忽略——SSE 只是加速刷新，即使广播丢失也会被低频心跳轮询兜底。
+   *
+   * 实现统一收敛到 Core\DataSignal::notify()：数据表级的变更由 Core\Db 自动
+   * touch 并在请求结束时广播 data-change，本方法只发不带参数的原 reply 信号。
+   */
+  protected function notifyServer(): void
+  {
+    \Core\DataSignal::notify([]);
   }
 
   /**

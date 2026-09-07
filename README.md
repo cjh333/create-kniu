@@ -131,7 +131,7 @@ MVVM 提供 `ref()`、`computed()`、getter/多来源 `watch()` 和 `watchEffect
 
 - `api/app/index/Controllers/`：公开内容接口。
 - `api/app/admin/Controllers/`：登录、系统信息、SEO、导航、每日内容、文章、角色和缓存管理。
-- `api/core/AdminBaseController.php`：后台控制器的公共鉴权基础。
+- `api/core/Base.php`：后台控制器的公共鉴权基础。
 - `api/core/Controller.php`：请求参数和 JSON 响应等控制器基础能力。
 
 接口统一在 `api/config/router.php` 注册，当前均使用 POST，包括：

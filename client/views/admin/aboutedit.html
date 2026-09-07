@@ -5,15 +5,15 @@
 </style>
 <section class="seo_cells">
   <div class="admin_content_body index_cell index_cell_2">
-    <kniu-form ref="form" kniu:options="{{({...(aboutModel)})}}" kniu@submit.prevent="onSubmit">
+    <kniu-form ref="form" kniu:options="{{...(aboutModel)}}" kniu@submit.prevent="onSubmit">
       <kniu-form-cell>
-        <kniu-editor kniu:model="{{aboutModel.content}}" kniu:options="{{({readonly:(!canEditContent),toolbar:(toolbar),name:'content',placeholder:'请输入关于我的内容'})}}">
+        <kniu-editor kniu:model="{{aboutModel.content}}" kniu:options="{{toolbar:(toolbar),name:'content',placeholder:'请输入关于我的内容'}}">
           <template #prepend label-width="120px">关于我</template>
         </kniu-editor>
       </kniu-form-cell>
-      <kniu-form-cell kniu:if="{{canEditContent}}">
-        <kniu-btn style="margin-left: 120px;" kniu:options="{{({disabled:(isSubmitting),nativeType:'submit'})}}">
-          <kniu-icon kniu:if="{{isSubmitting}}" kniu:options="{{({icon:'Loading'})}}" />
+      <kniu-form-cell>
+        <kniu-btn style="margin-left: 120px;" kniu:options="{{disabled:(isSubmitting),nativeType:'submit'}}">
+          <kniu-icon kniu:if="{{isSubmitting}}" kniu:options="{{icon:'Loading'}}" />
           <template kniu:else>提 交</template>
         </kniu-btn>
       </kniu-form-cell>

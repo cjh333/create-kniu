@@ -2,10 +2,10 @@ import KniuMvvm from '../../core/kniumvvm.mjs';
 import KniuUI from '../../core/kniuui.js';
 import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
-import { assignOptionFields, debounce } from '../../core/kniuutil.mjs';
+import { assignOptionFields } from '../../core/kniuutil.mjs';
 
 const { controller, onMounted, reactive } = KniuMvvm;
-const { usePagination } = KniuUI;
+const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = KniuUI;
 const ROLE_TEXT = { '1': '管理员', '2': '普通用户' };
 
 function deriveRoleAuth(role) {
@@ -194,14 +194,7 @@ const usersController = controller(function () {
       ]
     },
     userModel: createUserModel(),
-    userSwitch: {
-      name: 'is_show',
-      activeValue: 1,
-      activeColor: '#13ce66',
-      inactiveValue: 0,
-      inactiveColor: '#ff4949',
-      disabled: !canAdministerUsers
-    },
+    userSwitch: makeSwitchOptions(canAdministerUsers),
     userPage: {
       layout: '总数,首页,上一页,页码,下一页,末页,条数',
       currentPage: 1,
@@ -235,8 +228,7 @@ const usersController = controller(function () {
     }
   });
 
-  function searchList() { loadList(1); }
-  const debouncedSearch = debounce(searchList, 250);
+  const { searchList, debouncedSearch } = createSearchActions(loadList);
 
   function addRow() {
     if (!canAdministerUsers) return;
@@ -349,32 +341,15 @@ const usersController = controller(function () {
     return saved;
   }
 
-  async function deleteRow(index, list) {
-    if (!canAdministerUsers) return false;
-    const row = list[index];
-    if (!row) return false;
-    const confirmed = await self.$confirm(`确定删除用户“${row.name}”吗？`, '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }).then(function () { return true; }).catch(function () { return false; });
-    if (!confirmed) return false;
-    await REQUEST({
-      url: '/role_delete',
-      type: 'POST',
-      data: { id: row.id },
-      async success(res) {
-        if (res.status !== 1) {
-          self.$msg({ content: res.msg, type: 'error' });
-          return;
-        }
-        self.$msg({ content: res.msg, type: 'success' });
-        await loadList(state.currentPage);
-      },
-      fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
-    });
-    return false;
-  }
+  const deleteRow = createRowDeleteHandler({
+    self,
+    state,
+    loadList,
+    url: '/role_delete',
+    confirmMessage: (row) => `确定删除用户“${row.name}”吗？`,
+    gate: () => canAdministerUsers,
+    getSuccessMessage: (res) => res.msg
+  });
 
   onMounted(function () {
     if (!canAccessUsers(AUTH.getUser())) {

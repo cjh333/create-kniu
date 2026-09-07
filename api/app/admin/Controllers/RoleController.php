@@ -2,10 +2,10 @@
 
 namespace App\Admin\Controllers;
 
-use Core\AdminBaseController;
+use Core\Base;
 use Core\Db;
 
-class RoleController extends AdminBaseController
+class RoleController extends Base
 {
   public function __construct()
   {
@@ -188,8 +188,7 @@ class RoleController extends AdminBaseController
       $query->where('id', '=', $this->currentUserId());
     }
     if ($keyword !== '') {
-      $pattern = '%' . mb_strtolower(htmlspecialchars($keyword, ENT_QUOTES), 'UTF-8') . '%';
-      $query->where('LOWER(`name`)', 'LIKE', $pattern);
+      $query->where('LOWER(`name`)', 'LIKE', $this->likeEncodedPattern($keyword));
     }
     $result = $query
       ->field(['id', 'sid', 'name', 'role', 'role_auth', 'is_show', 'create_time'])

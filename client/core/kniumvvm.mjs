@@ -1,6 +1,7 @@
 import KniuTemplate from './kniutemplate.mjs';
 import KniuUI from './kniuui.js';
 import { nextTick } from './kniuscheduler.mjs';
+import SYNC from './kniusync.mjs';
 
 const { collectReactiveReads, observe, reactive } = KniuTemplate;
 
@@ -92,16 +93,23 @@ function createViewModel(component, services = {}, root, refs = {}) {
     bindings: null
   };
   const setupContext = createTimerServices({ ...services, root: root || services.root, $refs: refs, refs: refs }, instance.timers);
-  Object.assign(setupContext, { reactive, ref, computed, watch, watchEffect, onMounted, onUnmounted, onScopeDispose });
+  Object.assign(setupContext, {
+    reactive, ref, computed, watch, watchEffect,
+    onMounted, onUnmounted, onScopeDispose, autoSync
+  });
   setupContext.$msg = KniuUI.msg;
   setupContext.$confirm = KniuUI.confirm;
 
   activeInstance = instance;
+  // setup() 期间发布当前作用域：期间调用的 autoSync()（含 usePagination 内部的注册）
+  // 自动绑定到本实例，随 dispose() 一并注销。
+  SYNC.setActiveOwner(instance);
   let bindings;
   try {
     bindings = component.setup.call(setupContext, setupContext) || {};
   } finally {
     activeInstance = null;
+    SYNC.setActiveOwner(null);
   }
 
   const state = bindings.state;
@@ -124,6 +132,8 @@ function createViewModel(component, services = {}, root, refs = {}) {
   function dispose() {
     if (instance.stopped) return;
     instance.stopped = true;
+    // 先摘掉本作用域注册的数据源，避免卸载过程中又被服务端变更信号触发重放。
+    SYNC.disposeOwner(instance);
     instance.unmounted.forEach(function (hook) {
       try { hook(); } catch (error) { console.warn('[MVVM] onUnmounted hook failed:', error); }
     });
@@ -151,6 +161,19 @@ function onUnmounted(hook) {
 function onScopeDispose(cleanup) {
   if (typeof cleanup !== 'function') throw new TypeError('[MVVM] cleanup must be a function');
   requireActiveInstance('onScopeDispose').cleanups.push(cleanup);
+}
+
+/**
+ * 注册一个数据源，服务端数据变更时自动重放（页面不刷新、业务不写刷新代码）。
+ *
+ * 必须在 setup() 内同步调用——内部依赖当前控制器作用域做自动注销；
+ * 在 usePagination() 等工厂内部调用同样有效（仍处于同一个 setup 同步段）。
+ *
+ * @param {Function} reload 重新拉数据并写回响应式 state 的函数。
+ * @return {Function} 手动注销函数（通常无需调用）。
+ */
+function autoSync(reload) {
+  return SYNC.autoSync(reload);
 }
 
 function ref(value) {
@@ -258,6 +281,7 @@ export default {
   onMounted,
   onUnmounted,
   onScopeDispose,
+  autoSync,
   watch,
   watchEffect,
   ref,

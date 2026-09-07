@@ -1,16 +1,13 @@
 import KniuMvvm from '../../core/kniumvvm.mjs';
 import KniuUI from '../../core/kniuui.js';
 import REQUEST from '../../core/kniurequest.mjs';
-import { assignModelFields, buildMultipartFormData, toSingleFileList, debounce } from '../../core/kniuutil.mjs';
+import { assignModelFields, buildMultipartFormData, toSingleFileList } from '../../core/kniuutil.mjs';
 
 const { controller, onMounted, reactive } = KniuMvvm;
-const { usePagination } = KniuUI;
+const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = KniuUI;
 
-const articledetailController = controller(function () {
+const articleController = controller(function () {
   const self = this;
-  // 文章管理页对所有后台账号开放增删改查：管理员可管理全部文章，
-  // 普通账号的列表/详情/更新/删除已由后端按 user_id 归属隔离到自己的文章，
-  // 因此操作列与「显示」开关无需按角色隐藏。
   const canEditContent = true;
   const state = reactive({
     canEditContent,
@@ -69,6 +66,12 @@ const articledetailController = controller(function () {
           label: '标题',
           minWidth: 360,
           showOverflowTooltip: true
+        },
+        {
+          field: 'publisher',
+          label: '发布人',
+          width: 120,
+          align: 'center'
         },
         {
           field: 'cover',
@@ -153,14 +156,7 @@ const articledetailController = controller(function () {
       onCurrentChange: (detail) => changePage({ detail }),
       onSizeChange: (detail) => changePageSize({ detail })
     },
-    switchOptions: {
-      name: 'is_show',
-      activeValue: 1,
-      inactiveValue: 0,
-      activeColor: '#13ce66',
-      inactiveColor: '#ff4949',
-      disabled: !canEditContent
-    },
+    switchOptions: makeSwitchOptions(canEditContent),
     datePickerOptions: {
       type: 'datetime',
       range: false,
@@ -188,11 +184,7 @@ const articledetailController = controller(function () {
     pageKey: 'articlePage'
   });
 
-  function searchList() {
-    loadList(1);
-  }
-
-  const debouncedSearch = debounce(searchList, 250);
+  const { searchList, debouncedSearch } = createSearchActions(loadList);
 
   async function updateShow(index, list, value) {
     const row = list[index];
@@ -213,31 +205,13 @@ const articledetailController = controller(function () {
     });
   }
 
-  async function deleteRow(index, list) {
-    const row = list[index];
-    if (!row) return false;
-    const confirmed = await self.$confirm('此操作将永久删除该条数据, 是否继续?', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }).then(function () { return true; }).catch(function () { return false; });
-    if (!confirmed) return false;
-    await REQUEST({
-      url: '/article_delete',
-      type: 'POST',
-      data: { id: row.id },
-      success(res) {
-        if (res.status !== 1) {
-          self.$msg({ content: res.msg, type: 'error' });
-          return;
-        }
-        self.$msg({ content: '删除成功!', type: 'success' });
-        loadList(state.currentPage);
-      },
-      fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
-    });
-    return false;
-  }
+  const deleteRow = createRowDeleteHandler({
+    self,
+    state,
+    loadList,
+    url: '/article_delete',
+    confirmMessage: '此操作将永久删除该条数据, 是否继续?'
+  });
 
   function editRow(index, list) {
     const row = list[index];
@@ -324,4 +298,4 @@ const articledetailController = controller(function () {
   return { state, changePage, changePageSize, searchList, debouncedSearch, updateShow, deleteRow, editRow, addRow, closeDialog, saveEdit, goBack };
 });
 
-export default articledetailController;
+export default articleController;

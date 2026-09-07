@@ -2,11 +2,11 @@
 
 namespace App\Admin\Controllers;
 
-use Core\AdminBaseController;
+use Core\Base;
 use Core\Db;
 use Core\SystemHelper;
 
-class CacheController extends AdminBaseController
+class CacheController extends Base
 {
   public function __construct()
   {

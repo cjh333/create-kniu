@@ -1,6 +1,13 @@
 {
   "require": {
-    "php": ">=7.2.0"
+    "php": ">=8.0",
+    "ext-mysqli": "*",
+    "ext-mbstring": "*",
+    "ext-gd": "*",
+    "ext-fileinfo": "*",
+    "ext-openssl": "*",
+    "ext-curl": "*",
+    "ext-pdo_mysql": "*"
   },
   "autoload": {
     "psr-4": {

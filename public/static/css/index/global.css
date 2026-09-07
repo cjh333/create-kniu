@@ -16,6 +16,10 @@
 .kniu_web_head,
 .kniu_web_foot {
   flex: 0 0 auto;
+  -webkit-flex: 0 0 auto;
+  -moz-flex: 0 0 auto;
+  -ms-flex: 0 0 auto;
+  -o-flex: 0 0 auto;
   background-color: #fff;
   color: #333;
 }
@@ -27,17 +31,21 @@
   left: 0;
   right: 0;
   border-bottom: 1px solid #f0f0f0;
-  box-shadow: 0 4px 18px rgba(15, 23, 42, .04);
-  -webkit-box-shadow: 0 4px 18px rgba(15, 23, 42, .04);
-  -moz-box-shadow: 0 4px 18px rgba(15, 23, 42, .04);
-  -ms-box-shadow: 0 4px 18px rgba(15, 23, 42, .04);
-  -o-box-shadow: 0 4px 18px rgba(15, 23, 42, .04);
+  box-shadow: none;
+  -webkit-box-shadow: none;
+  -moz-box-shadow: none;
+  -ms-box-shadow: none;
+  -o-box-shadow: none;
 }
 
 .kniu_web_body {
   flex: 1 0 auto;
+  -webkit-flex: 1 0 auto;
+  -moz-flex: 1 0 auto;
+  -ms-flex: 1 0 auto;
+  -o-flex: 1 0 auto;
   min-width: 0;
-  min-height: calc(100vh - 73px);
+  min-height: calc(100vh - 70 / var(--kniu_vw));
   background-color: #f6f6f6;
 }
 
@@ -47,16 +55,11 @@
 
 .kniu_web_foot {
   border-top: 1px solid #f0f0f0;
-  padding: calc(24 / var(--kniu_vw)) 0;
+  padding: calc(18 / var(--kniu_vw)) calc(12 / var(--kniu_vw));
   color: #666;
 }
 
 .kniu_foot_body {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: calc(8 / var(--kniu_vw)) calc(18 / var(--kniu_vw));
   line-height: 1.6;
   text-align: center;
 }
@@ -65,26 +68,25 @@
   background-color: #333;
 }
 
-@media (max-width: 720px) {
+@media (min-width: 721px) {
   .kniu_web_head {
-    box-shadow: none;
-    -webkit-box-shadow: none;
-    -moz-box-shadow: none;
-    -ms-box-shadow: none;
-    -o-box-shadow: none;
+    box-shadow: 0 calc(4 / var(--kniu_vw)) calc(18 / var(--kniu_vw)) rgba(15, 23, 42, .04);
+    -webkit-box-shadow: 0 calc(4 / var(--kniu_vw)) calc(18 / var(--kniu_vw)) rgba(15, 23, 42, .04);
+    -moz-box-shadow: 0 calc(4 / var(--kniu_vw)) calc(18 / var(--kniu_vw)) rgba(15, 23, 42, .04);
+    -ms-box-shadow: 0 calc(4 / var(--kniu_vw)) calc(18 / var(--kniu_vw)) rgba(15, 23, 42, .04);
+    -o-box-shadow: 0 calc(4 / var(--kniu_vw)) calc(18 / var(--kniu_vw)) rgba(15, 23, 42, .04);
   }
 
   .kniu_web_body {
-    min-height: calc(100vh - 70px);
+    min-height: calc(100vh - 73 / var(--kniu_vw));
   }
 
   .kniu_web_foot {
-    padding: 18px 12px;
+    padding: calc(24 / var(--kniu_vw)) 0;
   }
 
   .kniu_foot_body {
-    gap: 4px 10px;
-    font-size: 13px;
+    font-size: inherit;
   }
 }
 

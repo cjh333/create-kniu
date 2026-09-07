@@ -2,12 +2,12 @@ import KniuMvvm from '../../core/kniumvvm.mjs';
 import KniuUI from '../../core/kniuui.js';
 import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
-import { assignModelFields, updateListRecord, debounce } from '../../core/kniuutil.mjs';
+import { assignModelFields, updateListRecord } from '../../core/kniuutil.mjs';
 
 const { controller, onMounted, reactive } = KniuMvvm;
-const { usePagination } = KniuUI;
+const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = KniuUI;
 
-const dailydetailController = controller(function () {
+const dailyController = controller(function () {
   const self = this;
   const canEditContent = Number(AUTH.getUser()?.roleId || AUTH.getUser()?.role || 0) === 1 || Number(AUTH.getUser()?.roleAuth || 0) === 1;
   const state = reactive({
@@ -115,18 +115,11 @@ const dailydetailController = controller(function () {
       onCurrentChange: (detail) => changePage({ detail }),
       onSizeChange: (detail) => changePageSize({ detail })
     },
-    switchOptions: {
-      name: 'is_show',
-      activeValue: 1,
-      inactiveValue: 0,
-      activeColor: '#13ce66',
-      inactiveColor: '#ff4949',
-      disabled: !canEditContent
-    }
+    switchOptions: makeSwitchOptions(canEditContent)
   });
   state.dailyTable.cols[6].switch.options = state.switchOptions;
 
-  const { loadList, changePage, changePageSize } = usePagination({
+  const { loadList, changePage, changePageSize, syncOptions } = usePagination({
     state,
     self,
     url: '/daily_list',
@@ -137,11 +130,7 @@ const dailydetailController = controller(function () {
     pageKey: 'dailyPage'
   });
 
-  function searchList() {
-    loadList(1);
-  }
-
-  const debouncedSearch = debounce(searchList, 250);
+  const { searchList, debouncedSearch } = createSearchActions(loadList);
 
   async function updateShow(index, list, value) {
     const row = list[index];
@@ -156,37 +145,22 @@ const dailydetailController = controller(function () {
           return;
         }
         row.is_show = value;
+        // 原地改字段后 state.dailyTable 引用未变 → kniu-table setter 不触发；
+        // 复用 usePagination 暴露的 syncOptions 把 state.list 推到 options 上即可。
+        syncOptions();
         self.$msg({ content: res.msg, type: 'success' });
       },
       fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
     });
   }
 
-  async function deleteRow(index, list) {
-    const row = list[index];
-    if (!row) return false;
-    const confirmed = await self.$confirm('此操作将永久删除该条数据, 是否继续?', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }).then(function () { return true; }).catch(function () { return false; });
-    if (!confirmed) return false;
-    await REQUEST({
-      url: '/daily_delete',
-      type: 'POST',
-      data: { id: row.id },
-      success(res) {
-        if (res.status !== 1) {
-          self.$msg({ content: res.msg, type: 'error' });
-          return;
-        }
-        self.$msg({ content: '删除成功!', type: 'success' });
-        loadList(state.currentPage);
-      },
-      fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
-    });
-    return false;
-  }
+  const deleteRow = createRowDeleteHandler({
+    self,
+    state,
+    loadList,
+    url: '/daily_delete',
+    confirmMessage: '此操作将永久删除该条数据, 是否继续?'
+  });
 
   function editRow(index, list) {
     const row = list[index];
@@ -219,6 +193,9 @@ const dailydetailController = controller(function () {
           return;
         }
         state.list = updateListRecord(state.list, form);
+        // 本地补丁后必须把新数组推到 options 上，否则 state.dailyTable.data
+        // 仍指向旧数组，kniu-table setter 不触发、表不刷新。
+        syncOptions();
         state.showmodal = false;
         self.$msg({ content: res.msg, type: 'success' });
       },
@@ -234,4 +211,4 @@ const dailydetailController = controller(function () {
   return { state, changePage, changePageSize, searchList, debouncedSearch, updateShow, deleteRow, editRow, closeDialog, saveEdit, goBack };
 });
 
-export default dailydetailController;
+export default dailyController;

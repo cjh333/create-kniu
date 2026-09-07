@@ -1,8 +1,9 @@
 import KniuTemplate from './kniutemplate.mjs';
 import REQUEST from './kniurequest.mjs';
 import IDENTITY from './kniuidentity.mjs';
-import { getResponseRecords } from './kniuutil.mjs';
-import { sanitizeRichHtml } from './kniusanitizer.mjs';
+import SYNC from './kniusync.mjs';
+import { getResponseRecords, debounce } from './kniuutil.mjs';
+import { sanitizeRichHtml, sanitizeRichHtmlAsync } from './kniusanitizer.mjs';
 
 const { reactive, compileExpression } = KniuTemplate;
 
@@ -16,12 +17,9 @@ var KniuUI = (function () {
   var shadowTemplateCache = new Map();
   var shadowStyleSheetCache = new Map();
   var KNIU_BASE_CONTAIN_CSS = ':host{contain:layout}';
-  var KNIU_CONTAIN_EXCLUDE_TAGS = { 'KNIU-TABLE': 1, 'KNIU-NAVBAR': 1, 'KNIU-MODAL': 1, 'KNIU-DATE-PICKER': 1 };
+  var KNIU_CONTAIN_EXCLUDE_TAGS = { 'KNIU-TABLE': 1, 'KNIU-NAVBAR': 1, 'KNIU-MODAL': 1, 'KNIU-DATE-PICKER': 1, 'KNIU-SELECT': 1, 'KNIU-USER-LOGIN': 1, 'KNIU-INPUT': 1 };
   function shouldContainHost(tag) { return !KNIU_CONTAIN_EXCLUDE_TAGS[String(tag || '').toUpperCase()]; }
 
-  // ==== 双语配置基础（locale 文案字典 + 翻译工具）====
-  // 所有组件内置文案统一从 KNIU_I18N 读取，支持 lang='cn'|'en'（默认 cn，向后兼容）。
-  // 键采用扁平命名空间「组件.具体键」，带参数用 {n} 占位（n 从 1 起）。
   var KNIU_I18N = {
     cn: {
       'common.ok': '确定',
@@ -451,6 +449,109 @@ var KniuUI = (function () {
     target.replaceChildren(fragment);
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // 统一下拉/浮层原语（约定：所有会弹出的浮层——select、分页、日期选择器、
+  // 账号登录菜单、密码 tip 等——都走这里）。
+  // 规范：
+  //   1) 一律 position:fixed（脱离 overflow 裁剪，可越过任意定位/裁剪祖先）。
+  //   2) 自动判断显示在上方还是下方，默认下方；仅下方放不下且上方足够时翻到上方。
+  //   3) 水平方向贴近触发元素左缘，超视口右缘自动向左钳制，保证完全可见。
+  //   4) 触发元素滚动/窗口 resize 时自动跟随重定位（rAF 节流）。
+  // 参考基准：kniu-date-picker 的 fixed 面板定位逻辑，抽取为共享实现供各组件复用。
+  // ─────────────────────────────────────────────────────────────
+
+  // 计算浮层 fixed 坐标与方向。panel 需先渲染出可见尺寸(offsetWidth/offsetHeight)。
+  // opts: { offset=6, width(可选兜底), height(可选兜底) }
+  // anchorRect: 触发元素 getBoundingClientRect() 结果。
+  function computePopoverLayout(panel, anchorRect, opts) {
+    const cfg = opts || {};
+    const offset = cfg.offset == null ? 6 : cfg.offset;
+    const measureWidth = (panel && panel.offsetWidth) || cfg.width || 0;
+    const width = Math.min(measureWidth, globalThis.innerWidth - 16);
+    let left = Math.min(anchorRect.left, globalThis.innerWidth - width - 8);
+    left = Math.max(8, left);
+    const panelHeight = (panel && panel.offsetHeight) || cfg.height || 0;
+    const spaceBelow = globalThis.innerHeight - anchorRect.bottom - 8;
+    const spaceAbove = anchorRect.top - 8;
+    // 默认下方；仅下方不足且上方足够时向上。若上下都不足，仍默认向下显示。
+    const placement = spaceBelow < panelHeight && spaceAbove >= panelHeight ? 'top' : 'bottom';
+    const top = placement === 'top' ? anchorRect.top - panelHeight - offset : anchorRect.bottom + offset;
+    return { placement: placement, left: left, top: top, width: width, height: panelHeight };
+  }
+
+  // 滚动/resize 时用 rAF 持续把浮层钉在触发元素旁(锚点由 caller 经 anchor() 提供，
+  // 位置由 apply() 应用)。返回 dispose。位置变化仅发生在几何/视口变化时。
+  function trackPopoverPosition(anchor, apply, onDone) {
+    if (typeof globalThis.requestAnimationFrame !== 'function') return onDone ? onDone() : null;
+    let frame = 0;
+    let lastKey = '';
+    const step = function () {
+      frame = 0;
+      if (!apply._alive) return;
+      const rect = anchor();
+      if (!rect) { frame = globalThis.requestAnimationFrame(step); return; }
+      const key = rect.left + ',' + rect.top + ',' + rect.right + ',' + rect.bottom + ',' + globalThis.innerWidth + ',' + globalThis.innerHeight;
+      if (key !== lastKey) {
+        lastKey = key;
+        apply(rect);
+      }
+      frame = globalThis.requestAnimationFrame(step);
+    };
+    const state = { alive: true };
+    apply._alive = state;
+    const dispose = function () { state.alive = false; apply._alive = null; if (frame) globalThis.cancelAnimationFrame(frame); frame = 0; };
+    frame = globalThis.requestAnimationFrame(step);
+    if (onDone) onDone(dispose);
+    return dispose;
+  }
+
+  // 统一浮层渲染宿主。绝大多数组件宿主带 :host{contain:layout} 或处于任何会建立
+  // containing block 的祖先内，导致宿主 shadowRoot 里的 position:fixed 后代相对宿主
+  // 而非视口定位（参照 kniu-date-picker 的实测：fixed 探针渲染在 host.top+N）。
+  // 因此所有视口级浮层必须 portal 到 document.body 之下、用独立 shadowRoot 承载面板，
+  // fixed 才能真正相对视口做自动上下翻转。本函数在面板首次打开前把 panel 从宿主
+  // shadowRoot 移入 portal，收起后由 caller 调 unmount 移回宿主，DOM 节点同一（不克隆，
+  // 保留面板自身事件与 data-*）。用法：
+  //   this._popoverState = mountPopoverPortal(panel, hostShadowRoot, { zIndex, dataKey })
+  //   关闭/断开时：if (this._popoverState) { this._popoverState.unmount(); this._popoverState = null; }
+  // opts: { zIndex=10030, attribute='data-kniu-popover' }
+  function mountPopoverPortal(panel, hostRoot, opts) {
+    const cfg = opts || {};
+    if (typeof document === 'undefined' || !panel || !hostRoot) return null;
+    if (panel.__kniuPortalState && panel.__kniuPortalState.portal?.isConnected) return panel.__kniuPortalState;
+    const portal = document.createElement('span');
+    portal.setAttribute(cfg.attribute || 'data-kniu-popover', '');
+    const zIndex = cfg.zIndex == null ? 10030 : cfg.zIndex;
+    portal.style.cssText = 'position:fixed;inset:0;display:block;width:0;height:0;pointer-events:none;z-index:' + zIndex;
+    const root = portal.attachShadow({ mode: 'open' });
+    // 继承宿主样式：adoptedStyleSheets 优先，否则克隆宿主 <style>。
+    if (typeof CSSStyleSheet !== 'undefined' && hostRoot.adoptedStyleSheets?.length && typeof root.adoptedStyleSheets !== 'undefined') {
+      root.adoptedStyleSheets = hostRoot.adoptedStyleSheets.slice();
+    } else {
+      hostRoot.querySelectorAll('style').forEach(function (style) {
+        root.appendChild(style.cloneNode(true));
+      });
+    }
+    // 面板本身可交互，portal 壳透明不拦截。
+    panel.style.pointerEvents = 'auto';
+    root.appendChild(panel);
+    document.body.appendChild(portal);
+    const state = {
+      portal: portal,
+      root: root,
+      panel: panel,
+      unmount: function () {
+        if (!portal.isConnected) return;
+        // 把面板移回宿主 shadow（非 portal root），再销毁 portal 壳。
+        hostRoot.appendChild(panel);
+        portal.remove();
+        if (panel.__kniuPortalState === state) panel.__kniuPortalState = null;
+      }
+    };
+    panel.__kniuPortalState = state;
+    return state;
+  }
+
   function resolveTableRowTemplate(template, row, rowIndex) {
     if (typeof template === 'function') return template(row, rowIndex);
     if (typeof template !== 'string' || !template.includes('{{')) return template;
@@ -647,10 +748,13 @@ var KniuUI = (function () {
       :host([theme="dark"]) .kniu_sys_table_group{--kniu-table-edge-fade:rgba(255,255,255,.1)}
       :host-context([data-theme="dark"]) .kniu_sys_table_group{--kniu-table-edge-fade:rgba(255,255,255,.1)}
       @media (prefers-color-scheme:dark){.kniu_sys_table_group{--kniu-table-edge-fade:rgba(255,255,255,.1)}}
-      @media (min-width:851px){.kniu_sys_table_group[data-mobile-overflow-left="true"]::before,.kniu_sys_table_group[data-mobile-overflow-right="true"]::after{display:none}}
-      @media (max-width:850px){
-        .kniu_sys_table .kniu_sys_table_fixed_left,.kniu_sys_table .kniu_sys_table_fixed_right{position:static!important;left:auto!important;right:auto!important;z-index:auto!important}
-        .kniu_sys_table_fixed_shadow{display:none!important}
+      .kniu_sys_table .kniu_sys_table_fixed_left,.kniu_sys_table .kniu_sys_table_fixed_right{position:static;z-index:auto}
+      .kniu_sys_table_fixed_shadow{display:none}
+      @media (min-width:851px){
+        .kniu_sys_table_group[data-mobile-overflow-left="true"]::before,.kniu_sys_table_group[data-mobile-overflow-right="true"]::after{display:none}
+        .kniu_sys_table .kniu_sys_table_fixed_left,.kniu_sys_table .kniu_sys_table_fixed_right{position:sticky;z-index:2}
+        .kniu_sys_table th.kniu_sys_table_fixed_left,.kniu_sys_table th.kniu_sys_table_fixed_right{z-index:5}
+        .kniu_sys_table_fixed_shadow{display:block}
       }
       @media (prefers-reduced-motion:reduce){.kniu_sys_table_loading_spinner{animation:none}}
     `;
@@ -2551,6 +2655,11 @@ var KniuUI = (function () {
       }
     }
 
+    // 数据变更信号到达时若正在加载（用户刚翻页/搜索），不能直接重放——
+    // 重放用的是尚未更新的 state.currentPage，其 success 会把页码覆盖回旧页。
+    // 故先挂起，等当前请求收尾后再补一次。
+    let pendingReload = false;
+
     async function loadList(page) {
       const targetPage = Math.min(Math.max(Number(page) || 1, 1), state.pageTotal || 1);
       state.loading = true;
@@ -2581,12 +2690,20 @@ var KniuUI = (function () {
           state.total = payload.total || 0;
           state.loading = false;
           syncOptions();
+          if (pendingReload) {
+            pendingReload = false;
+            loadList(state.currentPage);
+          }
         },
         fail(res) {
           state.loading = false;
           syncOptions();
           state.error = res.msg || '加载失败';
           self.$msg({ content: state.error, type: 'error' });
+          if (pendingReload) {
+            pendingReload = false;
+            loadList(state.currentPage);
+          }
         }
       });
     }
@@ -2605,7 +2722,78 @@ var KniuUI = (function () {
       loadList(1);
     }
 
-    return { loadList, changePage, changePageSize };
+    // 服务端数据变更时自动重放当前页：任何一端（后台改数据、他人在前台点赞/评论）
+    // 写库后，在线页面无需刷新即可看到最新数据，业务控制器不必写刷新逻辑。
+    // 调用点仍在控制器 setup() 的同步段内，作用域绑定与自动注销由 kniusync 负责。
+    SYNC.autoSync(function reloadCurrentPage() {
+      if (state.loading) {
+        pendingReload = true;
+        return;
+      }
+      loadList(state.currentPage);
+    });
+
+    return { loadList, changePage, changePageSize, syncOptions };
+  }
+
+  // 后台列表页通用的“显示”开关 options 工厂：四列 CRUD 控制器（daily/article/comment/users）
+  // 使用完全相同的 is_show 开关外观，仅 disabled 随当前账号的编辑权限变化。
+  // enabled 传 true/false 表示是否可编辑；内部 disabled 取反。
+  function makeSwitchOptions(enabled = true) {
+    return {
+      name: 'is_show',
+      activeValue: 1,
+      inactiveValue: 0,
+      activeColor: '#13ce66',
+      inactiveColor: '#ff4949',
+      disabled: !enabled
+    };
+  }
+
+  // 后台列表页搜索接线工厂：把 loadList 包装成回车/按钮触发的 searchList，并生成 250ms 防抖版本。
+  // 复刻各控制器重复的“searchList(){loadList(1)} + debounce(searchList,250)”三段式样板。
+  function createSearchActions(loadList, wait = 250) {
+    const searchList = function () { loadList(1); };
+    return { searchList: searchList, debouncedSearch: debounce(searchList, wait) };
+  }
+
+  // 后台列表页“删除行”交互工厂：确认框 -> 调删除接口 -> 提示 + 刷新列表。
+  // 复刻 article/daily/comment/users 高度重复的 deleteRow 样板；行为逐字节等价：
+  //  - row 不存在直接 return false；未确认 return false。
+  //  - gate 可选：传函数且返回假值时直接 return false（如 users 的仅管理员删除）。
+  //  - 成功默认提示固定文案“删除成功!”；传 getSuccessMessage(res) 可改用服务端 msg。
+  function createRowDeleteHandler(config) {
+    const { self, state, loadList, url, confirmMessage, gate = null, getSuccessMessage = null } = config || {};
+    return async function deleteRow(index, list) {
+      const row = list[index];
+      if (!row) return false;
+      if (typeof gate === 'function' && !gate()) return false;
+      const confirmed = await self.$confirm(
+        typeof confirmMessage === 'function' ? confirmMessage(row) : confirmMessage,
+        '提示',
+        {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      ).then(function () { return true; }).catch(function () { return false; });
+      if (!confirmed) return false;
+      await REQUEST({
+        url: url,
+        type: 'POST',
+        data: { id: row.id },
+        success(res) {
+          if (res.status !== 1) {
+            self.$msg({ content: res.msg, type: 'error' });
+            return;
+          }
+          self.$msg({ content: typeof getSuccessMessage === 'function' ? getSuccessMessage(res) : '删除成功!', type: 'success' });
+          loadList(state.currentPage);
+        },
+        fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
+      });
+      return false;
+    };
   }
 
   function registerSelectComponent() {
@@ -2640,7 +2828,7 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this._value = '';
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;min-width:120px}.kniu_sys_select_wrap{position:relative;width:100%}.kniu_sys_select{display:flex;align-items:center;width:100%;height:40px;padding:0 34px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px Arial,"Microsoft YaHei",sans-serif;cursor:pointer;box-sizing:border-box;white-space:nowrap}.kniu_sys_select:hover{border-color:#c0c4cc}.kniu_sys_select:focus-visible,.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select{border-color:#409eff}.kniu_sys_select:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_arrow{position:absolute;top:50%;right:12px;width:7px;height:7px;border-right:1px solid #909399;border-bottom:1px solid #909399;transform:translateY(-70%) rotate(45deg);transition:transform .2s;pointer-events:none}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_arrow{transform:translateY(-30%) rotate(225deg)}.kniu_sys_select_dropdown{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:10030;max-height:220px;overflow:auto;padding:5px 0;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);opacity:0;visibility:hidden;transform:translateY(-4px);transition:.16s}.kniu_sys_select_wrap[data-placement="top"] .kniu_sys_select_dropdown{top:auto;bottom:calc(100% + 6px);transform:translateY(4px)}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_dropdown{opacity:1;visibility:visible;transform:none}.kniu_sys_select_option{display:block;width:100%;height:32px;padding:0 12px;border:0;background-color:transparent;color:#606266;font:inherit;text-align:left;cursor:pointer}.kniu_sys_select_option:hover,.kniu_sys_select_option.is-selected{color:#409eff;background-color:#f5f7fa}.kniu_sys_select_option:disabled{color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_slot{display:none}</style><div class="kniu_sys_select_wrap" data-open="false" data-placement="bottom"><button type="button" class="kniu_sys_select" aria-haspopup="listbox" aria-expanded="false"></button><span class="kniu_sys_select_arrow" aria-hidden="true"></span><div class="kniu_sys_select_dropdown" role="listbox"></div></div><slot class="kniu_sys_select_slot"></slot>`;
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;min-width:120px}.kniu_sys_select_wrap{position:relative;width:100%}.kniu_sys_select{display:flex;align-items:center;width:100%;height:40px;padding:0 34px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px Arial,"Microsoft YaHei",sans-serif;cursor:pointer;box-sizing:border-box;white-space:nowrap}.kniu_sys_select:hover{border-color:#c0c4cc}.kniu_sys_select:focus-visible,.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select{border-color:#409eff}.kniu_sys_select:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_arrow{position:absolute;top:50%;right:12px;width:7px;height:7px;border-right:1px solid #909399;border-bottom:1px solid #909399;transform:translateY(-70%) rotate(45deg);transition:transform .2s;pointer-events:none}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_arrow{transform:translateY(-30%) rotate(225deg)}.kniu_sys_select_dropdown{position:fixed;z-index:10030;max-height:220px;overflow:auto;padding:5px 0;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);opacity:0;visibility:hidden;transform:translateY(-4px);transition:.16s}.kniu_sys_select_dropdown[data-placement="top"]{transform:translateY(4px)}.kniu_sys_select_dropdown[data-open="true"]{opacity:1;visibility:visible;transform:none}.kniu_sys_select_option{display:block;width:100%;height:32px;padding:0 12px;border:0;background-color:transparent;color:#606266;font:inherit;text-align:left;cursor:pointer}.kniu_sys_select_option:hover,.kniu_sys_select_option.is-selected{color:#409eff;background-color:#f5f7fa}.kniu_sys_select_option:disabled{color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_slot{display:none}</style><div class="kniu_sys_select_wrap" data-open="false" data-placement="bottom"><button type="button" class="kniu_sys_select" aria-haspopup="listbox" aria-expanded="false"></button><span class="kniu_sys_select_arrow" aria-hidden="true"></span><div class="kniu_sys_select_dropdown" role="listbox"></div></div><slot class="kniu_sys_select_slot"></slot>`;
         this._wrap = this.shadowRoot.querySelector('.kniu_sys_select_wrap');
         this._select = this.shadowRoot.querySelector('.kniu_sys_select');
         this._dropdown = this.shadowRoot.querySelector('.kniu_sys_select_dropdown');
@@ -2667,7 +2855,7 @@ var KniuUI = (function () {
         this._syncAttributes();
         window.addEventListener('pointerdown', this._outside, true);
       }
-      disconnectedCallback() { this._observer.disconnect(); window.removeEventListener('pointerdown', this._outside, true); }
+      disconnectedCallback() { this._observer.disconnect(); window.removeEventListener('pointerdown', this._outside, true); if (this._disposeSelectTrack) { this._disposeSelectTrack(); this._disposeSelectTrack = null; } if (this._popoverState) { this._popoverState.unmount(); this._popoverState = null; } }
       attributeChangedCallback() { if (this._select) this._syncAttributes(); }
       get value() { return this._value; }
       set value(value) {
@@ -2678,14 +2866,34 @@ var KniuUI = (function () {
       set disabled(value) { value ? this.setAttribute('disabled', '') : this.removeAttribute('disabled'); }
       _setOpen(open) {
         const expanded = !!open && !this._select.disabled;
-        if (expanded) {
-          const rect = this.getBoundingClientRect();
-          const panelHeight = Math.min(this._dropdown.scrollHeight || 220, 220) + 6;
-          const below = window.innerHeight - rect.bottom;
-          this._wrap.dataset.placement = below >= panelHeight || below >= rect.top ? 'bottom' : 'top';
+        // 收起：先停跟随、卸载 body portal，再隐藏，避免隐藏后再触发一次定位。
+        if (!expanded) {
+          if (this._disposeSelectTrack) { this._disposeSelectTrack(); this._disposeSelectTrack = null; }
+          if (this._popoverState) { this._popoverState.unmount(); this._popoverState = null; }
         }
         this._wrap.dataset.open = String(expanded);
+        this._dropdown.dataset.open = String(expanded);
         this._select.setAttribute('aria-expanded', String(expanded));
+        if (!expanded) return;
+        // 展开：下拉浮层 portal 到 body 使其 fixed 相对视口（同 date-picker 机制），
+        // 再按 fixed + 自动上下翻转(默认下方)定位；宽度沿用触发按钮。
+        if (!this._popoverState) this._popoverState = mountPopoverPortal(this._dropdown, this.shadowRoot, { zIndex: 10030, attribute: 'data-kniu-select-popover' });
+        this._dropdown.dataset.open = 'true';
+        const trigger = this._select;
+        const triggerRect = trigger.getBoundingClientRect();
+        this._dropdown.style.width = triggerRect.width + 'px';
+        const applyPosition = (rect) => {
+          const layout = computePopoverLayout(this._dropdown, rect, { offset: 6, width: rect.width, height: 220 });
+          this._dropdown.dataset.placement = layout.placement;
+          this._dropdown.style.left = layout.left + 'px';
+          this._dropdown.style.top = layout.top + 'px';
+        };
+        applyPosition(triggerRect);
+        if (this._disposeSelectTrack) this._disposeSelectTrack();
+        this._disposeSelectTrack = trackPopoverPosition(
+          () => { if (!this.isConnected) return null; return this._select.getBoundingClientRect(); },
+          applyPosition
+        );
       }
       syncOptions() {
         if (!this._select) return;
@@ -3190,7 +3398,7 @@ var KniuUI = (function () {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (!customElements.get('kniu-input')) {
       class KniuSysInput extends HTMLElement {
-        static get observedAttributes() { return ['type', 'name', 'placeholder', 'autocomplete', 'autocapitalize', 'maxlength', 'rows', 'disabled', 'readonly', 'required', 'show-password', 'clearable', 'label-width']; }
+        static get observedAttributes() { return ['type', 'name', 'placeholder', 'autocomplete', 'autocapitalize', 'maxlength', 'rows', 'disabled', 'readonly', 'required', 'show-password', 'clearable', 'label-width', 'tip']; }
         constructor() {
           super();
           attachComponentShadow(this);
@@ -3215,12 +3423,20 @@ var KniuUI = (function () {
           clearButton.tabIndex = -1;
           clearButton.textContent = '×';
           clearButton.setAttribute('aria-label', '清空输入内容');
+          const tipPanel = document.createElement('div');
+          tipPanel.className = 'kniu_sys_input_tip';
+          tipPanel.setAttribute('role', 'tooltip');
+          tipPanel.setAttribute('aria-hidden', 'true');
           this._input.replaceWith(wrap);
-          wrap.append(this._input, clearButton, passwordButton);
+          wrap.append(this._input, clearButton, passwordButton, tipPanel);
           adoptSharedStyle(this.shadowRoot, passwordStyle);
+          const tipStyle = '.kniu_sys_input_tip{position:fixed;z-index:10030;display:none;min-width:200px;max-width:calc(100vw - 16px);padding:8px 0;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;color:#606266;font-size:13px;line-height:1.6;text-align:left;white-space:normal;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.kniu_sys_input_tip[data-open="true"]{display:block}.kniu_sys_input_tip ul{margin:0;padding:0;list-style:none}.kniu_sys_input_tip li{margin:0;padding:4px 14px}.kniu_sys_input_tip--single{padding:8px 14px;color:#909399;white-space:pre-line}';
+          adoptSharedStyle(this.shadowRoot, tipStyle);
           this._wrap = wrap;
           this._passwordButton = passwordButton;
           this._clearButton = clearButton;
+          this._tipPanel = tipPanel;
+          this._tipState = null;
           const keepInputFocused = (event) => event.preventDefault();
           passwordButton.addEventListener('pointerdown', keepInputFocused);
           clearButton.addEventListener('pointerdown', keepInputFocused);
@@ -3256,6 +3472,8 @@ var KniuUI = (function () {
         disconnectedCallback() {
           if (this._affixObserver) this._affixObserver.disconnect();
           this._affixObserver = null;
+          if (this._disposeTipTrack) { this._disposeTipTrack(); this._disposeTipTrack = null; }
+          if (this._tipState) { this._tipState.unmount(); this._tipState = null; }
         }
         attributeChangedCallback(name) {
           if (!this._input) return;
@@ -3273,6 +3491,8 @@ var KniuUI = (function () {
             this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
           });
           node.addEventListener('change', () => this.dispatchEvent(new Event('change', { bubbles: true, composed: true })));
+          node.addEventListener('focus', () => this._showTip());
+          node.addEventListener('blur', () => this._hideTip());
           if (node.tagName.toLowerCase() !== 'textarea') {
             node.addEventListener('keydown', (event) => {
               if (event.key !== 'Enter' || event.isComposing) return;
@@ -3390,6 +3610,7 @@ var KniuUI = (function () {
           this._passwordButton.tabIndex = -1;
           this._clearButton.tabIndex = -1;
           this._syncClearable();
+          this._syncTip();
         }
         _syncClearable() {
           if (!this._wrap || !this._clearButton) return;
@@ -3398,6 +3619,49 @@ var KniuUI = (function () {
             && !this.hasAttribute('disabled')
             && !this.hasAttribute('readonly');
           this._wrap.dataset.clearVisible = String(visible);
+        }
+        _syncTip() {
+          if (!this._tipPanel) return;
+          const tip = this.getAttribute('tip');
+          if (tip == null || tip === '') {
+            this._tipPanel.innerHTML = '';
+            this._wrap.dataset.hasTip = 'false';
+            return;
+          }
+          const items = String(tip).split(/\n|;/).map((s) => s.trim()).filter(Boolean);
+          if (items.length > 1) {
+            this._tipPanel.classList.remove('kniu_sys_input_tip--single');
+            this._tipPanel.innerHTML = '<ul>' + items.map((item) => '<li>' + String(item).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])) + '</li>').join('') + '</ul>';
+          } else {
+            this._tipPanel.classList.add('kniu_sys_input_tip--single');
+            this._tipPanel.textContent = tip;
+          }
+          this._wrap.dataset.hasTip = 'true';
+        }
+        _showTip() {
+          if (!this._wrap || this.getAttribute('tip') == null || this.getAttribute('tip') === '') return;
+          // 打开：把提示浮层 portal 到 body，fixed 相对视口（同 date-picker），再定位。
+          if (!this._tipState) this._tipState = mountPopoverPortal(this._tipPanel, this.shadowRoot, { zIndex: 10030, attribute: 'data-kniu-input-tip-popover' });
+          this._tipPanel.dataset.open = 'true';
+          this._tipPanel.setAttribute('aria-hidden', 'false');
+          const apply = (rect) => {
+            const layout = computePopoverLayout(this._tipPanel, rect, { offset: 6 });
+            this._tipPanel.style.left = layout.left + 'px';
+            this._tipPanel.style.top = layout.top + 'px';
+          };
+          apply(this._input.getBoundingClientRect());
+          if (this._disposeTipTrack) this._disposeTipTrack();
+          this._disposeTipTrack = trackPopoverPosition(
+            () => { if (!this.isConnected || this._tipPanel.dataset.open !== 'true') return null; return this._input.getBoundingClientRect(); },
+            apply
+          );
+        }
+        _hideTip() {
+          if (!this._wrap) return;
+          if (this._disposeTipTrack) { this._disposeTipTrack(); this._disposeTipTrack = null; }
+          this._tipPanel.dataset.open = 'false';
+          this._tipPanel.setAttribute('aria-hidden', 'true');
+          if (this._tipState) { this._tipState.unmount(); this._tipState = null; }
         }
       }
       customElements.define('kniu-input', KniuSysInput);
@@ -3503,10 +3767,10 @@ var KniuUI = (function () {
         attachComponentShadow(this);
         this.shadowRoot.innerHTML = `<style>
           :host{display:block;width:100%}.group{display:flex;width:100%;height:40px}.input-wrap{position:relative;display:block;flex:1;min-width:0}.input{display:block;width:100%;height:40px;padding:0 38px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px Arial,"Microsoft YaHei",sans-serif;cursor:pointer;box-sizing:border-box;transition:border-color .2s}.input:hover{border-color:#c0c4cc}.input:focus,:host([data-open="true"]) .input{position:relative;z-index:1;border-color:#409eff}.input:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.calendar-icon{position:absolute;z-index:2;top:0;right:0;display:grid;width:38px;height:40px;place-items:center;color:#909399;pointer-events:none}.affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;white-space:nowrap;box-sizing:border-box}.group[data-has-prepend="true"] .prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.group[data-has-append="true"] .append{display:flex;border-left:0;border-radius:0 4px 4px 0}.group[data-has-prepend="true"] .input{border-radius:0 4px 4px 0}.group[data-has-append="true"] .input{border-radius:4px 0 0 4px}.group[data-has-prepend="true"][data-has-append="true"] .input{border-radius:0}
-          .panel{position:fixed;z-index:10020;width:322px;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.panel[hidden]{display:none}.panel[data-placement="bottom"]{transform-origin:center top}.panel[data-placement="top"]{transform-origin:center bottom}.panel[data-state="open"][data-placement="bottom"]{animation:kniu_date_in_bottom .18s ease-out both}.panel[data-state="open"][data-placement="top"]{animation:kniu_date_in_top .18s ease-out both}.panel[data-state="closing"][data-placement="bottom"]{animation:kniu_date_out_bottom .15s ease-in both}.panel[data-state="closing"][data-placement="top"]{animation:kniu_date_out_top .15s ease-in both}@keyframes kniu_date_in_bottom{from{opacity:0;transform:translateY(-8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_in_top{from{opacity:0;transform:translateY(8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_out_bottom{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(-6px) scaleY(.97)}}@keyframes kniu_date_out_top{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(6px) scaleY(.97)}}.head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.head button,.day,.chooser button,.title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.head>button{height:30px;border-radius:4px;font-size:17px}.head button:hover,.day:hover,.chooser button:hover,.title button:hover{color:#409eff}.title{display:flex;align-items:center;justify-content:center;gap:0;color:#303133;font-size:15px;font-weight:500}.title button{padding:6px 4px;border-radius:4px;font:inherit}.week,.days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.week[hidden],.days[hidden],.time[hidden]{display:none}.week{border-bottom:1px solid #ebeef5}.week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.day{justify-self:center;width:30px;height:30px;padding:0;border-radius:50%;font-size:12px}.day.other{color:#c0c4cc}.day.today{color:#409eff;font-weight:600}.day.selected,.chooser button.selected{background-color:#409eff;color:#fff}.chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.chooser[hidden]{display:none}.chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;padding:0;border-radius:4px;font-size:13px;text-align:center}.time{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:10px 12px;border-bottom:1px solid #ebeef5}.time::before{content:'选择时间';margin-right:auto;color:#606266;font-size:13px}.time-field{position:relative}.time-value{width:48px;height:30px;padding:0;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;cursor:pointer}.time-value:hover,.time-value:focus,.time-field[data-open="true"] .time-value{border-color:#409eff;outline:0}.time-options{position:absolute;top:34px;left:0;z-index:4;display:block;width:48px;max-height:168px;padding:4px 0;overflow-y:auto;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.time-options[hidden]{display:none}.time-option{display:block;width:100%;height:28px;padding:0;border:0;background-color:#fff;color:#606266;font-size:12px;text-align:center;cursor:pointer}.time-option:hover{background-color:#f5f7fa}.time-option.selected{background-color:#ecf5ff;color:#409eff;font-weight:600}.footer{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-top:1px solid #ebeef5}.date-preview{min-width:0;overflow:hidden;color:#606266;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.footer div{display:flex;flex:none;gap:3px}.action{height:28px;padding:0 5px;border:0;border-radius:3px;background-color:#fff;color:#409eff;cursor:pointer}.action:hover{background-color:#ecf5ff}.action.primary{border:1px solid #dcdfe6;background-color:#fff;color:#606266}.action.primary:hover{color:#409eff;border-color:#c6e2ff}@media(prefers-reduced-motion:reduce){.panel[data-state]{animation:none}}@media(max-width:360px){.panel{width:calc(100vw - 16px)}}
+          .panel{position:fixed;z-index:10020;width:calc(100vw - 16px);border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.panel[hidden]{display:none}.panel[data-placement="bottom"]{transform-origin:center top}.panel[data-placement="top"]{transform-origin:center bottom}.panel[data-state="open"][data-placement="bottom"]{animation:kniu_date_in_bottom .18s ease-out both}.panel[data-state="open"][data-placement="top"]{animation:kniu_date_in_top .18s ease-out both}.panel[data-state="closing"][data-placement="bottom"]{animation:kniu_date_out_bottom .15s ease-in both}.panel[data-state="closing"][data-placement="top"]{animation:kniu_date_out_top .15s ease-in both}@keyframes kniu_date_in_bottom{from{opacity:0;transform:translateY(-8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_in_top{from{opacity:0;transform:translateY(8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_out_bottom{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(-6px) scaleY(.97)}}@keyframes kniu_date_out_top{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(6px) scaleY(.97)}}.head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.head button,.day,.chooser button,.title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.head>button{height:30px;border-radius:4px;font-size:17px}.head button:hover,.day:hover,.chooser button:hover,.title button:hover{color:#409eff}.title{display:flex;align-items:center;justify-content:center;gap:0;color:#303133;font-size:15px;font-weight:500}.title button{padding:6px 4px;border-radius:4px;font:inherit}.week,.days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.week[hidden],.days[hidden],.time[hidden]{display:none}.week{border-bottom:1px solid #ebeef5}.week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.day{justify-self:center;width:30px;height:30px;padding:0;border-radius:50%;font-size:12px}.day.other{color:#c0c4cc}.day.today{color:#409eff;font-weight:600}.day.selected,.chooser button.selected{background-color:#409eff;color:#fff}.chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.chooser[hidden]{display:none}.chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;padding:0;border-radius:4px;font-size:13px;text-align:center}.time{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:10px 12px;border-bottom:1px solid #ebeef5}.time::before{content:'选择时间';margin-right:auto;color:#606266;font-size:13px}.time-field{position:relative}.time-value{width:48px;height:30px;padding:0;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;cursor:pointer}.time-value:hover,.time-value:focus,.time-field[data-open="true"] .time-value{border-color:#409eff;outline:0}.time-options{position:absolute;top:34px;left:0;z-index:4;display:block;width:48px;max-height:168px;padding:4px 0;overflow-y:auto;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.time-options[hidden]{display:none}.time-option{display:block;width:100%;height:28px;padding:0;border:0;background-color:#fff;color:#606266;font-size:12px;text-align:center;cursor:pointer}.time-option:hover{background-color:#f5f7fa}.time-option.selected{background-color:#ecf5ff;color:#409eff;font-weight:600}.footer{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-top:1px solid #ebeef5}.date-preview{min-width:0;overflow:hidden;color:#606266;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.footer div{display:flex;flex:none;gap:3px}.action{height:28px;padding:0 5px;border:0;border-radius:3px;background-color:#fff;color:#409eff;cursor:pointer}.action:hover{background-color:#ecf5ff}.action.primary{border:1px solid #dcdfe6;background-color:#fff;color:#606266}.action.primary:hover{color:#409eff;border-color:#c6e2ff}@media(min-width:361px){.panel{width:322px}}@media(prefers-reduced-motion:reduce){.panel[data-state]{animation:none}}
         </style><span class="group" data-has-prepend="false" data-has-append="false"><span class="affix prepend"><slot name="prepend"></slot></span><span class="input-wrap"><input class="input" type="text" readonly placeholder="请选择日期时间"><span class="calendar-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M8 3v4M16 3v4M3 10h18"></path></svg></span></span><span class="affix append"><slot name="append"></slot></span></span><section class="panel" hidden><div class="head"><button type="button" data-action="prev-year">«</button><button type="button" data-action="prev-month">‹</button><div class="title"><button type="button" data-action="choose-year"></button><button type="button" data-action="choose-month"></button></div><button type="button" data-action="next-month">›</button><button type="button" data-action="next-year">»</button></div><div class="week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div class="days"></div><div class="chooser" hidden></div><div class="time"><span class="time-field" data-time-field="hour"><button class="time-value" type="button" aria-label="小时"></button><span class="time-options" hidden></span></span><span data-time-separator="minute">:</span><span class="time-field" data-time-field="minute"><button class="time-value" type="button" aria-label="分钟"></button><span class="time-options" hidden></span></span><span data-time-separator="second">:</span><span class="time-field" data-time-field="second"><button class="time-value" type="button" aria-label="秒"></button><span class="time-options" hidden></span></span></div><div class="footer"><span class="date-preview"></span><div><button class="action" type="button" data-action="reset">重置</button><button class="action" type="button" data-action="today">现在</button><button class="action" type="button" data-action="confirm">确定</button></div></div></section>`;
         adoptSharedStyle(this.shadowRoot, '.day.disabled{color:#c0c4cc;cursor:not-allowed}.day.disabled:hover{color:#c0c4cc}');
-        adoptSharedStyle(this.shadowRoot, '.head[hidden]{display:none}.time::before{content:attr(data-label)}.day[data-mark]{position:relative;font-size:11px}.day[data-mark]::after{content:"";position:absolute;top:2px;right:2px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.day.selected[data-mark]::after{background-color:#fff}.panel[data-range="true"]{width:min(650px,calc(100vw - 16px))}.range-calendars{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));overflow-x:auto}.range-calendars[hidden]{display:none}.range-pane+ .range-pane{border-left:1px solid #ebeef5}.range-head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.range-head button,.range-day,.range-chooser button,.range-title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.range-head button{height:30px;border-radius:4px;font-size:17px}.range-head button:hover,.range-day:hover,.range-chooser button:hover,.range-title button:hover{color:#409eff}.range-title{display:flex;align-items:center;justify-content:center;color:#303133;font-size:15px;font-weight:500}.range-title button{padding:6px 4px;border-radius:4px;font:inherit}.range-week,.range-days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.range-week[hidden],.range-days[hidden],.range-chooser[hidden]{display:none}.range-week{border-bottom:1px solid #ebeef5}.range-week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.range-day{position:relative;justify-self:stretch;height:30px;padding:0;font-size:12px}.range-day.other{color:#c0c4cc}.range-day.in-range{background-color:#ecf5ff;color:#409eff}.range-day.range-start,.range-day.range-end{border-radius:4px;background-color:#409eff;color:#fff}.range-day[data-mark]{font-size:11px}.range-day[data-mark]::after{content:"";position:absolute;top:2px;right:4px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.range-day.range-start[data-mark]::after,.range-day.range-end[data-mark]::after{background-color:#fff}.range-chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.range-chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;border-radius:4px;font-size:13px}.range-chooser button.selected{background-color:#409eff;color:#fff}@media(max-width:620px){.range-calendars{grid-template-columns:repeat(2,280px)}}');
+        adoptSharedStyle(this.shadowRoot, '.head[hidden]{display:none}.time::before{content:attr(data-label)}.day[data-mark]{position:relative;font-size:11px}.day[data-mark]::after{content:"";position:absolute;top:2px;right:2px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.day.selected[data-mark]::after{background-color:#fff}.panel[data-range="true"]{width:min(650px,calc(100vw - 16px))}.range-calendars{display:grid;grid-template-columns:repeat(2,280px);overflow-x:auto}.range-calendars[hidden]{display:none}.range-pane+ .range-pane{border-left:1px solid #ebeef5}.range-head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.range-head button,.range-day,.range-chooser button,.range-title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.range-head button{height:30px;border-radius:4px;font-size:17px}.range-head button:hover,.range-day:hover,.range-chooser button:hover,.range-title button:hover{color:#409eff}.range-title{display:flex;align-items:center;justify-content:center;color:#303133;font-size:15px;font-weight:500}.range-title button{padding:6px 4px;border-radius:4px;font:inherit}.range-week,.range-days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.range-week[hidden],.range-days[hidden],.range-chooser[hidden]{display:none}.range-week{border-bottom:1px solid #ebeef5}.range-week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.range-day{position:relative;justify-self:stretch;height:30px;padding:0;font-size:12px}.range-day.other{color:#c0c4cc}.range-day.in-range{background-color:#ecf5ff;color:#409eff}.range-day.range-start,.range-day.range-end{border-radius:4px;background-color:#409eff;color:#fff}.range-day[data-mark]{font-size:11px}.range-day[data-mark]::after{content:"";position:absolute;top:2px;right:4px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.range-day.range-start[data-mark]::after,.range-day.range-end[data-mark]::after{background-color:#fff}.range-chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.range-chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;border-radius:4px;font-size:13px}.range-chooser button.selected{background-color:#409eff;color:#fff}@media(min-width:621px){.range-calendars{grid-template-columns:repeat(2,minmax(280px,1fr))}}');
         adoptSharedStyle(this.shadowRoot, '.panel,.panel[data-range="true"]{width:min(218px,calc(100vw - 16px))}.head,.range-head{grid-template-columns:24px 24px minmax(0,1fr) 24px 24px;padding:6px 6px 2px}.head>button,.range-head button{height:26px;font-size:14px}.title,.range-title{font-size:12px;white-space:nowrap}.title button,.range-title button{padding:4px 2px}.title[data-lang="en"] [data-action="choose-month"],.range-title[data-lang="en"] [data-range-choose="month"]{order:-1}.week,.days,.range-week,.range-days{gap:0;margin:0 6px}.days,.range-days{padding:4px 0}.week span,.range-week span{height:24px;font-size:10px;line-height:24px}.day,.range-day{height:26px;font-size:10px}.day{width:26px}.day[data-mark],.range-day[data-mark]{font-size:8px}.day.selected[data-mark]::after,.range-day.in-range[data-mark]::after,.range-day.range-start[data-mark]::after,.range-day.range-end[data-mark]::after{display:none}.chooser,.range-chooser{grid-template-columns:repeat(3,minmax(0,1fr));height:189px;min-height:0;padding:8px;gap:4px;box-sizing:border-box}.chooser[data-mode="year"],.range-chooser[data-mode="year"]{grid-template-rows:repeat(5,minmax(0,1fr))}.chooser[data-mode="month"],.range-chooser[data-mode="month"]{grid-template-rows:repeat(4,minmax(0,1fr))}.chooser button,.range-chooser button{min-height:0;font-size:11px}.time{gap:2px;padding:6px}.panel[data-type="datetime"] .time[hidden]{display:flex;visibility:hidden}.time::before{font-size:10px}.time-value{width:38px;height:26px;font-size:11px}.time-options{top:29px;width:38px;max-height:140px}.time-option{height:25px}.footer{padding:5px 6px}.action{width:42px;height:25px;padding:0;font-size:11px}.range-calendars{grid-template-columns:minmax(0,1fr);overflow:visible}.range-pane+ .range-pane{border-top:1px solid #ebeef5;border-left:0}');
         adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"]{display:grid;width:min(350px,calc(100vw - 16px));grid-template-columns:minmax(0,218px) minmax(0,132px)}.panel[data-type="datetime"]>.head{grid-column:1;grid-row:1}.panel[data-type="datetime"]>.week{grid-column:1;grid-row:2}.panel[data-type="datetime"]>.days{grid-column:1;grid-row:3}.panel[data-type="datetime"]>.chooser{grid-column:1;grid-row:2 / span 2}.panel[data-type="datetime"]>.range-calendars{grid-column:1;grid-row:1 / span 3}.panel[data-type="datetime"]>.time{display:grid;grid-column:2;grid-row:1 / span 3;align-self:start;width:100%;height:223px;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch;gap:0;padding:0;overflow:hidden;border-bottom:0;border-left:1px solid #ebeef5;box-sizing:border-box}.panel[data-type="datetime"]>.time[hidden]{display:grid;visibility:hidden}.panel[data-type="datetime"]>.time::before,.panel[data-type="datetime"]>.time>span:not(.time-field){display:none}.panel[data-type="datetime"] .time-field{display:flex;min-width:0;height:223px;overflow:hidden;flex-direction:column;border-left:1px solid #ebeef5;box-sizing:border-box}.panel[data-type="datetime"] .time-field:first-of-type{border-left:0}.panel[data-type="datetime"] .time-field::before{content:attr(data-label);display:block;flex:none;height:34px;border-bottom:1px solid #ebeef5;color:#606266;font-size:10px;line-height:34px;text-align:center;box-sizing:border-box}.panel[data-type="datetime"] .time-value{display:none}.panel[data-type="datetime"] .time-options,.panel[data-type="datetime"] .time-options[hidden]{position:static;display:block;width:100%;height:189px;max-height:189px;padding:0;overflow-x:hidden;overflow-y:auto;border:0;border-radius:0;background-color:#fff;box-shadow:none;box-sizing:border-box}.panel[data-type="datetime"] .time-option{height:25px}.panel[data-type="datetime"]>.footer{grid-column:1 / -1;grid-row:4}.panel[data-type="datetime"][data-range="true"]{width:min(350px,calc(100vw - 16px))}');
         adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"]:not([data-range="true"])>.head{grid-column:1 / -1;grid-row:1}.panel[data-type="datetime"]:not([data-range="true"])>.time{grid-column:2;grid-row:2 / span 2;height:189px}.panel[data-type="datetime"]:not([data-range="true"]) .time-field{height:189px}.panel[data-type="datetime"]:not([data-range="true"]) .time-field::before{height:25px;line-height:25px}.panel[data-type="datetime"]:not([data-range="true"]) .time-options,.panel[data-type="datetime"]:not([data-range="true"]) .time-options[hidden]{height:164px;max-height:164px}');
@@ -5405,7 +5669,26 @@ var KniuUI = (function () {
         return clone.innerHTML;
       }
       set value(v) {
-        var html = sanitizeRichHtml(v == null ? '' : String(v));
+        var raw = v == null ? '' : String(v);
+        var self = this;
+        // 超大内容用异步切分清洗（sanitizeRichHtmlAsync 内部按片让出主线程），
+        // 避免打开大文章时一次同步清空卡顿；普通内容保持同步，产物完全一致。
+        var large = raw.length > 200000;
+        if (!large) {
+          var html = sanitizeRichHtml(raw);
+          this._applyEditorValue(html);
+          return;
+        }
+        var token = (this._pendingValueToken || 0) + 1;
+        this._pendingValueToken = token;
+        sanitizeRichHtmlAsync(raw).then(function (html) {
+          // 期间若又被赋了新值，则丢弃本次迟到结果，避免覆盖更新。
+          if (self._pendingValueToken === token) self._applyEditorValue(html);
+        }).catch(function () {
+          if (self._pendingValueToken === token) self._applyEditorValue(sanitizeRichHtml(raw));
+        });
+      }
+      _applyEditorValue(html) {
         this._editor.innerHTML = html;
         if (this._source) this._source.value = html;
       }
@@ -6533,6 +6816,22 @@ var KniuUI = (function () {
   function registerNavbarComponent() {
     if (typeof customElements === 'undefined') return;
 
+    if (!customElements.get('kniu-navbar-cells')) {
+      class KniuNavbarCells extends HTMLElement {
+        constructor() {
+          super();
+          attachComponentShadow(this);
+          this.shadowRoot.innerHTML = `
+            <style>
+              :host{display:flex;width:100%;min-width:0;flex-direction:column;align-items:stretch;gap:10px}
+              @media(min-width:721px){:host{width:auto;flex-direction:row;align-items:center}}
+            </style>
+            <slot></slot>`;
+        }
+      }
+      customElements.define('kniu-navbar-cells', KniuNavbarCells);
+    }
+
     if (!customElements.get('kniu-navbar-cell')) {
       class KniuNavbarCell extends HTMLElement {
         static get observedAttributes() { return ['href', 'active', 'disabled', 'side', 'level']; }
@@ -6541,14 +6840,14 @@ var KniuUI = (function () {
           attachComponentShadow(this);
           this.shadowRoot.innerHTML = `
             <style>
-              :host{display:block;min-width:0}
-              a{display:flex;align-items:center;min-height:44px;padding:0 18px;border-radius:8px;color:#4b5563;text-decoration:none;font:inherit;white-space:nowrap;transition:background-color .2s,color .2s}
+              :host{display:block;width:100%;min-width:0;border-bottom:1px solid #e5e7eb}
+              a{display:flex;align-items:center;width:100%;min-height:50px;padding:0 16px 0 calc(16px + var(--kniu-navbar-level,0) * 16px);border-radius:0;box-sizing:border-box;color:#4b5563;text-decoration:none;font:inherit;white-space:nowrap;transition:background-color .2s,color .2s}
               a:hover,:host([active]) a{background-color:#f1f5f9;color:#111827}
               :host([disabled]){opacity:.45;pointer-events:none}
               :host([side]){width:100%}
               :host([side]) a{gap:8px;min-height:50px;width:100%;padding:0 12px;border-radius:11px;box-sizing:border-box;color:#9ca5bf}
               :host([side]) a:hover,:host([side][active]) a{background-color:#252b42;color:#fff}
-              @media(max-width:720px){:host(:not([side])){width:100%;border-bottom:1px solid #e5e7eb}:host(:not([side])) a{width:100%;min-height:50px;padding:0 16px 0 calc(16px + var(--kniu-navbar-level,0) * 16px);border-radius:0;box-sizing:border-box}}
+              @media(min-width:721px){:host(:not([side])){width:auto;border-bottom:0}:host(:not([side])) a{width:auto;min-height:44px;padding:0 18px;border-radius:8px}}
             </style>
             <a part="link"><slot></slot></a>`;
           this._link = this.shadowRoot.querySelector('a');
@@ -6573,16 +6872,15 @@ var KniuUI = (function () {
           attachComponentShadow(this);
           this.shadowRoot.innerHTML = `
             <style>
-              :host{position:relative;display:block}
+              :host{position:relative;display:block;width:100%;border-bottom:1px solid #e5e7eb}
               details{position:relative}
-              summary{display:flex;align-items:center;min-height:44px;padding:0 18px;border-radius:8px;color:#4b5563;cursor:pointer;list-style:none;white-space:nowrap}
+              summary{display:flex;align-items:center;min-height:50px;padding:0 16px 0 calc(16px + (var(--kniu-navbar-level,1) - 1) * 16px);border-radius:0;color:#4b5563;cursor:pointer;list-style:none;white-space:nowrap}
               summary::-webkit-details-marker{display:none}
               summary::after{content:'⌄';margin-left:auto;padding-left:8px;font-size:12px;transition:transform .2s}
               details[open]>summary::after{transform:rotate(180deg)}
               summary:hover,:host([active])>details>summary{background-color:#f1f5f9;color:#111827}
-              .panel{position:absolute;top:100%;left:0;z-index:20;min-width:180px;padding:8px;border:1px solid #e5e7eb;border-radius:10px;background-color:#fff;box-shadow:0 12px 30px rgba(15,23,42,.12)}
-              :host([level="2"]) .panel,:host([level="3"]) .panel{top:0;left:100%}
-              @media(max-width:720px){:host{width:100%;border-bottom:1px solid #e5e7eb}summary{min-height:50px;padding:0 16px 0 calc(16px + (var(--kniu-navbar-level,1) - 1) * 16px);border-radius:0}.panel,:host([level="2"]) .panel,:host([level="3"]) .panel{position:static;min-width:0;padding:0;border:0;border-radius:0;background-color:#fff;box-shadow:none}}
+              .panel{position:static;min-width:0;padding:0;border:0;border-radius:0;background-color:#fff;box-shadow:none}
+              @media(min-width:721px){:host{width:auto;border-bottom:0}summary{min-height:44px;padding:0 18px;border-radius:8px}.panel{position:absolute;top:100%;left:0;z-index:20;min-width:180px;padding:8px;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 12px 30px rgba(15,23,42,.12)}:host([level="2"]) .panel,:host([level="3"]) .panel{top:0;left:100%}}
             </style>
             <details><summary><slot name="title">菜单</slot></summary><div class="panel"><slot></slot></div></details>`;
           this._details = this.shadowRoot.querySelector('details');
@@ -6607,18 +6905,22 @@ var KniuUI = (function () {
           this.shadowRoot.innerHTML = `
             <style>
               :host{display:block;width:100%;background-color:#fff;color:#111827}
-              .bar{display:flex;align-items:center;justify-content:space-between;gap:24px;margin:0 auto;padding:0 clamp(16px,4vw,60px);min-height:72px;max-width:1600px;box-sizing:border-box}
-              .brand{display:flex;align-items:center;overflow:hidden;color:#111827;text-decoration:none;font-size:clamp(22px,3vw,30px);line-height:1.3;text-overflow:ellipsis;white-space:nowrap}
+              .bar{position:relative;display:flex;align-items:center;justify-content:space-between;gap:0;margin:0 auto;padding:0 16px;min-height:60px;max-width:1600px;flex-wrap:wrap;box-sizing:border-box}
+              .brand{display:flex;align-items:center;overflow:hidden;color:#111827;text-decoration:none;font-size:22px;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}
               .brand-label{display:block}
               ::slotted([slot="brand"]){display:block;max-width:min(220px,40vw);max-height:48px}
-              .toggle{display:none;align-items:center;justify-content:center;width:44px;height:44px;border:0;border-radius:8px;background-color:transparent;color:#111827;cursor:pointer}
+              .toggle{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border:0;border-radius:8px;background-color:transparent;color:#111827;cursor:pointer}
               .toggle-icon{position:relative;display:block;width:24px;height:18px}
               .toggle-icon i{position:absolute;left:0;display:block;width:24px;height:2px;border-radius:2px;background-color:currentColor;transition:top .28s ease,transform .28s ease,opacity .2s ease}
               .toggle-icon i:nth-child(1){top:0}.toggle-icon i:nth-child(2){top:8px}.toggle-icon i:nth-child(3){top:16px}
               :host([open]:not([closing])) .toggle-icon i:nth-child(1){top:8px;transform:rotate(45deg)}
               :host([open]:not([closing])) .toggle-icon i:nth-child(2){opacity:0;transform:scaleX(0)}
               :host([open]:not([closing])) .toggle-icon i:nth-child(3){top:8px;transform:rotate(-45deg)}
-              .menu{display:flex;align-items:center;justify-content:flex-end;gap:4px;min-width:0}
+              .menu{display:none;flex:0 0 100%;align-items:stretch;min-width:0;padding:0}
+              :host([open]:not([type="side"])) .menu{position:fixed;top:60px;right:0;bottom:0;left:0;z-index:1000;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:0;width:auto;margin:0;padding:0;overflow-y:auto;background-color:#fff;animation:kniu_navbar_mobile_slide_in .28s ease-out both}
+              :host([closing]:not([type="side"])) .menu{animation-name:kniu_navbar_mobile_slide_out;animation-timing-function:ease-in}
+              @keyframes kniu_navbar_mobile_slide_in{from{transform:translateX(-100%)}to{transform:translateX(0)}}
+              @keyframes kniu_navbar_mobile_slide_out{from{transform:translateX(0)}to{transform:translateX(-100%)}}
               :host([type="side"]){color:#eef2ff;background-color:transparent}
               :host([type="side"]) .bar{display:block;max-width:none;min-height:0;padding:0}
               :host([type="side"]) .brand{gap:10px;padding:0 8px 30px;color:#eef2ff;font-size:20px;font-weight:800}
@@ -6626,16 +6928,8 @@ var KniuUI = (function () {
               :host([type="side"]) .menu > slot:not([name]){display:grid;grid-template-columns:minmax(0,1fr);width:100%;justify-content:stretch;gap:6px}
               :host([type="side"]) .menu > slot:not([name])::slotted(kniu-navbar-cell){display:block;width:100%}
               :host([type="side"]) .toggle{display:none}
-              @media(max-width:720px){
-                .bar{position:relative;min-height:60px;padding:0 16px;flex-wrap:wrap;gap:0}
-                .brand{font-size:22px}.toggle{display:flex}
-                .menu{display:none;flex:0 0 100%;align-items:stretch;padding:0}
-                :host([open]:not([type="side"])) .menu{position:fixed;top:60px;right:0;bottom:0;left:0;z-index:1000;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:0;width:auto;margin:0;padding:0;overflow-y:auto;background-color:#fff;animation:kniu_navbar_mobile_slide_in .28s ease-out both}
-                :host([closing]:not([type="side"])) .menu{animation-name:kniu_navbar_mobile_slide_out;animation-timing-function:ease-in}
-                @keyframes kniu_navbar_mobile_slide_in{from{transform:translateX(-100%)}to{transform:translateX(0)}}
-                @keyframes kniu_navbar_mobile_slide_out{from{transform:translateX(0)}to{transform:translateX(-100%)}}
-                @media(prefers-reduced-motion:reduce){.toggle-icon i{transition:none}:host([open]:not([type="side"])) .menu{animation:none}}
-              }
+              @media(min-width:721px){.bar{gap:24px;padding:0 clamp(16px,4vw,60px);min-height:72px;flex-wrap:nowrap}.brand{font-size:clamp(22px,3vw,30px)}.toggle{display:none}.menu{display:flex;flex:initial;align-items:center;justify-content:flex-end;gap:4px;padding:0}}
+              @media(prefers-reduced-motion:reduce){.toggle-icon i{transition:none}:host([open]:not([type="side"])) .menu{animation:none}}
             </style>
             <nav class="bar" aria-label="主导航">
               <a class="brand"><slot name="brand"><span class="brand-label"></span></slot></a>
@@ -6753,12 +7047,12 @@ var KniuUI = (function () {
         attachComponentShadow(this);
         this.shadowRoot.innerHTML = `
           <style>
-            :host{display:none;position:fixed;z-index:40;right:min(var(--right,40px),calc(100vw - 56px));bottom:min(var(--bottom,40px),calc(100vh - 56px))}
+            :host{display:none;position:fixed;z-index:40;right:16px!important;bottom:16px!important}
             :host([visible]){display:block}
-            button{display:grid;place-items:center;width:44px;height:44px;border:1px solid #e5e7eb;border-radius:50%;background-color:#fff;color:#374151;cursor:pointer;box-shadow:0 8px 24px rgba(15,23,42,.14);transition:transform .2s,box-shadow .2s}
-            button svg{width:20px;height:20px;display:block}
+            button{display:grid;place-items:center;width:40px;height:40px;border:1px solid #e5e7eb;border-radius:50%;background-color:#fff;color:#374151;cursor:pointer;box-shadow:0 8px 24px rgba(15,23,42,.14);transition:transform .2s,box-shadow .2s}
+            button svg{width:18px;height:18px;display:block}
             button:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(15,23,42,.18)}
-            @media(max-width:720px){:host{right:16px!important;bottom:16px!important}button{width:40px;height:40px}button svg{width:18px;height:18px}}
+            @media(min-width:721px){:host{right:min(var(--right,40px),calc(100vw - 56px))!important;bottom:min(var(--bottom,40px),calc(100vh - 56px))!important}button{width:44px;height:44px}button svg{width:20px;height:20px}}
             @media(prefers-reduced-motion:reduce){button{transition:none}}
           </style>
           <button type="button" aria-label="返回顶部">
@@ -6865,6 +7159,10 @@ var KniuUI = (function () {
       .kniu_sys_comment_empty{padding:40px 0;text-align:center;color:#909399;font-size:14px}
       .kniu_sys_comment_item{display:flex;gap:12px;padding:16px 0;border-bottom:1px solid #ebeef5}
       .kniu_sys_comment_item:last-child{border-bottom:0}
+      .kniu_sys_comment_item_own{flex-direction:row-reverse;text-align:right}
+      .kniu_sys_comment_item_own .kniu_sys_comment_body{text-align:right}
+      .kniu_sys_comment_item_own .kniu_sys_comment_meta{justify-content:flex-end}
+      .kniu_sys_comment_item_own .kniu_sys_comment_actions{order:-1;margin-left:0;margin-right:0}
       .kniu_sys_comment_avatar{width:40px;height:40px;border-radius:50%;overflow:hidden;flex-shrink:0;background-color:#e4e7ed;display:grid;place-items:center;color:#909399;font-size:14px}
       .kniu_sys_comment_avatar img{width:100%;height:100%;object-fit:cover;display:block}
       .kniu_sys_comment_body{flex:1;min-width:0}
@@ -6957,12 +7255,13 @@ var KniuUI = (function () {
           htmlParts.push('<div class="kniu_sys_comment_empty">' + commentEscape(emptyText) + '</div>');
         } else {
           list.forEach(function (item) {
-            const username = item.username || t('comment.anonymous');
-            const firstChar = Array.from(String(username))[0] || '?';
+            const itemUsername = item.username || t('comment.anonymous');
             const isOwn = Boolean(item.isOwn)
               || (currentUserId > 0 && Number(item.userId) === currentUserId)
-              || (Boolean(currentUser) && String(username).toLocaleLowerCase() === String(currentUser).toLocaleLowerCase());
-            htmlParts.push('<div class="kniu_sys_comment_item" data-id="' + commentEscape(item.id) + '">');
+              || (Boolean(currentUser) && String(itemUsername).toLocaleLowerCase() === String(currentUser).toLocaleLowerCase());
+            const username = isOwn ? '我' : itemUsername;
+            const firstChar = Array.from(String(username))[0] || '?';
+            htmlParts.push('<div class="kniu_sys_comment_item' + (isOwn ? ' kniu_sys_comment_item_own' : '') + '" data-id="' + commentEscape(item.id) + '">');
             htmlParts.push('<div class="kniu_sys_comment_avatar">');
             if (item.avatar) htmlParts.push('<img src="' + commentEscape(item.avatar) + '" alt="">');
             else htmlParts.push('<div class="kniu_sys_comment_avatar_default">' + commentEscape(firstChar) + '</div>');
@@ -7165,12 +7464,13 @@ var KniuUI = (function () {
         const own = Boolean(options.own);
         const disabled = Boolean(options.disabled || options.loading || own);
         this.toggleAttribute('data-own', own);
-        const activeAnimations = Array.from(this.shadowRoot.querySelectorAll('.like-plus'));
-        activeAnimations.forEach(function (animation) { animation.remove(); });
+        // 重新渲染按钮状态时不要搬运旧的 +1 动画节点；详情页连续拉取
+        // getDetail/frontProfile/getComments 会触发多次渲染，搬运会让同一
+        // 个动画重复播放，表现为飘出两个 +1。
         this.shadowRoot.innerHTML = `
           <style>
-            :host{display:flex;justify-content:center;width:100%;margin:24px 0;color:#606266;font:16px/1 Arial,"Microsoft YaHei",sans-serif;box-sizing:border-box}
-            button{position:relative;display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:11px 18px;border:1px solid #dcdfe6;border-radius:5px;background-color:#fff;color:inherit;font:inherit;cursor:pointer;overflow:visible;transition:color .15s,border-color .15s,background-color .15s;box-sizing:border-box}
+            :host{display:block;width:100%;margin:0;color:#606266;font:16px/1 Arial,"Microsoft YaHei",sans-serif;box-sizing:border-box}
+            button{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:44px;padding:11px 18px;border:1px solid #dcdfe6;border-radius:5px;background-color:#fff;color:inherit;font:inherit;cursor:pointer;overflow:visible;transition:color .15s,border-color .15s,background-color .15s;box-sizing:border-box}
             button:hover,button:focus-visible{color:#409eff;border-color:#c6e2ff;background-color:#ecf5ff;outline:0}
             button[aria-pressed="true"]{color:#409eff;border-color:#409eff;background-color:#ecf5ff}
             button:disabled{color:#a8abb2;border-color:#e4e7ed;background-color:#f5f7fa;cursor:not-allowed}
@@ -7185,11 +7485,13 @@ var KniuUI = (function () {
             <span class="count">(${count})</span>
           </button>`;
         const button = this.shadowRoot.querySelector('button');
-        activeAnimations.forEach(function (animation) { button?.appendChild(animation); });
         button?.addEventListener('click', this._handleClick);
       }
       _click() {
         if (this._options?.disabled || this._options?.loading || this._options?.own) return;
+        const now = Date.now();
+        if (this._lastClickAt && now - this._lastClickAt < 500) return;
+        this._lastClickAt = now;
         if (!this._options?.liked) this._playPlusOne();
         this.dispatchEvent(new CustomEvent('change', {
           detail: { liked: !Boolean(this._options?.liked), count: Math.max(0, Number(this._options?.count) || 0) },
@@ -7198,13 +7500,20 @@ var KniuUI = (function () {
         }));
       }
       _playPlusOne() {
+        const now = Date.now();
+        // 详情视图切换/重渲染期间可能短暂存在两个组件实例；全局时间窗
+        // 确保一次用户点击最多产生一个视觉反馈。
+        if (KniuSysLike._lastPlusAt && now - KniuSysLike._lastPlusAt < 800) return;
+        KniuSysLike._lastPlusAt = now;
+        if (this._plusPlaying) return;
+        this._plusPlaying = true;
         const button = this.shadowRoot.querySelector('button');
-        if (!button) return;
+        if (!button) { this._plusPlaying = false; return; }
         const plus = (this.ownerDocument || document).createElement('span');
         plus.className = 'like-plus';
         plus.textContent = '+1';
         plus.setAttribute('aria-hidden', 'true');
-        plus.addEventListener('animationend', function () { plus.remove(); }, { once: true });
+        plus.addEventListener('animationend', function () { plus.remove(); this._plusPlaying = false; }.bind(this), { once: true });
         button.appendChild(plus);
       }
     }
@@ -7220,6 +7529,7 @@ var KniuUI = (function () {
         this._options = {};
         this._logoutLoading = false;
         this._menuOpen = false;
+        this._menuState = null;
         this._handleIdentityChange = this._render.bind(this);
         this._handleLogout = this._logout.bind(this);
         this._handleDocumentClick = this._onDocumentClick.bind(this);
@@ -7228,17 +7538,37 @@ var KniuUI = (function () {
         globalThis.addEventListener?.('kniu-identity-change', this._handleIdentityChange);
         this.ownerDocument?.addEventListener('click', this._handleDocumentClick);
         this._render();
+        this._syncSession();
       }
       disconnectedCallback() {
         globalThis.removeEventListener?.('kniu-identity-change', this._handleIdentityChange);
         this.ownerDocument?.removeEventListener('click', this._handleDocumentClick);
         this.shadowRoot.querySelector('.logout')?.removeEventListener('click', this._handleLogout);
+        this._cleanupMenuPopover();
       }
       set options(value) {
         this._options = value && typeof value === 'object' ? value : {};
         this._render();
       }
       get options() { return this._options; }
+      async _syncSession() {
+        if (this._sessionSyncing) return;
+        this._sessionSyncing = true;
+        const identity = IDENTITY.getIdentity();
+        const result = await REQUEST({
+          url: '/frontSessionSync',
+          type: 'POST',
+          data: { identity_token: identity.token },
+          redirectOnUnauthorized: false
+        });
+        this._sessionSyncing = false;
+        if (this._logoutLoading) return;
+        if (result.status !== 1 || !result.data?.loggedIn || !result.data?.nickname) return;
+        const nickname = result.data.nickname;
+        if (identity.nickname !== nickname || !identity.account) {
+          IDENTITY.setIdentity({ token: identity.token, nickname: nickname, account: 1 });
+        }
+      }
       _render() {
         const identity = IDENTITY.getIdentity();
         const nickname = identity.nickname;
@@ -7246,11 +7576,12 @@ var KniuUI = (function () {
         // 身份切换（登录/退出）时收起菜单；访客态同样是下拉框，不能一律强制关闭。
         if (this._renderedNickname !== undefined && this._renderedNickname !== nickname) this._menuOpen = false;
         this._renderedNickname = nickname;
+        this._cleanupMenuPopover();
         this.shadowRoot.innerHTML = `
           <style>
-            :host{display:inline-flex;align-items:center;color:#111827;font:14px/1 Arial,"Microsoft YaHei",sans-serif;box-sizing:border-box}
+            :host{display:flex;align-items:center;width:100%;min-height:50px;padding:0 16px;border-bottom:1px solid #e5e7eb;color:#111827;font:14px/1 Arial,"Microsoft YaHei",sans-serif;box-sizing:border-box}
             a,button{min-height:44px;border:0;background-color:transparent;color:inherit;font:inherit;text-decoration:none;box-sizing:border-box}
-            .user{position:relative;display:inline-flex;align-items:center;white-space:nowrap}
+            .user{position:relative;display:inline-flex;align-items:center;width:100%;white-space:nowrap}
             .user-trigger{display:inline-flex;align-items:center;gap:7px;padding:0;cursor:pointer}
             .user-trigger:focus-visible{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}
             .avatar{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;overflow:hidden;background-color:#d9e8f8;color:#7d9fc2;flex-shrink:0}
@@ -7258,19 +7589,19 @@ var KniuUI = (function () {
             .user-guest .avatar{background-color:#eef1f6;color:#b3bcc9}
             .arrow{width:5px;height:5px;margin:0 3px 3px 1px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(45deg);transition:transform .2s}
             .user[data-open="true"] .arrow{margin-bottom:0;transform:rotate(225deg)}
-            .menu{position:absolute;top:calc(100% + 4px);right:0;z-index:20;display:none;min-width:112px;padding:5px 0;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.12)}
-            .user[data-open="true"] .menu{display:block}
+            .menu{position:fixed;z-index:10030;display:none;min-width:112px;padding:5px 0;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+            .menu[data-open="true"]{display:block}
             .menu a,.menu button{display:flex;align-items:center;width:100%;min-height:34px;padding:0 14px;cursor:pointer;white-space:nowrap}
             .menu a:hover,.menu a:focus-visible,.menu button:hover,.menu button:focus-visible{color:#409eff;background-color:#ecf5ff;outline:0}
             .logout:disabled{color:#c0c4cc;cursor:not-allowed}
-            @media(max-width:720px){:host{display:flex;width:100%;min-height:50px;padding:0 16px;border-bottom:1px solid #e5e7eb}.user{width:100%}.menu{right:auto;left:0}}
+            @media(min-width:721px){:host{display:inline-flex;width:auto;min-height:0;padding:0;border-bottom:0}.user{width:auto}}
           </style>
           <div class="user${nickname ? '' : ' user-guest'}" data-open="${this._menuOpen}">
             <button class="user-trigger" type="button" aria-haspopup="menu" aria-expanded="${this._menuOpen}">
               <span class="avatar" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="11" r="7"></circle><path d="M4 29c.8-7 5.2-11 12-11s11.2 4 12 11z"></path></svg></span>
               <span class="hello"></span><span class="arrow" aria-hidden="true"></span>
             </button>
-            <div class="menu" role="menu">
+            <div class="menu" role="menu" data-open="${this._menuOpen}">
               ${nickname ? `
                 <a href="#/profile" role="menuitem">${t('userLogin.profile')}</a>
                 <a href="#/login" target="_blank" rel="noopener noreferrer" role="menuitem">${t('userLogin.admin')}</a>
@@ -7285,6 +7616,32 @@ var KniuUI = (function () {
           this._render();
         });
         this.shadowRoot.querySelector('.logout')?.addEventListener('click', this._handleLogout);
+        this._positionMenu();
+      }
+      _positionMenu() {
+        const menu = this.shadowRoot?.querySelector('.menu');
+        if (this._disposeMenuTrack) { this._disposeMenuTrack(); this._disposeMenuTrack = null; }
+        if (!this._menuOpen || !menu) return;
+        // 打开：把菜单浮层 portal 到 body，fixed 相对视口（同 date-picker），再定位。
+        if (!this._menuState) this._menuState = mountPopoverPortal(menu, this.shadowRoot, { zIndex: 10030, attribute: 'data-kniu-userlogin-popover' });
+        menu.dataset.open = 'true';
+        const anchor = this.shadowRoot.querySelector('.user-trigger');
+        if (!anchor) return;
+        const apply = (rect) => {
+          const layout = computePopoverLayout(menu, rect, { offset: 4 });
+          menu.style.left = layout.left + 'px';
+          menu.style.top = layout.top + 'px';
+        };
+        apply(anchor.getBoundingClientRect());
+        this._disposeMenuTrack = trackPopoverPosition(
+          () => { if (!this.isConnected || !this._menuOpen) return null; return this.shadowRoot?.querySelector('.user-trigger')?.getBoundingClientRect(); },
+          apply
+        );
+      }
+      _cleanupMenuPopover() {
+        // 卸载菜单 body portal 并停止跟随。供 _render 重建前 / 断开时调用。
+        if (this._disposeMenuTrack) { this._disposeMenuTrack(); this._disposeMenuTrack = null; }
+        if (this._menuState) { this._menuState.unmount(); this._menuState = null; }
       }
       _onDocumentClick(event) {
         if (!this._menuOpen || event.composedPath().includes(this)) return;
@@ -7295,8 +7652,15 @@ var KniuUI = (function () {
         if (this._logoutLoading) return;
         this._menuOpen = false;
         this._logoutLoading = true;
-        this._render();
         const identity = IDENTITY.getIdentity();
+        // 先更新本地界面，再等待服务端销毁前后台会话，避免网络延迟期间仍显示已登录。
+        IDENTITY.clearIdentity();
+        try {
+          globalThis.sessionStorage?.removeItem('kniu_authed');
+          globalThis.sessionStorage?.removeItem('kniu_user');
+          globalThis.localStorage?.setItem('kniu_auth_logout_at', String(Date.now()));
+        } catch (_) { }
+        this._render();
         const result = await REQUEST({
           url: '/frontProfileClear',
           type: 'POST',
@@ -7309,7 +7673,6 @@ var KniuUI = (function () {
           msg({ content: result.msg || componentText(componentLang(this._options), 'userLogin.logoutFail'), type: 'error' });
           return;
         }
-        IDENTITY.clearIdentity();
         globalThis.location.hash = '#/';
       }
     }
@@ -7362,9 +7725,10 @@ var KniuUI = (function () {
               return '<button type="button" data-direction="' + row.direction + '" data-id="' + id + '"><span class="label">' + escape(row.label) + '：</span><span class="title">' + escape(title) + '</span></button>';
             }).join('')}
           </nav>`;
+        const component = this;
         this.shadowRoot.querySelectorAll('button').forEach(function (button) {
           button.addEventListener('click', function () {
-            this.dispatchEvent(new CustomEvent('change', {
+            component.dispatchEvent(new CustomEvent('change', {
               detail: {
                 direction: button.dataset.direction,
                 id: Number(button.dataset.id) || null
@@ -7372,8 +7736,8 @@ var KniuUI = (function () {
               bubbles: true,
               composed: true
             }));
-          }.bind(this));
-        }, this);
+          });
+        });
       }
     }
     customElements.define('kniu-article-tab', KniuArticleTab);
@@ -7506,7 +7870,7 @@ var KniuUI = (function () {
     'kniu-btn', 'kniu-btn-group', 'kniu-switch', 'kniu-modal', 'kniu-table', 'kniu-table-col', 'kniu-loading', 'kniu-msg',
     'kniu-option', 'kniu-select', 'kniu-radio', 'kniu-radio-group', 'kniu-page', 'kniu-image', 'kniu-input',
     'kniu-input-group', 'kniu-form-cell', 'kniu-date-picker', 'kniu-form', 'kniu-upload', 'kniu-icon',
-    'kniu-badge', 'kniu-tag', 'kniu-status', 'kniu-empty', 'kniu-editor', 'kniu-navbar-cell',
+    'kniu-badge', 'kniu-tag', 'kniu-status', 'kniu-empty', 'kniu-editor', 'kniu-navbar-cells', 'kniu-navbar-cell',
     'kniu-sub-navbar', 'kniu-navbar', 'kniu-backtop', 'kniu-comment', 'kniu-like', 'kniu-user-login', 'kniu-article-tab'
   ].forEach(installOptionsOnlyProtocol);
 
@@ -7515,6 +7879,9 @@ var KniuUI = (function () {
     setLoading: setLoading,
     msg: msg,
     usePagination: usePagination,
+    makeSwitchOptions: makeSwitchOptions,
+    createSearchActions: createSearchActions,
+    createRowDeleteHandler: createRowDeleteHandler,
     confirm: confirm
   };
 }());

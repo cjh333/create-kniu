@@ -4,6 +4,7 @@ namespace App\Index\Controllers;
 
 use Core\Controller;
 use Core\Db;
+use Core\EmailCode;
 
 class IndexController extends Controller
 {
@@ -24,7 +25,24 @@ class IndexController extends Controller
       ->where('is_show', '=', 1)
       ->select();
     $result = $this->decodeFields($result, ['title', 'subtitle', 'summary', 'content']);
+    foreach ($result as &$article) {
+      $role = Db::name('tb_role')->where('id', '=', (int)($article['user_id'] ?? 0))->find();
+      $article['publisher'] = (string)($role['name'] ?? '');
+    }
+    unset($article);
     $this->json($result);
+  }
+
+  /**
+   * 数据版本号（公开接口，供前端兜底校验）。
+   *
+   * 前端主要靠 SSE 的 data-change 信号实时刷新；本接口用于信号丢失场景
+   * （Node 重启、SSE 断开、页面长时间处于后台）在页面重新可见时比对版本，
+   * 版本不一致即重拉当前页数据。只返回单调计数，不携带任何业务数据。
+   */
+  public function dataRevision(): void
+  {
+    $this->json(['revision' => \Core\DataSignal::revision()]);
   }
 
   public function getInfo(): void
@@ -83,11 +101,6 @@ class IndexController extends Controller
     }
 
     try {
-      Db::name('tb_article')
-        ->where('id', '=', $id)
-        ->inc('hits')
-        ->update();
-
       $result = Db::name('tb_article')
         ->where('id', '=', $id)
         ->select();
@@ -98,8 +111,13 @@ class IndexController extends Controller
       }
 
       $result = $this->decodeFields($result, ['title', 'subtitle', 'summary', 'content']);
-      $result[0]['isOwn'] = $this->validateToken();
+      $publisherRole = Db::name('tb_role')->where('id', '=', (int)($result[0]['user_id'] ?? 0))->find();
+      $result[0]['publisher'] = (string)($publisherRole['name'] ?? '');
       $frontUser = $this->frontUserByToken($identityToken);
+      // 是否本人文章：按 tb_article.user_id 与当前身份的 tb_role.id 比对，
+      // 不能直接用 validateToken()（那只是后台会话有效）。
+      $result[0]['isOwn'] = $this->isOwnedByCurrentUser((int)($result[0]['user_id'] ?? 0), $frontUser);
+      $result[0]['likeLocked'] = !empty($_SESSION['article_like_' . $id . '_' . date('Ymd')]);
       if ($frontUser) {
         $userId = (int)$frontUser['id'];
         Db::name('tb_article_history')->where('last_view_time', '<', date('Y-m-d H:i:s', strtotime('-1 year')))->delete();
@@ -256,8 +274,8 @@ class IndexController extends Controller
         'email' => '',
         'ip' => '',
         'message' => $message,
-        // 提交即待审核：is_show=0，后台审核通过置 1 后才在前台展示。
-        'is_show' => 0
+        // 管理员发表的评论直接展示；普通用户评论仍需后台审核。
+        'is_show' => ((int)($_SESSION['admin_token']['role'] ?? 0) === 1) ? 1 : 0
       ], ['name', 'message']);
       $id = Db::name('tb_comment')->insert($data);
 
@@ -356,24 +374,41 @@ class IndexController extends Controller
   {
     $articleId = $this->input('post.article_id/d', 0);
     $liked = $this->input('post.liked/b', true);
+    $identityToken = strtolower(trim((string)$this->input('post.identity_token/s', '')));
 
     if ($articleId <= 0) {
       $this->json([], '文章ID参数错误', 0);
       return;
     }
-    if ($this->validateToken()) {
-      $this->json([], '不能给自己的文章点赞', 0);
-      return;
-    }
+
     try {
-      $current = Db::name('tb_article')->where('id', '=', $articleId)->value('likes');
-      if ($current === null) {
+      $article = Db::name('tb_article')->where('id', '=', $articleId)->find();
+      if (!$article) {
         $this->json([], '文章不存在', 0);
         return;
       }
-      $next = $liked ? ((int)$current + 1) : max(0, (int)$current - 1);
+      // 仅作者本人禁止点赞：后台会话有效（validateToken）只代表已登录，不等于文章是本人发的，
+      // 否则任何后台账号（含管理员）都无法给他人文章点赞。
+      $frontUser = $this->frontUserByToken($identityToken);
+      if ($this->isOwnedByCurrentUser((int)($article['user_id'] ?? 0), $frontUser)) {
+        $this->json([], '不能给自己的文章点赞', 0);
+        return;
+      }
+      // 同一会话对同一文章每天仅允许成功点赞一次；点赞成功后当天不可取消/重复提交。
+      $likeKey = 'article_like_' . $articleId . '_' . date('Ymd');
+      if (!empty($_SESSION[$likeKey])) {
+        $this->json(['likes' => (int)($article['likes'] ?? 0), 'locked' => true], '操作成功', 1);
+        return;
+      }
+      if (!$liked) {
+        $this->json(['likes' => (int)($article['likes'] ?? 0), 'locked' => true], '操作成功', 1);
+        return;
+      }
+      $current = (int)($article['likes'] ?? 0);
+      $next = $current + 1;
       Db::name('tb_article')->where('id', '=', $articleId)->update(['likes' => $next]);
-      $this->json(['likes' => (int)$next], '操作成功', 1);
+      $_SESSION[$likeKey] = 1;
+      $this->json(['likes' => $next], '操作成功', 1);
     } catch (\Exception $e) {
       $this->json([], '点赞失败', 0);
     }
@@ -390,6 +425,15 @@ class IndexController extends Controller
       return;
     }
     try {
+      $article = Db::name('tb_article')->where('id', '=', $articleId)->find();
+      if (!$article) {
+        $this->json([], '文章不存在', 0);
+        return;
+      }
+      if ($this->isOwnedByCurrentUser((int)($article['user_id'] ?? 0), $frontUser)) {
+        $this->json([], '不能收藏自己发表的文章', 0);
+        return;
+      }
       $query = Db::name('tb_article_favorite')->where([
         'user_id' => (int)$frontUser['id'],
         'article_id' => $articleId
@@ -422,6 +466,30 @@ class IndexController extends Controller
     return Db::name('tb_front_user')
       ->where('identity_token', '=', hash('sha256', $token))
       ->find();
+  }
+
+  /**
+   * 当前身份对应的后台账号 ID（tb_role.id）：后台会话优先，其次前台身份绑定的账号。
+   * 两者都不存在时返回 0（游客）。与 tb_article.user_id / tb_user_about.user_id 同一坐标系。
+   */
+  private function currentRoleId($frontUser = null): int
+  {
+    if ($this->validateToken()) {
+      $roleId = (int)($_SESSION['admin_token']['id'] ?? 0);
+      if ($roleId > 0) return $roleId;
+    }
+    return (int)($frontUser['role_id'] ?? 0);
+  }
+
+  /**
+   * 资源是否归属于当前身份（作者本人）。
+   * 注意：validateToken() 只表示后台会话有效，不能用于判定资源归属——否则任何
+   * 已登录后台的账号访问他人文章都会被当成作者，从而永远无法点赞。
+   */
+  private function isOwnedByCurrentUser(int $ownerId, $frontUser = null): bool
+  {
+    if ($ownerId <= 0) return false;
+    return $this->currentRoleId($frontUser) === $ownerId;
   }
 
   private function normalizeFrontNickname(string $nickname): string
@@ -482,14 +550,9 @@ class IndexController extends Controller
     $transactionStarted = false;
     try {
       $user = Db::name('tb_front_user')->where('identity_token', '=', $tokenHash)->find();
-      if (!$user) {
-        $submittedCaptcha = trim((string)$this->input('post.gvcode/s', ''));
-        $expectedCaptcha = isset($_SESSION['captcha']) ? (string)$_SESSION['captcha'] : '';
-        unset($_SESSION['captcha']);
-        if ($expectedCaptcha === '' || !preg_match('/^-?\d+$/', $submittedCaptcha) || (int)$submittedCaptcha !== (int)$expectedCaptcha) {
-          $this->json([], '验证码错误', 0);
-          return;
-        }
+      if (!$user && !$this->verifyArithmeticCaptcha()) {
+        $this->json([], '验证码错误', 0);
+        return;
       }
       $duplicateQuery = Db::name('tb_front_user')->where('nickname', '=', $encodedNickname);
       if ($user) $duplicateQuery->where('id', '<>', (int)$user['id']);
@@ -598,7 +661,43 @@ class IndexController extends Controller
       $this->json([], '身份令牌无效', 0);
       return;
     }
+    unset($_SESSION['front_token'], $_SESSION['admin_token']);
+    if (session_status() === PHP_SESSION_ACTIVE) {
+      $_SESSION = [];
+      if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+      }
+      session_destroy();
+    }
     $this->json([], '已退出登录', 1);
+  }
+
+  /** 用有效后台会话恢复前台身份，保证从后台打开前端时保持登录。 */
+  public function frontSessionSync(): void
+  {
+    $token = $this->validIdentityToken();
+    if ($token === '' || !$this->validateToken()) {
+      $this->json(['loggedIn' => false, 'id' => 0, 'nickname' => '']);
+      return;
+    }
+    $roleId = (int)($_SESSION['admin_token']['id'] ?? 0);
+    $name = trim(html_entity_decode((string)($_SESSION['admin_token']['name'] ?? ''), ENT_QUOTES));
+    if ($roleId <= 0 || $name === '') {
+      $this->json(['loggedIn' => false, 'id' => 0, 'nickname' => '']);
+      return;
+    }
+    $frontUserId = $this->bindFrontUser(
+      hash('sha256', $token),
+      htmlspecialchars($name, ENT_QUOTES)
+    );
+    $this->createFrontSession($roleId, $name);
+    $this->json([
+      'loggedIn' => true,
+      'id' => $frontUserId,
+      'roleId' => $roleId,
+      'nickname' => $this->normalizeFrontNickname($name)
+    ]);
   }
 
   /**
@@ -616,6 +715,24 @@ class IndexController extends Controller
     }
     if (!$this->verifyFrontCaptcha()) {
       $this->json([], '验证码错误', 0);
+      return;
+    }
+
+    // 邮箱必填、格式校验、全站唯一。
+    $email = EmailCode::normalizeEmail((string)$this->input('post.email/s', ''));
+    if (!EmailCode::validEmail($email)) {
+      $this->json([], '邮箱格式不正确', 0);
+      return;
+    }
+    if (Db::name('tb_role')->where('email', '=', $email)->find()) {
+      $this->json([], '该邮箱已被注册', 0);
+      return;
+    }
+    // 邮箱验证码（注册场景）必须校验通过。
+    $emailCode = trim((string)$this->input('post.email_code/s', ''));
+    $verify = EmailCode::verify($email, EmailCode::SCENE_REGISTER, $emailCode);
+    if (!$verify['status']) {
+      $this->json([], $verify['msg'], 0);
       return;
     }
 
@@ -653,6 +770,7 @@ class IndexController extends Controller
       Db::name('tb_role')->insert([
         'sid' => 0,
         'name' => $encodedName,
+        'email' => $email,
         'password' => $this->hashPassword($password),
         'role' => 2,
         'role_auth' => 2,
@@ -661,6 +779,8 @@ class IndexController extends Controller
       $id = $this->bindFrontUser(hash('sha256', $token), $encodedName);
       Db::commit();
       $transactionStarted = false;
+      // 注册成功后核销邮箱验证码。
+      EmailCode::consume($verify['id']);
     } catch (\Exception $e) {
       if ($transactionStarted) Db::rollback();
       $this->json([], '注册失败，请稍后重试', 0);
@@ -795,6 +915,105 @@ class IndexController extends Controller
   }
 
   /**
+   * 发送邮箱验证码（注册 / 找回密码共用）。
+   *
+   * 注册场景：邮箱尚未注册才允许发码；找回密码场景：邮箱必须已注册。
+   * 频率与水限制由 EmailCode 统一管控，验证码仅入库摘要、明文只出现在邮件正文。
+   */
+  public function emailCode(): void
+  {
+    $email = EmailCode::normalizeEmail((string)$this->input('post.email/s', ''));
+    $scene = strtolower(trim((string)$this->input('post.scene/s', '')));
+
+    if (!EmailCode::validEmail($email)) {
+      $this->json([], '邮箱格式不正确', 0);
+      return;
+    }
+    if (!EmailCode::validScene($scene)) {
+      $this->json([], '操作类型无效', 0);
+      return;
+    }
+
+    if ($scene === EmailCode::SCENE_REGISTER) {
+      if (Db::name('tb_role')->where('email', '=', $email)->find()) {
+        $this->json([], '该邮箱已被注册', 0);
+        return;
+      }
+    } else {
+      if (!Db::name('tb_role')->where('email', '=', $email)->find()) {
+        $this->json([], '该邮箱尚未注册账号', 0);
+        return;
+      }
+    }
+
+    $result = EmailCode::issue($email, $scene);
+    if (!$result['status']) {
+      $this->json([], $result['msg'], 0);
+      return;
+    }
+    // dev=true 表示服务端未配置 SMTP（Mailer 走了日志兜底），邮件并未真正发出，
+    // 必须给前端一个区别于「已发送」的提示，避免用户一直等一封不存在的邮件。
+    $tip = $result['dev']
+      ? '开发模式未配置 SMTP，邮件未实际发送（验证码仅写入服务端日志）'
+      : '验证码已发送，请查收邮箱';
+    $this->json([
+      'expire' => $result['expire'],
+      'interval' => (int)(EmailCode::config()['CODE_INTERVAL'] ?? 60),
+      'dev' => $result['dev']
+    ], $tip, 1);
+  }
+
+  /**
+   * 邮箱验证码找回密码：校验验证码后直接重置账号密码，无需原密码。
+   *
+   * 按邮箱定位 tb_role 账号，验证通过即更新密码哈希，并核销验证码。
+   */
+  public function passwordReset(): void
+  {
+    $email = EmailCode::normalizeEmail((string)$this->input('post.email/s', ''));
+    $code = trim((string)$this->input('post.code/s', ''));
+    $password = (string)$this->input('post.password/s', '');
+    $confirm = (string)$this->input('post.confirm/s', '');
+
+    if (!EmailCode::validEmail($email)) {
+      $this->json([], '邮箱格式不正确', 0);
+      return;
+    }
+    if (!$this->validFrontPassword($password)) {
+      $this->json([], '密码为6-20位非空白字符', 0);
+      return;
+    }
+    if (!hash_equals($password, $confirm)) {
+      $this->json([], '两次输入的密码不一致', 0);
+      return;
+    }
+
+    $account = Db::name('tb_role')->where('email', '=', $email)->field(['id', 'is_show'])->find();
+    if (!$account) {
+      $this->json([], '该邮箱尚未注册账号', 0);
+      return;
+    }
+    if (isset($account['is_show']) && (int)$account['is_show'] === 0) {
+      $this->json([], '该账号已被禁用，请联系管理员', 0);
+      return;
+    }
+
+    $verify = EmailCode::verify($email, EmailCode::SCENE_RESET, $code);
+    if (!$verify['status']) {
+      $this->json([], $verify['msg'], 0);
+      return;
+    }
+
+    try {
+      Db::name('tb_role')->where('id', '=', (int)$account['id'])->update(['password' => $this->hashPassword($password)]);
+      EmailCode::consume($verify['id']);
+      $this->json([], '密码重置成功，请使用新密码登录', 1);
+    } catch (\Exception $e) {
+      $this->json([], '密码重置失败，请稍后重试', 0);
+    }
+  }
+
+  /**
    * 建立前台登录会话（front_token）。
    *
    * 与后台 admin_token 完全独立，不会串进后台鉴权；存 tb_role 账号 id 与昵称。
@@ -816,15 +1035,7 @@ class IndexController extends Controller
    */
   private function verifyFrontCaptcha(): bool
   {
-    if (session_status() === PHP_SESSION_NONE) {
-      session_start();
-    }
-    $submitted = trim((string)$this->input('post.gvcode/s', ''));
-    $expected = isset($_SESSION['captcha']) ? (string)$_SESSION['captcha'] : '';
-    unset($_SESSION['captcha']);
-    return $expected !== ''
-      && preg_match('/^-?\d+$/', $submitted) === 1
-      && (int)$submitted === (int)$expected;
+    return $this->verifyArithmeticCaptcha();
   }
 
   /**

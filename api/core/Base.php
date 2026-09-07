@@ -2,7 +2,7 @@
 
 namespace Core;
 
-class AdminBaseController extends Controller
+class Base extends Controller
 {
   /**
    * 当前登录账号的 tb_role.id。

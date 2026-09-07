@@ -13,18 +13,18 @@
   <!-- 2.内容 -->
   <main class="kniu_web_body">
     <section class="about_cells">
-      <div class="about_cell about_cell1">
+      <div class="about_cell about_cell_1">
         <div class="kniu_container">
-          <div class="about_group1">
+          <div class="about_group_1">
             <div kniu:if="{{content}}" class="about_content">{{@ content}}</div>
-            <kniu-empty kniu:elseif="{{!loading}}" kniu:options="{{({note:'暂无数据'})}}" />
+            <kniu-empty kniu:elseif="{{!loading}}" kniu:options="{{note:'暂无数据'}}" />
           </div>
         </div>
       </div>
-      <div class="detail_cell detail_cell2">
+      <div class="about_cell about_cell_2">
         <div class="kniu_container">
-          <div class="kniu_btn_group detail_btn_group">
-            <a class="kniu_btn detail_btn" kniu@click="toBack" href="#/">返回</a>
+          <div class="kniu_btn_group about_btn_group">
+            <a class="kniu_btn about_btn" kniu@click="toBack" href="#/">返回</a>
           </div>
         </div>
       </div>

@@ -7,29 +7,18 @@ import { optionsToValues } from '../../core/kniuutil.mjs';
 
 const { controller, reactive, onMounted, onUnmounted } = KniuMvvm;
 
-/**
- * 合并登录页：同一 #/login 承载「后台登录 + 前台登录/注册」。
- *
- * - 登录 tab：POST /logup 建后台会话（admin_token，校验验证码），成功后
- *   再 POST /frontBind 绑前台身份（front_token，不重复消费验证码）——
- *   一次登录前后台全通，杜绝「后台登录了前台仍当游客」的死循环。
- * - 注册 tab：POST /frontRegister 建 role=2 账号 + 前台会话，后端同时写
- *   admin_token，注册即进后台，无需二次登录。
- * - 落地：带 redirect(/detail+id | /profile | /about | /) 参数回跳来源页，
- *   否则进入工作台 /admin。
- */
 const loginController = controller(({ navigateTo, getRouteData }) => {
   const routeData = getRouteData() || {};
   const state = reactive({
-    tab: routeData.tab === 'register' ? 'register' : 'login',
+    tab: routeData.tab === 'register' ? 'register' : (routeData.tab === 'reset' ? 'reset' : 'login'),
     subtitle: routeData.tab === 'register'
       ? '注册后即可评论、收藏，并直接进入工作台'
-      : '登录后可评论、收藏或进入工作台',
+      : (routeData.tab === 'reset'
+        ? '通过邮箱验证码重置密码，无需原密码'
+        : '登录后可评论、收藏或进入工作台'),
     captchaImageUrl: '',
     isCaptchaLoading: true,
     isSubmitting: false,
-    // kniu-form 的全部配置：labelPosition / labelWidth 是表单级保留键，
-    // 其余每个键是一个字段——带 condition 即需验证，value 为默认值。
     loginModel: {
       labelPosition: 'top',
       labelWidth: 'auto',
@@ -69,16 +58,56 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
         condition: function (v) { return v.value === v.password; },
         message: '两次输入的密码不一致'
       },
+      email: {
+        value: '',
+        condition: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+        message: '请输入有效的邮箱地址'
+      },
+      email_code: {
+        value: '',
+        condition: /^\d{6}$/,
+        message: '请输入6位邮箱验证码'
+      },
       gvcode: {
         value: '',
         condition: /^-?\d{1,4}$/,
         message: '请输入验证码计算结果'
       }
+    },
+    codeCountdown: 0,
+    codeSending: false,
+    resetModel: {
+      labelPosition: 'top',
+      labelWidth: 'auto',
+      email: {
+        value: '',
+        condition: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+        message: '请输入有效的邮箱地址'
+      },
+      code: {
+        value: '',
+        condition: /^\d{6}$/,
+        message: '请输入6位邮箱验证码'
+      },
+      password: {
+        value: '',
+        condition: function (v) {
+          const password = String(v.value || '');
+          if (!state.isAddDialog && password === '') return true;
+          return /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,./?])[^<>]{8,}$/.test(password);
+        },
+        message: '密码为8位以上，含大小写字母、数字和特殊字符'
+      },
+      confirm: {
+        value: '',
+        condition: function (v) { return v.value === v.password; },
+        message: '两次输入的密码不一致'
+      }
     }
   });
   let captchaObjectUrl = '';
+  let codeTimer = null;
 
-  // redirect 参数只放行前台可回跳的页面；其余一律默认进工作台。
   function redirectTarget() {
     const redirect = String(routeData?.redirect || '').replace(/^#/, '');
     const id = Number(routeData?.id || 0);
@@ -135,28 +164,106 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
     refreshCaptcha();
   }
 
+  function toReset() {
+    state.tab = 'reset';
+    state.subtitle = '通过邮箱验证码重置密码，无需原密码';
+  }
+
+  function clearCodeTimer() {
+    if (codeTimer) { clearInterval(codeTimer); codeTimer = null; }
+  }
+
+  function startCodeCountdown(seconds) {
+    clearCodeTimer();
+    state.codeCountdown = Math.max(1, Number(seconds) || 60);
+    codeTimer = setInterval(() => {
+      state.codeCountdown -= 1;
+      if (state.codeCountdown <= 0) {
+        clearCodeTimer();
+        state.codeCountdown = 0;
+      }
+    }, 1000);
+  }
+
+  function quickValidateEmail(model) {
+    const email = String(model.email.value || '').trim();
+    if (email === '') {
+      KniuUI.msg({ content: '请输入邮箱', type: 'error' });
+      return '';
+    }
+    if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+      KniuUI.msg({ content: '邮箱格式不正确', type: 'error' });
+      return '';
+    }
+    return email;
+  }
+
+  async function sendEmailCode(scene, model) {
+    if (state.codeSending || state.codeCountdown > 0) return;
+    const email = quickValidateEmail(model);
+    if (email === '') return;
+    state.codeSending = true;
+    const res = await REQUEST({
+      url: '/email_code',
+      type: 'POST',
+      data: { email: email, scene: scene },
+      redirectOnUnauthorized: false
+    });
+    state.codeSending = false;
+    if (res.status !== 1) {
+      KniuUI.msg({ content: res.msg || '验证码发送失败', type: 'error' });
+      return;
+    }
+    // dev=true：服务端未配置 SMTP，邮件没真发出去，用 warning 明确告知，别让用户干等。
+    const devMode = !!(res.data && res.data.dev);
+    KniuUI.msg({
+      content: res.msg || (devMode ? '验证码已生成，但邮件未实际发送' : '验证码已发送，请查收邮箱'),
+      type: devMode ? 'warning' : 'success'
+    });
+    startCodeCountdown((res.data && res.data.interval) ? res.data.interval : 60);
+  }
+
+  function sendRegisterCode() {
+    sendEmailCode('register', state.registerModel);
+  }
+
+  function sendResetCode() {
+    sendEmailCode('reset', state.resetModel);
+  }
+
+  async function onResetSubmit() {
+    if (state.isSubmitting) return;
+    const form = optionsToValues(state.resetModel);
+    state.isSubmitting = true;
+    const res = await REQUEST({
+      url: '/password_reset',
+      type: 'POST',
+      data: {
+        email: form.email,
+        code: form.code,
+        password: form.password,
+        confirm: form.confirm
+      },
+      redirectOnUnauthorized: false
+    });
+    state.isSubmitting = false;
+    if (res.status !== 1) {
+      KniuUI.msg({ content: res.msg || '密码重置失败', type: 'error' });
+      return;
+    }
+    KniuUI.msg({ content: res.msg || '密码重置成功，请使用新密码登录', type: 'success' });
+    state.resetModel.email.value = '';
+    state.resetModel.code.value = '';
+    state.resetModel.password.value = '';
+    state.resetModel.confirm.value = '';
+    toLogin();
+  }
+
   function submitFailed(model, res) {
     state.isSubmitting = false;
     model.gvcode.value = '';
     KniuUI.msg({ content: res.msg || '操作失败', type: 'error' });
     refreshCaptcha();
-  }
-
-  // 登录成功后补绑前台身份（frontBind 不消费验证码），打通前后台会话。
-  async function bindFrontIdentity(username, password, fallbackName) {
-    const bindRes = await REQUEST({
-      url: '/frontBind',
-      type: 'POST',
-      data: {
-        username: username,
-        password: password,
-        identity_token: IDENTITY.getIdentity().token
-      },
-      redirectOnUnauthorized: false
-    });
-    if (bindRes.status === 1) {
-      IDENTITY.setIdentity({ nickname: bindRes.data?.nickname || fallbackName, account: 1 });
-    }
   }
 
   async function onSubmit() {
@@ -173,7 +280,11 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
       gvcode: form.gvcode,
       identity_token: IDENTITY.getIdentity().token
     };
-    if (isRegister) data.confirm = form.confirm;
+    if (isRegister) {
+      data.confirm = form.confirm;
+      data.email = form.email;
+      data.email_code = form.email_code;
+    }
 
     const res = await REQUEST({
       url: isRegister ? '/frontRegister' : '/logup',
@@ -195,12 +306,10 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
       name: name,
       avatar: info.avatar || name.charAt(0),
       role: info.role || (isRegister ? '2' : ''),
-      roleId: Number(info.role_id || info.id || 0),
+      roleId: Number(info.role || (isRegister ? 2 : 0)),
+      userId: Number(info.role_id || info.id || 0),
       roleAuth: Number(info.role_auth || 0)
     });
-    if (!isRegister) {
-      await bindFrontIdentity(form.username, form.password, name);
-    }
     state.isSubmitting = false;
     KniuUI.msg({ content: isRegister ? '注册成功' : '登录成功', type: 'success' });
     finishAuth();
@@ -226,9 +335,10 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
   onUnmounted(() => {
     captchaObjectUrl && URL.revokeObjectURL(captchaObjectUrl);
     captchaObjectUrl = '';
+    clearCodeTimer();
   });
 
-  return { state, refreshCaptcha, onSubmit, toLogin, toRegister };
+  return { state, refreshCaptcha, onSubmit, toLogin, toRegister, toReset, onResetSubmit, sendRegisterCode, sendResetCode };
 });
 
 export default loginController;

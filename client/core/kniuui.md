@@ -701,20 +701,22 @@ const myController = controller(function () {
     <kniu-image kniu:options="{{({ src:'/static/logo.png' })}}" />
   </template>
   <template #append>
-    <kniu-navbar-cell index="/" href="#/">首页</kniu-navbar-cell>
-    <kniu-navbar-cell index="/about" href="#/about">关于我</kniu-navbar-cell>
-    <kniu-sub-navbar>
-      <template #title>更多</template>
-      <kniu-navbar-cell index="/help" href="#/help">帮助</kniu-navbar-cell>
+    <kniu-navbar-cells>
+      <kniu-navbar-cell kniu:options="{{({index:'/',href:'#/'})}}">首页</kniu-navbar-cell>
+      <kniu-navbar-cell kniu:options="{{({index:'/about',href:'#/about'})}}">关于我</kniu-navbar-cell>
       <kniu-sub-navbar>
-        <template #title>文档</template>
-        <kniu-navbar-cell index="/docs/start" href="#/docs/start">入门</kniu-navbar-cell>
+        <template #title>更多</template>
+        <kniu-navbar-cell kniu:options="{{({index:'/help',href:'#/help'})}}">帮助</kniu-navbar-cell>
         <kniu-sub-navbar>
-          <template #title>进阶</template>
-          <kniu-navbar-cell index="/docs/api" href="#/docs/api">接口</kniu-navbar-cell>
+          <template #title>文档</template>
+          <kniu-navbar-cell kniu:options="{{({index:'/docs/start',href:'#/docs/start'})}}">入门</kniu-navbar-cell>
+          <kniu-sub-navbar>
+            <template #title>进阶</template>
+            <kniu-navbar-cell kniu:options="{{({index:'/docs/api',href:'#/docs/api'})}}">接口</kniu-navbar-cell>
+          </kniu-sub-navbar>
         </kniu-sub-navbar>
       </kniu-sub-navbar>
-    </kniu-sub-navbar>
+    </kniu-navbar-cells>
   </template>
 </kniu-navbar>
 ```
@@ -727,6 +729,7 @@ const myController = controller(function () {
 | `kniu-navbar[type="side"]` | 纵向侧栏导航；与 `kniu-navbar-cell` 配合用于应用工作台 |
 | `template #brand` | 左侧品牌内容；未设置时显示 `brand` 属性文字 |
 | `template #append` | 右侧导航内容；仍兼容直接写入默认插槽 |
+| `kniu-navbar-cells` | 导航项横向包裹容器，固定 `gap:10px`；移动端纵向排列并保持相同间距 |
 | `kniu-navbar-cell[index]` | 用于匹配当前路由的唯一索引 |
 | `kniu-navbar-cell[href]` | 导航地址 |
 | `kniu-navbar-cell[disabled]` | 禁用导航项 |
@@ -891,7 +894,7 @@ box-shadow: 0 2px 12px rgba(0,0,0,.1);
 
 ## 前台登录状态 kniu-user-login
 
-前台公共头部始终使用 `<kniu-user-login></kniu-user-login>`。未建立昵称时显示“你好，访客！”，不显示箭头和下拉菜单；昵称只能在首次发表评论时设置，个人中心只读展示。建立昵称后显示头像、“你好，昵称”和下拉箭头。点击账号区域展开菜单，菜单内提供“个人中心”“后台管理”和“退出”；“后台管理”在新标签页打开后台登录页。退出调用 `/frontProfileClear` 保留数据库身份和昵称，仅刷新本地随机令牌并返回首页。组件监听 `kniu-identity-change` 实时更新。
+前台公共头部始终使用 `<kniu-user-login></kniu-user-login>`。未建立账号时显示“你好，访客！”、头像和下拉箭头，菜单仅提供“登录”；统一登录页可以切换登录和注册。建立账号后显示头像、“你好，昵称”和下拉箭头，菜单提供“个人中心”“后台管理”和“退出”；“后台管理”在新标签页打开后台登录页。点击退出后先清除本地身份使前台立即变为访客，再由 `/frontProfileClear` 销毁前后台 Session；数据库账号仍保留。其它后台标签通过跨标签退出事件立即回到登录页。组件监听 `kniu-identity-change` 实时更新。
 
 ## 点赞组件 kniu-like
 

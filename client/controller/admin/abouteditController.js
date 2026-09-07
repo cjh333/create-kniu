@@ -1,12 +1,10 @@
 import KniuMvvm from '../../core/kniumvvm.mjs';
 import REQUEST from '../../core/kniurequest.mjs';
-import AUTH from '../../core/kniuauth.mjs';
 
 const { controller, reactive, onMounted } = KniuMvvm;
 
-const abouteditController = controller(() => {
+const abouteditController = controller(({ autoSync }) => {
   const state = reactive({
-    canEditContent: Number(AUTH.getUser()?.roleId || AUTH.getUser()?.role || 0) === 1 || Number(AUTH.getUser()?.roleAuth || 0) === 1,
     isSubmitting: false,
     toolbar: 'code | undo redo | bold italic underline strikeThrough | justifyLeft justifyCenter justifyRight justifyFull | insertOrderedList insertUnorderedList | h1 h2 h3 p | blockquote pre hr table | fontname fontsize forecolor hilitecolor | link unlink image media emoticons | removeFormat clearhtml selectAll | maximize',
     aboutModel: {
@@ -35,7 +33,6 @@ const abouteditController = controller(() => {
   }
 
   async function onSubmit() {
-    if (!state.canEditContent) return;
     if (state.isSubmitting) return;
     state.isSubmitting = true;
     await REQUEST({
@@ -55,6 +52,8 @@ const abouteditController = controller(() => {
   }
 
   onMounted(getAboutDetail);
+  // 多标签/多端同时维护「关于我」时，本页自动跟随最新数据。
+  autoSync(getAboutDetail);
   return { state, onSubmit };
 });
 

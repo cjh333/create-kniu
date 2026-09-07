@@ -2,10 +2,10 @@
 
 namespace App\Admin\Controllers;
 
-use Core\AdminBaseController;
+use Core\Base;
 use Core\Db;
 
-class SeoController extends AdminBaseController
+class SeoController extends Base
 {
   public function __construct()
   {

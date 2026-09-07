@@ -4,7 +4,7 @@ import REQUEST from '../../core/kniurequest.mjs';
 
 const { controller, onMounted, reactive } = KniuMvvm;
 
-const profileController = controller(({ navigateTo }) => {
+const profileController = controller(({ navigateTo, autoSync }) => {
   const identity = IDENTITY.getIdentity();
   const state = reactive({
     nickname: identity.nickname,
@@ -51,6 +51,8 @@ const profileController = controller(({ navigateTo }) => {
   }
 
   onMounted(loadProfile);
+  // 获赞数/评论数/收藏与浏览历史随他人行为变化，信号到达时自动重放。
+  autoSync(loadProfile);
   return { state, toBack, toFavorite, toSignin };
 });
 

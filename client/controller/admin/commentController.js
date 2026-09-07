@@ -2,10 +2,9 @@ import KniuMvvm from '../../core/kniumvvm.mjs';
 import KniuUI from '../../core/kniuui.js';
 import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
-import { debounce } from '../../core/kniuutil.mjs';
 
 const { controller, onMounted, reactive } = KniuMvvm;
-const { usePagination } = KniuUI;
+const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = KniuUI;
 
 function createCommentManagementController(managementType = 'comment') {
   return controller(function () {
@@ -128,14 +127,7 @@ function createCommentManagementController(managementType = 'comment') {
         onCurrentChange: (detail) => changePage({ detail }),
         onSizeChange: (detail) => changePageSize({ detail })
       },
-      switchOptions: {
-        name: 'is_show',
-        activeValue: 1,
-        inactiveValue: 0,
-        activeColor: '#13ce66',
-        inactiveColor: '#ff4949',
-        disabled: !canEditContent
-      },
+      switchOptions: makeSwitchOptions(canEditContent),
       auditOptions: [
         { label: '全部状态', value: '' },
         { label: '待审核', value: '0' },
@@ -156,11 +148,7 @@ function createCommentManagementController(managementType = 'comment') {
       pageKey: 'commentPage'
     });
 
-    function searchList() {
-      loadList(1);
-    }
-
-    const debouncedSearch = debounce(searchList, 250);
+    const { searchList, debouncedSearch } = createSearchActions(loadList);
 
     function onFilterChange() {
       loadList(1);
@@ -213,33 +201,15 @@ function createCommentManagementController(managementType = 'comment') {
       });
     }
 
-    async function deleteRow(index, list) {
-      const row = list[index];
-      if (!row) return false;
-      const isTop = Number(row.parent_id) === 0;
-      const tip = isTop ? '此操作将永久删除该评论及其全部回复, 是否继续?' : '此操作将永久删除该回复, 是否继续?';
-      const confirmed = await self.$confirm(tip, '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }).then(function () { return true; }).catch(function () { return false; });
-      if (!confirmed) return false;
-      await REQUEST({
-        url: '/comment_delete',
-        type: 'POST',
-        data: { id: row.id },
-        success(res) {
-          if (res.status !== 1) {
-            self.$msg({ content: res.msg, type: 'error' });
-            return;
-          }
-          self.$msg({ content: '删除成功!', type: 'success' });
-          loadList(state.currentPage);
-        },
-        fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
-      });
-      return false;
-    }
+    const deleteRow = createRowDeleteHandler({
+      self,
+      state,
+      loadList,
+      url: '/comment_delete',
+      confirmMessage: (row) => Number(row.parent_id) === 0
+        ? '此操作将永久删除该评论及其全部回复, 是否继续?'
+        : '此操作将永久删除该回复, 是否继续?'
+    });
 
     function goBack() {
       self.navigateTo('/admin');

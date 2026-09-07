@@ -400,6 +400,15 @@ state.tableOptions = { data: state.list, rowKey: 'id', stripe: true };
 state.tableOptions = { ...state.tableOptions, data: state.list };
 ```
 
+**内联对象字面量可省略外层圆括号。** 表达式编译时会先按对象字面量 `return ({expr})` 处理，因此带 `:` 的对象直接写即可，无需 `({...})` 包裹：
+
+```html
+<kniu-input kniu:model="{{registerModel.email}}" kniu:options="{{name:'email',placeholder:'邮箱，用于找回密码'}}" />
+<!-- 等价于旧写法：kniu:options="{{({name:'email',placeholder:'邮箱，用于找回密码'})}}" -->
+```
+
+唯一要保留内层括号的场景：引用 state 的键值取值本身需要括号（`src:(captchaImageUrl)`），或某键的值是复合表达式（`disabled:(codeSending || codeCountdown > 0)`），为清晰可加，但并非语法必需。
+
 - 已升级的组件走 `options` property；**未升级的自定义元素**（如列模板 `template.content` 内从未插入文档的 `<kniu-switch>`，Chrome 对 disconnected 节点不自动升级、`customElements.upgrade()` 也静默无效）回退写入 `__kniuOptionsValue` expando，消费方（如 kniu-table `_readColumns`）读 property 失败时回退读取。
 - 列模板内节点（`__kniuTableColumn`）**刻意保留 `kniu:options` 属性**：`kniu:if` / `kniu:for` 克隆列时 expando 不随 `cloneNode` 复制，保留属性让克隆列在递归 `applyBindings` 中重新解析并写入 expando（与 `kniu@change` 同策略）。
 - 绑定只在解析出**真实对象**时写入；解析不到（undefined / null / 非对象）保持原值，防止异步间隙里用数据对象当 state 的重复绑定把已写入的 expando 覆盖成空对象。

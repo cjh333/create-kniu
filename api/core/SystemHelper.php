@@ -4,7 +4,7 @@ namespace Core;
 
 class SystemHelper
 {
-  private static $cacheDir = null;
+  private static ?string $cacheDir = null;
 
   /**
    * 获取缓存目录。
@@ -190,7 +190,8 @@ class SystemHelper
   {
     if (function_exists('ini_get')) {
       $memoryLimit = ini_get('memory_limit');
-      if ($memoryLimit == '-1') {
+      // 严格比较，兼容 PHP 8.x 松散比较语义变化。
+      if ($memoryLimit === '-1') {
         return 'Unlimited';
       }
       return $memoryLimit;

@@ -71,11 +71,11 @@ var KniuAuth = (function () {
   async function restoreSession() {
     try {
       await REQUEST({
-        url: '/system',
+        url: '/session_status',
         type: 'POST',
         redirectOnUnauthorized: false,
         success(res) {
-          if (res.status !== 1) {
+          if (res.status !== 1 || !res.data?.loggedIn) {
             markLoggedOut();
             return;
           }
@@ -106,6 +106,17 @@ var KniuAuth = (function () {
       sessionStorage.removeItem('kniu_user');
     } catch (e) { }
     notify();
+  }
+
+  // 前台账号菜单退出时，通过 localStorage 事件让其它后台标签立即退出显示状态。
+  if (typeof globalThis !== 'undefined' && typeof globalThis.addEventListener === 'function') {
+    globalThis.addEventListener('storage', function syncLogoutAcrossTabs(event) {
+      if (event.key !== 'kniu_auth_logout_at' || !event.newValue) return;
+      markLoggedOut();
+      if (typeof location !== 'undefined' && /^#\/(admin|home|seo|aboutedit|users|dailydetail|articledetail|comment|reply)/.test(location.hash)) {
+        location.hash = '#/login';
+      }
+    });
   }
 
   /**
