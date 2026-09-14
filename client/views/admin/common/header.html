@@ -136,44 +136,44 @@
   }
 </style>
 <nav class="kniu_web_aside_mdnav_wrap" aria-label="移动端应用导航">
-  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/admin' ? ' active' : ''}}" data-nav="/admin" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'House'}}" /><span class="kniu_web_aside_mdnav_title">控制台</span>
+  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/admin' ? ' active' : ''}}" data-nav="/admin" kniu:option="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:option="{{icon:'House'}}" /><span class="kniu_web_aside_mdnav_title">控制台</span>
   </kniu-btn>
-  <kniu-btn kniu:if="{{showWebsiteInfo}}" class="kniu_web_aside_mdnav{{currentPath === '/seo' ? ' active' : ''}}" data-nav="/seo" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'Document'}}" /><span class="kniu_web_aside_mdnav_title">网站信息</span>
+  <kniu-btn kniu:if="{{showWebsiteInfo}}" class="kniu_web_aside_mdnav{{currentPath === '/seo' ? ' active' : ''}}" data-nav="/seo" kniu:option="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:option="{{icon:'Document'}}" /><span class="kniu_web_aside_mdnav_title">网站信息</span>
   </kniu-btn>
-  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/aboutedit' ? ' active' : ''}}" data-nav="/aboutedit" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'View'}}" /><span class="kniu_web_aside_mdnav_title">关于我</span>
+  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/aboutedit' ? ' active' : ''}}" data-nav="/aboutedit" kniu:option="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:option="{{icon:'View'}}" /><span class="kniu_web_aside_mdnav_title">关于我</span>
   </kniu-btn>
-  <kniu-btn kniu:if="{{showDaily}}" class="kniu_web_aside_mdnav{{currentPath === '/dailydetail' ? ' active' : ''}}" data-nav="/dailydetail" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'Bell'}}" /><span class="kniu_web_aside_mdnav_title">每日一句</span>
+  <kniu-btn kniu:if="{{showDaily}}" class="kniu_web_aside_mdnav{{currentPath === '/dailydetail' ? ' active' : ''}}" data-nav="/dailydetail" kniu:option="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:option="{{icon:'Bell'}}" /><span class="kniu_web_aside_mdnav_title">每日一句</span>
   </kniu-btn>
-  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/articledetail' ? ' active' : ''}}" data-nav="/articledetail" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'File'}}" /><span class="kniu_web_aside_mdnav_title">文章管理</span>
+  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/articledetail' ? ' active' : ''}}" data-nav="/articledetail" kniu:option="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:option="{{icon:'File'}}" /><span class="kniu_web_aside_mdnav_title">文章管理</span>
   </kniu-btn>
-  <kniu-btn kniu:if="{{showUserManagement}}" class="kniu_web_aside_mdnav{{currentPath === '/users' ? ' active' : ''}}" data-nav="/users" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'User'}}" /><span class="kniu_web_aside_mdnav_title">用户管理</span>
+  <kniu-btn kniu:if="{{showUserManagement}}" class="kniu_web_aside_mdnav{{currentPath === '/users' ? ' active' : ''}}" data-nav="/users" kniu:option="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:option="{{icon:'User'}}" /><span class="kniu_web_aside_mdnav_title">用户管理</span>
   </kniu-btn>
-  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/comment' ? ' active' : ''}}" data-nav="/comment" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'ChatDotRound'}}" /><span class="kniu_web_aside_mdnav_title">评论管理</span>
+  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/comment' ? ' active' : ''}}" data-nav="/comment" kniu:option="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:option="{{icon:'ChatDotRound'}}" /><span class="kniu_web_aside_mdnav_title">评论管理</span>
   </kniu-btn>
-  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/reply' ? ' active' : ''}}" data-nav="/reply" kniu:options="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
-    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:options="{{icon:'ChatDotRound'}}" /><span class="kniu_web_aside_mdnav_title">回复管理</span>
+  <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/reply' ? ' active' : ''}}" data-nav="/reply" kniu:option="{{block:true,nativeType:'button'}}" kniu@click="handleNavigation">
+    <kniu-icon class="kniu_web_aside_mdnav_icon" kniu:option="{{icon:'ChatDotRound'}}" /><span class="kniu_web_aside_mdnav_title">回复管理</span>
   </kniu-btn>
 </nav>
 <header class="kniu_web_aside_head">
-  <kniu-btn class="kniu_web_aside_brand" aria-label="返回总览" kniu:options="{{nativeType:'button'}}" kniu@click="handleHomeNavigation">{{brandMark}}</kniu-btn>
+  <kniu-btn class="kniu_web_aside_brand" aria-label="返回总览" kniu:option="{{nativeType:'button'}}" kniu@click="handleHomeNavigation">{{brandMark}}</kniu-btn>
   <div class="kniu_web_aside_crumb_wrap">
     <span class="kniu_web_aside_crumb">{{workspaceLabel}} / </span>
     <strong>{{currentApp.name}}</strong>
   </div>
   <div class="kniu_web_aside_head_actions">
-    <a class="kniu_btn kniu_web_aside_front_link" href="#/" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开前端首页"><kniu-icon style="font-size:16px;" kniu:options="{{icon:'House'}}" /><span class="kniu_web_aside_front_text">前端首页</span></a>
-    <kniu-badge class="kniu_web_aside_note" title="回复消息" kniu:options="{{notificationBadge}}" kniu@click="handleNotificationRequest">
-      <kniu-icon style="font-size:16px;color:#ff5c35;" kniu:options="{{icon:'ChatDotRound'}}" />
+    <a class="kniu_btn kniu_web_aside_front_link" href="#/" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开前端首页"><kniu-icon style="font-size:16px;" kniu:option="{{icon:'House'}}" /><span class="kniu_web_aside_front_text">前端首页</span></a>
+    <kniu-badge class="kniu_web_aside_note" title="回复消息" kniu:option="{{notificationBadge}}" kniu@click="handleNotificationRequest">
+      <kniu-icon style="font-size:16px;color:#ff5c35;" kniu:option="{{icon:'ChatDotRound'}}" />
     </kniu-badge>
     <kniu-btn class="admin_tab_refresh1" kniu@click="handleRefresh">
-      <kniu-icon kniu:options="{{icon:'Refresh'}}" />
+      <kniu-icon kniu:option="{{icon:'Refresh'}}" />
     </kniu-btn>
   </div>
 </header>

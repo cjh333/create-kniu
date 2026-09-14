@@ -233,4 +233,4 @@ dist/
 
 更细的模板语法参见 `client/core/kniutemplate.md`，系统 UI 组件（`kniu-table` / `kniu-page` / `kniu-empty` / `kniu-modal` / `kniu-form` / `kniu-input` / `kniu-switch` / `kniu-editor` 等）用法参见 `client/core/kniuui.md`，后端补充说明（含 HTML 编解码、接口清单）参见 `api/API.md`。
 
-所有 `kniu-*` 自定义组件统一使用 `kniu:options` 配置，旧的零散组件属性不再兼容。模板标签仅保留 `ref`、`kniu:model`、模板指令、插槽和模板事件；组件回调优先配置为 options 中的 `onXxx`。
+所有 `kniu-*` 自定义组件统一使用 `kniu:option` 配置，旧的零散组件属性不再兼容。模板标签仅保留 `ref`、`kniu:form`、模板指令、插槽和模板事件；组件回调优先配置为 options 中的 `onXxx`。

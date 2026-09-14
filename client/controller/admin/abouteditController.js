@@ -1,16 +1,32 @@
-import KniuMvvm from '../../core/kniumvvm.mjs';
+import MVVM from '../../core/kniumvvm.mjs';
 import REQUEST from '../../core/kniurequest.mjs';
+import { buildMultipartFormData, optionsToValues, toSingleFileList } from '../../core/kniuutil.mjs';
 
-const { controller, reactive, onMounted } = KniuMvvm;
+const { controller, reactive, onMounted } = MVVM;
 
-const abouteditController = controller(({ autoSync }) => {
+const abouteditController = controller(() => {
   const state = reactive({
     isSubmitting: false,
-    toolbar: 'code | undo redo | bold italic underline strikeThrough | justifyLeft justifyCenter justifyRight justifyFull | insertOrderedList insertUnorderedList | h1 h2 h3 p | blockquote pre hr table | fontname fontsize forecolor hilitecolor | link unlink image media emoticons | removeFormat clearhtml selectAll | maximize',
-    aboutModel: {
-      content: {
-        value: ''
-      }
+    files: [],
+    editor: {
+      toolbar: [
+        'code', '|',
+        'undo', 'redo', '|',
+        'bold', 'italic', 'underline', 'strikeThrough', '|',
+        'justifyLeft', 'justifyCenter', 'justifyRight', 'justifyFull', '|',
+        'insertOrderedList', 'insertUnorderedList', '|',
+        'h1', 'h2', 'h3', 'p', '|',
+        'blockquote', 'pre', 'hr', 'table', '|',
+        'fontName', 'fontSize', 'foreColor', 'hiliteColor', '|',
+        'link', 'unlink', 'image', 'media', 'emoticons', '|',
+        'removeFormat', 'clear', 'selectAll', '|',
+        'fullscreen'
+      ]
+    },
+    models: {
+      avatar: '',
+      summary: '',
+      content: ''
     }
   });
 
@@ -24,7 +40,10 @@ const abouteditController = controller(({ autoSync }) => {
           this.$msg({ content: res.msg, type: 'error' });
           return;
         }
-        state.aboutModel = { ...state.aboutModel, content: { value: String(res.data?.content || '') } };
+        state.models.avatar = String(res.data?.avatar || '');
+        state.models.summary = String(res.data?.summary || '');
+        state.models.content = String(res.data?.content || '');
+        state.files = toSingleFileList(res.data?.avatar);
       },
       fail(res) {
         this.$msg({ content: res.msg, type: 'error' });
@@ -38,7 +57,7 @@ const abouteditController = controller(({ autoSync }) => {
     await REQUEST({
       url: '/about_save',
       type: 'POST',
-      data: { content: state.aboutModel.content.value },
+      data: buildMultipartFormData(optionsToValues(state.models), { fileField: 'avatar', files: state.files }),
       success(res) {
         this.$msg({ content: res.msg, type: res.status === 1 ? 'success' : 'error' });
       },
@@ -51,10 +70,12 @@ const abouteditController = controller(({ autoSync }) => {
     });
   }
 
+  function onAvatarInput(files) {
+    state.files = Array.isArray(files) ? files.slice() : [];
+  }
+
   onMounted(getAboutDetail);
-  // 多标签/多端同时维护「关于我」时，本页自动跟随最新数据。
-  autoSync(getAboutDetail);
-  return { state, onSubmit };
+  return { state, onSubmit, onAvatarInput };
 });
 
 export default abouteditController;

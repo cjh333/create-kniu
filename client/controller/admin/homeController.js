@@ -1,9 +1,9 @@
-import KniuMvvm from '../../core/kniumvvm.mjs';
+import MVVM from '../../core/kniumvvm.mjs';
 import SERVER from '../../config/server.js';
 import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 
-const { controller, onMounted, reactive } = KniuMvvm;
+const { controller, onMounted, reactive } = MVVM;
 
 const SYSTEM_FIELDS = [
   'username', 'role', 'role_id', 'role_auth', 'platform', 'arch', 'server', 'ip', 'rootDir', 'mysqlVer', 'uptime', 'totalMemory', 'currentMemory'

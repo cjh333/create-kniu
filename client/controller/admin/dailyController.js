@@ -1,11 +1,11 @@
-import KniuMvvm from '../../core/kniumvvm.mjs';
-import KniuUI from '../../core/kniuui.js';
+import MVVM from '../../core/kniumvvm.mjs';
+import UI from '../../core/kniuui.js';
 import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 import { assignModelFields, updateListRecord } from '../../core/kniuutil.mjs';
 
-const { controller, onMounted, reactive } = KniuMvvm;
-const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = KniuUI;
+const { controller, onMounted, reactive } = MVVM;
+const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = UI;
 
 const dailyController = controller(function () {
   const self = this;
@@ -31,80 +31,6 @@ const dailyController = controller(function () {
       border: true,
       maxHeight: innerHeight - 220 / 1920 * innerWidth,
       loading: true,
-      cols: [
-        {
-          type: 'checkbox',
-          width: 60,
-          align: 'center',
-          fixed: true
-        },
-        {
-          field: 'id',
-          label: 'ID',
-          width: 80,
-          align: 'center',
-          fixed: true,
-          sortable: true
-        },
-        {
-          field: 'sid',
-          label: '排序',
-          width: 100,
-          align: 'center',
-          editable: 'number',
-          sortable: true
-        },
-        {
-          field: 'cn',
-          label: '中文',
-          showOverflowTooltip: true
-        },
-        {
-          field: 'en',
-          label: '英文',
-          showOverflowTooltip: true
-        },
-        {
-          field: 'create_time',
-          label: '发布时间',
-          width: 160,
-          align: 'center'
-        },
-        {
-          field: 'is_show',
-          label: '显示',
-          width: 80,
-          align: 'center',
-          condition: canEditContent,
-          switch: {
-            options: null,
-            onChange: updateShow
-          }
-        },
-        {
-          label: '操作',
-          width: 120,
-          align: 'center',
-          fixed: 'right',
-          condition: canEditContent,
-          actions: [
-            {
-              title: '删除',
-              type: 'danger',
-              size: 'small',
-              link: true,
-              onClick: ({ index, rows }) => deleteRow(index, rows)
-            },
-            {
-              title: '修改',
-              type: 'primary',
-              size: 'small',
-              link: true,
-              onClick: ({ index, rows }) => editRow(index, rows)
-            }
-          ]
-        }
-      ]
     },
     dailyPage: {
       layout: '上一页,首页,页码,末页,下一页,跳转,总数,条数',
@@ -117,7 +43,6 @@ const dailyController = controller(function () {
     },
     switchOptions: makeSwitchOptions(canEditContent)
   });
-  state.dailyTable.cols[6].switch.options = state.switchOptions;
 
   const { loadList, changePage, changePageSize, syncOptions } = usePagination({
     state,
@@ -145,8 +70,6 @@ const dailyController = controller(function () {
           return;
         }
         row.is_show = value;
-        // 原地改字段后 state.dailyTable 引用未变 → kniu-table setter 不触发；
-        // 复用 usePagination 暴露的 syncOptions 把 state.list 推到 options 上即可。
         syncOptions();
         self.$msg({ content: res.msg, type: 'success' });
       },
@@ -193,8 +116,6 @@ const dailyController = controller(function () {
           return;
         }
         state.list = updateListRecord(state.list, form);
-        // 本地补丁后必须把新数组推到 options 上，否则 state.dailyTable.data
-        // 仍指向旧数组，kniu-table setter 不触发、表不刷新。
         syncOptions();
         state.showmodal = false;
         self.$msg({ content: res.msg, type: 'success' });

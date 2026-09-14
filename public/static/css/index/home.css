@@ -126,9 +126,9 @@
   -ms-border-radius: 100%;
   -o-border-radius: 100%;
   margin: 0 calc(15 / var(--kniu_vw)) 0 0;
-  min-width: calc(80 / var(--kniu_vw));
-  width: calc(80 / var(--kniu_vw));
-  height: calc(80 / var(--kniu_vw));
+  min-width: calc(90 / var(--kniu_vw));
+  width: calc(90 / var(--kniu_vw));
+  height: calc(90 / var(--kniu_vw));
 }
 
 .index_user_note {

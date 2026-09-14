@@ -62,9 +62,9 @@ Router::post('/comment_list', 'CommentController@commentList');
 Router::post('/comment_audit', 'CommentController@commentAudit');
 Router::post('/comment_delete', 'CommentController@commentDelete');
 Router::post('/comment_detail', 'CommentController@commentDetail');
-Router::post('/reply_notification_state', 'CommentController@replyNotificationState');
-Router::post('/reply_notification_read', 'CommentController@replyNotificationRead');
-Router::post('/reply_notification_update', 'CommentController@replyNotificationUpdate');
+Router::post('/comment_reply_state', 'CommentController@commentReplyState');
+Router::post('/comment_reply_read', 'CommentController@commentReplyRead');
+Router::post('/comment_reply_update', 'CommentController@commentReplyUpdate');
 // 角色。
 Router::post('/role_add', 'RoleController@roleAdd');
 Router::post('/role_delete', 'RoleController@roleDelete');

@@ -1,0 +1,21 @@
+CREATE TABLE `tb_article` (
+    `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `role_id` bigint unsigned NOT NULL COMMENT '账号ID(tb_role.id)',
+    `is_select` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '后台勾选状态',
+    `sid` bigint NOT NULL DEFAULT 0 COMMENT '排序',
+    `is_show` tinyint unsigned NOT NULL DEFAULT 1 COMMENT '是否显示(0否,1是)',
+    `type` bigint NOT NULL DEFAULT 0 COMMENT '文章分类',
+    `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '标题',
+    `subtitle` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '副标题',
+    `summary` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '摘要',
+    `content` longtext COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '正文',
+    `cover` varchar(1024) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '封面地址',
+    `url` varchar(2048) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '外链地址',
+    `hits` bigint unsigned NOT NULL DEFAULT 0 COMMENT '浏览次数',
+    `likes` int unsigned NOT NULL DEFAULT 0 COMMENT '点赞次数',
+    `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `issue_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发表时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_article_role` (`role_id`),
+    KEY `idx_article_visible` (`is_show`, `id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '文章';

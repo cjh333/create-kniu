@@ -1,7 +1,7 @@
-import KniuMvvm from '../../core/kniumvvm.mjs';
+import MVVM from '../../core/kniumvvm.mjs';
 import UTIL from '../../core/kniuui.js';
 
-const { controller, reactive } = KniuMvvm;
+const { controller, reactive } = MVVM;
 
 const mainController = controller(() => {
     const state = reactive({ ui: UTIL.state });

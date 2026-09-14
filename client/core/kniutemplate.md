@@ -1,12 +1,12 @@
 # kniu-template 使用说明
 
-> UI 组件约定：`kniu-*` 的功能配置只允许通过 `kniu:options` 传入。`ref`、`kniu:model`、模板指令、插槽及 `kniu@...` 属于模板引擎接口；旧组件 attribute 不再兜底。组件回调能由 options 表达时，优先使用 `onXxx`。
+> UI 组件约定：`kniu-*` 的功能配置只允许通过 `kniu:option` 传入。`ref`、`kniu:form`、模板指令、插槽及 `kniu@...` 属于模板引擎接口；旧组件 attribute 不再兜底。组件回调能由 options 表达时，优先使用 `onXxx`。
 
 轻量响应式数据绑定模板引擎。核心能力按实际使用顺序组织：
 
 1. **数据列表渲染**：`kniu:for`
 2. **判断渲染**：`kniu:if` / `kniu:elseif` / `kniu:else`
-3. **属性渲染**：`kniu:model` / `kniu:<attr>` / `kniu:[name]`
+3. **属性渲染**：`kniu:form` / `kniu:<attr>` / `kniu:[name]`
 4. **事件渲染**：`kniu@<event>`
 5. **DOM 查询操作**：`$()`
 
@@ -33,7 +33,7 @@
 - [§5 判断渲染 `kniu:if`](#5-判断渲染-kniuif)
   - [§5.1 分支链 `kniu:elseif` / `kniu:else`](#51-分支链-kniuelseif--kniuelse)
 - [§6 属性渲染](#6-属性渲染)
-  - [§6.1 `kniu:model`](#61-kniumodel双向绑定-)
+  - [§6.1 `kniu:form`](#61-kniumodel双向绑定-)
   - [§6.1.1 字段对象绑定（kniu-form 专用）](#611-字段对象绑定-kniu-form-专用)
   - [§6.2 `kniu:<attr>`](#62-kniuattr通用标准属性绑定)
   - [§6.3 `kniu:[name]`](#63-kniuname自定义-data-属性)
@@ -379,19 +379,19 @@ const state = reactive({
 
 | 子节 | 指令 | 用途 | 方向 |
 | --- | --- | --- | --- |
-| §6.1 | `kniu:model` | 双向绑定 | state ⇄ DOM |
-| §6.1.1 | `kniu:model` 字段对象 | 绑定 options 字段自动读写 `.value` | state ⇄ DOM |
+| §6.1 | `kniu:form` | 双向绑定 | state ⇄ DOM |
+| §6.1.1 | `kniu:form` 字段对象 | 绑定 options 字段自动读写 `.value` | state ⇄ DOM |
 | §6.2 | `kniu:<attr>` | 通用标准属性绑定 | state → DOM |
 | §6.3 | `kniu:[name]` | 自定义 `data-*` 属性 | state → DOM |
 | §6.4 | 任意属性内插值 `{{...}}` | 属性值表达式插值 | state → DOM |
-| §6.6 | `kniu:options` | 组件统一配置入口（kniu-form / kniu-switch / kniu-page / kniu-table） | state → 组件 options |
+| §6.6 | `kniu:option` | 组件统一配置入口（kniu-form / kniu-switch / kniu-page / kniu-table） | state → 组件 options |
 
-### 6.6 `kniu:options` —— 组件统一配置
+### 6.6 `kniu:option` —— 组件统一配置
 
-`kniu-form` / `kniu-switch` / `kniu-page` / `kniu-table` 等组件的**唯一配置入口**：旧 attribute 一律作废，所有配置收进单个 options 对象，`kniu:options="{{stateObj}}"` 整体替换对象即刷新（**原地改子属性不触发**——响应式订阅注册在表达式路径，见 `kniuui.md` 各组件章节）。
+`kniu-form` / `kniu-switch` / `kniu-page` / `kniu-table` 等组件的**唯一配置入口**：旧 attribute 一律作废，所有配置收进单个 options 对象，`kniu:option="{{stateObj}}"` 整体替换对象即刷新（**原地改子属性不触发**——响应式订阅注册在表达式路径，见 `kniuui.md` 各组件章节）。
 
 ```html
-<kniu-table kniu:options="{{tableOptions}}"></kniu-table>
+<kniu-table kniu:option="{{tableOptions}}"></kniu-table>
 ```
 
 ```js
@@ -403,17 +403,17 @@ state.tableOptions = { ...state.tableOptions, data: state.list };
 **内联对象字面量可省略外层圆括号。** 表达式编译时会先按对象字面量 `return ({expr})` 处理，因此带 `:` 的对象直接写即可，无需 `({...})` 包裹：
 
 ```html
-<kniu-input kniu:model="{{registerModel.email}}" kniu:options="{{name:'email',placeholder:'邮箱，用于找回密码'}}" />
-<!-- 等价于旧写法：kniu:options="{{({name:'email',placeholder:'邮箱，用于找回密码'})}}" -->
+<kniu-input kniu:form="{{registerModel.email}}" kniu:option="{{name:'email',placeholder:'邮箱，用于找回密码'}}" />
+<!-- 等价于旧写法：kniu:option="{{({name:'email',placeholder:'邮箱，用于找回密码'})}}" -->
 ```
 
 唯一要保留内层括号的场景：引用 state 的键值取值本身需要括号（`src:(captchaImageUrl)`），或某键的值是复合表达式（`disabled:(codeSending || codeCountdown > 0)`），为清晰可加，但并非语法必需。
 
 - 已升级的组件走 `options` property；**未升级的自定义元素**（如列模板 `template.content` 内从未插入文档的 `<kniu-switch>`，Chrome 对 disconnected 节点不自动升级、`customElements.upgrade()` 也静默无效）回退写入 `__kniuOptionsValue` expando，消费方（如 kniu-table `_readColumns`）读 property 失败时回退读取。
-- 列模板内节点（`__kniuTableColumn`）**刻意保留 `kniu:options` 属性**：`kniu:if` / `kniu:for` 克隆列时 expando 不随 `cloneNode` 复制，保留属性让克隆列在递归 `applyBindings` 中重新解析并写入 expando（与 `kniu@change` 同策略）。
+- 列模板内节点（`__kniuTableColumn`）**刻意保留 `kniu:option` 属性**：`kniu:if` / `kniu:for` 克隆列时 expando 不随 `cloneNode` 复制，保留属性让克隆列在递归 `applyBindings` 中重新解析并写入 expando（与 `kniu@change` 同策略）。
 - 绑定只在解析出**真实对象**时写入；解析不到（undefined / null / 非对象）保持原值，防止异步间隙里用数据对象当 state 的重复绑定把已写入的 expando 覆盖成空对象。
 
-### 6.1 `kniu:model` —— 双向绑定 ⭐
+### 6.1 `kniu:form` —— 双向绑定 ⭐
 
 只需将 state 单向写入输入框时，使用标准属性指令：
 
@@ -422,41 +422,41 @@ state.tableOptions = { ...state.tableOptions, data: state.list };
 <input type="checkbox" kniu:checked="{{agreed}}">
 ```
 
-需要用户输入回写 state 时，使用 `kniu:model`：
+需要用户输入回写 state 时，使用 `kniu:form`：
 
 ```html
-<input kniu:model="{{message}}" placeholder="编辑我……">
+<input kniu:form="{{message}}" placeholder="编辑我……">
 <p>input 表单消息是: {{ message }}</p>
 ```
 
-- `kniu:model="{{path}}"` 实现 state ⇄ 表单双向同步，使用 `input` 事件回写；复选框和单选框使用 `change` 事件回写。
+- `kniu:form="{{path}}"` 实现 state ⇄ 表单双向同步，使用 `input` 事件回写；复选框和单选框使用 `change` 事件回写。
 - 属性值必须包裹在 `{{ }}` 内。
-- `model` 是 JS 关键字，但作为 HTML 属性名（`kniu:model`）完全合法；引擎内部用 `[kniu\:model]` 转义冒号来匹配选择器。
+- `model` 是 JS 关键字，但作为 HTML 属性名（`kniu:form`）完全合法；引擎内部用 `[kniu\:model]` 转义冒号来匹配选择器。
 - 可配合 `type="checkbox"`/`radio` 使用（布尔值走 `checked` + `change`）。
 - 模板卸载时自动移除对应的事件监听。
-- 绑定完成后，`kniu:model` 指令属性会从最终 DOM 中移除；响应式订阅与输入事件仍然有效。
+- 绑定完成后，`kniu:form` 指令属性会从最终 DOM 中移除；响应式订阅与输入事件仍然有效。
 
 #### 6.1.1 字段对象绑定（kniu-form 专用）
 
-`kniu-form` 的 `kniu:options` 中，**字段写成对象 `{ value, condition?, message? }` 时**，`kniu:model` 直接绑到字段对象本身，引擎自动读写它的 `value`，无需写 `.value`：
+`kniu-form` 的 `kniu:option` 中，**字段写成对象 `{ value, condition?, message? }` 时**，`kniu:form` 直接绑到字段对象本身，引擎自动读写它的 `value`，无需写 `.value`：
 
 ```html
-<kniu-form ref="form" kniu:options="{{loginModel}}">
-  <kniu-input kniu:model="{{loginModel.username}}" kniu:options="{{({ name:'username' })}}"></kniu-input>
+<kniu-form ref="form" kniu:option="{{loginModel}}">
+  <kniu-input kniu:form="{{loginModel.username}}" kniu:option="{{({ name:'username' })}}"></kniu-input>
 </kniu-form>
 ```
 
 ```js
 const loginModel = {
   username: { value: '', condition: /^(?=.*\S).+$/, message: '请输入用户名' },
-  role: 2 // 非对象字段：普通值，kniu:model 直接绑值
+  role: 2 // 非对象字段：普通值，kniu:form 直接绑值
 };
 ```
 
 - 引擎对路径的末端字段对象做「解包」：渲染读 `field.value`，输入回写 `field.value`，订阅同时监听 `field.value` 与 `field` 自身（`reset()` 重设 value 时字段对象被替换，双路径订阅保证界面刷新）。
 - 判断末端是否为字段对象：对象自身含 `value` 键且含 `condition` 或 `message` 键（或两者皆无时按普通值处理）。
-- 普通路径（非字段对象）行为不变：`kniu:model="{{message}}"` 直接读写该值。
-- 原 `kniu:rules` 指令已移除，验证规则统一由 `kniu-form` 的 `kniu:options` 承载（见 `kniuui.md`「Form 和 InputGroup」）。
+- 普通路径（非字段对象）行为不变：`kniu:form="{{message}}"` 直接读写该值。
+- 原 `kniu:rules` 指令已移除，验证规则统一由 `kniu-form` 的 `kniu:option` 承载（见 `kniuui.md`「Form 和 InputGroup」）。
 
 ### 6.2 `kniu:<attr>` —— 通用标准属性绑定
 
@@ -553,7 +553,7 @@ reactive({
 
 ```html
 <!-- ① 直接挂在 kniu-table 上（推荐）：委托给组件内置遮罩，在 Shadow DOM 内覆盖整张表 -->
-<kniu-table kniu:options="{{tableOptions}}"></kniu-table>
+<kniu-table kniu:option="{{tableOptions}}"></kniu-table>
 
 <!-- ② 区域加载：遮罩作为绑定元素子节点，覆盖该元素区域（元素需为定位上下文） -->
 <div class="detail_wrap" kniu:loading="{{loading}}">
@@ -721,12 +721,12 @@ return off; // 模板卸载时解绑
 
 ## 10. 完整示例
 
-下面是一段**合成演示**，集中覆盖文本插值 / `kniu:model` / `kniu:<attr>` / `kniu:[name]` / `kniu@事件` / XSS 防护 / `kniu:for` / `kniu:if` 等全部指令，便于一览写法。实际项目中的精简用法可参考 `views/orders.html`（`kniu:for` + `kniu:key` + `kniu:if` 分支链）与 `views/home.html`（`kniusystem.eventTo` / `kniusystem.navigateTo`）。
+下面是一段**合成演示**，集中覆盖文本插值 / `kniu:form` / `kniu:<attr>` / `kniu:[name]` / `kniu@事件` / XSS 防护 / `kniu:for` / `kniu:if` 等全部指令，便于一览写法。实际项目中的精简用法可参考 `views/orders.html`（`kniu:for` + `kniu:key` + `kniu:if` 分支链）与 `views/home.html`（`kniusystem.eventTo` / `kniusystem.navigateTo`）。
 
 ```html
 <div class="demo">
   <p>当前负责人：<b>{{owner.name}}</b>（待付款 {{nopay}} 单）</p>
-  <input kniu:model="{{message}}" placeholder="编辑我……" />
+  <input kniu:form="{{message}}" placeholder="编辑我……" />
   <p>input 表单消息是: {{ message }}</p>
 
   <h4>标准 class / style 属性绑定</h4>
@@ -744,7 +744,7 @@ return off; // 模板卸载时解绑
   <h4>原生事件绑定（kniu@事件）</h4>
   <div kniu:class="{{hasError ? 'text-danger' : ''}}">点击 {{clickCount}} 次 ｜ 最近按键 {{lastKey}} ｜ 失焦 {{blurCount}} 次</div>
   <button kniu@click="handleClick" type="button">点我（kniu@click）</button>
-  <input kniu:model="{{inputMsg}}" kniu@keydown="handleKeydown" placeholder="按键触发 kniu@keydown" />
+  <input kniu:form="{{inputMsg}}" kniu@keydown="handleKeydown" placeholder="按键触发 kniu@keydown" />
   <input kniu:value="{{inputMsg}}" kniu@change="handleChange" kniu@focus="handleFocus" placeholder="改变/聚焦触发" />
 
   <h4>XSS 防护示意</h4>
@@ -809,9 +809,9 @@ export default demoController;
 3. `$()` 包装对象的所有 setter 方法均返回 `this`，支持链式调用。
 4. `kniu:for` 的数组表达式须最终求值为数组；非数组会被当作空数组处理。
 5. `{{...}}` 与 `kniu:if` 中的表达式通过 `with` + `new Function` 求值，**不要在其中拼接不可信字符串**，避免注入风险。
-6. 循环内的 `kniu:model` 双向写回以根 `state` 为基准；在循环体内修改 `item.xxx` 推荐用 `state.list[idx].xxx = ...` 或借助数组整体重赋值。
+6. 循环内的 `kniu:form` 双向写回以根 `state` 为基准；在循环体内修改 `item.xxx` 推荐用 `state.list[idx].xxx = ...` 或借助数组整体重赋值。
 7. **HTML 编解码由后端全责，前端零参与**：接口返回的富文本 / 文本字段由后端 `decodeFields()` 单轮解码后已是「所见即所得」的 HTML 字符串；前端**不再做任何解码**，直接 `{{ }}`（转义）或 `{{@ }}`（已净化，用于受信任富文本）渲染即可。不要把库内数据当作「还需前端再解码一次」的内容。若历史数据出现多层编码乱码，交给后端根目录 `normalise_db.php` 归一，不要在前端补偿。
-8. **惰性代理绝不触发 auto-bind（2026-09-01 修复）**：`reactive()` 代理的 `get` 会惰性包装嵌套对象（`AUTH.getUser()` 这类跨模块对象尤甚）。若首次访问发生在绑定收集同步段（`currentScope` 非 null，即 `execute()`/`mountController` 期间），旧实现会**以该嵌套对象为 base** 对整棵视图树重新 `applyBindings`——解析不到目标时虽挡下了 options 写入，但**无条件移除 `kniu:options` 等绑定属性**，后续正确的 state 绑定无从处理（表现为组件 options 恒为组件默认值）。现以 `lazyProxyDepth` 深度计数：仅用户显式 `reactive()`（setup 的 state）触发 auto-bind，表达式/属性间接访问嵌套对象不会。**排查法**：临时在模板引擎加 `__BINDLOG` 打点（AUTOBIND keys / OPTIONS 解析结果 / removeAttribute），重启 dev server 后由 puppeteer 读取 `globalThis.__BINDLOG`。
+8. **惰性代理绝不触发 auto-bind（2026-09-01 修复）**：`reactive()` 代理的 `get` 会惰性包装嵌套对象（`AUTH.getUser()` 这类跨模块对象尤甚）。若首次访问发生在绑定收集同步段（`currentScope` 非 null，即 `execute()`/`mountController` 期间），旧实现会**以该嵌套对象为 base** 对整棵视图树重新 `applyBindings`——解析不到目标时虽挡下了 options 写入，但**无条件移除 `kniu:option` 等绑定属性**，后续正确的 state 绑定无从处理（表现为组件 options 恒为组件默认值）。现以 `lazyProxyDepth` 深度计数：仅用户显式 `reactive()`（setup 的 state）触发 auto-bind，表达式/属性间接访问嵌套对象不会。**排查法**：临时在模板引擎加 `__BINDLOG` 打点（AUTOBIND keys / OPTIONS 解析结果 / removeAttribute），重启 dev server 后由 puppeteer 读取 `globalThis.__BINDLOG`。
 
 ## 12. 简洁 Controller 与响应式 API
 

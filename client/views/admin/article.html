@@ -60,67 +60,95 @@
     <div class="detail_head">
       <span class="detail_title">文章</span>
       <div class="detail_head_actions">
-        <kniu-btn kniu:options="{{type:'primary'}}" kniu@click="addRow">添加</kniu-btn>
-        <kniu-input kniu:model="{{keyword}}" kniu:options="{{name:'keyword',placeholder:'请输入标题'}}" kniu@keydown.enter="searchList" kniu@input="debouncedSearch">
+        <kniu-btn kniu:option="{{type:'primary'}}" kniu@click="addRow">添加</kniu-btn>
+        <kniu-input kniu:form="{{keyword}}" kniu:option="{{name:'keyword',placeholder:'请输入标题'}}" kniu@keydown.enter="searchList" kniu@input="debouncedSearch">
           <template #append label-width="48px">
-            <kniu-btn aria-label="搜索" kniu:options="{{text:true}}" kniu@click="searchList">
-              <kniu-icon kniu:options="{{icon:'Search'}}" />
+            <kniu-btn aria-label="搜索" kniu:option="{{text:true}}" kniu@click="searchList">
+              <kniu-icon kniu:option="{{icon:'Search'}}" />
             </kniu-btn>
           </template>
         </kniu-input>
-        <kniu-btn kniu:options="{{link:true,type:'primary',size:'small'}}" kniu@click="goBack">返回</kniu-btn>
+        <kniu-btn kniu:option="{{link:true,type:'primary',size:'small'}}" kniu@click="goBack">返回</kniu-btn>
       </div>
     </div>
     <template kniu:if="{{articleTable.data.length > 0}}">
-      <kniu-table ref="table" kniu:options="{{articleTable}}" />
-      <kniu-page kniu:options="{{articlePage}}" />
+      <div class="detail_wrap">
+        <kniu-table ref="table" kniu:option="{{articleTable}}">
+          <kniu-table-col width="60" align="center" fixed="left" type="checkbox" />
+          <kniu-table-col field="id" label="ID" width="80" align="center" fixed="left" sortable />
+          <kniu-table-col field="sid" label="排序" width="100" align="center" editable="number" fixed="left" sortable />
+          <kniu-table-col field="title" label="标题" min-width="360" show-overflow-tooltip />
+          <kniu-table-col field="publisher" label="发布者" width="120" align="center" />
+          <kniu-table-col field="cover" label="封面" width="180" align="center">
+            <template #default>
+              <kniu-image kniu:if="{{row.cover}}" style="width:60px;height:60px;" src="{{row.cover}}" />
+            </template>
+          </kniu-table-col>
+          <kniu-table-col field="subtitle" label="副标题" min-width="360" show-overflow-tooltip />
+          <kniu-table-col field="summary" label="摘要" min-width="360" show-overflow-tooltip />
+          <kniu-table-col field="likes" label="点赞数" width="100" align="center" sortable />
+          <kniu-table-col kniu:if="{{canEditContent}}" field="is_show" label="显示" width="120" align="center">
+            <template #default>
+              <kniu-switch kniu:option="{{switchOptions}}" kniu@change="updateShow" />
+            </template>
+          </kniu-table-col>
+          <kniu-table-col field="create_time" label="创建时间" width="180" align="center" />
+          <kniu-table-col kniu:if="{{canEditContent}}" label="操作" width="160" align="center" fixed="right">
+            <template #default>
+              <kniu-btn kniu:option="{{type:'danger',size:'small',link:true}}" kniu@click="deleteRow">删除</kniu-btn>
+              <kniu-btn kniu:option="{{type:'primary',size:'small',link:true}}" kniu@click="editRow">修改</kniu-btn>
+            </template>
+          </kniu-table-col>
+        </kniu-table>
+        <kniu-page ref="page" kniu:option="{{articlePage}}" />
+      </div>
     </template>
     <template kniu:else>
-      <kniu-empty kniu:options="{{note:'暂无数据'}}" />
+      <kniu-empty kniu:option="{{note:'暂无数据'}}" />
     </template>
   </div>
 </section>
 <!-- 弹框 -->
-<kniu-modal style="width:90vw;" kniu:options="{{show:(showmodal)}}" kniu@close="closeDialog">
+<kniu-modal style="width:90vw;" kniu:option="{{show:(showmodal)}}" kniu@close="closeDialog">
   <template #header>
     <span>{{dialogTitle}}</span>
-    <kniu-btn kniu:options="{{link:true,type:'primary',size:'small'}}" kniu@click="closeDialog">
-      <kniu-icon kniu:options="{{icon:'Close'}}" />
+    <kniu-btn kniu:option="{{type:'primary',size:'small',link:true}}" kniu@click="closeDialog">
+      <kniu-icon kniu:option="{{icon:'Close'}}" />
     </kniu-btn>
   </template>
   <template #default>
     <kniu-form-cell>
-      <kniu-input kniu:model="{{editform.sid}}" kniu:options="{{name:'sid',placeholder:'请输入排序'}}">
+      <kniu-input kniu:form="{{editform.sid}}" kniu:option="{{name:'sid',placeholder:'请输入排序'}}">
         <template #prepend label-width="100px">排序</template>
       </kniu-input>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-input kniu:model="{{editform.title}}" kniu:options="{{name:'title',placeholder:'请输入标题'}}">
+      <kniu-input kniu:form="{{editform.title}}" kniu:option="{{name:'title',placeholder:'请输入标题'}}">
         <template #prepend label-width="100px">标题</template>
       </kniu-input>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-input kniu:model="{{editform.subtitle}}" kniu:options="{{name:'subtitle',placeholder:'请输入副标题'}}">
+      <kniu-input kniu:form="{{editform.subtitle}}" kniu:option="{{name:'subtitle',placeholder:'请输入副标题'}}">
         <template #prepend label-width="100px">副标题</template>
       </kniu-input>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-input kniu:model="{{editform.summary}}" kniu:options="{{name:'summary',placeholder:'请输入摘要',row:'6',type:'textarea'}}">
+      <kniu-input kniu:form="{{editform.summary}}" kniu:option="{{name:'summary',placeholder:'请输入摘要',row:'6',type:'textarea'}}">
         <template #prepend label-width="100px">摘要</template>
       </kniu-input>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-input kniu:model="{{editform.url}}" kniu:options="{{name:'url',placeholder:'请输入链接'}}">
+      <kniu-input kniu:form="{{editform.url}}" kniu:option="{{name:'url',placeholder:'请输入链接'}}">
         <template #prepend label-width="100px">链接</template>
       </kniu-input>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-date-picker ref="datePicker" kniu:model="{{editform.create_time}}" kniu:options="{{...(datePickerOptions),name:'create_time'}}">
+      <kniu-date-picker ref="datepicker" kniu:form="{{editform.create_time}}" kniu:option="{{...(datePickerOptions),name:'create_time'}}">
         <template #prepend label-width="100px">发布时间</template>
       </kniu-date-picker>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-editor ref="editor" kniu:model="{{editform.content}}" kniu:options="{{toolbar:(toolbar),name:'content'}}">
+      <kniu-editor ref="editor" kniu:form="{{editform.content}}" kniu:option="{{...(editor),name:'content'}}">
         <template #prepend label-width="100px">正文</template>
       </kniu-editor>
     </kniu-form-cell>
@@ -128,18 +156,18 @@
       <kniu-input>
         <template #prepend label-width="100px">封面</template>
         <template #append label-width="100px">
-          <kniu-upload ref="upload" kniu:model="{{files}}" kniu:options="{{name:'cover',maxSize:'5',accept:'image/*'}}">选择图片</kniu-upload>
+          <kniu-upload ref="upload" kniu:form="{{files}}" kniu:option="{{name:'cover',maxSize:'5',accept:'image/*'}}">选择图片</kniu-upload>
         </template>
       </kniu-input>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-switch kniu:model="{{editform.is_show}}" kniu:options="{{switchOptions}}">
+      <kniu-switch kniu:form="{{editform.is_show}}" kniu:option="{{switchOptions}}">
         <template #prepend label-width="100px">显示</template>
       </kniu-switch>
     </kniu-form-cell>
   </template>
   <template #footer>
     <kniu-btn kniu@click="closeDialog">取 消</kniu-btn>
-    <kniu-btn style="margin-left:10px;" kniu:options="{{type:'primary'}}" kniu@click="saveEdit">保 存</kniu-btn>
+    <kniu-btn style="margin-left:10px;" kniu:option="{{type:'primary'}}" kniu@click="saveEdit">保 存</kniu-btn>
   </template>
 </kniu-modal>

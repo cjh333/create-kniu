@@ -40,8 +40,7 @@ class SeoController extends Base
       'author' => $this->input('post.author') ?? null,
       'copyright' => $this->input('post.copyright') ?? null,
       'record' => $this->input('post.record') ?? null,
-      'email' => $this->input('post.email') ?? null,
-      'about_content' => $this->input('post.about_content') ?? null
+      'email' => $this->input('post.email') ?? null
     ];
     $data = array_filter($data, function ($value) {
       return $value !== null;
@@ -50,10 +49,10 @@ class SeoController extends Base
       $this->json([], '没有提供任何要更新的数据', 0);
       return;
     }
-    $data = $this->encodeFields($data, ['title', 'url', 'logo', 'description', 'keywords', 'author', 'copyright', 'record', 'email', 'about_content']);
+    $data = $this->encodeFields($data, ['title', 'url', 'logo', 'description', 'keywords', 'author', 'copyright', 'record', 'email']);
     $result = Db::name('tb_seo')
       ->where('id', '=', $id)
-      ->field(['sid', 'title', 'url', 'logo', 'description', 'keywords', 'author', 'copyright', 'record', 'email', 'about_content'])
+      ->field(['sid', 'title', 'url', 'logo', 'description', 'keywords', 'author', 'copyright', 'record', 'email'])
       ->update($data);
     if ($result === false) {
       $this->json([], '更新失败', 0);
@@ -74,7 +73,7 @@ class SeoController extends Base
       $this->json([], 'SEO设置不存在', 0);
       return;
     }
-    $result = $this->decodeFields($result, ['title', 'url', 'logo', 'description', 'keywords', 'author', 'copyright', 'record', 'email', 'about_content']);
+    $result = $this->decodeFields($result, ['title', 'url', 'logo', 'description', 'keywords', 'author', 'copyright', 'record', 'email']);
     $this->json($result);
   }
 }

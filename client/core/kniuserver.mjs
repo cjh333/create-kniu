@@ -175,7 +175,7 @@ const server = createServer(async function (request, response) {
     let file = PATH_NAME === '/'
       ? VIEW_INDEX
       : PATH_NAME === '/upload' || PATH_NAME.startsWith('/upload/')
-        ? normalize(join(ROOT, 'public', PATH_NAME))
+        ? normalize(join(ROOT, 'public', PATH_NAME.replace(/^\/+/, '')))
         : normalize(join(ROOT, PATH_NAME));
     if (!file.startsWith(ROOT)) throw new Error('Invalid path');
     if ((await stat(file)).isDirectory()) file = join(file, 'index.html');

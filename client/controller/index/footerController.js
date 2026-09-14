@@ -1,7 +1,7 @@
-import KniuMvvm from '../../core/kniumvvm.mjs';
+import MVVM from '../../core/kniumvvm.mjs';
 import UI from '../../core/kniuui.js';
 
-const { controller, reactive, watch } = KniuMvvm;
+const { controller, reactive, watch } = MVVM;
 
 const footerController = controller(() => {
   const state = reactive({

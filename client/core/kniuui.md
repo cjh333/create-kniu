@@ -6,17 +6,17 @@
 
 - 系统 UI 自定义元素使用 `kniu-` 前缀。
 - 组件内部 DOM 类名使用 `kniu_sys_` 前缀。
-- 所有 `kniu-*` 组件的功能配置统一通过 `kniu:options` 对象接收；旧的组件配置 attribute 不再读取或兼容。
+- 所有 `kniu-*` 组件的功能配置统一通过 `kniu:option` 对象接收；旧的组件配置 attribute 不再读取或兼容。
 - 组件使用 Shadow DOM 隔离内部结构与样式。
 
 ## 统一 options 协议（强制）
 
-组件标签只保留模板引擎接口：`ref`、`kniu:model`、条件/循环/样式指令、插槽以及 `kniu@...`。其他配置全部放入 `kniu:options`；组件自身产生的回调优先使用 `onXxx`，如 `onChange`、`onCurrentChange`、`onSizeChange`。
+组件标签只保留模板引擎接口：`ref`、`kniu:form`、条件/循环/样式指令、插槽以及 `kniu@...`。其他配置全部放入 `kniu:option`；组件自身产生的回调优先使用 `onXxx`，如 `onChange`、`onCurrentChange`、`onSizeChange`。
 
 ```html
-<kniu-table ref="table" kniu:options="{{userTable}}"></kniu-table>
-<kniu-input kniu:model="{{form.name}}" kniu:options="{{nameInput}}"></kniu-input>
-<kniu-page kniu:options="{{userPage}}"></kniu-page>
+<kniu-table ref="table" kniu:option="{{userTable}}"></kniu-table>
+<kniu-input kniu:form="{{form.name}}" kniu:option="{{nameInput}}"></kniu-input>
+<kniu-page kniu:option="{{userPage}}"></kniu-page>
 ```
 
 两个及以上按钮统一使用 `<kniu-btn-group>` 包裹，组件内置 `display:inline-flex; align-items:center; gap:10px`，页面不得再用零散 margin 拼按钮间距。
@@ -25,7 +25,7 @@
 
 ### 双语配置（lang，强制约定）
 
-所有 `kniu-*` 组件的**内置文案**统一支持中英双语，通过 `kniu:options` 里的 `lang` 字段切换：
+所有 `kniu-*` 组件的**内置文案**统一支持中英双语，通过 `kniu:option` 里的 `lang` 字段切换：
 
 - `lang` 取值：`'cn'`（默认）/ `'en'`（`'english'` 亦视为英文），不区分大小写。**未配置时默认中文**，向后兼容。
 - **运行时动态切换**：改 `options.lang` 后（经 `options` 属性 setter，即 `installOptionsOnlyProtocol`），组件调用 `_sync()` / `_render()` 立即按新 lang 重渲染。无需重建组件。
@@ -34,8 +34,8 @@
 - 参考实现：编辑器工具栏 `_applyToolbarLang()` 遍历 `.kniu_sys_editor_btn` 按 `data-cmd` / `data-action` / `data-block` token 设 `title` / `aria-label`，`_sync()` 在 lang 变化时重建工具栏（`__kniuLastLang` 缓存比较）。
 
 ```html
-<kniu-empty kniu:options="{{({ lang:'en' })}}" />
-<kniu-comment kniu:options="{{commentOptions}}" />
+<kniu-empty kniu:option="{{({ lang:'en' })}}" />
+<kniu-comment kniu:option="{{commentOptions}}" />
 ```
 ```js
 state.commentOptions = Object.assign({}, state.commentOptions, { lang: 'en' }); // 运行中切英文
@@ -75,12 +75,12 @@ this.$msg({
 
 ## Loading
 
-`<kniu-loading kniu:options="{{loadingOptions}}" />` 默认使用固定到视口最高层的全屏遮罩；全局加载期间同时锁定 `html` 和 `body` 滚动，使长页面的滚动条不会露在遮罩外。配置 `contained: true` 时，遮罩只覆盖定位容器：
+`<kniu-loading kniu:option="{{loadingOptions}}" />` 默认使用固定到视口最高层的全屏遮罩；全局加载期间同时锁定 `html` 和 `body` 滚动，使长页面的滚动条不会露在遮罩外。配置 `contained: true` 时，遮罩只覆盖定位容器：
 
 ```html
 <section style="position:relative;">
   <article></article>
-  <kniu-loading kniu:options="{{({ contained:true, show:loading })}}" />
+  <kniu-loading kniu:option="{{({ contained:true, show:loading })}}" />
 </section>
 ```
 
@@ -91,7 +91,13 @@ this.$msg({
 ## 图片上传预览
 
 ```html
-<kniu-upload kniu:model="{{files}}" kniu:options="{{uploadOptions}}">选择图片</kniu-upload>
+<kniu-upload kniu:form="{{files}}" kniu:option="{{uploadOptions}}">选择图片</kniu-upload>
+```
+
+`kniu-upload` 的 `kniu:option` 支持 `note` 字段，用于替换无文件时 `.kniu_upload_empty` 内的文字描述；未配置时使用内置文案。
+
+```html
+<kniu-upload kniu:form="{{files}}" kniu:option="{{({ note:'请选择图片' })}}" />
 ```
 
 - 组件只负责本地选择、Blob 预览、删除和回显，不会立即上传。
@@ -104,12 +110,12 @@ this.$msg({
 ## 模态框
 
 ```html
-<kniu-modal kniu:options="{{modalOptions}}" kniu@close="closeDialog">
+<kniu-modal kniu:option="{{modalOptions}}" kniu@close="closeDialog">
   <template #$header><span>编辑文章</span></template>
   <template #default>弹框内容（推荐使用 kniu-input-group + kniu-input 等）</template>
   <template #footer>
     <kniu-btn kniu@click="closeDialog">取 消</kniu-btn>
-    <kniu-btn kniu:options="{{primaryButton}}" kniu@click="saveEdit">保 存</kniu-btn>
+    <kniu-btn kniu:option="{{primaryButton}}" kniu@click="saveEdit">保 存</kniu-btn>
   </template>
 </kniu-modal>
 ```
@@ -158,7 +164,7 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 ## Button
 
 ```html
-<kniu-btn kniu:options="{{({ type:'primary', size:'small', round:true })}}">保存</kniu-btn>
+<kniu-btn kniu:option="{{({ type:'primary', size:'small', round:true })}}">保存</kniu-btn>
 ```
 
 | 属性 | 可选值或说明 | 默认值 |
@@ -187,7 +193,7 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 
 ```html
 <kniu-input
-  kniu:model="{{form.username}}"
+  kniu:form="{{form.username}}"
   placeholder="请输入用户名"
   clearable
 ></kniu-input>
@@ -208,9 +214,9 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 ## Select
 
 ```html
-<kniu-select kniu:model="{{form.region}}" kniu:options="{{selectOptions}}">
-  <kniu-option kniu:options="{{({ label:'Zone one', value:'shanghai' })}}" />
-  <kniu-option kniu:options="{{({ label:'Zone two', value:'beijing' })}}" />
+<kniu-select kniu:form="{{form.region}}" kniu:option="{{selectOptions}}">
+  <kniu-option kniu:option="{{({ label:'Zone one', value:'shanghai' })}}" />
+  <kniu-option kniu:option="{{({ label:'Zone two', value:'beijing' })}}" />
 </kniu-select>
 ```
 
@@ -219,13 +225,13 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 ### kniu-radio-group
 
 ```html
-<kniu-radio-group kniu:model="{{form.role}}">
-  <kniu-radio kniu:options="{{({ value:'1', size:'large' })}}">管理员</kniu-radio>
-  <kniu-radio kniu:options="{{({ value:'2', size:'large' })}}">普通用户</kniu-radio>
+<kniu-radio-group kniu:form="{{form.role}}">
+  <kniu-radio kniu:option="{{({ value:'1', size:'large' })}}">管理员</kniu-radio>
+  <kniu-radio kniu:option="{{({ value:'2', size:'large' })}}">普通用户</kniu-radio>
 </kniu-radio-group>
 ```
 
-- `kniu-radio-group` 支持 `kniu:model`、`name`、`disabled`、`size` 以及 `input`、`change` 事件。
+- `kniu-radio-group` 支持 `kniu:form`、`name`、`disabled`、`size` 以及 `input`、`change` 事件。
 - `kniu-radio` 支持 `value`、`label`、`disabled`、`size`，未设置 `label` 时使用标签内文本。
 - 单选项选中时显示主题色实心圆和中心白点，并保留键盘焦点轮廓及禁用状态反馈。
 - 下拉内容展开时右侧箭头朝上，关闭、失焦或完成选择后恢复朝下。
@@ -237,8 +243,8 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 ## Tag
 
 ```html
-<kniu-tag kniu:options="{{({ type:'success' })}}">已启用</kniu-tag>
-<kniu-tag kniu:options="{{({ type:'danger', effect:'dark', closable:true })}}">异常</kniu-tag>
+<kniu-tag kniu:option="{{({ type:'success' })}}">已启用</kniu-tag>
+<kniu-tag kniu:option="{{({ type:'danger', effect:'dark', closable:true })}}">异常</kniu-tag>
 ```
 
 - `type` 支持 `primary`（默认）、`success`、`warning`、`danger` 和 `info`。
@@ -249,8 +255,8 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 ## Status
 
 ```html
-<kniu-status kniu:options="{{({ type:'success' })}}">编辑</kniu-status>
-<kniu-status kniu:options="{{({ type:'primary' })}}">查看</kniu-status>
+<kniu-status kniu:option="{{({ type:'success' })}}">编辑</kniu-status>
+<kniu-status kniu:option="{{({ type:'primary' })}}">查看</kniu-status>
 ```
 
 - 显示形式为“彩色圆点 + 文本”，`type` 只改变圆点颜色，文字保持正文色。
@@ -261,14 +267,14 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 ## Form 和 InputGroup
 
 ```html
-<kniu-form ref="form" kniu:options="{{loginModel}}" kniu@submit.prevent="onSubmit">
-  <kniu-form-cell kniu:options="{{({ label:'用户名' })}}">
-    <kniu-input kniu:model="{{loginModel.username}}" kniu:options="{{({ name:'username' })}}"></kniu-input>
+<kniu-form ref="form" kniu:option="{{loginModel}}" kniu@submit.prevent="onSubmit">
+  <kniu-form-cell kniu:option="{{({ label:'用户名' })}}">
+    <kniu-input kniu:form="{{loginModel.username}}" kniu:option="{{({ name:'username' })}}"></kniu-input>
   </kniu-form-cell>
 </kniu-form>
 ```
 
-**所有配置只走 `kniu:options`**。`model` / `data` / `rules` / `kniu:rules` / `formConfig` / `label-position` / `label-width` 属性与 `kniu:rules` 指令**全部作废**，表单元素上只剩 `ref`、事件和两个保留键：
+**所有配置只走 `kniu:option`**。`model` / `data` / `rules` / `kniu:rules` / `formConfig` / `label-position` / `label-width` 属性与 `kniu:rules` 指令**全部作废**，表单元素上只剩 `ref`、事件和两个保留键：
 
 ```js
 const loginModel = {
@@ -290,7 +296,7 @@ const loginModel = {
 };
 ```
 
-- `value` 是默认值也是当前值：`kniu:model="{{loginModel.username}}"` 直接绑到字段对象上，引擎自动读写它的 `value`，无需写 `.value`。
+- `value` 是默认值也是当前值：`kniu:form="{{loginModel.username}}"` 直接绑到字段对象上，引擎自动读写它的 `value`，无需写 `.value`。
 - `condition` 为正则 / 函数 / `true`（`true` 表示非空即通过）；`message` 为错误提示，校验失败时 `$msg` 弹出并给控件加 `data-invalid`。
 - **只验证当前渲染出来的字段**：`kniu:if` 未渲染的控件不参与校验（条件表单天然按场景验证）。
 - 组件 API：`options`、`values`（摊平后的纯值对象，供直接提交）、`validate()`、`reset()`（回到首次传入的默认值）。
@@ -304,11 +310,11 @@ const loginModel = {
 
 标签位置同时镜像到宿主的 `data-label-position` 属性，供外部样式挂钩（原 `label-position` 属性已废）。
 
-`kniu-input-group` 与 `kniu-form-cell` 共用同一套实现（标签 + 内容布局）。带标签的表单单元写 `<kniu-form-cell kniu:options="{{({ label:'用户名' })}}">`，不带 label 的纯分组容器才用 `<kniu-input-group>`。
+`kniu-input-group` 与 `kniu-form-cell` 共用同一套实现（标签 + 内容布局）。带标签的表单单元写 `<kniu-form-cell kniu:option="{{({ label:'用户名' })}}">`，不带 label 的纯分组容器才用 `<kniu-input-group>`。
 
 `kniu-form-cell` 也支持模板结构：`<template #prepend label-width="120px">权限</template>` 声明标签，`<template #append>` 放置 `kniu-radio-group` 等自定义表单内容。条件渲染延迟插入模板时组件会自动重新挂载；模板式 prepend 标签与输入组件附加标签保持一致，文字默认水平、垂直居中并使用 `#909399`。
 
-输入控件需带 `name`（或 `kniu:model` 指向 options 字段）才会被当作字段纳入取值与验证；同名只取首个控件。字段控件范围：`kniu-input`、`kniu-textarea`、`kniu-select`、`kniu-switch`、`kniu-radio-group`、`kniu-checkbox-group`、`kniu-date-picker`、`kniu-upload`、`kniu-editor`、`kniu-slider`。
+输入控件需带 `name`（或 `kniu:form` 指向 options 字段）才会被当作字段纳入取值与验证；同名只取首个控件。字段控件范围：`kniu-input`、`kniu-textarea`、`kniu-select`、`kniu-switch`、`kniu-radio-group`、`kniu-checkbox-group`、`kniu-date-picker`、`kniu-upload`、`kniu-editor`、`kniu-slider`。
 
 ## Image
 
@@ -331,12 +337,12 @@ const loginModel = {
 
 ## Switch
 
-开关组件。**旧 attribute（`active-value` / `inactive-value` / `active-color` / `inactive-color` / `width` 等）已全部作废**，统一用 `kniu:options` 传配置：
+开关组件。**旧 attribute（`active-value` / `inactive-value` / `active-color` / `inactive-color` / `width` 等）已全部作废**，统一用 `kniu:option` 传配置：
 
 ```html
 <kniu-switch
-  kniu:model="{{row.is_show}}"
-  kniu:options="{{switchOptions}}"
+  kniu:form="{{row.is_show}}"
+  kniu:option="{{switchOptions}}"
   kniu@change="onSwitchChange"
 ></kniu-switch>
 ```
@@ -352,7 +358,7 @@ state.switchOptions = {
 };
 ```
 
-| `kniu:options` 键 | 说明 | 默认值 |
+| `kniu:option` 键 | 说明 | 默认值 |
 | --- | --- | --- |
 | `activeValue` / `inactiveValue` | 开 / 关对应值 | `true` / `false` |
 | `activeColor` / `inactiveColor` | 开 / 关轨道颜色 | `#409EFF` / `#C0CCDA` |
@@ -362,7 +368,7 @@ state.switchOptions = {
 | `activeIconClass` / `inactiveIconClass` | 开 / 关图标 class | — |
 | `name` | 原生 input 的 name | — |
 
-- `kniu:model` 双向绑定（同 kniu-input），状态变化触发 `change`（表格列内开关的 `kniu@change` 同样有效），提供 `focus()`。
+- `kniu:form` 双向绑定（同 kniu-input），状态变化触发 `change`（表格列内开关的 `kniu@change` 同样有效），提供 `focus()`。
 - **整体替换 options 对象即刷新**（响应式订阅注册在表达式路径，原地改子属性不触发，见 `kniutemplate.md`）。
 - 表格列内开关：在 `tableOptions.cols` 中配置 `switch: { options: switchOptions, onChange }`。
 
@@ -371,16 +377,16 @@ state.switchOptions = {
 ```html
 <kniu-editor
   ref="editor"
-  toolbar="{{toolbar}}"
-  kniu:model="{{editForm.content}}"
-  name="content"
+  kniu:option="{{toolbar:(toolbar)}}"
+  kniu:form="{{editForm.content}}"
 >
   <template #prepend label-width="100px">正文</template>
 </kniu-editor>
 ```
 
-- `kniu:model` 双向绑定到表单字段（同 kniu-input），`name` 供表单识别，`#prepend` 插槽渲染前置标签（`#append` 同理预留）。
+- `kniu:form` 双向绑定到表单字段（同 kniu-input），`name` 供表单识别，`#prepend` 插槽渲染前置标签（`#append` 同理预留）。
 - 内容变更派发 `input` 事件，失焦派发 `change` 事件。
+- 媒体上传大小通过 options 配置 `imgMaxSize`、`videoMaxSize`、`audioMaxSize`，单位为字节；分别限制图片、视频和音频文件，默认值由业务页面显式传入。
 - **最大化（`maximize`）时自动隐藏 `#prepend` / `#append` 修饰框**，编辑器组改为竖向撑满视口，还原后恢复显示。
 - 代码模式（`code`）：在富文本视图与源码（`textarea`）视图间切换；源码视图下除 `code` / `maximize` 外工具栏全部禁用。**进入源码视图时自动美化**（`_beautifyHtml`）：块级标签换行+缩进、仅含行内内容的块闭合标签紧跟同行（如 `<li>item1</li>`）、行内标签与文本保持同行、`<pre>` 代码块内容原样保留不破坏缩进、纯空白文本相邻块级标签时丢弃（保证美化往返稳定）。切回富文本时直接以源码内容设回 innerHTML，渲染等价。
 - 内置功能参考 KindEditor 设计、UI 现代化：撤销/重做、预览、打印、代码模式、最大化、加粗/斜体/下划线/删除线/上下标、对齐（左中右两端）、增减缩进、有序/无序列表、行距、H1–H3/段落、引用、代码块、分割线、表格、字体/字号/文字色/背景色、链接/取消链接、表情、清除格式、清理 HTML、全选。
@@ -388,10 +394,9 @@ state.switchOptions = {
 
 ### toolbar 可配置属性
 
-工具栏可通过 `toolbar` 属性按需配置，未设置时使用默认（全部功能）。
+工具栏通过 `kniu:option` 的 `toolbar` 配置按需设置，未设置时使用默认（全部功能）。
 
 - 取值为字符串：**以 `|` 分隔分组**（分组间自动渲染分隔线），组内以空格或逗号分隔 token。
-- 也可在控制器里以数组声明（每个子数组为一组），框架会规范化为上面的字符串形式；通过 `{{toolbar}}` 绑定即可随状态动态切换。
 - 可用 token（与功能一一对应）：
 
   | 分组 | token |
@@ -415,12 +420,14 @@ state.switchOptions = {
 
 ## Table
 
-表格数据、列布局和回调全部由控制器 options 提供。旧 attribute 与 `kniu-table-col` 声明全部作废：
+表格数据、loading 和回调由控制器 options 提供；列布局唯一使用 `kniu-table-col` HTML 子标签，`cols` 配置不再支持：
 
 内部原生 `.kniu_sys_table` 固定使用 `width:100%`；列配置的总宽度仅生成 `min-width`，超出父容器时由 viewport 横向滚动，不会写入内联像素 `width` 覆盖 100%。
 
 ```html
-<kniu-table ref="table" kniu:options="{{tableOptions}}"></kniu-table>
+<kniu-table ref="table" kniu:option="{{tableOptions}}">
+  <kniu-table-col field="name" label="名称" />
+</kniu-table>
 ```
 
 ```js
@@ -434,20 +441,11 @@ state.tableOptions = {
   maxHeight: 250,
   emptyText: '暂无数据',
   loading: state.loading,
-  cols: [
-    { type: 'checkbox', width: 60, fixed: true },
-    { field: 'id', label: 'ID', width: 80, fixed: true },
-    { field: 'sid', label: '排序', sortable: true, editable: 'number', editMin: 0, onChange: updateSort },
-    { field: 'is_show', label: '显示', switch: { options: switchOptions, onChange: updateShow } },
-    { label: '操作', fixed: 'right', actions: [
-      { title: '删除', type: 'danger', link: true, onClick: deleteRow }
-    ] }
-  ],
   onRowClick: detail => handleRowClick(detail)
 };
 ```
 
-`kniu:options` 键：
+`kniu:option` 键：
 
 | 键 | 说明 | 默认值 |
 | --- | --- | --- |
@@ -464,7 +462,7 @@ state.tableOptions = {
 | `loadingText` | 加载遮罩中央文案 | — |
 | `cols` | 列定义数组，包含字段、宽度、编辑、开关、操作等 | `[]` |
 
-> `data` 可作 `options.data` 传入，也可单独用 `kniu:options` 整体替换时一并更新；**原地改 `options.data` 不触发刷新**，必须整体替换对象。
+> `data` 可作 `options.data` 传入，也可单独用 `kniu:option` 整体替换时一并更新；**原地改 `options.data` 不触发刷新**，必须整体替换对象。
 
 `cols` 列对象：
 
@@ -498,7 +496,7 @@ state.tableOptions = {
 事件使用 `bubbles: true, composed: true` 派发，可穿透组件 Shadow DOM 被 `kniu@` 绑定捕获，也可被祖先节点监听。
 
 ```html
-<kniu-table ref="table" kniu:options="{{tableOptions}}"></kniu-table>
+<kniu-table ref="table" kniu:option="{{tableOptions}}"></kniu-table>
 ```
 
 ```js
@@ -521,7 +519,7 @@ onSortChange(event) {
 在模板中声明引用：
 
 ```html
-<kniu-table ref="table" kniu:options="{{tableOptions}}"></kniu-table>
+<kniu-table ref="table" kniu:option="{{tableOptions}}"></kniu-table>
 ```
 
 `ref="table"` 会把 `<kniu-table>` 节点挂到控制器作用域的 `table` 上，处理函数里的 `this`（即响应式 state 代理）即可直接访问：
@@ -552,9 +550,9 @@ relayout() { this.tableRef.doLayout(); }                                  // 重
 表格无数据时，除 `empty-text` 文案和外部 `<kniu-empty>` 外，还支持 `<template #empty>` 具名插槽直接在表格内部渲染自定义空状态：
 
 ```html
-<kniu-table kniu:options="{{tableOptions}}">
+<kniu-table kniu:option="{{tableOptions}}">
   <template #empty>
-    <kniu-empty kniu:options="{{({ note:'暂无文章' })}}" />
+    <kniu-empty kniu:option="{{({ note:'暂无文章' })}}" />
   </template>
 </kniu-table>
 ```
@@ -593,7 +591,7 @@ relayout() { this.tableRef.doLayout(); }                                  // 重
 **与 `kniu-table` 配合的关键约定**：表格自身已有内置空行（`empty-text`，默认「暂无数据」）。若同页同时用 `<kniu-table>` 和 `<kniu-empty>`，务必给 `<kniu-table>` 加 `empty-text=""` 以隐藏内置空行，否则会出现两份空状态文案：
 
 ```html
-<kniu-table kniu:options="{{tableOptionsWithEmpty}}">
+<kniu-table kniu:option="{{tableOptionsWithEmpty}}">
   ...
 </kniu-table>
 <kniu-empty kniu:if="{{!list.length && !loading && !error}}" note="暂无数据" />
@@ -606,7 +604,7 @@ relayout() { this.tableRef.doLayout(); }                                  // 重
 列表分页由 `<kniu-page>` 组件与控制器侧的 `usePagination()` 配合完成，对接后端服务端分页接口；分页内部状态由 `usePagination()` 自动初始化。
 
 ```html
-<kniu-page ref="page" kniu:options="{{pageOptions}}" />
+<kniu-page ref="page" kniu:option="{{pageOptions}}" />
 ```
 
 ```js
@@ -622,9 +620,9 @@ state.pageOptions = {
 };
 ```
 
-**旧 attribute（`total` / `page-size` / `current-page` / `background` / `layout` / `prev-text` 等）已全部作废**，`kniu:options` 键：
+**旧 attribute（`total` / `page-size` / `current-page` / `background` / `layout` / `prev-text` 等）已全部作废**，`kniu:option` 键：
 
-| `kniu:options` 键 | 说明 | 默认值 |
+| `kniu:option` 键 | 说明 | 默认值 |
 | --- | --- | --- |
 | `total` | 总条数（来自后端） | `0` |
 | `pageSize` | 每页条数的唯一初始配置源；`usePagination` 会据此初始化并维护内部 `state.pageRows` | `10` |
@@ -688,7 +686,7 @@ const myController = controller(function () {
 要点：
 
 - `usePagination` 请求体固定携带 `page_current`、`page_rows`(= `state.pageRows`)、`field`、`sort`；成功回写 `list / currentPage / pageTotal / total`，页码窗口由 `kniu-page` 自行计算；失败回写 `error` 并调用 `self.$msg(...)` 弹错误浮层。
-- `state.pageRows` 是每页条数的**唯一数据源**，`kniu:options` 里的 `pageSize` 必须绑定它；`size-change` 由组件回写 `state.pageRows` 后自动重新拉取。
+- `state.pageRows` 是每页条数的**唯一数据源**，`kniu:option` 里的 `pageSize` 必须绑定它；`size-change` 由组件回写 `state.pageRows` 后自动重新拉取。
 - 切换每页大小时组件会把 `currentPage` 重置为 1，再从第 1 页加载。
 
 ## 导航栏 Navbar
@@ -698,21 +696,21 @@ const myController = controller(function () {
 ```html
 <kniu-navbar home="#/">
   <template #brand>
-    <kniu-image kniu:options="{{({ src:'/static/logo.png' })}}" />
+    <kniu-image kniu:option="{{({ src:'/static/logo.png' })}}" />
   </template>
   <template #append>
     <kniu-navbar-cells>
-      <kniu-navbar-cell kniu:options="{{({index:'/',href:'#/'})}}">首页</kniu-navbar-cell>
-      <kniu-navbar-cell kniu:options="{{({index:'/about',href:'#/about'})}}">关于我</kniu-navbar-cell>
+      <kniu-navbar-cell kniu:option="{{({index:'/',href:'#/'})}}">首页</kniu-navbar-cell>
+      <kniu-navbar-cell kniu:option="{{({index:'/about',href:'#/about'})}}">关于我</kniu-navbar-cell>
       <kniu-sub-navbar>
         <template #title>更多</template>
-        <kniu-navbar-cell kniu:options="{{({index:'/help',href:'#/help'})}}">帮助</kniu-navbar-cell>
+        <kniu-navbar-cell kniu:option="{{({index:'/help',href:'#/help'})}}">帮助</kniu-navbar-cell>
         <kniu-sub-navbar>
           <template #title>文档</template>
-          <kniu-navbar-cell kniu:options="{{({index:'/docs/start',href:'#/docs/start'})}}">入门</kniu-navbar-cell>
+          <kniu-navbar-cell kniu:option="{{({index:'/docs/start',href:'#/docs/start'})}}">入门</kniu-navbar-cell>
           <kniu-sub-navbar>
             <template #title>进阶</template>
-            <kniu-navbar-cell kniu:options="{{({index:'/docs/api',href:'#/docs/api'})}}">接口</kniu-navbar-cell>
+            <kniu-navbar-cell kniu:option="{{({index:'/docs/api',href:'#/docs/api'})}}">接口</kniu-navbar-cell>
           </kniu-sub-navbar>
         </kniu-sub-navbar>
       </kniu-sub-navbar>
@@ -748,14 +746,14 @@ const myController = controller(function () {
 ```html
 <kniu-date-picker
   ref="datePicker"
-  kniu:model="{{form.create_time}}"
-  kniu:options="{{datePickerOptions}}"
+  kniu:form="{{form.create_time}}"
+  kniu:option="{{datePickerOptions}}"
   name="create_time">
   <template #prepend label-width="100px">发布时间</template>
 </kniu-date-picker>
 ```
 
-组件配置只通过 `kniu:options` 传入。`name`、`ref`、`kniu:model`、`kniu@change` 等框架接口和模板插槽继续有效；旧的 `type`、`min`、`max`、`first-day-of-week` 等组件配置属性不再读取。
+组件配置只通过 `kniu:option` 传入。`name`、`ref`、`kniu:form`、`kniu@change` 等框架接口和模板插槽继续有效；旧的 `type`、`min`、`max`、`first-day-of-week` 等组件配置属性不再读取。
 
 | options 字段 | 说明 |
 | --- | --- |
@@ -814,12 +812,12 @@ format 字母大小写不敏感，组件会在内部自动规范化：日期部�
 
 ## 评论组件 kniu-comment
 
-前台文章底部的评论留言组件，配置只通过 `kniu:options` 传入。
+前台文章底部的评论留言组件，配置只通过 `kniu:option` 传入。
 
 前台业务必须提供真实的 `currentUser` 昵称，不能用“游客”作为兜底直接提交。未设置昵称时，详情页打开昵称与算术验证码模态框，验证码由 `/captcha` 生成，后端在首次创建身份时强制校验；保存唯一昵称后继续提交原评论。本人评论通过 `onDelete` 接收 `{ commentId }`，业务确认后调用删除接口并刷新列表；非本人不渲染删除按钮，服务端仍需校验所有权。
 
 ```html
-<kniu-comment kniu:options="{{commentOptions}}" />
+<kniu-comment kniu:option="{{commentOptions}}" />
 ```
 
 ```js
@@ -898,10 +896,10 @@ box-shadow: 0 2px 12px rgba(0,0,0,.1);
 
 ## 点赞组件 kniu-like
 
-文章点赞组件只通过 `kniu:options` 配置，按钮显示大拇指图标及括号包裹的点赞数，例如“大拇指图标 (360)”。组件始终渲染；`own=true` 时按钮禁用但仍显示点赞数，不能把整个组件隐藏。组件在内容区域水平居中并保留 `24px` 上下间距；按钮最小高度 `44px`，图标 `24px`，文字 `16px`。点击未点赞的大拇指后立即向上飘出蓝色 `+1`；组件重渲染时保留正在播放的动画节点，取消点赞不播放，并遵循 `prefers-reduced-motion`。
+文章点赞组件只通过 `kniu:option` 配置，按钮显示大拇指图标及括号包裹的点赞数，例如“大拇指图标 (360)”。组件始终渲染；`own=true` 时按钮禁用但仍显示点赞数，不能把整个组件隐藏。组件在内容区域水平居中并保留 `24px` 上下间距；按钮最小高度 `44px`，图标 `24px`，文字 `16px`。点击未点赞的大拇指后立即向上飘出蓝色 `+1`；组件重渲染时保留正在播放的动画节点，取消点赞不播放，并遵循 `prefers-reduced-motion`。
 
 ```html
-<kniu-like kniu:options="{{likeOptions}}" />
+<kniu-like kniu:option="{{likeOptions}}" />
 ```
 
 ```js
@@ -931,7 +929,7 @@ state.likeOptions = {
 用于详情页显示上一篇、下一篇。相邻文章不存在时显示“返回列表”，点击时 `id` 为 `null`，由业务返回列表页。
 
 ```html
-<kniu-article-tab kniu:options="{{articleTabOptions}}" />
+<kniu-article-tab kniu:option="{{articleTabOptions}}" />
 ```
 
 ```js

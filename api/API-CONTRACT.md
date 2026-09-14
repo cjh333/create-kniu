@@ -1,0 +1,155 @@
+# KniuSystem 通用 API 契约
+
+本文件定义 KniuSystem 后端的语言无关行为契约。任何 PHP、Go、Python、Node.js、Java 或其他实现，只要保持本文件的 HTTP 路径、字段、响应、鉴权、权限和状态规则一致，即可替换现有后端。
+
+实现专用的启动、ORM、Web 框架、Session 库、SSE 库和数据库驱动不属于本契约。
+
+## 1. 项目目录与文件归位
+
+不同语言可以使用等价的目录命名，但恢复、迁移或新增文件时必须按职责归位，不能把业务、配置、运行数据和依赖混放。
+
+| 目录 | 作用 | 恢复或新增内容应放置的位置 |
+| --- | --- | --- |
+| `api/` | 后端根目录与 HTTP 入口 | 应用入口、依赖清单、后端运行说明放在此层；不要放业务控制器或运行时数据 |
+| `api/app/` | 业务应用层 | 按访问边界分组：`admin/` 为需要后台会话的管理业务，`index/` 为公开或前台身份业务；各自内部放路由动作、领域服务和业务 DTO |
+| `api/config/` | 非敏感默认配置 | 路由、认证、角色、数据库配置模板、邮件和上传策略、证书配置放这里；真实密钥只放环境变量或未提交的环境文件 |
+| `api/core/` | 语言/框架无关的基础能力 | 请求解析、统一响应、鉴权、数据库抽象、密码哈希、验证码、邮件、上传、缓存、数据通知等公共能力放这里；不得在此处放页面专属业务 |
+| `api/sql/` | 数据库初始化与迁移基线 | `kniu_create_tb_*.sql` 放建表基线，`kniu_insert_tb_*.sql` 放初始化数据；结构变更同时更新本目录与数据迁移方案 |
+| `api/assets/` | 后端静态资源 | 验证码字体、服务端模板、固定资源等非用户上传内容放这里 |
+| `api/runtime/` | 可再生的运行时数据 | `cache/`、`session/`、日志、开发邮件和临时文件放这里；恢复代码时不应覆盖生产运行数据 |
+| `api/vendor/` | 第三方依赖安装目录 | 由依赖清单恢复，不手工放项目源码；其他语言使用等价的依赖缓存目录 |
+
+推荐的跨语言映射：HTTP 路由与控制器可分别放在 `app/<boundary>/`，公共中间件和基础设施放 `core/`，持久化模型或仓储可放在 `app/` 下的领域子目录或独立 `data/` 目录；无论如何，外部接口必须继续遵循本文契约。
+
+## 2. 基础约定
+
+- API 根路径：`/api`；下文路径均省略此前缀。
+- 所有业务接口使用 `POST`。请求体接受 `application/json`、`application/x-www-form-urlencoded`；带文件接口接受 `multipart/form-data`。
+- 时间使用服务器时区的 `YYYY-MM-DD HH:mm:ss`，每日状态在服务器当地时间 `00:00:00` 重置。
+- 成功响应：`{"status":1,"msg":"…","data":{…}}`；失败响应：`{"status":0,"msg":"…","data":[]}`。
+- `401` 用于未登录，`403` 用于已登录但无权限，`422` 用于参数或业务校验失败，`500` 用于不可恢复的服务端错误。为兼容现有前端，响应体仍必须符合上述结构。
+- 富文本与普通文本均由服务端单轮 HTML 编码后存储、单轮解码后返回；客户端不得再次编码或解码。
+
+## 3. 统一身份与权限
+
+### 3.1 账号
+
+`tb_role.id` 是所有业务关系的唯一标识。`name` 是登录名，`nickname` 仅用于展示。不得按昵称或登录名判断资源归属。
+
+角色：`role=1` 或 `role_auth=1` 为管理员；其他为普通账号。`is_show=0` 的账号无法登录；`comment_ban=1` 的账号能登录和发表文章，但不能发表评论或回复；`comment_audit=1` 的评论和回复初始不可见，需管理员审核。
+
+### 3.2 会话与前台身份
+
+- 后台会话以安全、HttpOnly、SameSite Cookie 保存；登录有效期为 7 天。
+- 前台身份通过客户端生成的 64 位十六进制 `identity_token` 绑定；服务端只持久化其 SHA-256，且绑定到 `tb_role.identity_token`。
+- 后台登录可同步前台身份；前台会话与后台会话逻辑独立，但可在同一浏览器同步恢复。
+- 修改昵称必须距上次 `issue_time` 满一年；服务端必须强制执行。
+
+## 4. 逻辑数据模型
+
+| 实体 | 核心字段与规则 |
+| --- | --- |
+| Role | `id,name,nickname,identity_token,password,email,role,role_auth,is_show,comment_audit,comment_ban,create_time,issue_time` |
+| Article | `id,role_id,title,subtitle,summary,content,cover,url,is_show,likes,hits,create_time,issue_time`；`role_id -> Role.id` |
+| Comment | `id,article_id,role_id,parent_id,message,is_show,likes,ip,create_time`；`parent_id=0` 是评论，大于 0 是回复 |
+| About | 每个 `role_id` 仅一条：`avatar,summary,content,create_time,issue_time` |
+| Favorite | `role_id + article_id` 唯一 |
+| History | `role_id + article_id` 唯一，保存 `last_view_time`，只保留一年 |
+| Reply status | `reply_id + recipient_user_id` 复合主键，保存 `is_read,issue_time` |
+| Email code | `email,scene,code_hash,expire_time,used,ip,create_time`；验证码只存摘要 |
+
+删除 Role 时必须事务性清理其文章、资料、评论和回复、回复状态、收藏、浏览历史，以及其文章对应的收藏与浏览记录。
+
+## 5. 公共内容与前台接口
+
+| 路径 | 请求字段 | 成功 `data` / 行为 |
+| --- | --- | --- |
+| `/getDaily` | 无 | 当前每日一句列表或当前项，字段含 `id,cn,en,is_show` |
+| `/getArticle` | 可选分页/排序 | 已显示文章列表；每项含文章字段、`publisher`（昵称）和点赞数 |
+| `/getInfo` | 可选 `identity_token` | 首页资料：当前账号头像与简述；无身份时回退默认资料；简介为空时为“这家伙很懒，什么都没留下！” |
+| `/getAbout` | `identity_token` | 当前账号 `tb_about.content`；不读取 SEO 内容 |
+| `/getDetail` | `id`、可选 `identity_token` | 文章详情、`publisher,isOwn,favorited,previous,next`；记录登录账号浏览历史 |
+| `/getComments` | `article_id`，可选 `identity_token` | 已审核评论和回复，按 `id` 升序；行字段：`id,userId,isOwn,parentId,replyTo,username,avatar,time,content,likes,liked` |
+| `/submitComment` | `article_id,parent_id=0,identity_token,message` | 登录且未禁言才可提交；回复必须属于同一文章；免审立即可见，待审仅返回成功 ID |
+| `/deleteComment` | `comment_id,identity_token` | 仅本人可删；删除顶层评论时连同其回复删除 |
+| `/likeComment` | `comment_id,liked,identity_token` | 不可点赞本人。`liked=true` 点赞，`false` 取消；返回 `likes,liked,locked` |
+| `/likeArticle` | `article_id,liked,identity_token` | 登录必需；作者不可点赞自己文章；返回 `likes,liked` |
+| `/favoriteArticle` | `article_id,favorited,identity_token` | 登录必需；收藏可反选；返回 `favorited` |
+| `/frontProfile` | `identity_token` | `id,name,nickname,canEditNickname,articleLikeCount,commentLikeCount,commentCount,favorites,history` |
+| `/frontProfileSave` | `identity_token,nickname`；首次创建另需 `gvcode` | 创建或修改资料；昵称一年只能修改一次 |
+| `/frontProfileClear` | `identity_token` | 清理前后台会话，不删除账号 |
+| `/frontSessionSync` | `identity_token` | 依据有效后台会话恢复前台身份，返回 `loggedIn,id,roleId,name,nickname,avatar` |
+| `/frontRegister` | `username,password,confirm,email,email_code,identity_token` | 创建普通账号、绑定前台身份 |
+| `/frontLogin` | `username,password,identity_token` | 前台登录并绑定身份 |
+| `/frontBind` | `username,password,identity_token` | 将已有账号绑定当前前台身份 |
+| `/email_code` | `email,scene` | `scene` 仅 `register` / `reset`；返回发送状态和开发环境标识 |
+| `/password_reset` | `email,code,password,confirm` | 校验验证码后重置密码 |
+| `/data_revision` | 无 | 返回全局内容数据版本，供前端增量刷新兜底 |
+
+点赞和收藏状态至少按账号与目标资源隔离。评论点赞允许在同一天取消后再次点赞；文章点赞与收藏同理。所有日级状态以服务器日界线重置。
+
+## 6. 后台认证与系统接口
+
+| 路径 | 请求字段 | 行为 |
+| --- | --- | --- |
+| `/captcha` | 可选 `width,height,fontSize` | 返回算术验证码图片，并将答案存入后台会话 |
+| `/logup` | `username,password,identity_token` | 校验验证码会话、账号、密码和禁用状态；建立后台会话并可同步前台身份 |
+| `/logout` | 无 | 销毁后台会话 |
+| `/session_status` | 无 | 始终返回 HTTP 200；`data.loggedIn` 表示后台会话状态 |
+| `/admin` | 无 | 后台首页统计：欢迎语、版本、服务器时间、账号/文章/每日一句数量 |
+| `/system` | 无 | 已登录后台账号的系统信息 |
+| `/clearCache` | 无 | 管理员清理缓存，返回清理统计 |
+
+## 7. 后台资源接口
+
+除特别说明外，后台接口都要求有效后台会话。普通账号只能访问和修改自己的资源；批量操作、角色管理、评论审核、SEO、导航、每日一句和清缓存仅管理员可用。
+
+### 7.1 SEO、导航与每日一句
+
+| 资源 | 路径 | 关键请求字段 |
+| --- | --- | --- |
+| SEO | `/seo_list`, `/seo_update` | `id,sid,title,url,logo,description,keywords,author,copyright,record,email`；更新 Logo 使用 multipart 字段 `logo` |
+| 导航 | `/nav_add`, `/nav_delete`, `/nav_update`, `/nav_list`, `/nav_detail` | `id,is_select,sid,name,url,is_show`；支持 `parent_id,is_open,nav_type` 扩展 |
+| 每日一句 | `/daily_add`, `/daily_delete`, `/daily_update`, `/daily_list`, `/daily_detail` | `id,is_select,sid,cn,en,is_show` |
+
+列表接口统一接受 `page_current,page_rows,field,sort`，返回：`{data: [...], count, page_current, page_rows, selectall}`。`field` 必须受服务端白名单约束。
+
+### 7.2 文章
+
+| 路径 | 关键请求字段 | 行为 |
+| --- | --- | --- |
+| `/article_add` | `sid,title,subtitle,summary,content,url,cover,is_show,create_time` | 已登录账号创建文章，归属由服务端写入当前 `role_id` |
+| `/article_update` | `id` 加上述可更新字段；可含 `type=KNIU_TABLE_EVENT_CHECKALL` | 作者只能改自己的文章；批量仅管理员 |
+| `/article_delete` | `id` | 作者或管理员删除 |
+| `/article_list`, `/article_detail` | 分页参数或 `id` | 普通账号仅见自己的文章 |
+| `/article_cover_delete` | `cover` | 删除当前账号可操作文章的上传封面 |
+| `/article_media_upload` | multipart `file` | 上传编辑器图片、音频或视频，返回 `{url}` |
+
+### 7.3 评论与回复管理
+
+| 路径 | 请求字段 | 行为 |
+| --- | --- | --- |
+| `/comment_list` | `type=all|comment|reply,audit,keyword,page_current,page_rows,field,sort` | 管理员查看全部，普通账号只见本人；返回 `account_name,nickname,is_own,status_text` |
+| `/comment_detail` | `id` | 查询单条内容 |
+| `/comment_audit` | `id,audit=0|1` | 管理员审核；通过回复后发送刷新信号 |
+| `/comment_delete` | `id` | 管理员可删全部，普通账号可删本人；删除顶层评论级联回复 |
+| `/comment_reply_state` | 无 | 返回 `has_unread,unread_count` |
+| `/comment_reply_read` | 无 | 当前账号收到的已审核回复全部标已读 |
+| `/comment_reply_update` | `id,is_read=0|1` | 接收者或管理员更新单条回复状态 |
+
+### 7.4 账号资料与关于我
+
+| 路径 | 请求字段 | 行为 |
+| --- | --- | --- |
+| `/role_add`, `/role_update`, `/role_delete`, `/role_list`, `/role_detail` | 账号资料、`id`、分页字段 | 管理员管理账号；普通账号仅可查看本人及修改本人密码/受限资料 |
+| `/about_detail` | 无 | 返回当前后台账号的 `avatar,summary,content` |
+| `/about_save` | multipart：`avatar` 文件，可选 `summary,content` | 更新当前账号资料；头像由服务端存储并返回 URL |
+
+## 8. 跨语言实现清单
+
+1. 按第 4 节建立数据模型、唯一约束和索引；所有关系使用 `role_id -> Role.id`。
+2. 实现 Cookie 会话、前台身份令牌摘要、验证码、密码哈希和 CSRF/同源校验。
+3. 逐条实现第 5 至第 7 节路由，保持路径、字段名、响应形状和业务错误语义不变。
+4. 在每个写接口中做服务端权限与归属校验；不要信任客户端传来的 `role_id`、昵称、作者或审核状态。
+5. 对上传、排序、分页、富文本、事务删除、每日重置和通知已读状态应用本契约的规则。
+6. 通过当前前端的登录、注册、文章增改删、评论回复、点赞收藏、个人中心、后台管理回归测试后再切换实现。

@@ -36,6 +36,7 @@
                       <p class="index_article_info">发布人：{{item.publisher}}</p>
                       <p class="index_article_info">发布于：{{item.create_time}}</p>
                       <p class="index_article_info">浏览次数：{{item.hits}}次</p>
+                      <p class="index_article_info">点赞数：{{item.likes}}</p>
                     </div>
                   </div>
                 </a>
@@ -43,15 +44,17 @@
             </article>
             <article class="index_wrap12">
               <div class="index_item12">
-                <div class="index_user_group">
-                  <div class="index_user_wrap">
-                    <a class="index_user_photo_group" href="javascript:;">
-                      <img class="kniu_img index_user_photo" kniu:src="{{photo}}" />
-                    </a>
-                    <p class="index_user_note">{{note}}</p>
+                <template kniu:if="{{loggedIn}}">
+                  <div class="index_user_group">
+                    <div class="index_user_wrap">
+                      <a class="index_user_photo_group" href="javascript:;">
+                        <kniu-image class="kniu_md_img_fill" src="{{photo}}" />
+                      </a>
+                      <p class="index_user_note">{{note}}</p>
+                    </div>
                   </div>
-                </div>
-                <ul class="index_advertise_group">
+                </template>
+                <ul class="index_advertise_group{{!loggedIn ? ' kniu_md_mt_0' : ''}}">
                   <li class="index_advertise">
                     <a class="index_advertise_link" href="javascript:;">广告位</a>
                   </li>

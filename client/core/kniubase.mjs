@@ -56,7 +56,8 @@ var KniuBase = (function () {
   }
 
   function isLoginRoute(hash) {
-    return String(hash || '').split('?')[0] === '/login';
+    const path = String(hash || '').split('?')[0];
+    return path === '/login' || path === '/register';
   }
 
   function routeRequiresAuth(hash, routes) {
@@ -321,21 +322,26 @@ var KniuBase = (function () {
           if (useLoading) UTIL.setLoading(true);
           try {
             if (isLoginRoute(hash)) {
-              const loginTag = state.pathToTag.get('/login');
-              if (!loginTag || state.currentViewTag === loginTag) return;
+              const loginTag = state.pathToTag.get(pathOnly) || state.pathToTag.get('/login');
+              // /login 与 /register 共用同一模板标签，但必须按路径重新挂载，
+              // 否则同一标签会被误判为当前页面，导致登录/注册表单无法互相切换。
+              if (!loginTag || (state.currentViewTag === loginTag && hash === state.lastRenderedHash)) return;
               await replacePageWhenReady(state.host, loginTag);
+              globalThis.dispatchEvent?.(new CustomEvent('kniu-route-rendered', { detail: { path: pathOnly } }));
               state.contentArea = null;
               state.currentViewTag = loginTag;
               state.lastRenderedHash = hash;
               return;
             }
             const route = currentRoute;
-            if (route && !route.authRequired) {
+            const isFrontendRoute = route && String(route.controllerPath || '').startsWith('index/');
+            if (route && (!route.authRequired || isFrontendRoute)) {
               const tag = state.pathToTag.get(pathOnly) || state.pathToTag.get('/') || state.tags[0]?.tag;
               if (!tag) return;
               const existing = getActivePage(state.host);
               if (existing && existing.tagName.toLowerCase() === tag && state.currentViewTag === tag && hash === state.lastRenderedHash) return;
               await replacePageWhenReady(state.host, tag);
+              globalThis.dispatchEvent?.(new CustomEvent('kniu-route-rendered', { detail: { path: pathOnly } }));
               state.contentArea = null;
               state.currentViewTag = tag;
               state.lastRenderedHash = hash;
@@ -359,6 +365,7 @@ var KniuBase = (function () {
             // 同一视图但查询参数（如 ?id=）变化时需要重新渲染，以便详情页读取新参数。
             if (existing && existing.tagName.toLowerCase() === tag && state.currentViewTag === tag && hash === state.lastRenderedHash) return;
             await replacePageWhenReady(state.contentArea, tag);
+            globalThis.dispatchEvent?.(new CustomEvent('kniu-route-rendered', { detail: { path: pathOnly } }));
             state.currentViewTag = tag;
             state.lastRenderedHash = hash;
           } finally {

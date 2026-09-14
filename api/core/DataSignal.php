@@ -38,9 +38,8 @@ class DataSignal
     'tb_article_history',            // 浏览历史：每次打开文章都写，最严重的刷新风暴源。
     'tb_article_favorite',           // 收藏：仅本人关心，个人中心自己会拉。
     'tb_email_code',                 // 邮箱验证码：短时效凭证，与展示数据无关。
-    'tb_front_user',                 // 前台身份：含令牌与登录时间，禁止外泄式广播。
-    'tb_reply_notification_read',    // 回复已读标记：按接收人私有。
-    'tb_reply_notification_status',  // 回复红点状态：按接收人私有。
+    'tb_role',                       // 统一账号表：含身份令牌，禁止外泄式广播。
+    'tb_comment_reply_status',  // 回复红点状态：按接收人私有。
   ];
 
   /** 本次请求是否发生过需要广播的写操作。 */

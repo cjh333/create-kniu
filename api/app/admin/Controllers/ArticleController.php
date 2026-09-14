@@ -30,6 +30,13 @@ class ArticleController extends Base
   // 增加。
   public function articleAdd(): void
   {
+    $this->ensureArticleSchema();
+    $roleId = $this->currentUserId();
+    if ($roleId <= 0) {
+      http_response_code(403);
+      $this->json([], '请先登录', 0);
+      return;
+    }
     $coverPath = '';
     if (isset($_FILES['cover']) && $_FILES['cover']['error'] === UPLOAD_ERR_OK) {
       $coverPath = $this->uploadFile($_FILES['cover'], 'article');
@@ -39,7 +46,7 @@ class ArticleController extends Base
       }
     }
     $data = [
-      'user_id' => $this->currentUserId(),
+      'role_id' => $roleId,
       'sid' => $this->input('post.sid') ?? 0,
       'title' => $this->input('post.title') ?? '',
       'subtitle' => $this->input('post.subtitle') ?? '',
@@ -51,8 +58,22 @@ class ArticleController extends Base
       'is_show' => $this->input('post.is_show') ?? 1
     ];
     $data = $this->encodeFields($data, ['title', 'subtitle', 'summary', 'content']);
-    Db::name('tb_article')->insert($data);
+    try {
+      Db::name('tb_article')->insert($data);
+    } catch (\Throwable $e) {
+      $this->json([], '文章添加失败：' . $e->getMessage(), 0);
+      return;
+    }
     $this->json([], '添加成功', 1);
+  }
+
+  /** 文章允许同一账号发布多篇，清理旧建表 SQL 遗留的 role_id 唯一索引。 */
+  private function ensureArticleSchema(): void
+  {
+    $indexes = Db::query("SELECT INDEX_NAME, NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_article' AND INDEX_NAME = 'uk_role_article_role'");
+    if (!empty($indexes)) {
+      Db::execute('ALTER TABLE `tb_article` DROP INDEX `uk_role_article_role`');
+    }
   }
 
   // 删除。普通用户仅能删除自己发布的文章；管理员可删除任意文章。
@@ -62,7 +83,7 @@ class ArticleController extends Base
     if (!$this->isAdmin()) {
       // 普通用户仅能删除自己发布的文章。
       $exists = Db::name('tb_article')
-        ->where(['id' => $id, 'user_id' => $this->currentUserId()])
+        ->where(['id' => $id, 'role_id' => $this->currentUserId()])
         ->find();
       if (!$exists) {
         http_response_code(403);
@@ -132,7 +153,7 @@ class ArticleController extends Base
       if (!$isAdmin) {
         // 普通用户仅能更新自己发布的文章。
         $owned = Db::name('tb_article')
-          ->where(['id' => $id, 'user_id' => $this->currentUserId()])
+          ->where(['id' => $id, 'role_id' => $this->currentUserId()])
           ->find();
         if (!$owned) {
           http_response_code(403);
@@ -146,7 +167,7 @@ class ArticleController extends Base
       $articleQuery = Db::name('tb_article')
         ->where('id', '=', $id);
       if (!$isAdmin) {
-        $articleQuery->where('user_id', '=', $this->currentUserId());
+        $articleQuery->where('role_id', '=', $this->currentUserId());
       }
       $articleResult = $articleQuery
         ->field(['is_select', 'sid', 'title', 'subtitle', 'summary', 'content', 'cover', 'create_time', 'url', 'is_show'])
@@ -177,7 +198,7 @@ class ArticleController extends Base
     $query = Db::name($table);
     if (!$this->isAdmin()) {
       // 普通用户仅能查看自己发布的文章。
-      $query->where('user_id', '=', $this->currentUserId());
+      $query->where('role_id', '=', $this->currentUserId());
     }
     if ($keyword !== '') {
       $query->where('LOWER(`title`)', 'LIKE', $this->likeEncodedPattern($keyword));
@@ -187,7 +208,7 @@ class ArticleController extends Base
       ->page($pageCurrent, $pageRow);
     $result['data'] = $this->decodeFields($result['data'] ?? [], ['title', 'subtitle', 'summary', 'content']);
     foreach ($result['data'] as &$article) {
-      $role = Db::name('tb_role')->where('id', '=', (int)($article['user_id'] ?? 0))->find();
+      $role = Db::name('tb_role')->where('id', '=', (int)($article['role_id'] ?? 0))->find();
       $article['publisher'] = (string)($role['name'] ?? '');
     }
     unset($article);
@@ -203,7 +224,7 @@ class ArticleController extends Base
       ->where('id', '=', $id);
     if (!$this->isAdmin()) {
       // 普通用户仅能查看（编辑回填）自己的文章。
-      $query->where('user_id', '=', $this->currentUserId());
+      $query->where('role_id', '=', $this->currentUserId());
     }
     $result = $query->find();
     $result = $this->decodeFields($result, ['title', 'subtitle', 'summary', 'content']);

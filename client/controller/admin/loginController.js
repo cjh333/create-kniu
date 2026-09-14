@@ -1,21 +1,22 @@
-import KniuMvvm from '../../core/kniumvvm.mjs';
+import MVVM from '../../core/kniumvvm.mjs';
 import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 import IDENTITY from '../../core/kniuidentity.mjs';
-import KniuUI from '../../core/kniuui.js';
+import UI from '../../core/kniuui.js';
 import { optionsToValues } from '../../core/kniuutil.mjs';
 
-const { controller, reactive, onMounted, onUnmounted } = KniuMvvm;
+const { controller, reactive, onMounted, onUnmounted } = MVVM;
 
 const loginController = controller(({ navigateTo, getRouteData }) => {
   const routeData = getRouteData() || {};
+  const routePath = String(globalThis.location?.hash || '').replace(/^#/, '').split('?')[0];
   const state = reactive({
-    tab: routeData.tab === 'register' ? 'register' : (routeData.tab === 'reset' ? 'reset' : 'login'),
-    subtitle: routeData.tab === 'register'
+    tab: routePath === '/register' || routeData.tab === 'register' ? 'register' : (routeData.tab === 'reset' ? 'reset' : 'login'),
+    subtitle: routePath === '/register' || routeData.tab === 'register'
       ? '注册后即可评论、收藏，并直接进入工作台'
       : (routeData.tab === 'reset'
         ? '通过邮箱验证码重置密码，无需原密码'
-        : '登录后可评论、收藏或进入工作台'),
+        : '简单好用的工作台'),
     captchaImageUrl: '',
     isCaptchaLoading: true,
     isSubmitting: false,
@@ -135,7 +136,7 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
       success(res) {
         if (res.status !== 1) {
           state.isCaptchaLoading = false;
-          KniuUI.msg({ content: res.msg, type: 'error' });
+          UI.msg({ content: res.msg, type: 'error' });
           return;
         }
         if (captchaObjectUrl) URL.revokeObjectURL(captchaObjectUrl);
@@ -145,23 +146,17 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
       },
       fail(res) {
         state.isCaptchaLoading = false;
-        KniuUI.msg({ content: res.msg, type: 'error' });
+        UI.msg({ content: res.msg, type: 'error' });
       }
     });
   }
 
   function toLogin() {
-    if (state.tab === 'login') return;
-    state.tab = 'login';
-    state.subtitle = '登录后可评论、收藏或进入工作台';
-    refreshCaptcha();
+    navigateTo('/login');
   }
 
   function toRegister() {
-    if (state.tab === 'register') return;
-    state.tab = 'register';
-    state.subtitle = '注册后即可评论、收藏，并直接进入工作台';
-    refreshCaptcha();
+    navigateTo('/register');
   }
 
   function toReset() {
@@ -188,11 +183,11 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
   function quickValidateEmail(model) {
     const email = String(model.email.value || '').trim();
     if (email === '') {
-      KniuUI.msg({ content: '请输入邮箱', type: 'error' });
+      UI.msg({ content: '请输入邮箱', type: 'error' });
       return '';
     }
     if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
-      KniuUI.msg({ content: '邮箱格式不正确', type: 'error' });
+      UI.msg({ content: '邮箱格式不正确', type: 'error' });
       return '';
     }
     return email;
@@ -211,12 +206,11 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
     });
     state.codeSending = false;
     if (res.status !== 1) {
-      KniuUI.msg({ content: res.msg || '验证码发送失败', type: 'error' });
+      UI.msg({ content: res.msg || '验证码发送失败', type: 'error' });
       return;
     }
-    // dev=true：服务端未配置 SMTP，邮件没真发出去，用 warning 明确告知，别让用户干等。
     const devMode = !!(res.data && res.data.dev);
-    KniuUI.msg({
+    UI.msg({
       content: res.msg || (devMode ? '验证码已生成，但邮件未实际发送' : '验证码已发送，请查收邮箱'),
       type: devMode ? 'warning' : 'success'
     });
@@ -248,10 +242,10 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
     });
     state.isSubmitting = false;
     if (res.status !== 1) {
-      KniuUI.msg({ content: res.msg || '密码重置失败', type: 'error' });
+      UI.msg({ content: res.msg || '密码重置失败', type: 'error' });
       return;
     }
-    KniuUI.msg({ content: res.msg || '密码重置成功，请使用新密码登录', type: 'success' });
+    UI.msg({ content: res.msg || '密码重置成功，请使用新密码登录', type: 'success' });
     state.resetModel.email.value = '';
     state.resetModel.code.value = '';
     state.resetModel.password.value = '';
@@ -262,13 +256,12 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
   function submitFailed(model, res) {
     state.isSubmitting = false;
     model.gvcode.value = '';
-    KniuUI.msg({ content: res.msg || '操作失败', type: 'error' });
+    UI.msg({ content: res.msg || '操作失败', type: 'error' });
     refreshCaptcha();
   }
 
   async function onSubmit() {
     if (state.isSubmitting) return;
-    // 校验已由 kniu-form 在 submit 阶段按对应 tab 模型的 condition 完成，不通过不会进到这里
     const isRegister = state.tab === 'register';
     const model = isRegister ? state.registerModel : state.loginModel;
     const form = optionsToValues(model);
@@ -299,9 +292,7 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
 
     const info = res.data || {};
     const name = info.nickname || info.name || form.username;
-    // 前台身份：昵称/登录态、可评论收藏（注册接口本身已绑定，登录接口靠下方 frontBind）
     IDENTITY.setIdentity({ nickname: name, account: 1 });
-    // 后台会话：登录接口由 /logup 建立，注册接口由后端一并写入 admin_token
     AUTH.setUser({
       name: name,
       avatar: info.avatar || name.charAt(0),
@@ -311,18 +302,15 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
       roleAuth: Number(info.role_auth || 0)
     });
     state.isSubmitting = false;
-    KniuUI.msg({ content: isRegister ? '注册成功' : '登录成功', type: 'success' });
+    UI.msg({ content: isRegister ? '注册成功' : '登录成功', type: 'success' });
     finishAuth();
   }
 
   onMounted(() => {
-    // 已有后台会话：直接按 redirect 回跳或进工作台（登录页不该出现）。
     if (AUTH.isLoggedIn()) {
       finishAuth();
       return;
     }
-    // 仅前台已登录（访客下拉「管理后台」入口）：无 redirect 时展示后台登录表单；
-    // 带 redirect 则无需再登录，直接回跳。
     if (IDENTITY.getIdentity().nickname) {
       if (redirectTarget()) {
         finishAuth();

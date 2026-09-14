@@ -1,0 +1,52 @@
+INSERT INTO
+    `tb_role` (
+        `id`,
+        `is_select`,
+        `sid`,
+        `is_show`,
+        `name`,
+        `nickname`,
+        `identity_token`,
+        `password`,
+        `email`,
+        `role`,
+        `role_auth`,
+        `comment_audit`,
+        `comment_ban`,
+        `create_time`,
+        `issue_time`
+    )
+VALUES (
+        1,
+        0,
+        0,
+        1,
+        'admin',
+        'cjh333',
+        '90aa4db8635e52c8bdba1e94aa97f84a2edb5eadcd422463bb7579d11019e901',
+        '706babe58bc5edf0e24854a2de3902f6$3be26589218482b32a4e63218df83047b0b59c31d90f6529384d6699cf5cacf911c3422a86086e2467f1daf0f6ee3168acf33522958231b21cccc5d392423971',
+        NULL,
+        1,
+        1,
+        0,
+        0,
+        '2020-03-18 18:30:00',
+        '2026-09-11 18:02:50'
+    ),
+    (
+        2,
+        0,
+        0,
+        1,
+        'test',
+        'test',
+        '27e9dbc2d0cf6c127fc3cfd4fbaeddc15643096ac1e5dabd4bb82b8dc55d4af9',
+        '3fff6580a264eec8117855c8eab4927f$d1f10f1e03c194229a40f4dc11d34741485ff451cf242f6bee419eda3fa5ea84e7f8cc56ac34ea6c18c141cfff2d17187441094155d59ef68b6843b658c089be',
+        NULL,
+        2,
+        2,
+        0,
+        0,
+        '2020-03-18 18:30:00',
+        '2026-09-12 12:39:45'
+    );

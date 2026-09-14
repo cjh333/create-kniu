@@ -55,34 +55,55 @@
     <div class="detail_head">
       <span class="detail_title">{{pageTitle}}</span>
       <div class="detail_head_actions">
-        <kniu-input kniu:model="{{keyword}}" kniu:options="{{name:'keyword',placeholder:'请输入昵称或回复内容'}}" kniu@keydown.enter="searchList" kniu@input="debouncedSearch">
+        <kniu-input kniu:form="{{keyword}}" kniu:option="{{name:'keyword',placeholder:'请输入昵称或回复内容'}}" kniu@keydown.enter="searchList" kniu@input="debouncedSearch">
           <template #append label-width="48px">
-            <kniu-btn aria-label="搜索" kniu:options="{{text:true}}" kniu@click="searchList">
-              <kniu-icon kniu:options="{{icon:'Search'}}" />
+            <kniu-btn aria-label="搜索" kniu:option="{{text:true}}" kniu@click="searchList">
+              <kniu-icon kniu:option="{{icon:'Search'}}" />
             </kniu-btn>
           </template>
         </kniu-input>
-        <kniu-btn kniu:options="{{link:true,type:'primary',size:'small'}}" kniu@click="goBack">返回</kniu-btn>
+        <kniu-btn kniu:option="{{link:true,type:'primary',size:'small'}}" kniu@click="goBack">返回</kniu-btn>
+      </div>
+    </div>
+    <div class="filter_bar">
+      <div class="filter_item">
+        <span>审核</span>
+        <kniu-radio-group kniu:form="{{audit}}" kniu@change="onFilterChange">
+          <kniu-radio kniu:option="{{value:'',size:'small'}}">全部</kniu-radio>
+          <kniu-radio kniu:option="{{value:'0',size:'small'}}">待审核</kniu-radio>
+          <kniu-radio kniu:option="{{value:'1',size:'small'}}">已通过</kniu-radio>
+        </kniu-radio-group>
       </div>
     </div>
     <template kniu:if="{{commentTable.data.length > 0}}">
-      <div class="filter_bar">
-        <div class="filter_item">
-          <span>审核</span>
-          <kniu-radio-group kniu:model="{{audit}}" kniu@change="onFilterChange">
-            <kniu-radio kniu:options="{{value:'',size:'small'}}">全部</kniu-radio>
-            <kniu-radio kniu:options="{{value:'0',size:'small'}}">待审核</kniu-radio>
-            <kniu-radio kniu:options="{{value:'1',size:'small'}}">已通过</kniu-radio>
-          </kniu-radio-group>
-        </div>
-      </div>
       <div class="detail_wrap">
-        <kniu-table ref="table" kniu:options="{{commentTable}}" />
-        <kniu-page ref="page" kniu:options="{{commentPage}}" />
+        <kniu-table ref="table" kniu:option="{{commentTable}}">
+          <kniu-table-col type="checkbox" width="60" align="center" fixed="left" />
+          <kniu-table-col field="id" label="ID" width="80" align="center" fixed="left" sortable />
+          <kniu-table-col field="account_name" label="用户名" width="100" show-overflow-tooltip />
+          <kniu-table-col field="nickname" label="昵称" width="80" show-overflow-tooltip />
+          <kniu-table-col field="message" label="回复内容" min-width="220" show-overflow-tooltip />
+          <kniu-table-col field="article_title" label="所属文章标题" min-width="160" show-overflow-tooltip />
+          <kniu-table-col field="parent_id" label="所属评论ID" width="100" align="center" />
+          <kniu-table-col field="likes" label="点赞" width="80" align="center" sortable />
+          <kniu-table-col field="status_text" label="状态" width="100" align="center" />
+          <kniu-table-col kniu:if="{{canEditContent}}" field="is_show" label="审核" width="120" align="center">
+            <template #default>
+              <kniu-switch kniu:option="{{switchOptions}}" kniu@change="toggleAudit" />
+            </template>
+          </kniu-table-col>
+          <kniu-table-col field="create_time" label="创建时间" width="180" align="center" />
+          <kniu-table-col label="操作" width="160" align="center" fixed="right">
+            <template #default>
+              <kniu-btn kniu:option="{{type:'danger',size:'small',link:true}}" kniu@click="deleteRow">删除</kniu-btn>
+            </template>
+          </kniu-table-col>
+        </kniu-table>
+        <kniu-page ref="page" kniu:option="{{commentPage}}" />
       </div>
     </template>
     <template kniu:else>
-      <kniu-empty kniu:options="{{note:'暂无数据'}}" />
+      <kniu-empty kniu:option="{{note:'暂无数据'}}" />
     </template>
   </div>
 </section>

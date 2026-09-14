@@ -2,7 +2,6 @@ import { throttle } from './kniuutil.mjs';
 
 const PLACEHOLDER_CLASS = 'kniu_web_head_placeholder';
 const HEAD_SELECTOR = '.kniu_web_head';
-const headObservers = new WeakMap();
 // 已发现的头部元素登记表。避免每次 DOM 变更都全树深度遍历（表格批量渲染时会被放大成 O(节点数) 热点）。
 const knownHeads = new Set();
 
@@ -24,35 +23,15 @@ function syncOneHead(head) {
   const root = head.getRootNode();
   if (!(root instanceof ShadowRoot)) return;
   const fixed = getComputedStyle(head).position === 'fixed';
-  let ph = root.querySelector('.' + PLACEHOLDER_CLASS);
+    // 占位元素由公共头部模板固定提供；这里仅同步尺寸，不动态创建或删除。
+    const ph = root.querySelector('.' + PLACEHOLDER_CLASS);
   if (fixed) {
-    if (!ph) {
-      ph = document.createElement('div');
-      ph.className = PLACEHOLDER_CLASS;
-      ph.setAttribute('aria-hidden', 'true');
-      head.after(ph);
-    }
-    const h = head.offsetHeight;
-    if (h > 0) ph.style.height = h + 'px';
-    if (!headObservers.has(head)) {
-      let raf = 0;
-      const ro = new ResizeObserver(function () {
-        if (raf) cancelAnimationFrame(raf);
-        raf = requestAnimationFrame(function () {
-          const hh = head.offsetHeight;
-          if (hh > 0 && ph && ph.isConnected) ph.style.height = hh + 'px';
-        });
-      });
-      ro.observe(head);
-      headObservers.set(head, ro);
-    }
+    if (!ph) return;
+    // 头部渲染完成时读取一次实际高度；头部高度固定，页面切换时不再监听或调整。
+    const height = head.offsetHeight;
+    // 新页面刚挂载时可能尚未完成布局，不能用 0 覆盖占位高度。
+    if (height > 0) ph.style.height = height + 'px';
   } else if (ph) {
-    const ro = headObservers.get(head);
-    if (ro) {
-      ro.disconnect();
-      headObservers.delete(head);
-    }
-    ph.remove();
   }
 }
 
@@ -105,6 +84,14 @@ export function initHeadFixed() {
 
   window.addEventListener('hashchange', function () { scheduleSync(true); });
   window.addEventListener('popstate', function () { scheduleSync(true); });
+  // 路由页面可能在同一帧内替换 Shadow DOM；由路由渲染器在替换完成后主动通知，
+  // 不依赖 MutationObserver 的时序，确保详情页返回首页后占位元素立即生效。
+  window.addEventListener('kniu-route-rendered', function () {
+    scheduleSync(true);
+    // 公共头部在路由替换后异步完成布局，补两次单次同步；不持续监听。
+    requestAnimationFrame(function () { syncHeadPlaceholder(true); });
+    setTimeout(function () { syncHeadPlaceholder(true); }, 60);
+  });
   const host = document.querySelector('#app') || document.body;
   if (host && typeof MutationObserver !== 'undefined') {
     const mo = new MutationObserver(function (records) {

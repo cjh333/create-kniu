@@ -507,7 +507,7 @@ var KniuEventer = (function () {
       // 绑定收集只在任务「同步段」有效（setup 内 reactive(state) 的 auto-bind 依赖 currentScope）。
       // 若跨 await 保持 currentScope，异步回调（如 onMounted 里的接口返回后 kniuui.js 内部
       // reactive(行对象/表格配置)）会触发对整棵视图树的伪绑定——用数据对象当 state 重新解析
-      // 所有 kniu:options / kniu:model，把列模板内 switch 的 expando 覆盖成 {}（2026-09-01 修复）。
+      // 所有 kniu:option / kniu:form，把列模板内 switch 的 expando 覆盖成 {}（2026-09-01 修复）。
       // 因此：先同步调用 task() 跑完 sync 段，随即清空收集，再 await 异步余段。
       beginBindingCollection(target, reactiveDisposers);
       let cleanup;

@@ -1,10 +1,10 @@
-import KniuMvvm from '../../core/kniumvvm.mjs';
-import KniuUI from '../../core/kniuui.js';
+import MVVM from '../../core/kniumvvm.mjs';
+import UI from '../../core/kniuui.js';
 import REQUEST from '../../core/kniurequest.mjs';
 import { assignModelFields, buildMultipartFormData, toSingleFileList } from '../../core/kniuutil.mjs';
 
-const { controller, onMounted, reactive } = KniuMvvm;
-const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = KniuUI;
+const { controller, onMounted, reactive } = MVVM;
+const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = UI;
 
 const articleController = controller(function () {
   const self = this;
@@ -30,122 +30,28 @@ const articleController = controller(function () {
       is_show: '1',
       cover: ''
     },
-    toolbar: 'code | undo redo | bold italic underline strikeThrough | justifyLeft justifyCenter justifyRight justifyFull | insertOrderedList insertUnorderedList | h1 h2 h3 p | blockquote pre hr table | fontname fontsize forecolor hilitecolor | link unlink image media emoticons | removeFormat clearhtml selectAll | maximize',
+    editor: {
+      toolbar: [
+        'code', '|',
+        'undo', 'redo', '|',
+        'bold', 'italic', 'underline', 'strikeThrough', '|',
+        'justifyLeft', 'justifyCenter', 'justifyRight', 'justifyFull', '|',
+        'insertOrderedList', 'insertUnorderedList', '|',
+        'h1', 'h2', 'h3', 'p', '|',
+        'blockquote', 'pre', 'hr', 'table', '|',
+        'fontName', 'fontSize', 'foreColor', 'hiliteColor', '|',
+        'link', 'unlink', 'image', 'media', 'emoticons', '|',
+        'removeFormat', 'clear', 'selectAll', '|',
+        'fullscreen'
+      ]
+    },
     articleTable: {
       data: [],
       rowKey: 'id',
       stripe: true,
       border: true,
       maxHeight: 480,
-      loading: true,
-      cols: [
-        {
-          type: 'checkbox',
-          width: 60,
-          align: 'center',
-          fixed: 'left'
-        },
-        {
-          field: 'id',
-          label: 'ID',
-          width: 80,
-          align: 'center',
-          fixed: 'left',
-          sortable: true
-        },
-        {
-          field: 'sid',
-          label: '排序',
-          width: 100,
-          align: 'center',
-          editable: 'number',
-          sortable: true
-        },
-        {
-          field: 'title',
-          label: '标题',
-          minWidth: 360,
-          showOverflowTooltip: true
-        },
-        {
-          field: 'publisher',
-          label: '发布人',
-          width: 120,
-          align: 'center'
-        },
-        {
-          field: 'cover',
-          label: '封面',
-          width: 180,
-          align: 'center',
-          image: {
-            width: '60px',
-            height: '60px',
-            options: {
-              fit: 'contain'
-            }
-          }
-        },
-        {
-          field: 'subtitle',
-          label: '副标题',
-          minWidth: 360,
-          showOverflowTooltip: true
-        },
-        {
-          field: 'summary',
-          label: '摘要',
-          minWidth: 360,
-          showOverflowTooltip: true
-        },
-        {
-          field: 'likes',
-          label: '点赞数',
-          width: 100,
-          align: 'center',
-          sortable: true
-        },
-        {
-          field: 'create_time',
-          label: '发布时间',
-          width: 160,
-          align: 'center'
-        },
-        {
-          field: 'is_show',
-          label: '显示',
-          width: 80,
-          align: 'center',
-          condition: canEditContent,
-          switch: {
-            options: null,
-            onChange: updateShow
-          }
-        },
-        {
-          label: '操作',
-          width: 120,
-          align: 'center',
-          fixed: 'right',
-          condition: canEditContent,
-          actions: [
-            {
-              title: '删除',
-              type: 'danger',
-              size: 'small',
-              link: true,
-              onClick: ({ index, rows }) => deleteRow(index, rows)
-            },
-            {
-              title: '编辑',
-              type: 'primary',
-              size: 'small',
-              link: true,
-              onClick: ({ index, rows }) => editRow(index, rows)
-            }
-          ]
-        }
-      ]
+      loading: true
     },
     articlePage: {
       layout: '总数,首页,上一页,页码,下一页,末页,条数',
@@ -161,7 +67,7 @@ const articleController = controller(function () {
       type: 'datetime',
       range: false,
       value: getToday().year + '-' + getToday().month + '-' + getToday().date,
-      format: 'yyyy-mm-dd hh:mm',
+      format: 'yyyy-mm-dd hh:mm:ss',
       mark: {
         '0-6-1': '儿童',
         '0-7-1': '建党',
@@ -170,8 +76,6 @@ const articleController = controller(function () {
       }
     }
   });
-  const articleShowColumn = state.articleTable.cols.find((column) => column.switch);
-  if (articleShowColumn) articleShowColumn.switch.options = state.switchOptions;
 
   const { loadList, changePage, changePageSize } = usePagination({
     state,

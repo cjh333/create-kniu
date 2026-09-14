@@ -1,10 +1,10 @@
-import KniuMvvm from '../../core/kniumvvm.mjs';
-import KniuUI from '../../core/kniuui.js';
+import MVVM from '../../core/kniumvvm.mjs';
+import UI from '../../core/kniuui.js';
 import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 
-const { controller, onMounted, reactive } = KniuMvvm;
-const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = KniuUI;
+const { controller, onMounted, reactive } = MVVM;
+const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = UI;
 
 function createCommentManagementController(managementType = 'comment') {
   return controller(function () {
@@ -25,98 +25,7 @@ function createCommentManagementController(managementType = 'comment') {
         stripe: true,
         border: true,
         maxHeight: innerHeight - 220 / 1920 * innerWidth,
-        loading: true,
-        cols: [
-          {
-            type: 'checkbox',
-            width: 60,
-            align: 'center',
-            fixed: true
-          },
-          {
-            field: 'id',
-            label: 'ID',
-            width: 80,
-            align: 'center',
-            fixed: true,
-            sortable: true
-          },
-          {
-            field: 'name',
-            label: '昵称',
-            width: 80,
-            showOverflowTooltip: true
-          },
-          {
-            field: 'message',
-            label: managementType === 'reply' ? '回复内容' : '评论内容',
-            minWidth: 220,
-            showOverflowTooltip: true
-          },
-          {
-            field: 'article_title',
-            label: '所属文章标题',
-            minWidth: 160,
-            showOverflowTooltip: true
-          },
-          ...(managementType === 'reply' ? [{
-            field: 'parent_id',
-            label: '所属评论ID',
-            width: 100,
-            align: 'center'
-          }] : []),
-          {
-            field: 'likes',
-            label: '点赞',
-            width: 80,
-            align: 'center',
-            sortable: true
-          },
-          {
-            field: 'create_time',
-            label: '时间',
-            width: 160,
-            align: 'center'
-          },
-          {
-            field: 'status_text',
-            label: '状态',
-            width: 100,
-            align: 'center',
-            status: {
-              options: {
-                type: (row) => Number(row.is_show) === 1 ? 'success' : 'warning'
-              }
-            }
-          },
-          {
-            field: 'is_show',
-            label: '审核',
-            width: 90,
-            align: 'center',
-            condition: canEditContent,
-            switch: {
-              options: null,
-              onChange: toggleAudit
-            }
-          },
-          {
-            label: '操作',
-            width: 80,
-            align: 'center',
-            fixed: 'right',
-            condition: canEditContent,
-            actions: [
-              {
-                title: '删除',
-                type: 'danger',
-                size: 'small',
-                link: true,
-                onClick: ({ index, rows }) => deleteRow(index, rows)
-              }
-            ]
-          }
-        ]
+        loading: true
       },
       commentPage: {
         layout: '上一页,首页,页码,末页,下一页,跳转,总数,条数',
@@ -134,8 +43,6 @@ function createCommentManagementController(managementType = 'comment') {
         { label: '已通过', value: '1' }
       ]
     });
-    const auditSwitchColumn = state.commentTable.cols.find((column) => column.switch);
-    if (auditSwitchColumn) auditSwitchColumn.switch.options = state.switchOptions;
 
     const { loadList, changePage, changePageSize } = usePagination({
       state,
@@ -164,7 +71,7 @@ function createCommentManagementController(managementType = 'comment') {
       const row = list[index];
       if (!row) return;
       await REQUEST({
-        url: '/reply_notification_update',
+        url: '/comment_reply_update',
         type: 'POST',
         data: { id: row.id, is_read: Number(value) === 1 ? 1 : 0 },
         success(res) {

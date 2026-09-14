@@ -12,7 +12,7 @@ class CommentController extends Base
     parent::__construct();
   }
 
-  /** 当前后台账号所绑定的前台用户 ID。 */
+  /** 当前后台账号的统一用户 ID（tb_role.id）。 */
   private function currentFrontUserId(): int
   {
     return $this->frontUserIdByRoleId($this->currentUserId());
@@ -21,24 +21,23 @@ class CommentController extends Base
   /**
    * 解析"某条回复指向的接收前台用户"的通用 SQL 片段。
    *
-   * 前台评论 tb_comment.user_id 存 tb_front_user.id；对老评论（user_id=0）
-   * 按唯一昵称反查 tb_front_user。state/read/list 三处共用同一 join，
+   * 前台评论 tb_comment.role_id 存 tb_role.id；对老评论（role_id=0）
+   * 按唯一昵称反查 tb_role。state/read/list 三处共用同一 join，
    * 避免三份近似重复的复杂子句。
    */
   private function notificationReplyJoins(): string
   {
     return
       'INNER JOIN `tb_comment` AS `target` ON `target`.`id` = `reply`.`parent_id` ' .
-      'LEFT JOIN `tb_front_user` AS `legacy_recipient` ON `target`.`user_id` = 0 ' .
-      'AND `legacy_recipient`.`nickname` COLLATE utf8mb4_unicode_ci = `target`.`name` COLLATE utf8mb4_unicode_ci ';
+      '';
   }
 
   /** 判定某回复确实指向指定接收者（recipient）的 WHERE 片段。 */
   private function recipientPredicate(int $recipientId): string
   {
     return
-      'COALESCE(NULLIF(`target`.`user_id`,0),`legacy_recipient`.`id`) = ' . $recipientId . ' ' .
-      'AND `reply`.`user_id` <> ' . $recipientId . ' ';
+      '`target`.`role_id` = ' . $recipientId . ' ' .
+      'AND `reply`.`role_id` <> ' . $recipientId . ' ';
   }
 
   /**
@@ -48,11 +47,11 @@ class CommentController extends Base
   private function ensureReplyNotificationTable(): void
   {
     Db::execute(
-      'CREATE TABLE IF NOT EXISTS `tb_reply_notification_status` (' .
+      'CREATE TABLE IF NOT EXISTS `tb_comment_reply_status` (' .
       '`reply_id` int unsigned NOT NULL,' .
       '`recipient_user_id` int unsigned NOT NULL,' .
       '`is_read` tinyint unsigned NOT NULL DEFAULT 0,' .
-      '`update_time` datetime NOT NULL,' .
+      '`issue_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,' .
       'PRIMARY KEY (`reply_id`,`recipient_user_id`),' .
       'KEY `idx_reply_notification_recipient` (`recipient_user_id`,`is_read`)' .
       ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
@@ -60,7 +59,7 @@ class CommentController extends Base
   }
 
   /** 查询当前账号收到的、由其他用户发表的未读前台回复。 */
-  public function replyNotificationState(): void
+  public function commentReplyState(): void
   {
     $frontUserId = $this->currentFrontUserId();
     if ($frontUserId <= 0) {
@@ -73,7 +72,7 @@ class CommentController extends Base
       $rows = Db::query(
         'SELECT COUNT(*) AS `unread_count` FROM `tb_comment` AS `reply` ' .
         $this->notificationReplyJoins() .
-        'LEFT JOIN `tb_reply_notification_status` AS `reading` ON `reading`.`reply_id` = `reply`.`id` ' .
+        'LEFT JOIN `tb_comment_reply_status` AS `reading` ON `reading`.`reply_id` = `reply`.`id` ' .
         'AND `reading`.`recipient_user_id` = ' . $frontUserId . ' ' .
         'WHERE ' . $this->recipientPredicate($frontUserId) .
         'AND `target`.`is_show` = 1 AND `reply`.`is_show` = 1 ' .
@@ -87,7 +86,7 @@ class CommentController extends Base
   }
 
   /** 将当前账号已经收到的回复全部标记为已读。 */
-  public function replyNotificationRead(): void
+  public function commentReplyRead(): void
   {
     $frontUserId = $this->currentFrontUserId();
     if ($frontUserId <= 0) {
@@ -99,12 +98,12 @@ class CommentController extends Base
       $this->ensureReplyNotificationTable();
       $now = date('Y-m-d H:i:s');
       Db::execute(
-        'INSERT INTO `tb_reply_notification_status` (`reply_id`,`recipient_user_id`,`is_read`,`update_time`) ' .
+        'INSERT INTO `tb_comment_reply_status` (`reply_id`,`recipient_user_id`,`is_read`,`issue_time`) ' .
         'SELECT `reply`.`id`,' . $frontUserId . ',1,"' . $now . '" FROM `tb_comment` AS `reply` ' .
         $this->notificationReplyJoins() .
         'WHERE ' . $this->recipientPredicate($frontUserId) .
         'AND `target`.`is_show` = 1 AND `reply`.`is_show` = 1 ' .
-        'ON DUPLICATE KEY UPDATE `is_read` = 1, `update_time` = VALUES(`update_time`)'
+        'ON DUPLICATE KEY UPDATE `is_read` = 1, `issue_time` = VALUES(`issue_time`)'
       );
       $this->json([], '已读', 1);
     } catch (\Exception $e) {
@@ -113,7 +112,7 @@ class CommentController extends Base
   }
 
   /** 修改单条回复的读取状态。 */
-  public function replyNotificationUpdate(): void
+  public function commentReplyUpdate(): void
   {
     $replyId = (int)$this->input('post.id/d', 0);
     $isRead = (int)$this->input('post.is_read/d', 0) === 1 ? 1 : 0;
@@ -123,16 +122,13 @@ class CommentController extends Base
     }
 
     try {
-      $reply = Db::name('tb_comment')->where('id', '=', $replyId)->field(['id', 'parent_id', 'user_id'])->find();
+      $reply = Db::name('tb_comment')->where('id', '=', $replyId)->field(['id', 'parent_id', 'role_id'])->find();
       if (!$reply || (int)$reply['parent_id'] <= 0) {
         $this->json([], '回复不存在', 0);
         return;
       }
-      $target = Db::name('tb_comment')->where('id', '=', (int)$reply['parent_id'])->field(['user_id', 'name'])->find();
-      $recipientId = (int)($target['user_id'] ?? 0);
-      if ($recipientId <= 0 && !empty($target['name'])) {
-        $recipientId = (int)(Db::name('tb_front_user')->where('nickname', '=', (string)$target['name'])->value('id') ?? 0);
-      }
+      $target = Db::name('tb_comment')->where('id', '=', (int)$reply['parent_id'])->field(['role_id'])->find();
+      $recipientId = (int)($target['role_id'] ?? 0);
       if ($recipientId <= 0 || (!$this->isAdmin() && $recipientId !== $this->currentFrontUserId())) {
         http_response_code(403);
         $this->json([], '无权修改该回复的读取状态', 0);
@@ -141,9 +137,9 @@ class CommentController extends Base
       $this->ensureReplyNotificationTable();
       $now = date('Y-m-d H:i:s');
       Db::execute(
-        'INSERT INTO `tb_reply_notification_status` (`reply_id`,`recipient_user_id`,`is_read`,`update_time`) VALUES (' .
+        'INSERT INTO `tb_comment_reply_status` (`reply_id`,`recipient_user_id`,`is_read`,`issue_time`) VALUES (' .
         $replyId . ',' . $recipientId . ',' . $isRead . ',"' . $now . '") ' .
-        'ON DUPLICATE KEY UPDATE `is_read` = VALUES(`is_read`), `update_time` = VALUES(`update_time`)'
+        'ON DUPLICATE KEY UPDATE `is_read` = VALUES(`is_read`), `issue_time` = VALUES(`issue_time`)'
       );
       $this->json(['is_read' => $isRead], $isRead === 1 ? '已标记为已读' : '已标记为未读', 1);
     } catch (\Exception $e) {
@@ -169,15 +165,13 @@ class CommentController extends Base
     $query = Db::name('tb_comment');
     $isAdmin = $this->isAdmin();
     $currentUserId = $this->currentUserId();
-    $roleName = (string)(Db::name('tb_role')->where('id', '=', $currentUserId)->value('name') ?? '');
     $frontUserId = $this->frontUserIdByRoleId($currentUserId);
 
     if (!$isAdmin) {
-      // tb_comment.user_id 对应 tb_front_user.id，而后台会话 ID 对应 tb_role.id。
-      // 同时按唯一昵称兼容历史评论（旧数据可能没有有效 user_id）。
+      // tb_comment.role_id 与后台会话 ID 均对应 tb_role.id。
+      // 同时按唯一昵称兼容历史评论（旧数据可能没有有效 role_id）。
       $ownConditions = [];
-      if ($frontUserId > 0) $ownConditions[] = '`user_id` = ' . $frontUserId;
-      if ($roleName !== '') $ownConditions[] = '`name` = "' . $roleName . '"';
+      if ($currentUserId > 0) $ownConditions[] = '`role_id` = ' . $currentUserId;
       $query->where($ownConditions ? '(' . implode(' OR ', $ownConditions) . ')' : '1 = 0');
     }
 
@@ -195,7 +189,7 @@ class CommentController extends Base
       // 昵称或评论内容任一命中即匹配（OR 语义），用单条原始条件表达。
       $pattern = $this->likeEncodedPattern($keyword);
       $query->where(
-        '(LOWER(`name`) LIKE "' . $pattern . '" OR LOWER(`message`) LIKE "' . $pattern . '")'
+        'LOWER(`message`) LIKE "' . $pattern . '"'
       );
     }
 
@@ -204,7 +198,16 @@ class CommentController extends Base
       ->page($pageCurrent, $pageRow);
 
     // 评论内容/昵称后端解码（前端渲染时再做一次转义，双保险）。
-    $result['data'] = $this->decodeFields($result['data'] ?? [], ['name', 'message']);
+    $result['data'] = $this->decodeFields($result['data'] ?? [], ['message']);
+    $roleIds = array_values(array_unique(array_filter(array_map('intval', array_column($result['data'], 'role_id')))));
+    $roleNames = [];
+    $roleNicknames = [];
+    if ($roleIds) {
+      foreach (Db::name('tb_role')->whereIn('id', $roleIds)->field(['id', 'name', 'nickname'])->select() as $role) {
+        $roleNames[(int)$role['id']] = html_entity_decode((string)$role['name'], ENT_QUOTES);
+        $roleNicknames[(int)$role['id']] = html_entity_decode((string)($role['nickname'] ?? ''), ENT_QUOTES);
+      }
+    }
 
     $replyStates = [];
     if ($type === 'reply' && !empty($result['data'])) {
@@ -212,11 +215,11 @@ class CommentController extends Base
       $replyIds = array_values(array_filter(array_map('intval', array_column($result['data'], 'id'))));
       if (!empty($replyIds)) {
         $rows = Db::query(
-          'SELECT `reply`.`id`,COALESCE(NULLIF(`target`.`user_id`,0),`legacy_recipient`.`id`,0) AS `recipient_user_id`,COALESCE(`reading`.`is_read`,0) AS `is_read` ' .
+          'SELECT `reply`.`id`,COALESCE(`target`.`role_id`,0) AS `recipient_user_id`,COALESCE(`reading`.`is_read`,0) AS `is_read` ' .
           'FROM `tb_comment` AS `reply` ' .
           $this->notificationReplyJoins() .
-          'LEFT JOIN `tb_reply_notification_status` AS `reading` ON `reading`.`reply_id` = `reply`.`id` ' .
-          'AND `reading`.`recipient_user_id` = COALESCE(NULLIF(`target`.`user_id`,0),`legacy_recipient`.`id`) ' .
+          'LEFT JOIN `tb_comment_reply_status` AS `reading` ON `reading`.`reply_id` = `reply`.`id` ' .
+          'AND `reading`.`recipient_user_id` = `target`.`role_id` ' .
           'WHERE `reply`.`id` IN (' . implode(',', $replyIds) . ')'
         );
         foreach ($rows as $replyState) $replyStates[(int)$replyState['id']] = $replyState;
@@ -237,15 +240,19 @@ class CommentController extends Base
     }
     foreach ($result['data'] as &$row) {
       $row['article_title'] = $articleTitles[(int)$row['article_id']] ?? '未关联文章';
+      // 昵称和用户名均来自统一账号表。
+      $row['nickname'] = $roleNicknames[(int)$row['role_id']] ?? '';
+      $row['account_name'] = $roleNames[(int)$row['role_id']] ?? '';
+      // 兼容迁移前遗留的旧前台用户 ID：无法按 role_id 对应账号时按评论昵称回查。
       $row['status_text'] = (int)$row['is_show'] === 1 ? '已通过' : '待审核';
       if ($type === 'reply') {
         $replyState = $replyStates[(int)$row['id']] ?? [];
         $row['is_read'] = (int)($replyState['is_read'] ?? 0);
         $row['recipient_user_id'] = (int)($replyState['recipient_user_id'] ?? 0);
       }
-      // 是否本人发表：管理员列表含他人评论时按 user_id 比对；普通用户列表只含自己的，恒为 true。
+      // 是否本人发表：管理员列表含他人评论时按 role_id 比对；普通用户列表只含自己的，恒为 true。
       $row['is_own'] = $isAdmin
-        ? ((int)$row['user_id'] === $frontUserId || ($roleName !== '' && (string)$row['name'] === html_entity_decode($roleName, ENT_QUOTES)))
+        ? ((int)$row['role_id'] === $currentUserId)
         : true;
     }
     unset($row);
@@ -279,15 +286,19 @@ class CommentController extends Base
   // 删除评论或回复。
   public function commentDelete(): void
   {
-    if (!$this->requireManagePermission()) return;
+    if ($this->currentUserId() <= 0) {
+      http_response_code(403);
+      $this->json([], '请先登录', 0);
+      return;
+    }
     $id = $this->input('post.id') ?? '';
     // 删除顶层评论时，一并删除其下所有回复（parent_id 指向该评论）。
     $comment = Db::name('tb_comment')
       ->where('id', '=', $id)
-      ->field(['id', 'parent_id', 'user_id'])
+      ->field(['id', 'parent_id', 'role_id'])
       ->find();
     if ($comment) {
-      if (!$this->isAdmin() && (int)$comment['user_id'] !== $this->currentUserId()) {
+      if (!$this->isAdmin() && (int)$comment['role_id'] !== $this->currentUserId()) {
         http_response_code(403);
         $this->json([], '只能删除自己发表的评论', 0);
         return;
@@ -301,6 +312,8 @@ class CommentController extends Base
         ->where('id', '=', $id)
         ->delete();
     }
+    // 无论目标记录是否已被其它页面删除，都广播一次，让前台重新以数据库结果为准。
+    $this->notifyServer();
     $this->json([], '删除成功', 1);
   }
 
@@ -311,7 +324,7 @@ class CommentController extends Base
     $result = Db::name('tb_comment')
       ->where('id', '=', $id)
       ->find();
-    $result = $this->decodeFields($result, ['name', 'message']);
+    $result = $this->decodeFields($result, ['message']);
     $this->json($result);
   }
 }

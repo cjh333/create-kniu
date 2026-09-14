@@ -34,6 +34,8 @@ function getIdentity() {
   const identity = {
     token: /^[a-f0-9]{64}$/i.test(value?.token || '') ? value.token.toLowerCase() : createToken(),
     nickname: normalizeNickname(value?.nickname),
+    name: String(value?.name || '').trim(),
+    avatar: String(value?.avatar || '').trim(),
     // account：本机是否注册过前台账号。退出登录不清零——设备「有账号」这件事不会因登出而改变，
     // 用于区分「初次访客（引导注册）」与「已有账号（直接登录）」。
     account: value?.account ? 1 : 0
@@ -47,6 +49,8 @@ function setIdentity(value) {
   const identity = {
     token: /^[a-f0-9]{64}$/i.test(value?.token || '') ? value.token.toLowerCase() : current.token,
     nickname: normalizeNickname(value?.nickname),
+    name: String(value?.name || current.name || '').trim(),
+    avatar: String(value?.avatar === undefined ? current.avatar : value.avatar || '').trim(),
     account: value?.account === undefined || value?.account === null ? current.account : (value.account ? 1 : 0)
   };
   persist(identity);
@@ -57,7 +61,7 @@ function setIdentity(value) {
 function clearIdentity() {
   const account = readStored().account ? 1 : 0;
   try { globalThis.localStorage?.removeItem(STORAGE_KEY); } catch (_) { }
-  const identity = { token: createToken(), nickname: '', account: account };
+  const identity = { token: createToken(), nickname: '', name: '', avatar: '', account: account };
   persist(identity);
   globalThis.dispatchEvent?.(new CustomEvent('kniu-identity-change', { detail: identity }));
   return identity;

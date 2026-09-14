@@ -1,9 +1,9 @@
-import KniuMvvm from '../../core/kniumvvm.mjs';
+import MVVM from '../../core/kniumvvm.mjs';
 import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 import { buildMultipartFormData, fillOptionsFromResponse, optionsToValues, toSingleFileList } from '../../core/kniuutil.mjs';
 
-const { controller, reactive, onMounted } = KniuMvvm;
+const { controller, reactive, onMounted } = MVVM;
 
 const seoController = controller(({ autoSync }) => {
   const state = reactive({

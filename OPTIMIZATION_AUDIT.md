@@ -63,7 +63,7 @@ onMounted(function () {
 });
 ```
 
-- 接口：`POST /reply_notification_state`（`CommentController::replyNotificationState`）。
+- 接口：`POST /comment_reply_state`（`CommentController::commentReplyState`）。
 - 问题：后台所有在线的管理/普通账号只要停留在后台壳层，就会每 60s 打一次该接口；而这条数据只有在"别人回复了你"时才变化。多数请求是"空轮询"。
 - 另外：后台/前台是两个标签页时，即便前台有新评论，后台红点也要等 60s 或手动刷新/切回才更新。
 
@@ -79,7 +79,7 @@ onMounted(function () {
 | 兜底 | 保留一个低频心跳轮询（如 5~10 分钟）或 `visibilitychange` 重新拉取，防止 WS 断线漏消息；WS 断开自动重连 + 指数退避 |
 
 **跨账号即时"回复我"的完整链路**（以最简、对现有代码侵入最小为原则）：
-1. `CommentController::replyNotificationState` 现成可复用作兜底。
+1. `CommentController::commentReplyState` 现成可复用作兜底。
 2. Node 网关维护 `Map<recipientId, Set<ws>>`。
 3. 推送触发点（任选其一，推荐 A）：
    - **A（推荐，后端无感知）**：Node 网关在收到"回复状态变更"信号后，调用 PHP 现有查询、把 `{has_unread:true}` 推给该 recipient 的所有连接。信号来源可以是 PHP 在 `submitComment` 后向 Node 的一个内部端点 POST（内网本机，无鉴权风险）。
@@ -156,7 +156,7 @@ onMounted(function () {
 - 关键词模糊 LIKE 编码段（4 处）：`Article/Comment/Daily/Role`
 - 前台用户 ID 映射 `role_id → tb_front_user.id`：`CommentController` + `AuthController` 等多处
 - 算术验证码校验块：`AuthController::logup` / `IndexController`（frontProfileSave / verifyFrontCaptcha）3 处近似重复
-- 回复通知 3 段相同的复杂 join SQL（`CommentController::replyNotificationState/Read/Update` 内）——**这是 WebSocket 推送改造时最该顺手抽公共方法的地方**。
+- 回复通知 3 段相同的复杂 join SQL（`CommentController::commentReplyState/Read/Update` 内）——**这是 WebSocket 推送改造时最该顺手抽公共方法的地方**。
 
 ### 6.3 会话/权限
 - 现状合理（前后台会话隔离、`Base`（`api/core/Base.php`）统一鉴权）。若上 WS/SSE，注意**不要**为长连接暴露新鉴权漏洞：SSE/WS 端点必须复用 `validateToken` 同等的 session 校验，不能让"能连上长连接"绕过登录。

@@ -1,8 +1,8 @@
-import KniuMvvm from '../../core/kniumvvm.mjs';
+import MVVM from '../../core/kniumvvm.mjs';
 import { getCurrentRoutePath } from '../../core/kniuutil.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 
-const { controller, onMounted, reactive } = KniuMvvm;
+const { controller, onMounted, reactive } = MVVM;
 
 function getActiveNavigationPath(path) {
   return path;

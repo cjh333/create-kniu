@@ -143,7 +143,7 @@ class AuthController extends Controller
     $this->json([], '退出登录成功', 1);
   }
 
-  /** 后台登录成功后同步建立前台身份，保证前后台登录状态一致。 */
+  /** 后台登录成功后把前台身份令牌同步到统一账号表。 */
   private function syncFrontIdentity(string $token, int $roleId, string $name): array
   {
     $nickname = trim(html_entity_decode($name, ENT_QUOTES));
@@ -151,44 +151,16 @@ class AuthController extends Controller
       return ['id' => 0, 'nickname' => $nickname];
     }
     $tokenHash = hash('sha256', strtolower($token));
-    $encodedName = htmlspecialchars($nickname, ENT_QUOTES);
-    $now = date('Y-m-d H:i:s');
-    $account = Db::name('tb_front_user')->where('role_id', '=', $roleId)->find();
-    if (!$account) $account = Db::name('tb_front_user')->where('nickname', '=', $encodedName)->find();
-    $tokenUser = Db::name('tb_front_user')->where('identity_token', '=', $tokenHash)->find();
-
-    if ($account) {
-      if ($tokenUser && (int)$tokenUser['id'] !== (int)$account['id']) {
-        Db::name('tb_front_user')->where('id', '=', (int)$tokenUser['id'])->delete();
-      }
-      Db::name('tb_front_user')->where('id', '=', (int)$account['id'])->update([
-        'role_id' => $roleId,
-        'identity_token' => $tokenHash,
-        'nickname' => $encodedName,
-        'update_time' => $now
-      ]);
-      $frontUserId = (int)$account['id'];
-    } elseif ($tokenUser) {
-      Db::name('tb_front_user')->where('id', '=', (int)$tokenUser['id'])->update([
-        'role_id' => $roleId,
-        'nickname' => $encodedName,
-        'update_time' => $now
-      ]);
-      $frontUserId = (int)$tokenUser['id'];
-    } else {
-      $frontUserId = (int)Db::name('tb_front_user')->insert([
-        'role_id' => $roleId,
-        'identity_token' => $tokenHash,
-        'nickname' => $encodedName,
-        'create_time' => $now,
-        'update_time' => $now
-      ]);
-    }
+    Db::name('tb_role')->where('identity_token', '=', $tokenHash)->where('id', '<>', $roleId)->update(['identity_token' => null]);
+    Db::name('tb_role')->where('id', '=', $roleId)->update([
+      'identity_token' => $tokenHash,
+      'nickname' => Db::name('tb_role')->where('id', '=', $roleId)->value('nickname')
+    ]);
     $_SESSION['front_token'] = [
       'id' => $roleId,
       'name' => $nickname,
       'expire' => $_SESSION['admin_token']['expire'] ?? (time() + 86400 * 7)
     ];
-    return ['id' => $frontUserId, 'nickname' => $nickname];
+    return ['id' => $roleId, 'nickname' => $nickname];
   }
 }

@@ -703,7 +703,7 @@ var KniuUI = (function () {
       .kniu_sys_table_viewport{width:100%;max-width:100%;overflow-x:auto;overflow-y:auto;box-sizing:border-box}
       @supports(overflow-y:overlay){.kniu_sys_table_viewport{overflow-y:overlay}}
       .kniu_sys_table{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;background-color:#fff;box-sizing:border-box}
-      .kniu_sys_table th,.kniu_sys_table td{border-bottom:1px solid #ebeef5;padding:0 10px;height:48px;box-sizing:border-box;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background-color:#fff}
+      .kniu_sys_table th,.kniu_sys_table td{border-bottom:1px solid #ebeef5;padding:5px 10px;height:48px;box-sizing:border-box;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background-color:#fff}
       .kniu_sys_table th{position:sticky;top:0;z-index:3;color:#909399;font-weight:600;background-color:#f5f7fa}
       .kniu_sys_table_group[data-empty="true"] thead{pointer-events:none;user-select:none}
       .kniu_sys_table_group[data-empty="true"] thead th{cursor:not-allowed!important}
@@ -953,7 +953,7 @@ var KniuUI = (function () {
       }
       if (column.switch) {
         const switchElement = documentRef.createElement('kniu-switch');
-        // 列内开关配置统一来自 kniu:options 快照（旧 attribute 快照已作废）
+        // 列内开关配置统一来自 kniu:option 快照（旧 attribute 快照已作废）
         if (column.switch.options && typeof column.switch.options === 'object') {
           switchElement.options = column.switch.options;
         }
@@ -1007,6 +1007,42 @@ var KniuUI = (function () {
         cell.append(status);
         return;
       }
+      if (column.radio) {
+        const radioGroup = documentRef.createElement('kniu-radio-group');
+        radioGroup._saveQueue = Promise.resolve();
+        radioGroup._changeVersion = 0;
+        // 按列定义的选项逐行重建单选组；每个行实例自带唯一 name，互不干扰。
+        (column.radio.options || []).forEach(function (opt) {
+          const radio = documentRef.createElement('kniu-radio');
+          if (opt.value !== '' && opt.value != null) radio.setAttribute('value', String(opt.value));
+          radio.setAttribute('label', opt.label == null ? '' : String(opt.label));
+          radioGroup.appendChild(radio);
+        });
+        radioGroup.value = column.field == null ? '' : String(row?.[column.field]);
+        radioGroup.dataset.rowIndex = String(rowIndex);
+        radioGroup.addEventListener('change', async function (event) {
+          const currentIndex = Number.parseInt(radioGroup.dataset.rowIndex, 10);
+          const currentRowData = Number.isFinite(currentIndex) ? rows[currentIndex] : row;
+          if (currentRowData === undefined) return;
+          const previousValue = column.field == null ? undefined : currentRowData[column.field];
+          const requestedValue = event.detail;
+          if (column.field != null) currentRowData[column.field] = requestedValue;
+          if (typeof column.radio.onChange !== 'function') return;
+          // 串行入队，避免连续点击后发请求先返回覆盖最终值；失败时回滚到原值。
+          const changeVersion = ++radioGroup._changeVersion;
+          const saveTask = radioGroup._saveQueue.then(function () {
+            return column.radio.onChange(currentIndex, rows, requestedValue);
+          });
+          radioGroup._saveQueue = saveTask.catch(function () { return false; });
+          const saved = await saveTask.catch(function () { return false; }) !== false;
+          if (!saved && column.field != null && radioGroup._changeVersion === changeVersion) {
+            currentRowData[column.field] = previousValue;
+            radioGroup.value = previousValue;
+          }
+        });
+        cell.append(radioGroup);
+        return;
+      }
       if (Array.isArray(column.actions)) {
         column.actions.forEach(function (action, actionIndex) {
           if (action.condition != null && !resolveTableRowTemplate(action.condition, row, rowIndex)) return;
@@ -1053,6 +1089,7 @@ var KniuUI = (function () {
       return column.type !== 'checkbox'
         && !column.image
         && !column.switch
+        && !column.radio
         && !column.tag
         && !column.status
         && !Array.isArray(column.actions);
@@ -1086,13 +1123,20 @@ var KniuUI = (function () {
       }
       if (column.switch) {
         if (!child || child.tagName !== 'KNIU-SWITCH') return false;
-        // 首次渲染早于 kniu:options 绑定（快照为 null）时，行复用节点也需在列定义
+        // 首次渲染早于 kniu:option 绑定（快照为 null）时，行复用节点也需在列定义
         // 重读后同步最新配置；整体替换 options 后此处按引用变化更新。
         if (column.switch.options && typeof column.switch.options === 'object'
           && child.options !== column.switch.options) {
           child.options = column.switch.options;
         }
         child.value = column.field == null ? false : row?.[column.field];
+        child.dataset.rowIndex = String(rowIndex);
+        return true;
+      }
+      if (column.radio) {
+        if (!child || child.tagName !== 'KNIU-RADIO-GROUP') return false;
+        // 复用行只需同步选中值与行索引，不重建单选组（避免焦点/交互丢失）。
+        child.value = column.field == null ? '' : String(row?.[column.field]);
         child.dataset.rowIndex = String(rowIndex);
         return true;
       }
@@ -1183,7 +1227,6 @@ var KniuUI = (function () {
       columns.forEach(function (column, index) {
         const cell = documentRef.createElement('td');
         applyColumnLayout(cell, column, index, offsets);
-        if (column.editable) cell.classList.add('kniu_sys_table_editable');
         cellFragment.appendChild(cell);
       });
       tableRow.appendChild(cellFragment);
@@ -1205,7 +1248,13 @@ var KniuUI = (function () {
       tableRow.dataset.rowIndex = String(rowIndex);
       const cells = tableRow.cells;
       for (let index = 0; index < columns.length; index += 1) {
-        renderCellContent(cells[index], columns[index], row, rowIndex, reused);
+        const column = columns[index];
+        if (column.editable) {
+          cells[index].classList.toggle('kniu_sys_table_editable', row?.[column.field + '_editable'] !== false);
+        } else {
+          cells[index].classList.remove('kniu_sys_table_editable');
+        }
+        renderCellContent(cells[index], column, row, rowIndex, reused);
       }
       return tableRow;
     }
@@ -1389,7 +1438,7 @@ var KniuUI = (function () {
     }
 
     function beginCellEdit(cell, column, row, rowIndex) {
-      if (!column.editable || cell.querySelector('.kniu_sys_table_edit_input')) return;
+      if (!column.editable || row?.[column.field + '_editable'] === false || cell.querySelector('.kniu_sys_table_edit_input')) return;
       const oldValue = row?.[column.field];
       const input = documentRef.createElement('input');
       input.className = 'kniu_sys_table_edit_input';
@@ -1761,7 +1810,8 @@ var KniuUI = (function () {
         this.shadowRoot.querySelector('slot').addEventListener('slotchange', () => this._syncAutoSpace());
         adoptSharedStyle(this.shadowRoot, '.kniu_sys_button_icon{display:inline-flex;align-items:center;justify-content:center}.kniu_sys_button_icon svg{display:block;width:1em;height:1em;fill:currentColor;overflow:visible}');
         adoptSharedStyle(this.shadowRoot, ':host([block]){height:100%}:host([block]) .kniu_sys_button{width:100%;height:100%}');
-        adoptSharedStyle(this.shadowRoot, 'slot::slotted(kniu-icon){font-size:var(--kniu-button-icon-size,1em)}');
+          adoptSharedStyle(this.shadowRoot, 'slot::slotted(kniu-icon){font-size:var(--kniu-button-icon-size,1em)}');
+          adoptSharedStyle(this.shadowRoot, ':host([append-borderless]) .kniu_sys_button{border:none;border-radius:0}');
       }
       _bindButton() {
         this._icon = this._button.querySelector('.kniu_sys_button_icon');
@@ -1872,7 +1922,7 @@ var KniuUI = (function () {
     class KniuSysSwitch extends HTMLElement {
       // 2026-09-01：所有旧 attribute（disabled / width / active-value / inactive-value /
       // active-color / inactive-color / active-icon-class / inactive-icon-class /
-      // active-text / inactive-text / name / validate-event）全部作废，只认 kniu:options。
+      // active-text / inactive-text / name / validate-event）全部作废，只认 kniu:option。
       // 仅保留属性绑定透传：模板 `disabled="{{expr}}"` 走 property setter 写 _propDisabled。
       static get observedAttributes() {
         return [];
@@ -1902,7 +1952,7 @@ var KniuUI = (function () {
           this._sync();
           // 同时派 change 和 input（composed 让光层 listener 也能收到）：
           // - change：保留对历史上用 `kniu@change="..."` 的旧调用方的兼容；
-          // - input：让 `kniu:model` 双向绑定能够把当前值写回路径（双向绑定的监听器是 `input`）。
+          // - input：让 `kniu:form` 双向绑定能够把当前值写回路径（双向绑定的监听器是 `input`）。
           const value = this._value;
           this.dispatchEvent(new CustomEvent('change', { detail: value, bubbles: true, composed: true }));
           this.dispatchEvent(new CustomEvent('input', { detail: value, bubbles: true, composed: true }));
@@ -1936,7 +1986,7 @@ var KniuUI = (function () {
       set value(value) { this._value = value; this._sync(); }
       get disabled() { return (this._options && this._options.disabled === true) || this._propDisabled === true; }
       set disabled(value) { this._propDisabled = !!value; this._sync(); }
-      // kniu:options 统一配置入口（2026-09-01）：activeValue / inactiveValue / activeColor /
+      // kniu:option 统一配置入口（2026-09-01）：activeValue / inactiveValue / activeColor /
       // inactiveColor / disabled / width / activeText / inactiveText / activeIconClass /
       // inactiveIconClass / name 全部收进 options；旧 attribute 一律作废。
       set options(value) {
@@ -1961,7 +2011,7 @@ var KniuUI = (function () {
         this._core.disabled = disabled;
         this._input.name = String(this._cfg('name', ''));
         this._core.style.width = `${width}px`;
-        this._core.style.backgroundColor = active ? String(this._cfg('activeColor', '#409EFF')) : String(this._cfg('inactiveColor', '#C0CCDA'));
+        this._core.style.backgroundColor = active ? String(this._cfg('activeColor', '#13ce66')) : String(this._cfg('inactiveColor', '#f56c6c'));
         this._root.style.setProperty('--kniu-switch-distance', `${width - 20}px`);
         const iconClass = active ? String(this._cfg('activeIconClass', '')) : String(this._cfg('inactiveIconClass', ''));
         this._icon.className = `kniu_sys_switch_icon${iconClass ? ` ${iconClass}` : ''}`;
@@ -2237,7 +2287,8 @@ var KniuUI = (function () {
         constructor() {
           super();
           attachComponentShadow(this);
-          this.shadowRoot.innerHTML = '<slot></slot>';
+          // 列定义仅作为配置载体被 kniu-table 读取，自身不应在页面中渲染出可见内容。
+          this.shadowRoot.innerHTML = '<style>:host{display:none}</style><slot></slot>';
         }
         set onChange(value) { this._onChange = typeof value === 'function' ? value : null; }
         get onChange() { return this._onChange; }
@@ -2255,7 +2306,7 @@ var KniuUI = (function () {
     class KniuSysTable extends HTMLElement {
       // 2026-09-01：kniu-table 自身旧 attribute（height / max-height / stripe / border /
       // size / fit / show-header / highlight-current-row / row-key / empty-text）全部作废，
-      // 唯一配置入口为 kniu:options；列定义来自 options.cols。
+      // 唯一配置入口为 kniu:option；列定义唯一来自 kniu-table 下的 kniu-table-col HTML 标签。
       static get observedAttributes() {
         return [];
       }
@@ -2300,7 +2351,7 @@ var KniuUI = (function () {
         return this.config;
       }
 
-      // kniu:options 统一配置入口（2026-09-01）：data / rowKey / stripe / border / size / fit /
+      // kniu:option 统一配置入口（2026-09-01）：data / rowKey / stripe / border / size / fit /
       // showHeader / highlightCurrentRow / emptyText / height / maxHeight 全部收进 options；
       // 旧 attribute 一律作废。options 对象整体替换即触发刷新（响应式通知 + 本 setter）。
       set options(value) {
@@ -2315,7 +2366,7 @@ var KniuUI = (function () {
         if (langChanged) { this._queueRender(); this._clearColumnDefinitions(); return; }
         if (Array.isArray(opts.data)) {
           if (this._table) {
-            // 列模板 content 内 switch 的 kniu:options 在 applyBindings 同步块内才写入 expando，
+            // 列模板 content 内 switch 的 kniu:option 在 applyBindings 同步块内才写入 expando，
             // 而首次 _readColumns（connectedCallback 的 microtask）早于绑定执行 → 快照为 null。
             // 整体替换 options 时延迟到 microtask 重读列定义再 setData，让行内开关拿到配置；
             // 重读走 _columnElements 缓存（列定义可能已被 _clearColumnDefinitions 移除）。
@@ -2362,13 +2413,12 @@ var KniuUI = (function () {
       }
 
       _clearColumnDefinitions() {
-        if (this._columnDefinitionsCleared || !this._columns.length) return;
-        this._columnDefinitionsCleared = true;
-        queueMicrotask(() => {
-          this.querySelectorAll(':scope > kniu-table-col').forEach(function (column) {
-            column.remove();
-          });
-        });
+        // 还原成 HTML 标签形式后，<kniu-table-col> 是列定义的唯一来源，必须保留——
+        // 任何后续 options / data 更新都通过 _readColumns 重新读取这些元素（含其内联
+        // kniu@change / kniu@click 处理器），移除会导致后续渲染丢失列配置。
+        // 旧 JS 配置页（article / daily / comment 等）不使用 <kniu-table-col> 子节点，
+        // 此函数已无清理对象，故置为空操作。
+        return;
       }
 
       _readColumns() {
@@ -2426,6 +2476,8 @@ var KniuUI = (function () {
               }))
             } : null,
             onChange: (...args) => {
+              const optionOnChange = element.__kniuOptionsValue?.onChange;
+              if (typeof optionOnChange === 'function') return optionOnChange(...args);
               if (typeof element.onChange === 'function') return element.onChange(...args);
               return true;
             },
@@ -2442,9 +2494,9 @@ var KniuUI = (function () {
           const switchElement = element.querySelector(':scope > kniu-switch')
             || template?.content.querySelector('kniu-switch');
           if (switchElement) {
-            // 列内 kniu-switch 统一走 kniu:options：模板 content 内节点未被框架以 property 赋值时
+            // 列内 kniu-switch 统一走 kniu:option：模板 content 内节点未被框架以 property 赋值时
             // （未插入文档 → 自定义元素未升级 → 无 options property），框架会把配置存到
-            // __kniuOptionsValue expando（见 kniutemplate 的 kniu:options 绑定），此处两者都读。
+            // __kniuOptionsValue expando（见 kniutemplate 的 kniu:option 绑定），此处两者都读。
             // createTable 重建行内开关时整体赋回，旧 attribute 快照机制已作废。
             const switchConfig = (switchElement && typeof switchElement.options === 'object' && switchElement.options)
               || (switchElement && switchElement.__kniuOptionsValue && typeof switchElement.__kniuOptionsValue === 'object' ? switchElement.__kniuOptionsValue : null);
@@ -2464,20 +2516,49 @@ var KniuUI = (function () {
               }
             };
           }
+          const radioGroupElement = element.querySelector(':scope > kniu-radio-group')
+            || template?.content.querySelector('kniu-radio-group');
+          if (radioGroupElement) {
+            const radioOptions = Array.from(radioGroupElement.querySelectorAll(':scope > kniu-radio')).map(function (radio) {
+              return {
+                value: radio.getAttribute('value') || '',
+                label: radio.getAttribute('label') || (radio.textContent || '').trim()
+              };
+            });
+            column.radio = {
+              options: radioOptions,
+              // 同 kniu-switch：优先取模板引擎为内联 <kniu-radio-group kniu@change> 写入的作用域处理器，
+              // 列被 kniu:if / kniu:for clone 后仍能稳定调用业务提交函数；否则回退到列级 onChange property。
+              onChange: (...args) => {
+                if (typeof radioGroupElement.__kniuTableScopedHandler === 'function') {
+                  return radioGroupElement.__kniuTableScopedHandler(...args);
+                }
+                if (typeof element.onChange === 'function') return element.onChange(...args);
+                return true;
+              }
+            };
+          }
           if (buttons.length) {
             column.actions = buttons.map(function (button) {
+              // 列模板中的按钮通常尚未升级，kniu:option 会暂存到 expando；
+              // 已升级按钮则直接读取 options。普通属性作为兼容回退。
+              const buttonOptions = (button.__kniuOptionsValue && typeof button.__kniuOptionsValue === 'object'
+                ? button.__kniuOptionsValue
+                : (button.options && typeof button.options === 'object' ? button.options : null)) || {};
+              const optionValue = (name, fallback = '') => buttonOptions[name] !== undefined ? buttonOptions[name] : fallback;
+              const optionFlag = (name, fallback = false) => buttonOptions[name] !== undefined ? !!buttonOptions[name] : fallback;
               return {
                 title: button.textContent.trim() || '操作',
-                className: button.getAttribute('class') || '',
-                type: button.getAttribute('type') || '',
-                size: button.getAttribute('size') || '',
-                plain: button.hasAttribute('plain'),
-                text: button.hasAttribute('text'),
-                bg: button.hasAttribute('bg'),
-                link: button.hasAttribute('link'),
-                round: button.hasAttribute('round'),
-                circle: button.hasAttribute('circle'),
-                disabled: button.hasAttribute('disabled'),
+                className: button.getAttribute('class') || optionValue('className'),
+                type: optionValue('type', button.getAttribute('type') || ''),
+                size: optionValue('size', button.getAttribute('size') || ''),
+                plain: optionFlag('plain', button.hasAttribute('plain')),
+                text: optionFlag('text', button.hasAttribute('text')),
+                bg: optionFlag('bg', button.hasAttribute('bg')),
+                link: optionFlag('link', button.hasAttribute('link')),
+                round: optionFlag('round', button.hasAttribute('round')),
+                circle: optionFlag('circle', button.hasAttribute('circle')),
+                disabled: optionFlag('disabled', button.hasAttribute('disabled')),
                 condition: button.hasAttribute('kniu:if') ? button.getAttribute('kniu:if') : null,
                 icon: button.getAttribute('icon') || '',
                 onClick: ({ index, rows }) => {
@@ -2513,7 +2594,7 @@ var KniuUI = (function () {
 
       _renderTable() {
         this._readColumns();
-        const columns = this._columns.length ? this._columns : this._config?.cols;
+        const columns = this._columns;
         if (!Array.isArray(columns) || !columns.length) return;
         this._destroyTable();
         const cfg = this._config || {};
@@ -2641,8 +2722,8 @@ var KniuUI = (function () {
     }
 
     // 加载完成后把分页结果同步进 options 化的 table / page 配置对象
-    // （kniu-table 的 kniu:options、kniu-page 的 kniu:options 直接消费这两个对象）。
-    // 注意：必须整体替换对象引用——kniu:options 的响应式订阅注册在表达式路径
+    // （kniu-table 的 kniu:option、kniu-page 的 kniu:option 直接消费这两个对象）。
+    // 注意：必须整体替换对象引用——kniu:option 的响应式订阅注册在表达式路径
     // （如 state.userPage）上，原地改 total/data 等子属性不会触发组件刷新。
     function syncOptions() {
       if (tableKey && state[tableKey] && typeof state[tableKey] === 'object') {
@@ -3042,7 +3123,7 @@ var KniuUI = (function () {
     class KniuSysPage extends HTMLElement {
       // 2026-09-01：所有旧 attribute（total / page-size / current-page / layout /
       // background / first-text / prev-text / next-text / last-text）全部作废，
-      // 只认 kniu:options。
+      // 只认 kniu:option。
       static get observedAttributes() {
         return [];
       }
@@ -3137,7 +3218,7 @@ var KniuUI = (function () {
       get currentPage() { return this._currentPage; }
       set currentPage(value) { this._currentPage = Math.max(1, Number(value) || 1); this._render(); }
 
-      // kniu:options 统一配置入口（2026-09-01）：total / currentPage / pageSize / layout /
+      // kniu:option 统一配置入口（2026-09-01）：total / currentPage / pageSize / layout /
       // background / firstText / prevText / nextText / lastText / sizes 全部收进 options；
       // 旧 attribute 一律作废（整体替换 options 对象即可刷新）。
       set options(value) {
@@ -3301,6 +3382,8 @@ var KniuUI = (function () {
         this._fit = 'contain';
         this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;overflow:hidden;flex-shrink:0}.kniu_sys_image_group{display:flex;width:100%;height:100%;align-items:stretch}.kniu_sys_image_content{position:relative;flex:1;min-width:0;height:100%;display:flex;align-items:center;justify-content:flex-start;padding:0 12px;background-color:#fff;box-sizing:border-box;overflow:hidden}.kniu_sys_image_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_image_group[data-affix="true"] .kniu_sys_image_content{border:1px solid #dcdfe6}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_content{border-radius:0 4px 4px 0}.kniu_sys_image_group[data-has-append="true"] .kniu_sys_image_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_image_group[data-affix="true"]{height:40px}.kniu_sys_image_group:not([data-affix="true"]) .kniu_sys_image_content{padding:0;background-color:transparent}.kniu_sys_image_wrap{position:relative;width:100%;height:100%;overflow:hidden;background-color:#f5f7fa}.kniu_sys_image{display:block;width:100%;height:100%}.kniu_sys_image_status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background-color:#f5f7fa;color:#909399;font-size:12px}.kniu_sys_image_status[data-hidden="true"]{display:none}</style><div class="kniu_sys_image_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_image_affix kniu_sys_image_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_image_content"><div class="kniu_sys_image_wrap"><img class="kniu_sys_image"><span class="kniu_sys_image_status">加载中…</span></div></div><span class="kniu_sys_image_affix kniu_sys_image_append"><slot name="append"></slot></span></div>`;
         this._image = this.shadowRoot.querySelector('.kniu_sys_image');
+        // 允许页面通过宿主 class/style 设置尺寸，并让 Shadow DOM 内部完整继承宿主尺寸。
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_image_group,.kniu_sys_image_wrap,.kniu_sys_image{width:100%;height:100%;box-sizing:border-box}');
         this._status = this.shadowRoot.querySelector('.kniu_sys_image_status');
         this._image.addEventListener('load', () => {
           this._status.dataset.hidden = 'true';
@@ -3456,7 +3539,7 @@ var KniuUI = (function () {
             if (this.shadowRoot.activeElement !== this._input) this._input.focus({ preventScroll: true });
           });
           this._bindControl(this._input);
-          adoptSharedStyle(this.shadowRoot, 'textarea.kniu_sys_input{height:auto;min-height:42px;padding:8px 12px;line-height:1.5;font:14px/1.5 Arial,"Microsoft YaHei",sans-serif;resize:vertical;white-space:pre-wrap;overflow:auto}.kniu_sys_input_group[data-is-textarea="true"]{height:auto;min-height:40px;align-items:stretch}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{align-self:flex-start;height:40px;display:flex;align-items:center;padding-top:0;padding-bottom:0;box-sizing:border-box}');
+          adoptSharedStyle(this.shadowRoot, 'textarea.kniu_sys_input{height:auto;min-height:120px;padding:8px 12px;line-height:1.5;font:14px/1.5 Arial,"Microsoft YaHei",sans-serif;resize:vertical;white-space:pre-wrap;overflow:auto}.kniu_sys_input_group[data-is-textarea="true"]{height:auto;min-height:40px;align-items:stretch}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{align-self:flex-start;height:40px;display:flex;align-items:center;padding-top:0;padding-bottom:0;box-sizing:border-box}');
         }
         connectedCallback() {
           if (!this.hasAttribute('autocomplete')) this.setAttribute('autocomplete', 'off');
@@ -3565,11 +3648,13 @@ var KniuUI = (function () {
               if (el.matches && el.matches('kniu-btn')) {
                 hasButton = true;
                 el.setAttribute('block', '');
+                if (name === 'append') el.setAttribute('append-borderless', '');
               }
               const nestedButton = el.querySelector('kniu-btn');
               if (nestedButton) {
                 hasButton = true;
                 nestedButton.setAttribute('block', '');
+                if (name === 'append') nestedButton.setAttribute('append-borderless', '');
               }
             });
             if (name === 'append') group.dataset.uploadAppend = String(hasUpload);
@@ -4498,7 +4583,7 @@ var KniuUI = (function () {
   function registerFormComponent() {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-form')) return;
-    // 表单内被视为「字段」的控件：带 name，或 kniu:model 指向 options 的某个字段。
+    // 表单内被视为「字段」的控件：带 name，或 kniu:form 指向 options 的某个字段。
     const FORM_FIELD_SELECTOR = [
       'kniu-input', 'kniu-textarea', 'kniu-select', 'kniu-switch', 'kniu-radio-group',
       'kniu-checkbox-group', 'kniu-date-picker', 'kniu-upload', 'kniu-editor', 'kniu-slider'
@@ -4539,7 +4624,7 @@ var KniuUI = (function () {
         });
         return out;
       }
-      // 唯一配置入口：kniu:options="{{xxxOptions}}"。
+      // 唯一配置入口：kniu:option="{{xxxOptions}}"。
       // 除 ref 与事件外，表单元素上不再有任何配置项属性（model / data / rules / formConfig /
       // label-position / label-width 全部作废）。字段要么写成对象（可验证），要么直接给默认值。
       set options(value) {
@@ -4830,8 +4915,10 @@ var KniuUI = (function () {
         if (previews.length === 0) {
           const empty = document.createElement('div');
           empty.className = 'kniu_upload_item kniu_upload_empty';
-          empty.setAttribute('aria-label', componentText(componentLang(this.__kniuOptions), 'upload.empty'));
-          empty.innerHTML = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="6" width="24" height="20" rx="1"></rect><circle cx="21" cy="12" r="2"></circle><path d="m6 23 7-8 5 5 3-3 5 6"></path></svg><span>' + componentText(componentLang(this.__kniuOptions), 'upload.empty') + '</span>';
+          const emptyNote = this.__kniuOptions?.note ?? componentText(componentLang(this.__kniuOptions), 'upload.empty');
+          empty.setAttribute('aria-label', String(emptyNote));
+          empty.innerHTML = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="6" width="24" height="20" rx="1"></rect><circle cx="21" cy="12" r="2"></circle><path d="m6 23 7-8 5 5 3-3 5 6"></path></svg><span></span>';
+          empty.querySelector('span').textContent = String(emptyNote);
           previews.push(empty);
         }
         replaceChildrenWithFragment(this._wall, previews);
@@ -4958,6 +5045,15 @@ var KniuUI = (function () {
     if (customElements.get('kniu-icon')) return;
     class KniuSysIcon extends HTMLElement {
       static get observedAttributes() { return ['icon']; }
+      get options() { return this.__kniuOptions || {}; }
+      set options(value) {
+        this.__kniuOptions = value && typeof value === 'object' ? value : {};
+        if (Object.prototype.hasOwnProperty.call(this.__kniuOptions, 'icon')) {
+          const icon = this.__kniuOptions.icon;
+          if (icon == null || icon === '') this.removeAttribute('icon');
+          else this.setAttribute('icon', String(icon));
+        }
+      }
       constructor() {
         super();
         attachComponentShadow(this);
@@ -5496,10 +5592,17 @@ var KniuUI = (function () {
         this._sync();
       }
 
-      get toolbar() { return this.getAttribute('toolbar'); }
+      get toolbar() {
+        if (this.__kniuOptions && Object.prototype.hasOwnProperty.call(this.__kniuOptions, 'toolbar')) {
+          return this.__kniuOptions.toolbar;
+        }
+        return this.getAttribute('toolbar');
+      }
       set toolbar(v) {
         if (v == null || v === '') { this.removeAttribute('toolbar'); return; }
-        var str = Array.isArray(v) ? v.map(function (g) { return g.join(' '); }).join(' | ') : String(v);
+        var str = Array.isArray(v) ? v.map(function (item) {
+          return Array.isArray(item) ? item.join(' ') : String(item);
+        }).join(' ') : String(v);
         this.setAttribute('toolbar', str);
       }
 
@@ -5507,8 +5610,20 @@ var KniuUI = (function () {
       //  - 字符串中 '|' 作为分组分隔符，组内以空白/逗号分隔 token
       //  - 空或缺失 -> 使用 EDITOR_DEFAULT_TOOLBAR（全部功能）
       _resolveToolbarConfig() {
-        var raw = this.getAttribute('toolbar');
-        if (raw == null || raw.trim() === '') return EDITOR_DEFAULT_TOOLBAR;
+        var raw = this.__kniuOptions && Object.prototype.hasOwnProperty.call(this.__kniuOptions, 'toolbar')
+          ? this.__kniuOptions.toolbar : this.getAttribute('toolbar');
+        if (Array.isArray(raw)) {
+          var aliases = { fontName: 'fontname', fontSize: 'fontsize', foreColor: 'forecolor', clear: 'clearhtml', fullscreen: 'maximize' };
+          var groupsFromArray = [[]];
+          raw.forEach(function (item) {
+            if (item === '|') { if (groupsFromArray[groupsFromArray.length - 1].length) groupsFromArray.push([]); return; }
+            var token = aliases[item] || item;
+            if (EDITOR_TOOLBAR_ITEMS[token]) groupsFromArray[groupsFromArray.length - 1].push(token);
+          });
+          return groupsFromArray.filter(function (group) { return group.length; });
+        }
+        if (raw == null || String(raw).trim() === '') return EDITOR_DEFAULT_TOOLBAR;
+        raw = String(raw);
         var groups;
         if (raw.indexOf('|') !== -1) {
           groups = raw.split('|').map(function (g) { return g.trim().split(/[\s,]+/).filter(Boolean); });
@@ -6382,6 +6497,13 @@ var KniuUI = (function () {
           if (error) error.textContent = this._editorT()('common.chooseLocalFile');
           return '';
         }
+        const maxSize = file.type.startsWith('image/') ? this.__kniuOptions?.imgMaxSize
+          : file.type.startsWith('video/') ? this.__kniuOptions?.videoMaxSize
+            : file.type.startsWith('audio/') ? this.__kniuOptions?.audioMaxSize : null;
+        if (Number.isFinite(Number(maxSize)) && Number(maxSize) > 0 && file.size > Number(maxSize)) {
+          if (error) error.textContent = `文件大小不能超过 ${Math.round(Number(maxSize) / 1024 / 1024)}MB`;
+          return '';
+        }
         var form = new FormData();
         form.append('file', file);
         try {
@@ -6770,6 +6892,12 @@ var KniuUI = (function () {
       }
 
       _sync() {
+        var toolbarConfig = this._resolveToolbarConfig();
+        var toolbarKey = JSON.stringify(toolbarConfig);
+        if (this.__kniuLastToolbar !== toolbarKey) {
+          this.__kniuLastToolbar = toolbarKey;
+          if (this._toolbar) this._buildToolbar(toolbarConfig);
+        }
         // lang 变化时重建工具栏（本地化 title/aria-label），满足运行中动态切换。
         var lang = this._editorLang();
         if (this.__kniuLastLang !== lang) {
@@ -7179,7 +7307,7 @@ var KniuUI = (function () {
       .kniu_sys_comment_action_delete{color:#f56c6c}
       .kniu_sys_comment_action_delete:hover,.kniu_sys_comment_action_delete:focus-visible{color:#f78989}
       .kniu_sys_comment_action_like.kniu_sys_comment_liked{color:#f56c6c}
-      .kniu_sys_comment_like_icon{font-size:12px}
+      .kniu_sys_comment_like_icon{font-size:12px}.kniu_sys_comment_action_like{position:relative;overflow:visible}.kniu_sys_comment_like_feedback{position:absolute;left:50%;top:0;color:#f56c6c;font-size:16px;line-height:1;pointer-events:none;animation:kniu_sys_comment_like_heart .9s ease-out forwards}@keyframes kniu_sys_comment_like_heart{0%{opacity:1;transform:translate(-50%,-2px) scale(.8)}30%{opacity:1;transform:translate(-50%,-16px) scale(1.1)}100%{opacity:0;transform:translate(-50%,-42px) scale(1.2)}}
       .kniu_sys_comment_reply_hint{padding:6px 10px;margin-bottom:8px;background-color:#f5f7fa;border-radius:4px;color:#606266;font-size:13px;display:flex;justify-content:space-between;align-items:center}
       .kniu_sys_comment_reply_hint button{background-color:transparent;border:0;color:#909399;cursor:pointer;font-size:16px;line-height:1}
       .kniu_sys_comment_reply_hint button:hover{color:#f56c6c}
@@ -7206,7 +7334,7 @@ var KniuUI = (function () {
       }
       connectedCallback() { this._render(); }
       attributeChangedCallback() {}
-      // kniu:options 统一配置入口：必须提供本组件自身的 options accessor，
+      // kniu:option 统一配置入口：必须提供本组件自身的 options accessor，
       // 否则 installOptionsOnlyProtocol 因无 ownDescriptor.set 会退回属性反射
       // （reflectOptions），_options 恒空、_render 渲染不出任何内容
       // （对齐 kniu-switch / kniu-select / kniu-date-picker 的既有模式）。
@@ -7227,28 +7355,30 @@ var KniuUI = (function () {
         const currentUser = options.currentUser || null;
         const currentUserId = Math.max(0, Number.parseInt(options.currentUserId, 10) || 0);
         const maxLength = Math.max(0, Number.parseInt(options.maxLength, 10) || 0);
-        const canSubmit = typeof options.onSubmit === 'function' || true;
+        const canSubmit = options.canSubmit !== false;
 
         const htmlParts = ['<style>' + COMMENT_STYLE + '</style><div class="kniu_sys_comment">'];
         // 输入区
-        htmlParts.push('<div class="kniu_sys_comment_input_area">');
-        if (this._replyId) {
-          htmlParts.push('<div class="kniu_sys_comment_reply_hint">' + t('comment.replyTo') + commentEscape(this._replyName) + '...<button type="button" data-action="cancel-reply" title="' + t('comment.cancelReply') + '">×</button></div>');
+        if (canSubmit) {
+          htmlParts.push('<div class="kniu_sys_comment_input_area">');
+          if (this._replyId) {
+            htmlParts.push('<div class="kniu_sys_comment_reply_hint">' + t('comment.replyTo') + commentEscape(this._replyName) + '...<button type="button" data-action="cancel-reply" title="' + t('comment.cancelReply') + '">×</button></div>');
+          }
+          htmlParts.push('<div class="kniu_sys_comment_textarea_wrap">');
+          htmlParts.push('<textarea class="kniu_sys_comment_textarea" placeholder="' + commentEscape(placeholder) + '"></textarea>');
+          if (maxLength) htmlParts.push('<span class="kniu_sys_comment_count">0/' + maxLength + '</span>');
+          htmlParts.push('</div>');
+          htmlParts.push('<div class="kniu_sys_comment_toolbar">');
+          htmlParts.push('<button type="button" class="kniu_sys_comment_emoji_btn" title="' + t('comment.emoji') + '">😊</button>');
+          htmlParts.push('<button type="button" class="kniu_sys_comment_submit" type="button">' + commentEscape(submitText) + '</button>');
+          htmlParts.push('</div>');
+          htmlParts.push('<div class="kniu_sys_comment_emoji_panel' + (this._showEmoji ? '' : ' kniu_sys_comment_hidden') + '">');
+          emojis.forEach(function (emoji) {
+            htmlParts.push('<button type="button" class="kniu_sys_comment_emoji_item">' + emoji + '</button>');
+          });
+          htmlParts.push('</div>');
+          htmlParts.push('</div>');
         }
-        htmlParts.push('<div class="kniu_sys_comment_textarea_wrap">');
-        htmlParts.push('<textarea class="kniu_sys_comment_textarea" placeholder="' + commentEscape(placeholder) + '"></textarea>');
-        if (maxLength) htmlParts.push('<span class="kniu_sys_comment_count">0/' + maxLength + '</span>');
-        htmlParts.push('</div>');
-        htmlParts.push('<div class="kniu_sys_comment_toolbar">');
-        htmlParts.push('<button type="button" class="kniu_sys_comment_emoji_btn" title="' + t('comment.emoji') + '">😊</button>');
-        htmlParts.push('<button type="button" class="kniu_sys_comment_submit" type="button">' + commentEscape(submitText) + '</button>');
-        htmlParts.push('</div>');
-        htmlParts.push('<div class="kniu_sys_comment_emoji_panel' + (this._showEmoji ? '' : ' kniu_sys_comment_hidden') + '">');
-        emojis.forEach(function (emoji) {
-          htmlParts.push('<button type="button" class="kniu_sys_comment_emoji_item">' + emoji + '</button>');
-        });
-        htmlParts.push('</div>');
-        htmlParts.push('</div>');
         // 评论列表
         htmlParts.push('<div class="kniu_sys_comment_list">');
         if (list.length === 0) {
@@ -7256,9 +7386,10 @@ var KniuUI = (function () {
         } else {
           list.forEach(function (item) {
             const itemUsername = item.username || t('comment.anonymous');
+            // 归属只能使用后端按 role_id 判定的 isOwn；不能按昵称比较，
+            // 否则不同账号昵称相同或身份缓存过期时会把他人评论错误放到右侧。
             const isOwn = Boolean(item.isOwn)
-              || (currentUserId > 0 && Number(item.userId) === currentUserId)
-              || (Boolean(currentUser) && String(itemUsername).toLocaleLowerCase() === String(currentUser).toLocaleLowerCase());
+              || (currentUserId > 0 && Number(item.userId) === currentUserId);
             const username = isOwn ? '我' : itemUsername;
             const firstChar = Array.from(String(username))[0] || '?';
             htmlParts.push('<div class="kniu_sys_comment_item' + (isOwn ? ' kniu_sys_comment_item_own' : '') + '" data-id="' + commentEscape(item.id) + '">');
@@ -7270,22 +7401,30 @@ var KniuUI = (function () {
             htmlParts.push('<div class="kniu_sys_comment_meta">');
             htmlParts.push('<span class="kniu_sys_comment_username">' + commentEscape(username) + '</span>');
             if (Number(item.parentId) > 0 && item.replyTo) {
-              htmlParts.push('<span class="kniu_sys_comment_reply_relation">' + t('comment.replyTo') + '<span class="kniu_sys_comment_reply_target">' + commentEscape(item.replyTo) + '</span></span>');
+              htmlParts.push('<span class="kniu_sys_comment_reply_relation">' + t('comment.replyTo') + '</span>');
+              htmlParts.push('<span class="kniu_sys_comment_reply_target">' + commentEscape(item.replyTo) + '</span>');
             }
             htmlParts.push('<span class="kniu_sys_comment_time">' + commentEscape(item.time || '') + '</span>');
-            htmlParts.push('<div class="kniu_sys_comment_actions">');
-            if (isOwn) {
-              htmlParts.push('<button type="button" class="kniu_sys_comment_action_delete" title="' + t('comment.delete') + '">' + t('common.delete') + '</button>');
+            if (currentUserId > 0 || !isOwn) {
+              htmlParts.push('<div class="kniu_sys_comment_actions">');
+              if (currentUserId > 0 && isOwn) {
+                htmlParts.push('<button type="button" class="kniu_sys_comment_action_delete" title="' + t('comment.delete') + '">' + t('common.delete') + '</button>');
+              }
+              if (currentUserId > 0 && !isOwn) {
+                htmlParts.push('<button type="button" class="kniu_sys_comment_action_reply">' + t('comment.reply') + '</button>');
+                htmlParts.push('<span class="kniu_sys_comment_action_sep">|</span>');
+                htmlParts.push('<button type="button" class="kniu_sys_comment_action_like' + (item.liked ? ' kniu_sys_comment_liked' : '') + '">');
+                htmlParts.push('<span class="kniu_sys_comment_like_icon">' + (item.liked ? '❤' : '♡') + '</span>');
+                htmlParts.push('<span>' + (Number(item.likes) || 0) + '</span>');
+                if (item.likeFeedback) htmlParts.push('<span class="kniu_sys_comment_like_feedback" aria-hidden="true">❤</span>');
+                htmlParts.push('</button>');
+              }
+              if (!isOwn && currentUserId <= 0) {
+                htmlParts.push('<button type="button" class="kniu_sys_comment_action_like' + (item.liked ? ' kniu_sys_comment_liked' : '') + '">');
+                htmlParts.push('<span class="kniu_sys_comment_like_icon">' + (item.liked ? '❤' : '♡') + '</span><span>' + (Number(item.likes) || 0) + '</span></button>');
+              }
+              htmlParts.push('</div>');
             }
-            if (!isOwn) {
-              htmlParts.push('<button type="button" class="kniu_sys_comment_action_reply">' + t('comment.reply') + '</button>');
-              htmlParts.push('<span class="kniu_sys_comment_action_sep">|</span>');
-              htmlParts.push('<button type="button" class="kniu_sys_comment_action_like' + (item.liked ? ' kniu_sys_comment_liked' : '') + '">');
-              htmlParts.push('<span class="kniu_sys_comment_like_icon">' + (item.liked ? '❤' : '♡') + '</span>');
-              htmlParts.push('<span>' + (Number(item.likes) || 0) + '</span>');
-              htmlParts.push('</button>');
-            }
-            htmlParts.push('</div>');
             htmlParts.push('</div>');
             htmlParts.push('<div class="kniu_sys_comment_content">' + commentEscape(item.content || '') + '</div>');
             htmlParts.push('</div>');
@@ -7397,6 +7536,7 @@ var KniuUI = (function () {
 
         root.querySelectorAll('.kniu_sys_comment_action_reply').forEach(function (btn) {
           btn.addEventListener('click', function () {
+            if (btn.disabled) return;
             const item = btn.closest('.kniu_sys_comment_item');
             if (!item || !textarea) return;
             const id = item.dataset.id;
@@ -7472,7 +7612,7 @@ var KniuUI = (function () {
             :host{display:block;width:100%;margin:0;color:#606266;font:16px/1 Arial,"Microsoft YaHei",sans-serif;box-sizing:border-box}
             button{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:44px;padding:11px 18px;border:1px solid #dcdfe6;border-radius:5px;background-color:#fff;color:inherit;font:inherit;cursor:pointer;overflow:visible;transition:color .15s,border-color .15s,background-color .15s;box-sizing:border-box}
             button:hover,button:focus-visible{color:#409eff;border-color:#c6e2ff;background-color:#ecf5ff;outline:0}
-            button[aria-pressed="true"]{color:#409eff;border-color:#409eff;background-color:#ecf5ff}
+            button[aria-pressed="true"]{color:#fff;border-color:#409eff;background-color:#409eff}
             button:disabled{color:#a8abb2;border-color:#e4e7ed;background-color:#f5f7fa;cursor:not-allowed}
             svg{display:block;width:24px;height:24px;fill:currentColor}
             .count{white-space:nowrap}
@@ -7486,13 +7626,18 @@ var KniuUI = (function () {
           </button>`;
         const button = this.shadowRoot.querySelector('button');
         button?.addEventListener('click', this._handleClick);
+         // 等按钮完成本次 DOM 挂载后再启动动画，避免同步 append 后首帧未建立导致动画不可见。
+         if (options.feedback) {
+           const play = () => this._playPlusOne();
+           if (typeof requestAnimationFrame === 'function') requestAnimationFrame(play);
+           else setTimeout(play, 0);
+         }
       }
       _click() {
         if (this._options?.disabled || this._options?.loading || this._options?.own) return;
         const now = Date.now();
         if (this._lastClickAt && now - this._lastClickAt < 500) return;
         this._lastClickAt = now;
-        if (!this._options?.liked) this._playPlusOne();
         this.dispatchEvent(new CustomEvent('change', {
           detail: { liked: !Boolean(this._options?.liked), count: Math.max(0, Number(this._options?.count) || 0) },
           bubbles: true,
@@ -7522,6 +7667,7 @@ var KniuUI = (function () {
 
   function registerUserLoginComponent() {
     if (typeof customElements === 'undefined' || customElements.get('kniu-user-login')) return;
+    const DEFAULT_USER_AVATAR = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA4ZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuNi1jMDY3IDc5LjE1Nzc0NywgMjAxNS8wMy8zMC0yMzo0MDo0MiAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDo3OTA5OWY0MC1hZTY2LTQ0NTktYjdlMS0zNWYxMTEzN2JhNzYiIHhtcE1NOkRvY3VtZW50SUQ9InhtcC5kaWQ6QzQ0RDAwQUUyRjM0MTFFNjhGNjNBRUJGNzk1RDg1REIiIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6QzQ0RDAwQUQyRjM0MTFFNjhGNjNBRUJGNzk1RDg1REIiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIENDIDIwMTUgKE1hY2ludG9zaCkiPiA8eG1wTU06RGVyaXZlZEZyb20gc3RSZWY6aW5zdGFuY2VJRD0ieG1wLmlpZDoyNzdkNjVjNS01NmQxLTQwMGItYjY2NS00NjA2MDg3ZmFmMTAiIHN0UmVmOmRvY3VtZW50SUQ9ImFkb2JlOmRvY2lkOnBob3Rvc2hvcDo4MDM3NDc0YS03NzI0LTExNzktYmUy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';
     class KniuUserLogin extends HTMLElement {
       constructor() {
         super();
@@ -7565,13 +7711,16 @@ var KniuUI = (function () {
         if (this._logoutLoading) return;
         if (result.status !== 1 || !result.data?.loggedIn || !result.data?.nickname) return;
         const nickname = result.data.nickname;
-        if (identity.nickname !== nickname || !identity.account) {
-          IDENTITY.setIdentity({ token: identity.token, nickname: nickname, account: 1 });
+        const name = result.data.name || identity.name;
+        const avatar = result.data.avatar || '';
+        if (identity.nickname !== nickname || identity.name !== name || identity.avatar !== avatar || !identity.account) {
+          IDENTITY.setIdentity({ token: identity.token, name, nickname, avatar, account: 1 });
         }
       }
       _render() {
         const identity = IDENTITY.getIdentity();
         const nickname = identity.nickname;
+        const accountName = identity.name || nickname;
         const t = (key) => componentText(componentLang(this._options), key);
         // 身份切换（登录/退出）时收起菜单；访客态同样是下拉框，不能一律强制关闭。
         if (this._renderedNickname !== undefined && this._renderedNickname !== nickname) this._menuOpen = false;
@@ -7584,9 +7733,8 @@ var KniuUI = (function () {
             .user{position:relative;display:inline-flex;align-items:center;width:100%;white-space:nowrap}
             .user-trigger{display:inline-flex;align-items:center;gap:7px;padding:0;cursor:pointer}
             .user-trigger:focus-visible{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}
-            .avatar{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;overflow:hidden;background-color:#d9e8f8;color:#7d9fc2;flex-shrink:0}
-            .avatar svg{display:block;width:26px;height:26px;fill:currentColor}
-            .user-guest .avatar{background-color:#eef1f6;color:#b3bcc9}
+            .avatar{display:block;width:30px;height:30px;border-radius:50%;overflow:hidden;flex-shrink:0}
+            .avatar kniu-image{display:block;width:100%;height:100%}
             .arrow{width:5px;height:5px;margin:0 3px 3px 1px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(45deg);transition:transform .2s}
             .user[data-open="true"] .arrow{margin-bottom:0;transform:rotate(225deg)}
             .menu{position:fixed;z-index:10030;display:none;min-width:112px;padding:5px 0;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.12)}
@@ -7598,7 +7746,7 @@ var KniuUI = (function () {
           </style>
           <div class="user${nickname ? '' : ' user-guest'}" data-open="${this._menuOpen}">
             <button class="user-trigger" type="button" aria-haspopup="menu" aria-expanded="${this._menuOpen}">
-              <span class="avatar" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="11" r="7"></circle><path d="M4 29c.8-7 5.2-11 12-11s11.2 4 12 11z"></path></svg></span>
+              <span class="avatar" aria-hidden="true"><kniu-image src="${String(identity.avatar || DEFAULT_USER_AVATAR).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" fit="cover" /></span>
               <span class="hello"></span><span class="arrow" aria-hidden="true"></span>
             </button>
             <div class="menu" role="menu" data-open="${this._menuOpen}">
@@ -7610,12 +7758,25 @@ var KniuUI = (function () {
             </div>
           </div>`;
         const hello = this.shadowRoot.querySelector('.hello');
-        if (hello) hello.textContent = nickname ? t('userLogin.hello') + nickname : t('userLogin.guest');
+        if (hello) hello.textContent = nickname ? t('userLogin.hello') + accountName : t('userLogin.guest');
         this.shadowRoot.querySelector('.user-trigger')?.addEventListener('click', () => {
-          this._menuOpen = !this._menuOpen;
-          this._render();
+          this._setMenuOpen(!this._menuOpen);
         });
         this.shadowRoot.querySelector('.logout')?.addEventListener('click', this._handleLogout);
+        this._positionMenu();
+      }
+      _setMenuOpen(open) {
+        this._menuOpen = Boolean(open);
+        const user = this.shadowRoot?.querySelector('.user');
+        const trigger = this.shadowRoot?.querySelector('.user-trigger');
+        const menu = this.shadowRoot?.querySelector('.menu');
+        if (user) user.dataset.open = String(this._menuOpen);
+        if (trigger) trigger.setAttribute('aria-expanded', String(this._menuOpen));
+        if (!this._menuOpen) {
+          this._cleanupMenuPopover();
+          return;
+        }
+        if (menu) menu.dataset.open = 'true';
         this._positionMenu();
       }
       _positionMenu() {
@@ -7645,12 +7806,11 @@ var KniuUI = (function () {
       }
       _onDocumentClick(event) {
         if (!this._menuOpen || event.composedPath().includes(this)) return;
-        this._menuOpen = false;
-        this._render();
+        this._setMenuOpen(false);
       }
       async _logout() {
         if (this._logoutLoading) return;
-        this._menuOpen = false;
+        this._setMenuOpen(false);
         this._logoutLoading = true;
         const identity = IDENTITY.getIdentity();
         // 先更新本地界面，再等待服务端销毁前后台会话，避免网络延迟期间仍显示已登录。
@@ -7788,7 +7948,7 @@ var KniuUI = (function () {
       (element.__kniuOptionAttributes || []).forEach(function (name) { element.removeAttribute(name); });
       element.__kniuOptionAttributes = [];
       Object.entries(options || {}).forEach(function ([key, value]) {
-        if (/^on[A-Z]/.test(key) || value == null || typeof value === 'function' || typeof value === 'object') return;
+        if (/^on[A-Z]/.test(key) || value == null || typeof value === 'function') return;
         // 有公开 property 的配置必须走 property setter。部分组件（例如 kniu-loading.show）
         // 不观察同名 attribute，只在 setter 内更新 Shadow DOM；若一律反射 attribute，
         // 全局 loading 会永远停留在构造时的 data-show="true"，表现为所有路由白屏。
@@ -7800,6 +7960,7 @@ var KniuUI = (function () {
           element[key] = value;
           return;
         }
+        if (typeof value === 'object') return;
         const name = key.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
         element.__kniuOptionAttributes.push(name);
         if (value === false) element.removeAttribute(name);

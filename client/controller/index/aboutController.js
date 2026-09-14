@@ -1,8 +1,8 @@
-import KniuMvvm from '../../core/kniumvvm.mjs';
+import MVVM from '../../core/kniumvvm.mjs';
 import REQUEST from '../../core/kniurequest.mjs';
 import IDENTITY from '../../core/kniuidentity.mjs';
 
-const { controller, reactive, onMounted } = KniuMvvm;
+const { controller, reactive, onMounted } = MVVM;
 
 const aboutController = controller(({ autoSync }) => {
   const state = reactive({ content: '', loading: true, currentYear: new Date().getFullYear() });

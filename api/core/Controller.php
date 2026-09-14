@@ -790,19 +790,11 @@ class Controller
       && (int)$submitted === (int)$expected;
   }
 
-  /**
-   * 解析某前台会话绑定的 tb_role 账号对应的前台用户 ID。
-   *
-   * tb_front_user.role_id → tb_role.id，一处定位，多处复用；
-   * 未绑定前台账号时返回 0。
-   *
-   * @param int $roleId tb_role 账号 id。
-   * @return int 对应的前台用户 id，未绑定时为 0。
-   */
+  /** 前后台统一使用 tb_role.id，保留方法名兼容现有调用。 */
   protected function frontUserIdByRoleId(int $roleId): int
   {
     if ($roleId <= 0) return 0;
-    return (int)(Db::name('tb_front_user')->where('role_id', '=', $roleId)->value('id') ?? 0);
+    return (int)(Db::name('tb_role')->where('id', '=', $roleId)->value('id') ?? 0);
   }
 
   /**

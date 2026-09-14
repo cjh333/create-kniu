@@ -37,6 +37,7 @@ class RoleController extends Base
       $this->denyPermission();
       return;
     }
+    $this->ensureCommentAuditField();
     $data = [
       'sid' => $this->input('post.sid') ?? 0,
       'name' => $this->input('post.name') ?? '',
@@ -44,6 +45,8 @@ class RoleController extends Base
       'role' => $this->input('post.role') ?? 0,
       'role_auth' => $this->input('post.role_auth') ?? 0,
       'is_show' => $this->input('post.is_show') ?? 1
+      ,'comment_audit' => $this->input('post.comment_audit') ?? 1
+      ,'comment_ban' => $this->input('post.comment_ban') ?? 0
     ];
     $data['role_auth'] = $this->syncRoleAuth($data['role']);
     $data = $this->encodeFields($data, ['name']);
@@ -59,15 +62,44 @@ class RoleController extends Base
       return;
     }
     $id = $this->input('post.id') ?? '';
-    Db::name('tb_role')
-      ->where('id', '=', $id)
-      ->delete();
+    $roleId = (int)$id;
+    if ($roleId <= 0 || $roleId === $this->currentUserId()) {
+      $this->json([], '不能删除当前登录账号', 0);
+      return;
+    }
+    Db::beginTrans();
+    try {
+      $articleIds = Db::name('tb_article')->where('role_id', '=', $roleId)->column('id');
+      if ($articleIds) {
+        Db::name('tb_article_favorite')->whereIn('article_id', $articleIds)->delete();
+        Db::name('tb_article_history')->whereIn('article_id', $articleIds)->delete();
+        Db::name('tb_comment')->whereIn('article_id', $articleIds)->delete();
+        Db::name('tb_article')->whereIn('id', $articleIds)->delete();
+      }
+      Db::name('tb_comment_reply_status')->where('recipient_user_id', '=', $roleId)->delete();
+      $commentIds = Db::name('tb_comment')->where('role_id', '=', $roleId)->column('id');
+      if ($commentIds) {
+        Db::name('tb_comment_reply_status')->whereIn('reply_id', $commentIds)->delete();
+        Db::name('tb_comment')->whereIn('parent_id', $commentIds)->delete();
+        Db::name('tb_comment')->whereIn('id', $commentIds)->delete();
+      }
+      Db::name('tb_article_favorite')->where('role_id', '=', $roleId)->delete();
+      Db::name('tb_article_history')->where('role_id', '=', $roleId)->delete();
+      Db::name('tb_about')->where('role_id', '=', $roleId)->delete();
+      Db::name('tb_role')->where('id', '=', $roleId)->delete();
+      Db::commit();
+    } catch (\Throwable $e) {
+      Db::rollback();
+      $this->json([], '删除账号失败', 0);
+      return;
+    }
     $this->json([], '删除成功', 1);
   }
 
   // 修改。
   public function roleUpdate(): void
   {
+    $this->ensureCommentAuditField();
     $type = $this->input('post.type') ?? null;
     $id = $this->input('post.id') ?? null;
     $data = [
@@ -75,10 +107,13 @@ class RoleController extends Base
       'is_select' => $this->input('post.is_select') ?? null,
       'sid' => $this->input('post.sid') ?? null,
       'name' => $this->input('post.name') ?? null,
+      'nickname' => $this->input('post.nickname') ?? null,
       'password' => $this->input('post.password') ?? null,
       'role' => $this->input('post.role') ?? null,
       'role_auth' => $this->input('post.role_auth') ?? null,
       'is_show' => $this->input('post.is_show') ?? null
+      ,'comment_audit' => $this->input('post.comment_audit') ?? null
+      ,'comment_ban' => $this->input('post.comment_ban') ?? null
     ];
     $hasManagePermission = $this->hasManagePermission();
     $oldPassword = (string)($this->input('post.old_password') ?? '');
@@ -124,6 +159,20 @@ class RoleController extends Base
     $data = array_filter($data, function ($value) {
       return $value !== null && $value !== '';
     });
+    if (array_key_exists('nickname', $data)) {
+      $nickname = trim(html_entity_decode((string)$data['nickname'], ENT_QUOTES));
+      if ($nickname === '') {
+        $this->json([], '昵称不能为空', 0);
+        return;
+      }
+      $oldIssueTime = Db::name('tb_role')->where('id', '=', $id)->value('issue_time');
+      if ($oldIssueTime && strtotime((string)$oldIssueTime) > strtotime('-1 year')) {
+        $this->json([], '昵称一年内只能修改一次', 0);
+        return;
+      }
+      $data['nickname'] = $nickname;
+      $data['issue_time'] = date('Y-m-d H:i:s');
+    }
     if (array_key_exists('role', $data)) {
       $data['role_auth'] = $this->syncRoleAuth($data['role']);
     }
@@ -131,7 +180,7 @@ class RoleController extends Base
       $this->json([], '没有提供任何要更新的数据', 0);
       return;
     }
-    $data = $this->encodeFields($data, ['name']);
+    $data = $this->encodeFields($data, ['name', 'nickname']);
     if (isset($data['password'])) {
       $password = $data['password'];
       $hasDollar = strpos($password, '$') !== false;
@@ -157,7 +206,7 @@ class RoleController extends Base
         : 0;
       $roleResult = Db::name('tb_role')
         ->where('id', '=', $id)
-        ->field(['is_select', 'sid', 'name', 'password', 'role', 'role_auth', 'is_show'])
+        ->field(['is_select', 'sid', 'name', 'nickname', 'password', 'role', 'role_auth', 'comment_audit', 'comment_ban', 'is_show', 'issue_time'])
         ->update($data);
       $result = $selectallResult + $roleResult;
     }
@@ -175,6 +224,7 @@ class RoleController extends Base
   // 查询角色列表。
   public function roleList(): void
   {
+    $this->ensureCommentAuditField();
     $table = 'tb_role';
     $field = $this->input('post.field') ?? $this->getDefaultSortField($table);
     $sort = $this->input('post.sort') ?? 'asc';
@@ -191,10 +241,10 @@ class RoleController extends Base
       $query->where('LOWER(`name`)', 'LIKE', $this->likeEncodedPattern($keyword));
     }
     $result = $query
-      ->field(['id', 'sid', 'name', 'role', 'role_auth', 'is_show', 'create_time'])
+      ->field(['id', 'sid', 'name', 'nickname', 'role', 'role_auth', 'comment_audit', 'comment_ban', 'is_show', 'create_time', 'issue_time'])
       ->order($field, $sort)
       ->page($pageCurrent, $pageRow);
-    $result['data'] = $this->decodeFields($result['data'] ?? [], ['name']);
+    $result['data'] = $this->decodeFields($result['data'] ?? [], ['name', 'nickname']);
     $result['selectall'] = $selectall;
     $this->json($result);
   }
@@ -202,6 +252,7 @@ class RoleController extends Base
   // 查询某一条。
   public function roleDetail(): void
   {
+    $this->ensureCommentAuditField();
     $id = $this->input('post.id') ?? '';
     if (!$this->hasManagePermission() && (int)$id !== $this->currentUserId()) {
       $this->denyPermission();
@@ -210,7 +261,18 @@ class RoleController extends Base
     $result = Db::name('tb_role')
       ->where('id', '=', $id)
       ->find();
-    $result = $this->decodeFields($result, ['name']);
+    $result = $this->decodeFields($result, ['name', 'nickname']);
     $this->json($result);
+  }
+
+  private function ensureCommentAuditField(): void
+  {
+    $columns = Db::query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_role'");
+    if (!in_array('comment_audit', array_column($columns, 'COLUMN_NAME'), true)) {
+      Db::execute("ALTER TABLE `tb_role` ADD COLUMN `comment_audit` tinyint NOT NULL DEFAULT 1 COMMENT '评论审核(1需要审核,0免审核)'");
+    }
+    if (!in_array('comment_ban', array_column($columns, 'COLUMN_NAME'), true)) {
+      Db::execute("ALTER TABLE `tb_role` ADD COLUMN `comment_ban` tinyint NOT NULL DEFAULT 0 COMMENT '禁言(0正常,1禁言)'");
+    }
   }
 }

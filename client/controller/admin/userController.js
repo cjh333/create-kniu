@@ -1,11 +1,11 @@
-import KniuMvvm from '../../core/kniumvvm.mjs';
-import KniuUI from '../../core/kniuui.js';
+import MVVM from '../../core/kniumvvm.mjs';
+import UI from '../../core/kniuui.js';
 import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 import { assignOptionFields } from '../../core/kniuutil.mjs';
 
-const { controller, onMounted, reactive } = KniuMvvm;
-const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = KniuUI;
+const { controller, onMounted, reactive } = MVVM;
+const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = UI;
 const ROLE_TEXT = { '1': '管理员', '2': '普通用户' };
 
 function deriveRoleAuth(role) {
@@ -16,7 +16,7 @@ function canAccessUsers(user) {
   return !!String(user?.name || '').trim();
 }
 
-const usersController = controller(function () {
+const userController = controller(function () {
   const self = this;
   const currentUser = AUTH.getUser() || {};
   const currentUserName = String(currentUser.name || '');
@@ -97,104 +97,30 @@ const usersController = controller(function () {
       stripe: true,
       border: true,
       maxHeight: 480,
-      loading: true,
-      cols: [
-        {
-          type: 'checkbox',
-          width: 60,
-          align: 'center',
-          fixed: 'left'
-        },
-        {
-          field: 'id',
-          label: 'ID',
-          width: 80,
-          align: 'center',
-          fixed: 'left',
-          sortable: true
-        },
-        {
-          field: 'sid',
-          label: '排序',
-          fixed: 'left',
-          width: 100,
-          align: 'center',
-          editable: canAdministerUsers ? 'number' : false,
-          sortable: true
-        },
-        {
-          field: 'name',
-          label: '用户名',
-          showOverflowTooltip: true
-        },
-        {
-          field: 'role_text',
-          label: '角色',
-          width: 120,
-          align: 'center',
-          tag: {
-            options: {
-              round: true,
-              type: row => row.role_text === '管理员' ? 'success' : 'primary'
-            }
-          }
-        },
-        {
-          field: 'role_auth_text',
-          label: '权限',
-          width: 100,
-          align: 'center',
-          status: {
-            options: {
-              type: row => row.role_auth_text === '编辑' ? 'success' : 'primary'
-            }
-          }
-        },
-        {
-          field: 'is_show',
-          label: '显示',
-          width: 90,
-          align: 'center',
-          condition: canAdministerUsers,
-          switch: {
-            options: null,
-            onChange: updateShow
-          }
-        },
-        {
-          field: 'create_time',
-          label: '创建时间',
-          width: 180,
-          align: 'center'
-        },
-        {
-          label: '操作',
-          width: 120,
-          align: 'center',
-          fixed: 'right',
-          actions: [
-            {
-              title: '删除',
-              type: 'danger',
-              size: 'small',
-              link: true,
-              condition: () => canAdministerUsers,
-              onClick: ({ index, rows }) => deleteRow(index, rows)
-            },
-            {
-              title: row => canAdministerUsers ? '修改' : '修改密码',
-              type: 'primary',
-              size: 'small',
-              link: true,
-              condition: row => canAdministerUsers || row.can_edit,
-              onClick: ({ index, rows }) => editRow(index, rows)
-            }
-          ]
-        }
-      ]
+      loading: true
     },
     userModel: createUserModel(),
     userSwitch: makeSwitchOptions(canAdministerUsers),
+    auditSwitch: {
+      name: 'comment_audit',
+      activeValue: 1,
+      inactiveValue: 0,
+      activeColor: '#13ce66',
+      inactiveColor: '#f56c6c',
+      disabled: !canAdministerUsers
+    },
+    mutedSwitch: {
+      name: 'comment_ban',
+      activeValue: true,
+      inactiveValue: false,
+      activeColor: '#13ce66',
+      inactiveColor: '#f56c6c',
+      disabled: !canAdministerUsers
+    },
+    disabledSwitch: {
+      name: 'is_show', activeValue: 0, inactiveValue: 1,
+      activeColor: '#13ce66', inactiveColor: '#f56c6c', disabled: !canAdministerUsers
+    },
     userPage: {
       layout: '总数,首页,上一页,页码,下一页,末页,条数',
       currentPage: 1,
@@ -205,7 +131,6 @@ const usersController = controller(function () {
       onSizeChange: (detail) => changePageSize({ detail })
     }
   });
-  state.userTable.cols[6].switch.options = state.userSwitch;
 
   const { loadList, changePage, changePageSize } = usePagination({
     state,
@@ -222,6 +147,8 @@ const usersController = controller(function () {
           ...row,
           role_text: ROLE_TEXT[String(row.role)] || `未知(${row.role})`,
           role_auth_text: Number(row.role_auth) === 1 ? '编辑' : '查看',
+          muted: Number(row.comment_ban) === 1,
+          nickname_editable: !row.issue_time || new Date(row.issue_time).getTime() <= Date.now() - 365 * 24 * 60 * 60 * 1000,
           can_edit: canAdministerUsers || String(row.name || '') === currentUserName
         };
       });
@@ -253,7 +180,7 @@ const usersController = controller(function () {
     model.role_auth = Number(deriveRoleAuth(row.role));
     model.is_show = Number(row.is_show == null ? 1 : row.is_show);
     state.userModel = model;
-    state.dialogTitle = canAdministerUsers ? '修改用户' : '修改密码';
+    state.dialogTitle = canAdministerUsers ? '修改密码' : '修改用户';
     state.showmodal = true;
     return false;
   }
@@ -267,7 +194,7 @@ const usersController = controller(function () {
   function closeDialog() { state.showmodal = false; }
 
   async function saveEdit() {
-    const userForm = self.$refs.userform;
+    const userForm = self.$refs.form;
     if (!userForm) return;
     if (!userForm.validate()) return;
     const form = userForm.values;
@@ -295,14 +222,19 @@ const usersController = controller(function () {
       });
       return;
     }
-    const data = {
-      sid: form.sid,
-      name: String(form.name).trim(),
-      role: form.role,
-      role_auth: deriveRoleAuth(form.role),
-      is_show: form.is_show
-    };
-    if (!isAdd) data.id = form.id;
+    const data = isAdd
+      ? {
+        sid: form.sid,
+        name: String(form.name).trim(),
+        role: form.role,
+        role_auth: deriveRoleAuth(form.role),
+        is_show: form.is_show
+      }
+      : { id: form.id };
+    if (!isAdd && !String(form.password || '').trim()) {
+      self.$msg({ content: '请填写新密码', type: 'error' });
+      return;
+    }
     if (isAdd || String(form.password || '').trim()) {
       data.password = form.password;
       if (!isAdd) data.old_password = form.old_password;
@@ -324,18 +256,74 @@ const usersController = controller(function () {
     });
   }
 
-  async function updateShow(index, list, value) {
+  async function updateMuted(index, list, value) {
+    const row = list[index];
+    if (!row) return false;
+    let saved = false;
+    await REQUEST({
+      url: '/role_update', type: 'POST', data: { id: row.id, comment_ban: Number(value) ? 1 : 0 },
+      success(res) { saved = res.status === 1; self.$msg({ content: res.msg, type: saved ? 'success' : 'error' }); },
+      fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
+    });
+    if (saved) row.muted = Boolean(value);
+    return saved;
+  }
+
+  async function updateDisabled(index, list, value) {
+    const row = list[index];
+    if (!row) return false;
+    let saved = false;
+    const isShow = Number(value) === 0 ? 0 : 1;
+    await REQUEST({
+      url: '/role_update', type: 'POST', data: { id: row.id, is_show: isShow },
+      success(res) { saved = res.status === 1; self.$msg({ content: res.msg, type: saved ? 'success' : 'error' }); },
+      fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
+    });
+    if (saved) row.is_show = isShow;
+    return saved;
+  }
+
+  async function updateRoleAuth(index, list, value) {
     const row = list[index];
     if (!row) return false;
     let saved = false;
     await REQUEST({
       url: '/role_update',
       type: 'POST',
-      data: { id: row.id, is_show: value },
+      data: { id: row.id, role_auth: Number(value) },
       success(res) {
         saved = res.status === 1;
         self.$msg({ content: res.msg, type: saved ? 'success' : 'error' });
       },
+      fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
+    });
+    return saved;
+  }
+
+  async function updateNickname(index, list, value) {
+    const row = list[index];
+    if (!row) return false;
+    let saved = false;
+    await REQUEST({
+      url: '/role_update',
+      type: 'POST',
+      data: { id: row.id, nickname: String(value ?? '').trim() },
+      success(res) {
+        saved = res.status === 1;
+        self.$msg({ content: res.msg, type: saved ? 'success' : 'error' });
+      },
+      fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
+    });
+    return saved;
+  }
+
+  async function updateCommentAudit(index, list, value) {
+    const row = list[index];
+    if (!row) return false;
+    let saved = false;
+    await REQUEST({
+      url: '/role_update', type: 'POST', data: { id: row.id, comment_audit: Number(value) ? 1 : 0 },
+      success(res) { saved = res.status === 1; self.$msg({ content: res.msg, type: saved ? 'success' : 'error' }); },
       fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
     });
     return saved;
@@ -360,7 +348,7 @@ const usersController = controller(function () {
     loadList(1);
   });
 
-  return { state, changePage, changePageSize, searchList, debouncedSearch, addRow, editRow, closeDialog, saveEdit, updateShow, deleteRow, onRoleChange };
+  return { state, changePage, changePageSize, searchList, debouncedSearch, addRow, editRow, closeDialog, saveEdit, updateMuted, updateDisabled, updateRoleAuth, updateNickname, updateCommentAudit, deleteRow, onRoleChange };
 });
 
-export default usersController;
+export default userController;

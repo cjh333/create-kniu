@@ -5,6 +5,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import SERVER from '../config/server.js';
 import { NO_CACHE, sendStaticBody, staticCacheHeaders } from './kniustatic.mjs';
+import { subscribe } from './kniussemitter.mjs';
 
 const ROOT = normalize(join(process.cwd(), 'dist'));
 const VIEW_INDEX = join(ROOT, 'index.html');
@@ -80,6 +81,21 @@ function resolveRequestProtocol(request) {
   if (protocol === 'http' || protocol === 'https') return protocol;
   return request.socket.encrypted ? 'https' : 'http';
 }
+function handleEventStream(request, response) {
+  response.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  response.write('retry: 5000\n\n');
+  const unsubscribe = subscribe(response);
+  const close = function () { unsubscribe(); };
+  request.on('close', close);
+  request.on('error', close);
+  response.on('close', close);
+  response.on('error', close);
+}
 const server = createServer(async function (request, response) {
   let PATH_NAME = '';
   try {
@@ -93,6 +109,10 @@ const server = createServer(async function (request, response) {
         response.writeHead(502, { 'Content-Type': 'application/json' });
         response.end(JSON.stringify({ status: 502, msg: 'API 代理未配置，请在 server.js 的 PROXY 中设置' }));
       }
+      return;
+    }
+    if (PATH_NAME === '/events' && request.method === 'GET') {
+      handleEventStream(request, response);
       return;
     }
     let file = PATH_NAME === '/'

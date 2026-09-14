@@ -1,12 +1,10 @@
-import KniuMvvm from '../../core/kniumvvm.mjs';
-import KniuUI from '../../core/kniuui.js';
+import MVVM from '../../core/kniumvvm.mjs';
+import UI from '../../core/kniuui.js';
 import REQUEST from '../../core/kniurequest.mjs';
 import IDENTITY from '../../core/kniuidentity.mjs';
-import { marked } from '/node_modules/marked/lib/marked.esm.js';
+import { marked } from 'marked';
 
-const { controller, onMounted, reactive } = KniuMvvm;
-
-// 未登录时暂存待发评论，登录/注册成功后回到文章页自动补发。
+const { controller, onMounted, reactive } = MVVM;
 const PENDING_COMMENT_KEY = 'kniu_pending_comment';
 
 function renderCodeBlocks(value) {
@@ -17,17 +15,9 @@ function renderCodeBlocks(value) {
   });
   const source = String(value || '').replace(/&lt;br\s*\/??&gt;|<br\s*\/?>/gi, '\n');
   return marked.parse(source);
-  /* legacy fallback retained below */
-  /*
-  const escape = (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const source = String(value || '').replace(/&lt;br\s*\/??&gt;|<br\s*\/?>/gi, '\n');
-  return source.replace(/```([\w+-]*)\s*\n?([\s\S]*?)```/g, function (_, lang, code) {
-    const lines = code.replace(/^\n|\n$/g, '').split('\n');
-    return '<pre class="article-code"><code' + (lang ? ' data-language="' + escape(lang) + '"' : '') + '>' + lines.map(function (line) { return '<span class="article-code-line">' + (escape(line) || ' ') + '</span>'; }).join('') + '</code></pre>';
-  }); */
 }
 
-const detailController = controller(({ navigateTo, getRouteData, onRouteChange, onScopeDispose, autoSync }) => {
+const detailController = controller(({ navigateTo, getRouteData, onRouteChange, onScopeDispose }) => {
   const identity = IDENTITY.getIdentity();
   const state = reactive({
     title: '',
@@ -45,10 +35,6 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
       liked: false,
       loading: false,
       own: false,
-      // onChange 必须在初始 options 中声明：框架的 installOptionsOnlyProtocol 只在
-      // 首次 set options 时 bindCallbacks 绑定 change 监听器；若事后通过
-      // state.likeOptions.onChange = onLikeChange 原地 mutate，不会触发重绑，
-      // 导致点击点赞永远不触发请求（任何账号都点不了赞）。
       onChange: onLikeChange
     },
     favoriteOptions: { type: 'default', block: true },
@@ -58,7 +44,8 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
       previous: null,
       next: null,
       previousLabel: '上一篇',
-      nextLabel: '下一篇'
+      nextLabel: '下一篇',
+      onChange: onArticleTabChange
     },
     commentOptions: {
       list: [],
@@ -68,7 +55,8 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
       currentUser: identity.nickname,
       currentUserId: 0,
       filter: 'B,逼,屌,操',
-      placeholder: '请输入评论...'
+      placeholder: '请输入评论...',
+      canSubmit: Boolean(identity.nickname)
     }
   });
 
@@ -93,7 +81,6 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     }
   }
 
-  // 未登录：初次访客引导去注册，本机注册过账号的直接去登录。
   function requireSignin(pending) {
     savePendingComment(pending);
     navigateTo('/login', {
@@ -125,38 +112,53 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
   }
 
   let likeRequestActive = false;
+  let favoriteRequestActive = false;
   let commentSubmitActive = false;
+  let commentsRequest = null;
 
   async function onLikeChange(detail) {
     const id = getArticleId();
     if (!id || state.likeOptions.loading || likeRequestActive) return;
+    const identity = IDENTITY.getIdentity();
+    if (!identity.nickname) {
+      navigateTo('/login', {
+        tab: IDENTITY.hasAccount() ? 'login' : 'register',
+        redirect: '/detail',
+        id: id
+      });
+      return;
+    }
     const liked = Boolean(detail?.liked);
     likeRequestActive = true;
     updateLikeOptions({ loading: true });
+    let succeeded = false;
     try {
       const result = await REQUEST({
         url: '/likeArticle',
         type: 'POST',
-        data: { article_id: id, liked: liked },
+        data: { article_id: id, liked: liked, identity_token: identity.token },
         redirectOnUnauthorized: false
       });
       if (result.status !== 1) {
-        KniuUI.msg({ content: result.msg || '点赞失败', type: 'error' });
+        UI.msg({ content: result.msg || '点赞失败', type: 'error' });
         return;
       }
+      succeeded = true;
       updateLikeOptions({
         count: Number(result.data?.likes) || 0,
-        liked: liked,
-        // 点赞成功后立即锁定按钮，避免重复点击再次提交。
-        disabled: result.data?.locked !== false
+        liked: result.data?.liked === true,
+        disabled: false,
+        loading: false,
+        feedback: liked ? Date.now() : 0
       });
     } finally {
-      updateLikeOptions({ loading: false });
+      if (!succeeded) updateLikeOptions({ loading: false });
       likeRequestActive = false;
     }
   }
 
   async function toggleFavorite() {
+    if (favoriteRequestActive) return;
     const identity = IDENTITY.getIdentity();
     if (!identity.nickname) {
       navigateTo('/login', {
@@ -167,32 +169,47 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
       return;
     }
     const favorited = !state.favorited;
-    const result = await REQUEST({
-      url: '/favoriteArticle',
-      type: 'POST',
-      data: { article_id: getArticleId(), favorited: favorited, identity_token: identity.token },
-      redirectOnUnauthorized: false
-    });
-    if (result.status !== 1) {
-      KniuUI.msg({ content: result.msg || '收藏操作失败', type: 'error' });
-      return;
+    favoriteRequestActive = true;
+    try {
+      const result = await REQUEST({
+        url: '/favoriteArticle',
+        type: 'POST',
+        data: { article_id: getArticleId(), favorited: favorited, identity_token: identity.token },
+        redirectOnUnauthorized: false
+      });
+      if (result.status !== 1) {
+        UI.msg({ content: result.msg || '收藏操作失败', type: 'error' });
+        return;
+      }
+      state.favorited = Boolean(result.data?.favorited);
+      state.favoriteText = state.favorited ? '取消收藏' : '收藏文章';
+      state.favoriteOptions = { type: state.favorited ? 'primary' : 'default', block: true };
+    } finally {
+      favoriteRequestActive = false;
     }
-    state.favorited = Boolean(result.data?.favorited);
-    state.favoriteText = state.favorited ? '取消收藏' : '收藏文章';
-    state.favoriteOptions = { type: state.favorited ? 'primary' : 'default', block: true, disabled: true };
   }
 
   async function loadComments() {
     const id = getArticleId();
     if (!id) return;
-    const result = await REQUEST({
-      url: '/getComments',
-      type: 'POST',
-      data: { article_id: id, identity_token: IDENTITY.getIdentity().token },
-      redirectOnUnauthorized: false
-    });
-    if (result.status === 1 && Array.isArray(result.data)) {
-      updateCommentOptions({ list: result.data });
+    if (commentsRequest && commentsRequest.id === id) return commentsRequest.promise;
+    const promise = (async function () {
+      const result = await REQUEST({
+        url: '/getComments',
+        type: 'POST',
+        data: { article_id: id, identity_token: IDENTITY.getIdentity().token, _ts: Date.now() },
+        headers: { 'Cache-Control': 'no-cache, no-store', Pragma: 'no-cache' },
+        redirectOnUnauthorized: false
+      });
+      if (result.status === 1) {
+        updateCommentOptions({ list: Array.isArray(result.data) ? result.data : [] });
+      }
+    })();
+    commentsRequest = { id: id, promise: promise };
+    try {
+      return await promise;
+    } finally {
+      if (commentsRequest?.promise === promise) commentsRequest = null;
     }
   }
 
@@ -205,7 +222,7 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     commentSubmitActive = true;
     const maxLength = Math.max(0, Number(state.commentOptions.maxLength) || 0);
     if (maxLength && Array.from(content).length > maxLength) {
-      KniuUI.msg({ content: `评论不能超过 ${maxLength} 个字`, type: 'error' });
+      UI.msg({ content: `评论不能超过 ${maxLength} 个字`, type: 'error' });
       return;
     }
     const result = await REQUEST({
@@ -220,12 +237,14 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
       redirectOnUnauthorized: false
     });
     if (result.status === 1) {
-      KniuUI.msg({ content: '评论已提交，审核通过后将展示', type: 'success' });
+      if (Number(result.data?.is_show) !== 1) {
+        UI.msg({ content: '评论已提交，审核通过后将展示', type: 'success' });
+      }
       await loadComments();
       commentSubmitActive = false;
       return;
     }
-    KniuUI.msg({ content: result.msg || '评论提交失败', type: 'error' });
+    UI.msg({ content: result.msg || '评论提交失败', type: 'error' });
     commentSubmitActive = false;
   }
 
@@ -242,22 +261,29 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
   async function onLikeComment(detail) {
     const commentId = Number(detail?.commentId);
     if (!commentId) return;
+    const identity = IDENTITY.getIdentity();
+    if (!identity.nickname) {
+      navigateTo('/login', { tab: IDENTITY.hasAccount() ? 'login' : 'register', redirect: '/detail', id: getArticleId() });
+      return;
+    }
     const liked = !!detail?.liked;
     const result = await REQUEST({
       url: '/likeComment',
       type: 'POST',
-      data: { comment_id: commentId, liked: liked, identity_token: IDENTITY.getIdentity().token },
+      data: { comment_id: commentId, liked: liked, identity_token: identity.token },
       redirectOnUnauthorized: false
     });
     if (result.status !== 1) {
-      KniuUI.msg({ content: result.msg || '点赞失败', type: 'error' });
+      UI.msg({ content: result.msg || '点赞失败', type: 'error' });
       return;
     }
     const next = (state.commentOptions.list || []).map(function (item) {
       if (Number(item.id) !== commentId) return item;
       return Object.assign({}, item, {
         likes: Number(result.data?.likes ?? item.likes),
-        liked: liked
+        liked: result.data?.liked === true,
+        locked: false,
+        likeFeedback: liked
       });
     });
     updateCommentOptions({ list: next });
@@ -267,7 +293,7 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     const commentId = Number(detail?.commentId);
     if (!commentId) return;
     try {
-      await KniuUI.confirm('确定删除这条评论吗？', '提示', { type: 'warning' });
+      await UI.confirm('确定删除这条评论吗？', '提示', { type: 'warning' });
     } catch (_) {
       return;
     }
@@ -278,16 +304,19 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
       redirectOnUnauthorized: false
     });
     if (result.status !== 1) {
-      KniuUI.msg({ content: result.msg || '删除失败', type: 'error' });
+      UI.msg({ content: result.msg || '删除失败', type: 'error' });
       return;
     }
-    KniuUI.msg({ content: '删除成功', type: 'success' });
+    UI.msg({ content: '删除成功', type: 'success' });
     await loadComments();
   }
 
   async function loadCurrentIdentity() {
     const currentIdentity = IDENTITY.getIdentity();
-    if (!currentIdentity.nickname) return;
+    if (!currentIdentity.nickname) {
+      updateCommentOptions({ currentUser: '', currentUserId: 0, canSubmit: false });
+      return;
+    }
     const result = await REQUEST({
       url: '/frontProfile',
       type: 'POST',
@@ -297,70 +326,75 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     if (result.status !== 1 || !result.data?.nickname) return;
     updateCommentOptions({
       currentUser: result.data.nickname,
-      currentUserId: Number(result.data.id) || 0,
-      placeholder: '请输入评论...'
+      currentUserId: Number(result.data.roleId || result.data.id) || 0,
+      placeholder: '请输入评论...',
+      canSubmit: Number(result.data.comment_ban) !== 1
     });
   }
 
   let loadSeq = 0;
-  let lastAutoSyncAt = 0;
   let detailRequestActive = false;
-  let lastDetailStartAt = 0;
+  let detailReloadPending = false;
+  let initialRouteReplayPending = true;
 
   async function loadDetail() {
-    const startedAt = Date.now();
-    // 首次挂载时 onMounted 与路由初始化回调可能几乎同时到达；两者视为同一次加载。
-    if (startedAt - lastDetailStartAt < 500) return;
-    lastDetailStartAt = startedAt;
-    // 同一时刻只允许一个详情请求链路执行；页面挂载、路由回调和 SSE
-    // 可能在同一时间触发，避免重复请求详情/身份/评论接口。
-    if (detailRequestActive) return;
+    if (detailRequestActive) {
+      const requestedId = Number(getRouteData()?.id);
+      if (Number.isInteger(requestedId) && requestedId > 0 && requestedId !== state.articleId) {
+        detailReloadPending = true;
+      }
+      return;
+    }
     detailRequestActive = true;
     const seq = ++loadSeq;
-    const id = Number(getRouteData()?.id);
-    if (!Number.isInteger(id) || id <= 0) {
-      state.error = '文章参数无效';
+    try {
+      const id = Number(getRouteData()?.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        state.error = '文章参数无效';
+        state.loading = false;
+        return;
+      }
+      state.articleId = id;
+      const result = await REQUEST({
+        url: '/getDetail',
+        type: 'POST',
+        data: { id, identity_token: IDENTITY.getIdentity().token },
+        redirectOnUnauthorized: false
+      });
+      if (seq !== loadSeq) { detailRequestActive = false; return; }
+      if (result.status !== 1 || !result.data) {
+        state.error = result.msg || '文章加载失败';
+        state.loading = false;
+        detailRequestActive = false;
+        return;
+      }
+      state.title = result.data.title || '';
+      state.content = renderCodeBlocks(result.data.content || '');
+      state.publisher = result.data.publisher || '';
+      state.create_time = result.data.create_time || '';
+      state.hits = Number(result.data.hits) || 0;
+      state.isOwn = Boolean(result.data.isOwn);
+      updateLikeOptions({ count: Number(result.data.likes) || 0, liked: Boolean(result.data.liked ?? result.data.likeLocked), own: Boolean(result.data.isOwn), disabled: false });
+      state.favorited = Boolean(result.data.favorited);
+      state.favoriteText = state.favorited ? '取消收藏' : '收藏文章';
+      state.favoriteOptions = { type: state.favorited ? 'primary' : 'default', block: true };
+      updateArticleTabOptions({
+        previous: result.data.previous || null,
+        next: result.data.next || null
+      });
       state.loading = false;
+      await loadCurrentIdentity();
+      await loadComments();
+      if (!IDENTITY.getIdentity().nickname) return;
+      const pending = takePendingComment(id);
+      if (pending) await submitComment(pending);
+    } finally {
       detailRequestActive = false;
-      return;
+      if (detailReloadPending) {
+        detailReloadPending = false;
+        queueMicrotask(loadDetail);
+      }
     }
-    state.articleId = id;
-    const result = await REQUEST({
-      url: '/getDetail',
-      type: 'POST',
-      data: { id, identity_token: IDENTITY.getIdentity().token },
-      redirectOnUnauthorized: false
-    });
-    // 快速连续切换文章（上一篇/下一篇）时只采纳最后一次加载的结果。
-    if (seq !== loadSeq) { detailRequestActive = false; return; }
-    if (result.status !== 1 || !result.data) {
-      state.error = result.msg || '文章加载失败';
-      state.loading = false;
-      detailRequestActive = false;
-      return;
-    }
-    state.title = result.data.title || '';
-    state.content = renderCodeBlocks(result.data.content || '');
-    state.publisher = result.data.publisher || '';
-    state.create_time = result.data.create_time || '';
-    state.hits = Number(result.data.hits) || 0;
-    state.isOwn = Boolean(result.data.isOwn);
-    updateLikeOptions({ count: Number(result.data.likes) || 0, liked: Boolean(result.data.likeLocked), own: Boolean(result.data.isOwn), disabled: Boolean(result.data.likeLocked) });
-    state.favorited = Boolean(result.data.favorited);
-    state.favoriteText = state.favorited ? '取消收藏' : '收藏文章';
-    state.favoriteOptions = { type: state.favorited ? 'primary' : 'default', block: true, disabled: state.favorited };
-    updateArticleTabOptions({
-      previous: result.data.previous || null,
-      next: result.data.next || null
-    });
-    state.loading = false;
-    await loadCurrentIdentity();
-    await loadComments();
-    // 登录/注册后带着待发评论回到文章页：此时已登录，自动补发并刷新列表。
-    if (!IDENTITY.getIdentity().nickname) return;
-    const pending = takePendingComment(id);
-    if (pending) await submitComment(pending);
-    detailRequestActive = false;
   }
 
   function toBack() {
@@ -370,27 +404,19 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
   state.commentOptions.onSubmit = onSubmitComment;
   state.commentOptions.onLike = onLikeComment;
   state.commentOptions.onDelete = onDeleteComment;
-  // likeOptions.onChange 已在初始 options 中声明（框架只在首次 set options 绑定监听器），此处不再原地赋值。
-  state.articleTabOptions.onChange = onArticleTabChange;
-
-  // 详情页内上一篇/下一篇走 navigateTo('/detail', { id })：hash 不变，_renderRoute 按同视图
-  // 去重后不会重新挂载组件，必须订阅路由变化重读 routeData 刷新内容；浏览器前进/后退同样经此刷新。
   const offRouteChange = onRouteChange(function (hash, prev) {
-    if (prev === null) return; // 注册时的同步初始化回调，首次加载交给 onMounted
+    if (prev === null) return;
     if (String(hash || '').split('?')[0] !== '/detail') return;
+    const routeId = Number(getRouteData()?.id);
+    if (initialRouteReplayPending) {
+      initialRouteReplayPending = false;
+      if (Number.isInteger(routeId) && routeId > 0 && routeId === state.articleId) return;
+    }
     loadDetail();
   });
   onScopeDispose(offRouteChange);
 
   onMounted(loadDetail);
-  // 后台编辑文章或审核评论后，在线详情页自动重放（loadDetail 内部连带刷新评论列表），
-  // 无需刷新页面。loadSeq 竞态守卫保证与"上一篇/下一篇"切换并发时只采纳最后一次结果。
-  autoSync(function () {
-    const now = Date.now();
-    if (now - lastAutoSyncAt < 1200) return;
-    lastAutoSyncAt = now;
-    loadDetail();
-  });
   return { state, loadDetail, toBack, toggleFavorite };
 });
 
