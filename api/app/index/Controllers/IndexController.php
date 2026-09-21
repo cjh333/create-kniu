@@ -876,26 +876,12 @@ class IndexController extends Controller
 
     $roleId = (int)(Db::name('tb_role')->where('name', '=', $encodedName)->value('id') ?? 0);
     $this->createFrontSession($roleId, $username);
-    // 注册即进后台：与前台会话一并建立 admin_token（role=2 受限工作台），
-    // 使「合并登录页」注册成功后可直接进入 /admin，无需二次登录。
-    if (session_status() === PHP_SESSION_NONE) {
-      session_start();
-    }
-    session_regenerate_id(true);
-    $authConfig = require __DIR__ . '/../../../config/auth.php';
-    $loginExpireSeconds = max(1, (int)($authConfig['LOGIN_EXPIRE_DAYS'] ?? 7)) * 86400;
-    $_SESSION['admin_token'] = [
-      'id' => $roleId,
-      'token' => bin2hex(random_bytes(32)),
-      'name' => $username,
-      'role' => '2',
-      'role_auth' => 2,
-      'expire' => time() + $loginExpireSeconds
-    ];
+    // 注册即进后台，使「合并登录页」注册成功后可直接进入 /admin，无需二次登录。
+    $adminToken = $this->createAdminSession($roleId, $username, '2', 2);
     $this->json([
       'id' => $id,
       'role_id' => $roleId,
-      'token' => $_SESSION['admin_token']['token'],
+      'token' => $adminToken,
       'name' => $username,
       'role' => '2',
       'role_auth' => 2,
@@ -907,7 +893,7 @@ class IndexController extends Controller
    * 前台登录：账号 + 密码 + 算术验证码。
    *
    * 校验 tb_role 账号，通过后把当前浏览器的身份令牌绑定到该账号，
-   * 使本机处于登录态；不写 admin_token 会话，不会串进后台。
+   * 使本机在前后台同时处于登录态，两个界面共享同一个认证会话。
    */
   public function frontLogin(): void
   {
@@ -930,7 +916,7 @@ class IndexController extends Controller
 
     $rows = Db::name('tb_role')
       ->where('name', '=', htmlspecialchars($username, ENT_QUOTES))
-      ->field(['id', 'name', 'nickname', 'password', 'is_show'])
+      ->field(['id', 'name', 'nickname', 'password', 'role', 'role_auth', 'is_show'])
       ->select();
     if (empty($rows)) {
       $this->json([], '账号不存在', 0);
@@ -944,8 +930,18 @@ class IndexController extends Controller
 
     $id = $this->bindFrontUser(hash('sha256', $token), (string)$account['name']);
     $this->createFrontSession((int)$account['id'], $username);
+    $this->createAdminSession(
+      (int)$account['id'],
+      html_entity_decode((string)$account['name'], ENT_QUOTES),
+      (string)($account['role'] ?? ''),
+      (int)($account['role_auth'] ?? 0)
+    );
     $this->json([
       'id' => $id,
+      'role_id' => (int)$account['id'],
+      'name' => html_entity_decode((string)$account['name'], ENT_QUOTES),
+      'role' => (string)($account['role'] ?? ''),
+      'role_auth' => (int)($account['role_auth'] ?? 0),
       'nickname' => $this->normalizeFrontNickname(html_entity_decode((string)($account['nickname'] ?? ''), ENT_QUOTES))
     ], '登录成功', 1);
   }
@@ -954,7 +950,7 @@ class IndexController extends Controller
    * 前台绑定账号：把当前浏览器身份令牌绑定到指定 tb_role 账号。
    *
    * 与 frontLogin 的区别：不校验验证码，供个人中心「绑定账号」入口使用；
-   * 校验账号密码通过后绑定身份并建立前台会话。
+   * 校验账号密码通过后建立前后台共享会话。
    */
   public function frontBind(): void
   {
@@ -973,7 +969,7 @@ class IndexController extends Controller
 
     $rows = Db::name('tb_role')
       ->where('name', '=', htmlspecialchars($username, ENT_QUOTES))
-      ->field(['id', 'name', 'nickname', 'password', 'is_show'])
+      ->field(['id', 'name', 'nickname', 'password', 'role', 'role_auth', 'is_show'])
       ->select();
     if (empty($rows)) {
       $this->json([], '账号不存在', 0);
@@ -987,8 +983,18 @@ class IndexController extends Controller
 
     $id = $this->bindFrontUser(hash('sha256', $token), (string)$account['name']);
     $this->createFrontSession((int)$account['id'], $username);
+    $this->createAdminSession(
+      (int)$account['id'],
+      html_entity_decode((string)$account['name'], ENT_QUOTES),
+      (string)($account['role'] ?? ''),
+      (int)($account['role_auth'] ?? 0)
+    );
     $this->json([
       'id' => $id,
+      'role_id' => (int)$account['id'],
+      'name' => html_entity_decode((string)$account['name'], ENT_QUOTES),
+      'role' => (string)($account['role'] ?? ''),
+      'role_auth' => (int)($account['role_auth'] ?? 0),
       'nickname' => $this->normalizeFrontNickname(html_entity_decode((string)($account['nickname'] ?? ''), ENT_QUOTES))
     ], '绑定成功', 1);
   }
@@ -1097,6 +1103,27 @@ class IndexController extends Controller
       'name' => $name,
       'expire' => time() + 86400 * 7
     ];
+  }
+
+  /** 建立前后台共用的后台认证会话，并返回会话令牌。 */
+  private function createAdminSession(int $roleId, string $name, string $role, int $roleAuth): string
+  {
+    if (session_status() === PHP_SESSION_NONE) {
+      session_start();
+    }
+    session_regenerate_id(true);
+    $authConfig = require __DIR__ . '/../../../config/auth.php';
+    $loginExpireSeconds = max(1, (int)($authConfig['LOGIN_EXPIRE_DAYS'] ?? 7)) * 86400;
+    $token = bin2hex(random_bytes(32));
+    $_SESSION['admin_token'] = [
+      'id' => $roleId,
+      'token' => $token,
+      'name' => $name,
+      'role' => $role,
+      'role_auth' => $roleAuth,
+      'expire' => time() + $loginExpireSeconds
+    ];
+    return $token;
   }
 
   /**

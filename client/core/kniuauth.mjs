@@ -1,5 +1,6 @@
 import KniuTemplate from './kniutemplate.mjs';
 import REQUEST from './kniurequest.mjs';
+import IDENTITY from './kniuidentity.mjs';
 
 const { reactive } = KniuTemplate;
 
@@ -58,9 +59,11 @@ var KniuAuth = (function () {
       complete() {
         state.loggedIn = false;
         state.user = null;
+        IDENTITY.clearIdentity();
         try {
           sessionStorage.removeItem('kniu_authed');
           sessionStorage.removeItem('kniu_user');
+          localStorage.setItem('kniu_auth_logout_at', String(Date.now()));
         } catch (e) { }
         notify();
       }
@@ -111,10 +114,18 @@ var KniuAuth = (function () {
   // 前台账号菜单退出时，通过 localStorage 事件让其它后台标签立即退出显示状态。
   if (typeof globalThis !== 'undefined' && typeof globalThis.addEventListener === 'function') {
     globalThis.addEventListener('storage', function syncLogoutAcrossTabs(event) {
-      if (event.key !== 'kniu_auth_logout_at' || !event.newValue) return;
-      markLoggedOut();
-      if (typeof location !== 'undefined' && /^#\/(admin|home|seo|aboutedit|users|dailydetail|articledetail|comment|reply)/.test(location.hash)) {
-        location.hash = '#/login';
+      if (event.key === 'kniu_auth_logout_at' && event.newValue) {
+        markLoggedOut();
+        if (typeof location !== 'undefined' && /^#\/(admin|home|seo|aboutedit|users|dailydetail|articledetail|comment|reply)/.test(location.hash)) {
+          location.hash = '#/login';
+        }
+        return;
+      }
+      // 前台登录会更新统一身份；匿名身份是退出后的访客标记，不能触发恢复。
+      if (event.key === 'kniu_front_identity' && event.newValue) {
+        try {
+          if (JSON.parse(event.newValue)?.nickname) restoreSession();
+        } catch (e) { }
       }
     });
   }

@@ -8382,7 +8382,14 @@ var KniuUI = (function () {
         });
         this._sessionSyncing = false;
         if (this._logoutLoading) return;
-        if (result.status !== 1 || !result.data?.loggedIn || !result.data?.nickname) return;
+        if (result.status !== 1 || !result.data?.loggedIn || !result.data?.nickname) {
+          // 后台会话已失效时，不能继续保留 localStorage 中的旧前台昵称。
+          if (identity.nickname) {
+            IDENTITY.clearIdentity();
+            try { globalThis.localStorage?.setItem('kniu_auth_logout_at', String(Date.now())); } catch (_) { }
+          }
+          return;
+        }
         const nickname = result.data.nickname;
         const name = result.data.name || identity.name;
         const avatar = result.data.avatar || '';

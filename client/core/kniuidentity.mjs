@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'kniu_front_identity';
+const LOGOUT_SIGNAL_KEY = 'kniu_auth_logout_at';
 
 function normalizeNickname(value) {
   const nickname = String(value == null ? '' : value).trim().replace(/\s+/g, ' ').slice(0, 30);
@@ -65,6 +66,19 @@ function clearIdentity() {
   persist(identity);
   globalThis.dispatchEvent?.(new CustomEvent('kniu-identity-change', { detail: identity }));
   return identity;
+}
+
+// 前台与后台位于同源的不同标签页时，storage 事件不会在写入页触发，
+// 但会在其它页面触发；统一转成组件已订阅的身份变更事件。
+if (typeof globalThis !== 'undefined' && typeof globalThis.addEventListener === 'function') {
+  globalThis.addEventListener('storage', function (event) {
+    if (event.key === STORAGE_KEY) {
+      const identity = getIdentity();
+      globalThis.dispatchEvent(new CustomEvent('kniu-identity-change', { detail: identity }));
+      return;
+    }
+    if (event.key === LOGOUT_SIGNAL_KEY && event.newValue) clearIdentity();
+  });
 }
 
 // 本机是否注册过前台账号：决定被拦截的评论该引导去「登录」还是「注册」。
