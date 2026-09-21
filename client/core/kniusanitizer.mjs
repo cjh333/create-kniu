@@ -1,12 +1,26 @@
-// 富文本安全白名单清理：危险标签整体移除 + 事件/危险属性剔除。
+// 富文本安全白名单清理：危险标签按可见文本保留 + 事件/危险属性剔除。
 // 提供同步 sanitizeRichHtml 与异步切分 sanitizeRichHtmlAsync 两种形态，
 // 语义（白名单/产物）完全一致；异步版本仅用于超大内容，避免主线程一次卡顿。
 
 /** 单次异步切分处理的节点上限；超过则跨多帧分片执行。 */
 const SLICE_SIZE = 800;
 
-/** 危险内联标签：整棵子树移除（含其中一切内容）。 */
+/** 危险标签不能作为富文本 DOM 节点；输入源码时按正文文本显示。 */
 const BANNED_TAGS = 'script,iframe,object,embed,link,meta,style,base,form';
+const BANNED_TAG_RE = /<(\/?)(script|iframe|object|embed|link|meta|style|base|form)(?=\s|\/?>)([^>]*?)>/gi;
+const ESCAPED_BANNED_TAG_RE = /&lt;(\/?)(script|iframe|object|embed|link|meta|style|base|form)(?=\s|\/?(?:&gt;|>))([^>]*?)(?:&gt;|>)/gi;
+
+function escapeBannedTags(html) {
+  BANNED_TAG_RE.lastIndex = 0;
+  ESCAPED_BANNED_TAG_RE.lastIndex = 0;
+  return String(html || '')
+    .replace(ESCAPED_BANNED_TAG_RE, function (_, slash, tag, tail) {
+      return '<code>&lt;' + slash + tag + tail + '&gt;</code>';
+    })
+    .replace(BANNED_TAG_RE, function (_, slash, tag, tail) {
+      return '<code>&lt;' + slash + tag + tail + '&gt;</code>';
+    });
+}
 
 /** 可能承载 URL 的属性名，用于拦截 javascript:/vbscript: 伪协议。 */
 const URL_ATTRIBUTES = ['href', 'src', 'poster', 'xlink:href'];
@@ -21,6 +35,11 @@ function isDangerousAttribute(node, attr) {
 
 function sanitizeDom(template, documentRef) {
   template.content.querySelectorAll(BANNED_TAGS).forEach(function (node) { node.remove(); });
+  // 旧内容或重复清洗可能产生 <code><code>...</code></code>；行内源码仅保留一层语义标签。
+  template.content.querySelectorAll('code code').forEach(function (inner) {
+    while (inner.firstChild) inner.parentNode.insertBefore(inner.firstChild, inner);
+    inner.remove();
+  });
   const all = Array.prototype.slice.call(template.content.querySelectorAll('*'));
   all.forEach(function (node) {
     Array.from(node.attributes).forEach(function (attr) {
@@ -38,7 +57,7 @@ function sanitizeDom(template, documentRef) {
  */
 export function sanitizeRichHtml(html, documentRef = document) {
   const template = documentRef.createElement('template');
-  template.innerHTML = String(html || '');
+  template.innerHTML = escapeBannedTags(html);
   return sanitizeDom(template, documentRef);
 }
 
@@ -65,8 +84,12 @@ function yieldToMainThread() {
  */
 export async function sanitizeRichHtmlAsync(html, documentRef = document) {
   const template = documentRef.createElement('template');
-  template.innerHTML = String(html || '');
+  template.innerHTML = escapeBannedTags(html);
   template.content.querySelectorAll(BANNED_TAGS).forEach(function (node) { node.remove(); });
+  template.content.querySelectorAll('code code').forEach(function (inner) {
+    while (inner.firstChild) inner.parentNode.insertBefore(inner.firstChild, inner);
+    inner.remove();
+  });
   const all = Array.prototype.slice.call(template.content.querySelectorAll('*'));
   if (all.length <= SLICE_SIZE) {
     all.forEach(stripAttributesOf);

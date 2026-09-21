@@ -1,5 +1,6 @@
 CREATE TABLE `tb_comment` (
     `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `sid` int NOT NULL DEFAULT 0 COMMENT '排序',
     `article_id` bigint unsigned NOT NULL COMMENT '文章ID(tb_article.id)',
     `role_id` bigint unsigned NOT NULL COMMENT '账号ID(tb_role.id)',
     `parent_id` bigint unsigned NOT NULL DEFAULT 0 COMMENT '父评论ID，0为顶层评论',

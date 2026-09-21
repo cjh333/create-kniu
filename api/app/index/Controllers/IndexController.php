@@ -51,9 +51,21 @@ class IndexController extends Controller
   {
     $result =  [
       'today' => date('z') + 1,
+      'title' => '',
+      'logo' => '',
+      'copyright' => '',
+      'icp' => '',
       'photo' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA4ZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuNi1jMDY3IDc5LjE1Nzc0NywgMjAxNS8wMy8zMC0yMzo0MDo0MiAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDo3OTA5OWY0MC1hZTY2LTQ0NTktYjdlMS0zNWYxMTEzN2JhNzYiIHhtcE1NOkRvY3VtZW50SUQ9InhtcC5kaWQ6QzQ0RDAwQUUyRjM0MTFFNjhGNjNBRUJGNzk1RDg1REIiIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6QzQ0RDAwQUQyRjM0MTFFNjhGNjNBRUJGNzk1RDg1REIiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIENDIDIwMTUgKE1hY2ludG9zaCkiPiA8eG1wTU06RGVyaXZlZEZyb20gc3RSZWY6aW5zdGFuY2VJRD0ieG1wLmlpZDoyNzdkNjVjNS01NmQxLTQwMGItYjY2NS00NjA2MDg3ZmFmMTAiIHN0UmVmOmRvY3VtZW50SUQ9ImFkb2JlOmRvY2lkOnBob3Rvc2hvcDo4MDM3NDc0YS03NzI0LTExNzktYmUy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',
       'note' => '这家伙很懒，什么都没留下！'
     ];
+    $seo = Db::name('tb_seo')->order('id', 'asc')->find();
+    $seo = $this->decodeFields($seo, ['title', 'logo', 'copyright', 'icp']);
+    if ($seo) {
+      $result['title'] = (string)($seo['title'] ?? '');
+      $result['logo'] = (string)($seo['logo'] ?? '');
+      $result['copyright'] = (string)($seo['copyright'] ?? '');
+      $result['icp'] = (string)($seo['icp'] ?? '');
+    }
     $token = $this->validIdentityToken();
     $about = null;
     $frontUser = null;
@@ -114,6 +126,11 @@ class IndexController extends Controller
     }
 
     try {
+      // 使用数据库原子递增，避免并发访问时出现覆盖写；详情接口每次成功读取计为一次浏览。
+      Db::name('tb_article')
+        ->where('id', '=', $id)
+        ->inc('hits')
+        ->update();
       $result = Db::name('tb_article')
         ->where('id', '=', $id)
         ->select();
@@ -217,11 +234,14 @@ class IndexController extends Controller
         }
       }
       $commentNames = [];
+      $commentContents = [];
       foreach ($result as $row) {
-        $commentNames[(int)$row['id']] = $this->normalizeFrontNickname($roleNicknames[(int)$row['role_id']] ?? '匿名');
+        $commentId = (int)$row['id'];
+        $commentNames[$commentId] = $this->normalizeFrontNickname($roleNicknames[(int)$row['role_id']] ?? '匿名');
+        $commentContents[$commentId] = (string)($row['message'] ?? '');
       }
 
-      $list = array_map(function ($row) use ($commentNames, $roleNicknames, $roleAvatars, $currentUserId) {
+      $list = array_map(function ($row) use ($commentNames, $commentContents, $roleNicknames, $roleAvatars, $currentUserId) {
         $parentId = (int)$row['parent_id'];
         $userId = (int)$row['role_id'];
         $username = $this->normalizeFrontNickname($roleNicknames[$userId] ?? '匿名');
@@ -231,6 +251,7 @@ class IndexController extends Controller
           'isOwn' => $currentUserId > 0 && $userId === $currentUserId,
           'parentId' => $parentId,
           'replyTo' => $parentId > 0 ? ($commentNames[$parentId] ?? '') : '',
+          'replyContent' => $parentId > 0 ? ($commentContents[$parentId] ?? '') : '',
           'username' => $username,
           'avatar' => $roleAvatars[$userId] ?? '',
           'time' => $row['create_time'] ?: '',
@@ -722,32 +743,46 @@ class IndexController extends Controller
   /** 用有效后台会话恢复前台身份，保证从后台打开前端时保持登录。 */
   public function frontSessionSync(): void
   {
-    $token = $this->validIdentityToken();
-    if ($token === '' || !$this->validateToken()) {
+    try {
+      $token = $this->validIdentityToken();
+      if ($token === '' || !$this->validateToken()) {
+        $this->json(['loggedIn' => false, 'id' => 0, 'name' => '', 'nickname' => '']);
+        return;
+      }
+      $roleId = (int)($_SESSION['admin_token']['id'] ?? 0);
+      if ($roleId <= 0) {
+        $this->json(['loggedIn' => false, 'id' => 0, 'name' => '', 'nickname' => '']);
+        return;
+      }
+      // 会话 ID 是唯一身份标识；账号名只作为展示和兼容旧会话的回退值。
+      $role = Db::name('tb_role')->where('id', '=', $roleId)->field(['id', 'name', 'nickname'])->find();
+      if (!$role) {
+        $this->json(['loggedIn' => false, 'id' => 0, 'name' => '', 'nickname' => '']);
+        return;
+      }
+      $name = trim(html_entity_decode((string)($role['name'] ?? ''), ENT_QUOTES));
+      $frontUserId = $this->bindFrontUserByRoleId(hash('sha256', $token), $roleId);
+      $this->createFrontSession($roleId, $name);
+      $avatar = '';
+      try {
+        $about = Db::name('tb_about')->where('role_id', '=', $roleId)->field(['avatar'])->find();
+        $decodedAbout = $this->decodeFields($about, ['avatar']);
+        $avatar = trim((string)($decodedAbout['avatar'] ?? ''));
+      } catch (\Throwable $ignored) {
+        // 资料表/旧库字段异常不能阻断登录同步，头像按空值回退默认图。
+      }
+      $this->json([
+        'loggedIn' => true,
+        'id' => $frontUserId,
+        'roleId' => $roleId,
+        'name' => $name,
+        'nickname' => $this->normalizeFrontNickname(html_entity_decode((string)($role['nickname'] ?? ''), ENT_QUOTES)),
+        'avatar' => $avatar
+      ]);
+    } catch (\Throwable $e) {
+      // 同步是辅助恢复接口，不能因旧库结构或唯一约束异常阻断前台渲染。
       $this->json(['loggedIn' => false, 'id' => 0, 'name' => '', 'nickname' => '']);
-      return;
     }
-    $roleId = (int)($_SESSION['admin_token']['id'] ?? 0);
-    $name = trim(html_entity_decode((string)($_SESSION['admin_token']['name'] ?? ''), ENT_QUOTES));
-    if ($roleId <= 0 || $name === '') {
-      $this->json(['loggedIn' => false, 'id' => 0, 'name' => '', 'nickname' => '']);
-      return;
-    }
-    $frontUserId = $this->bindFrontUser(
-      hash('sha256', $token),
-      htmlspecialchars($name, ENT_QUOTES)
-    );
-    $this->createFrontSession($roleId, $name);
-    $role = Db::name('tb_role')->where('id', '=', $roleId)->field(['name', 'nickname'])->find();
-    $about = Db::name('tb_about')->where('role_id', '=', $roleId)->field(['avatar'])->find();
-    $this->json([
-      'loggedIn' => true,
-      'id' => $frontUserId,
-      'roleId' => $roleId,
-      'name' => html_entity_decode((string)($role['name'] ?? $name), ENT_QUOTES),
-      'nickname' => $this->normalizeFrontNickname(html_entity_decode((string)($role['nickname'] ?? ''), ENT_QUOTES)),
-      'avatar' => (string)($this->decodeFields([$about], ['avatar'])[0]['avatar'] ?? '')
-    ]);
   }
 
   /**
@@ -768,14 +803,10 @@ class IndexController extends Controller
       return;
     }
 
-    // 邮箱必填、格式校验、全站唯一。
+    // 邮箱必填并校验格式；邮箱允许多个账号重复使用。
     $email = EmailCode::normalizeEmail((string)$this->input('post.email/s', ''));
     if (!EmailCode::validEmail($email)) {
       $this->json([], '邮箱格式不正确', 0);
-      return;
-    }
-    if (Db::name('tb_role')->where('email', '=', $email)->find()) {
-      $this->json([], '该邮箱已被注册', 0);
       return;
     }
     // 邮箱验证码（注册场景）必须校验通过。
@@ -812,9 +843,10 @@ class IndexController extends Controller
     try {
       Db::beginTrans();
       $transactionStarted = true;
-      Db::name('tb_role')->insert([
+      $roleId = (int)Db::name('tb_role')->insert([
         'sid' => 0,
         'name' => $encodedName,
+        'nickname' => $encodedName,
         'email' => $email,
         'password' => $this->hashPassword($password),
         'role' => 2,
@@ -823,13 +855,21 @@ class IndexController extends Controller
         'create_time' => date('Y-m-d H:i:s'),
         'issue_time' => date('Y-m-d H:i:s')
       ]);
-      $id = $this->bindFrontUser(hash('sha256', $token), $encodedName);
+      $id = $this->bindFrontUserByRoleId(hash('sha256', $token), $roleId);
+      if ($id <= 0) {
+        throw new \RuntimeException('注册账号绑定失败');
+      }
       Db::commit();
       $transactionStarted = false;
       // 注册成功后核销邮箱验证码。
       EmailCode::consume($verify['id']);
-    } catch (\Exception $e) {
+    } catch (\Throwable $e) {
       if ($transactionStarted) Db::rollback();
+      // 账号唯一索引是最终约束，覆盖并发注册场景。
+      if (stripos((string)$e->getMessage(), 'uk_role_name') !== false) {
+        $this->json([], '该账号已存在', 0);
+        return;
+      }
       $this->json([], '注册失败，请稍后重试', 0);
       return;
     }
@@ -956,7 +996,7 @@ class IndexController extends Controller
   /**
    * 发送邮箱验证码（注册 / 找回密码共用）。
    *
-   * 注册场景：邮箱尚未注册才允许发码；找回密码场景：邮箱必须已注册。
+   * 注册场景允许邮箱重复；找回密码场景要求邮箱已注册。
    * 频率与水限制由 EmailCode 统一管控，验证码仅入库摘要、明文只出现在邮件正文。
    */
   public function emailCode(): void
@@ -973,12 +1013,7 @@ class IndexController extends Controller
       return;
     }
 
-    if ($scene === EmailCode::SCENE_REGISTER) {
-      if (Db::name('tb_role')->where('email', '=', $email)->find()) {
-        $this->json([], '该邮箱已被注册', 0);
-        return;
-      }
-    } else {
+    if ($scene !== EmailCode::SCENE_REGISTER) {
       if (!Db::name('tb_role')->where('email', '=', $email)->find()) {
         $this->json([], '该邮箱尚未注册账号', 0);
         return;
@@ -1081,11 +1116,22 @@ class IndexController extends Controller
   {
     $roleId = (int)(Db::name('tb_role')->where('name', '=', $encodedName)->value('id') ?? 0);
     if ($roleId <= 0) return 0;
-    Db::name('tb_role')->where('identity_token', '=', $tokenHash)->where('id', '<>', $roleId)->update(['identity_token' => null]);
+    // Db::update 会过滤 PHP null；使用原始 NULL 才能真正解除旧账号绑定。
+    Db::name('tb_role')->where('identity_token', '=', $tokenHash)->where('id', '<>', $roleId)->update(['identity_token' => Db::raw('NULL')]);
     Db::name('tb_role')->where('id', '=', $roleId)->update([
       'identity_token' => $tokenHash,
       'nickname' => Db::name('tb_role')->where('id', '=', $roleId)->value('nickname')
     ]);
+    return $roleId;
+  }
+
+  /** 按稳定的 tb_role.id 绑定前台令牌，不依赖可变的用户名。 */
+  private function bindFrontUserByRoleId(string $tokenHash, int $roleId): int
+  {
+    if ($roleId <= 0) return 0;
+    // Db::update 会过滤 PHP null；使用原始 NULL 才能真正解除旧账号绑定。
+    Db::name('tb_role')->where('identity_token', '=', $tokenHash)->where('id', '<>', $roleId)->update(['identity_token' => Db::raw('NULL')]);
+    Db::name('tb_role')->where('id', '=', $roleId)->update(['identity_token' => $tokenHash]);
     return $roleId;
   }
 

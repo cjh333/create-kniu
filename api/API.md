@@ -1,6 +1,6 @@
 # 后端 API 技术说明（KniuSystem）
 
-> 需要以 Go、Python、Node.js、Java 等语言重建后端时，请以 [API-CONTRACT.md](API-CONTRACT.md) 为语言无关的行为契约；本文保留当前 PHP 实现、运行和运维说明。
+> 需要以 Go、Python、Node.js、Java 等语言重建后端时，请以 [KNIU-API-CONTRACT.md](../!kniu_project/KNIU-API-CONTRACT.md) 为语言无关的行为契约；本文保留当前 PHP 实现、运行和运维说明。
 
 PHP + Composer 轻量框架，提供 JSON API。入口 `api/index.php` 初始化自动加载与 Session、处理 CORS、解析 URI，交由 `Core\Router` 分发到 `api/app/<应用>/Controllers/` 下的控制器。
 
@@ -48,12 +48,7 @@ npm run build   # = cross-env PROCESS_ENV=production node client/core/kniubuilde
 
 ### 历史脏数据归一
 
-若怀疑库内仍有旧版反复转义叠加的多层编码字段，运行根目录工具一次性归一：
-
-```bash
-php normalise_db.php            # dry-run（默认，只报告不写库）
-php normalise_db.php --apply    # 剥到底解码后回写原文
-```
+若怀疑库内仍有旧版反复转义叠加的多层编码字段，当前仓库未提供自动归一脚本；应先备份数据库，再通过部署环境的迁移工具按字段白名单处理，不能在前端补偿编码层数。
 
 - 白名单字段：`tb_daily.cn/en`、`tb_article.title/subtitle/summary/content`、`tb_nav.name/url`、`tb_seo.*`、`tb_role.name`。
 - 已接入解码的端点：Daily / Article / Nav / Seo / Role 的 List + Detail，以及 IndexController 的 `getDaily` / `getArticle` / `getDetail`。
@@ -67,8 +62,8 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 
 ## 四、接口清单（当前注册于 `api/config/router.php`，均 POST）
 
-- 公共内容：`/getDaily`、`/getArticle`、`/getInfo`、`/getAbout`、`/getDetail`、`/getComments`、`/submitComment`、`/likeComment`、`/deleteComment`、`/likeArticle`、`/favoriteArticle`、`/frontProfile`、`/frontProfileSave`、`/frontProfileClear`
-- 会话与系统：`/logup`、`/logout`、`/captcha`、`/session_status`、`/frontBind`、`/frontSessionSync`、`/admin`、`/system`
+- 公共内容与前台身份：`/getDaily`、`/getArticle`、`/getInfo`、`/getAbout`、`/getDetail`、`/getComments`、`/submitComment`、`/likeComment`、`/deleteComment`、`/likeArticle`、`/favoriteArticle`、`/frontProfile`、`/frontProfileSave`、`/frontProfileClear`、`/frontSessionSync`、`/frontRegister`、`/frontLogin`、`/frontBind`、`/email_code`、`/password_reset`、`/data_revision`
+- 会话与系统：`/logup`、`/logout`、`/captcha`、`/session_status`、`/admin`、`/system`
 - 后台业务（需登录）：SEO、导航、每日内容、文章、角色、评论管理的增删改查，以及 `/about_detail`、`/about_save`、`/clearCache`
 
 所有已登录后台账号均可调用 `/article_add` 新增文章，并可使用 `/article_media_upload` 上传正文媒体；文章编辑、删除、显示状态修改及其他管理操作继续遵循原有权限和文章归属限制。
@@ -79,15 +74,19 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 | --- | --- | --- |
 | `/getComments` | `article_id`（必填）、`identity_token`（可选） | 返回该文章全部**已审核**评论（含回复，`parent_id` 区分），`is_show=1` 过滤，按 `id` 升序；每项含 `{id,userId,isOwn,parentId,replyTo,username,avatar,time,content,likes,liked}`。本人判断只按 `tb_role.id`/`role_id`，昵称仅用于展示 |
 | `/submitComment` | `article_id`、`parent_id`、`identity_token`、`message` | 提交评论或回复；禁言账号拒绝提交；其他账号按 `tb_role.comment_audit` 控制显示 |
-| `/likeComment` | `comment_id`、`liked`（bool）、`identity_token` | 登录账号每天只能给同一条评论成功点赞一次；成功后当天保持红心并锁定，服务端拒绝给本人评论点赞，返回 `{likes,liked,locked}` |
+| `/likeComment` | `comment_id`、`liked`（bool）、`identity_token` | 登录账号按“账号 + 评论 + 服务器日期”记录状态；`true` 点赞、`false` 取消，同一天允许反选后再次点赞；服务端拒绝给本人评论点赞，返回 `{likes,liked,locked}`，当前 `locked` 为 `false` |
 | `/deleteComment` | `comment_id`、`identity_token` | 仅允许按当前账号的 `tb_role.id` 删除自己的评论或回复；删除顶层评论时同时删除其回复 |
-| `/likeArticle` | `article_id`、`liked`（bool） | 文章点赞（`true` 加 1）或取消（`false` 减 1，不低于 0）；后台作者会话不能给自己的文章点赞，返回最新 `{likes}` |
+| `/likeArticle` | `article_id`、`liked`（bool）、`identity_token` | 登录账号按“账号 + 文章 + 服务器日期”记录状态；`true` 点赞、`false` 取消，返回最新 `{likes,liked}`；作者不能给自己的文章点赞 |
 | `/favoriteArticle` | `article_id`、`favorited`、`identity_token` | 当前前台用户收藏或取消收藏文章；未登录时拒绝 |
-| `/frontProfile` | `identity_token` | 返回昵称、文章获赞数、评论获赞数（含回复）、评论数、收藏文章和近一年浏览历史 `{id,nickname,articleLikeCount,commentLikeCount,commentCount,favorites,history}` |
+| `/frontProfile` | `identity_token` | 返回当前账号的 `{id,name,nickname,is_show,comment_ban,canEditNickname,articleLikeCount,commentLikeCount,commentCount,favorites,history}`；`id` 是 `tb_role.id`，`name` 是账号名，`nickname` 仅用于展示 |
 | `/frontProfileSave` | `identity_token`、`nickname`、`gvcode`（首次创建必填） | 昵称仅用于展示；已绑定账号修改昵称的间隔为一年。账号唯一标识为 `tb_role.id`，业务关联不依赖昵称 |
 | `/frontProfileClear` | `identity_token` | 统一退出前后台：销毁 `front_token`、`admin_token` 和 Session；不删除数据库账号、不释放昵称 |
+| `/frontSessionSync` | `identity_token` | 根据仍有效的后台会话恢复前台身份；资料异常时返回空头像，不应返回 HTML 500 |
+| `/frontRegister` | `username,password,confirm,email,email_code,gvcode,identity_token` | 校验算术验证码和邮箱验证码后注册普通账号并绑定前台身份；账号名必须唯一，邮箱允许重复，失败仍返回统一 JSON |
+| `/frontLogin` | `username,password,gvcode,identity_token` | 校验算术验证码后登录并绑定前台身份；`is_show=0` 的禁用账号拒绝登录 |
+| `/frontBind` | `username,password,identity_token` | 绑定已有账号；切换账号时先解除令牌旧绑定，再写入新账号 |
 
-`/getDetail` 除文章字段外还返回 `previous` 和 `next`，有相邻已显示文章时为 `{id,title}`，没有时为 `null`。相邻顺序按文章 `id`，并过滤 `is_show=1`。
+`/getDetail` 除文章字段外还返回 `previous` 和 `next`，有相邻已显示文章时为 `{id,title}`，没有时为 `null`。相邻顺序按文章 `id`，并过滤 `is_show=1`。成功读取文章时服务端原子增加 `hits`，响应返回递增后的最新值。
 
 账号的 `is_show=0` 在用户管理中表示禁用，禁止登录；`comment_ban=1` 表示禁言，不影响登录、个人中心或发表文章，仅禁止评论和回复提交。
 
@@ -105,7 +104,7 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 
 `tb_comment` 为评论表，`article_id` 关联 `tb_article.id`，`role_id` 直接关联统一账号 `tb_role.id`；`parent_id` 为 0 表示顶层评论，大于 0 表示回复。后台 `/comment` 固定管理顶层评论，`/reply` 固定管理回复，两页共用接口并直接按 `tb_role.id` 判断权限。
 
-`tb_comment_reply_status` 按“回复 ID + 接收人 ID”保存逐条读取状态。后台头部在首次加载、收到 `reply-refresh` 信号或显式状态变更时检查；红点仅表示存在其他用户发给本人的已审核新回复，点击后进入回复管理并将当前已接收回复批量设为已读。回复管理中的读取状态开关与红点使用同一份数据。
+`tb_comment_reply_status` 按“回复 ID + 接收账号的 `tb_role.id`”保存逐条读取状态。后台头部在首次加载、收到 `reply-refresh` 信号或显式状态变更时检查；红点仅表示存在其他用户发给本人的已审核新回复，点击后进入回复管理并将当前已接收回复批量设为已读。回复管理中的读取状态开关与红点使用同一份数据。
 
 后台 `/logup` 收到 `identity_token` 并验证账号成功后，同时写入 `admin_token`、`front_token`，并把该浏览器令牌写入对应 `tb_role.identity_token`，因此后台登录成功即同步为前台登录状态。
 前台 `kniu-user-login` 初始化时调用 `/frontSessionSync`；若后台 Session 仍有效，则服务端按当前 `tb_role` 账号恢复前台身份。这样从后台“前端首页”新标签打开时不依赖旧标签的本地状态传播。
@@ -122,12 +121,13 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 系统由单一管理员扩展为多账号按角色隔离数据：
 
 - `tb_role.role=1` 为管理员（`role_auth=1`），可见全量数据；`role=2` 为普通用户（`role_auth=2`），只能查看和操作自己的数据。
-- 数据归属：`tb_article.role_id`、评论/收藏/浏览历史的 `role_id` 均关联 `tb_role.id`；`tb_about.role_id` 关联 `tb_role.id`（“关于我”按账号存储，`uk_user_about_user` 唯一键防重复）。前台身份字段统一保存在 `tb_role`。
+- 数据归属：`tb_article.role_id`、评论/收藏/浏览历史的 `role_id` 均关联 `tb_role.id`；`tb_about.role_id` 关联 `tb_role.id`（“关于我”按账号存储，`uk_about_role` 唯一键防重复）；回复状态的接收人字段同样保存 `tb_role.id`。前台身份字段统一保存在 `tb_role`。
 - 后台会话 `admin_token` 内含 `id`，核心辅助 `Base::currentUserId()` / `isAdmin()`；`/logup` 登录响应同样返回 `id`。
 - 普通用户：文章列表/详情按 `role_id` 过滤，增改删只能操作自己的文章；角色列表只见自己；评论列表只见自己的评论（行内附 `is_own`），只能删除自己的评论；批量删除仅管理员可用。
-- “关于我”：后台 `/about_detail` 读本人 `tb_about` 的 `avatar`、`summary`、`content`，`/about_save` 保存三者（存在更新、不存在插入）；`tb_about` 使用 `create_time` / `issue_time` 记录创建和发布时间；首页 `/getInfo` 在浏览器持有合法 `identity_token` 且账号已绑定（`role_id>0`）时使用本人的头像和简介，否则回退默认值；前台 `/getAbout` 继续返回关于页内容。
-- 身份绑定：`POST /frontBind`（入参账号密码与 `identity_token`）校验账号密码后绑定前台身份并建立前台会话（个人中心入口，无需验证码）；前台会话 `front_token` 与后台 `admin_token` 完全独立。
-- 数据迁移与回填见 `api/database/20260902_role_permission.sql` 及同目录回填脚本。
+- “关于我”：后台 `/about_detail` 读本人 `tb_about` 的 `avatar`、`summary`、`content`，`/about_save` 保存三者（存在更新、不存在插入）；`tb_about` 使用 `create_time` / `issue_time` 记录创建和发布时间；首页 `/getInfo` 在浏览器持有合法 `identity_token` 且账号已绑定（`role_id>0`）时使用本人的头像和简介，否则回退默认值，并返回公开 SEO 的 `title`、`logo`、`copyright`、`icp`；前台 `/getAbout` 继续返回关于页内容。
+- 身份绑定：`POST /frontBind`（入参账号密码与 `identity_token`）校验账号密码后绑定前台身份并建立前台会话（个人中心入口，无需验证码）；前台会话 `front_token` 与后台 `admin_token` 完全独立。令牌从旧账号切换到新账号时必须先以 SQL `NULL` 解除旧绑定。
+- 前台注册：`POST /frontRegister` 校验 `username`、`password`、`confirm`、`email`、`email_code`、`identity_token` 及算术验证码后，在 `tb_role` 创建普通账号并按 `tb_role.id` 绑定前台身份；邮箱统一转小写但允许重复，账号名必须唯一；异常统一返回 JSON，不输出 HTML 500。
+- 当前数据库建表与初始化数据基线统一位于 `!kniu_project/kniusql/`；历史迁移脚本不属于当前仓库基线，恢复数据前应先备份并按部署记录执行迁移。
 
 ## 五、新增接口
 
@@ -137,7 +137,7 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 
 ## 六、上传与安全约定
 
-- `/seo_update` 使用 `multipart/form-data`，Logo 文件字段为 `logo`；已有图片可提交 URL，空字符串表示清空。
+- `/seo_update` 使用 `multipart/form-data`，Logo 文件字段为 `logo`；已有图片可提交 URL，空字符串表示清空。SEO ICP 备案字段统一为 `icp`，不再使用 `record`。
 - `/article_update` 的封面字段为 `cover`；`/article_media_upload` 的即时媒体字段为 `file`。
 - 上传同时校验扩展名、客户端 MIME、`finfo` 真实 MIME 和大小，文件名由服务端生成。
 - 后台依赖 Session、同源 CSRF 校验和角色授权；角色及缓存管理仅管理员可用。
@@ -168,7 +168,7 @@ php normalise_db.php --apply    # 剥到底解码后回写原文
 
 | 接口 | 用途 | 关键校验 |
 |---|---|---|
-| `POST /email_code` | 发验证码：`email` + `scene`（`register`/`reset`） | register 场景拒绝已注册邮箱，reset 场景拒绝未注册邮箱；同邮箱同场景 60 秒重发限频 |
+| `POST /email_code` | 发验证码：`email` + `scene`（`register`/`reset`） | register 场景允许重复邮箱，reset 场景拒绝未注册邮箱；同邮箱同场景 60 秒重发限频 |
 | `POST /password_reset` | 重置密码：`email` + `code` + `password` + `confirm` | 按邮箱定位账号、校验验证码、成功后直接设新密码，不需要原密码 |
 
 ### 实现要点

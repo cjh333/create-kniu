@@ -250,7 +250,22 @@ const userController = controller(function () {
         }
         state.showmodal = false;
         self.$msg({ content: res.msg, type: 'success' });
-        await loadList(isAdd ? 1 : state.currentPage);
+        // tb_role 是静默表；列表由当前页局部状态或用户主动搜索/翻页维护，
+        // 不在成功回调中再次拉取，避免与其它账号相关内容的自动同步叠加请求。
+        if (isAdd) {
+          await loadList(1);
+        } else {
+          const updated = state.list.find(function (item) { return Number(item?.id) === Number(form.id); });
+          if (updated) {
+            Object.assign(updated, {
+              name: data.name ?? updated.name,
+              role: data.role ?? updated.role,
+              role_auth: data.role_auth ?? updated.role_auth,
+              is_show: data.is_show ?? updated.is_show
+            });
+            state.userTable = { ...state.userTable, data: state.list };
+          }
+        }
       },
       fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
     });
@@ -336,7 +351,17 @@ const userController = controller(function () {
     url: '/role_delete',
     confirmMessage: (row) => `确定删除用户“${row.name}”吗？`,
     gate: () => canAdministerUsers,
-    getSuccessMessage: (res) => res.msg
+    getSuccessMessage: (res) => res.msg,
+    // 账号表属于静默表；删除账号还可能级联内容表，不能再额外请求列表，
+    // 否则会与级联删除触发的 SYNC.autoSync 重复。当前页直接移除已删除行。
+    onSuccess(row) {
+      state.list = (state.list || []).filter(function (item) {
+        return Number(item?.id) !== Number(row?.id);
+      });
+      state.total = Math.max(0, Number(state.total || 0) - 1);
+      state.userTable = { ...state.userTable, data: state.list };
+      state.userPage = { ...state.userPage, total: state.total };
+    }
   });
 
   onMounted(function () {

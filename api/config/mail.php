@@ -12,8 +12,6 @@ $config = [
     'TIMEOUT' => (int)(getenv('MAIL_TIMEOUT') ?: 12),
     'CODE_EXPIRE' => (int)(getenv('MAIL_CODE_EXPIRE') ?: 600),  // 验证码有效期（秒）
     'CODE_INTERVAL' => (int)(getenv('MAIL_CODE_INTERVAL') ?: 60),  // 同一邮箱重发间隔（秒）
-    // TLS 校验用的根证书包。Windows 下 PHP 常未配置 openssl.cafile，
-    // 缺失时 ssl:// 连接会「静默失败」（errno=0 且 errstr 为空），故项目自带一份。
     'CAFILE' => getenv('MAIL_CAFILE') ?: __DIR__ . '/cert/cacert.pem',
     'LOG_DIR' => __DIR__ . '/../runtime/mail'
   ],

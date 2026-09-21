@@ -152,6 +152,7 @@ var KniuTemplate = (function () {
     'for', 'if', 'elseif', 'else',
     'for-index', 'for-item', 'key',
     'loading',
+    'style',
   ]);
 
   const BOOLEAN_ATTRS = new Set([
@@ -203,6 +204,18 @@ var KniuTemplate = (function () {
     'pointerenter', 'pointerleave', 'pointerover', 'pointerout', 'pointermove',
     'animationstart', 'animationend', 'animationiteration', 'transitionend',
   ]);
+
+  const EVENT_OPTION_MODIFIERS = new Set(['capture', 'once', 'passive', 'native']);
+  const EVENT_BEHAVIOR_MODIFIERS = new Set([
+    'prevent', 'stop', 'self', 'ctrl', 'shift', 'alt', 'meta', 'exact',
+    'left', 'right', 'middle', 'enter', 'tab', 'delete', 'esc', 'space',
+    'up', 'down'
+  ]);
+  const KEY_MODIFIER_VALUES = {
+    enter: ['Enter'], tab: ['Tab'], delete: ['Backspace', 'Delete'], esc: ['Escape', 'Esc'],
+    space: [' ', 'Spacebar'], up: ['ArrowUp'], down: ['ArrowDown'],
+    left: ['ArrowLeft'], right: ['ArrowRight']
+  };
 
   function isValidEventForTag(event, tag) {
     const allowed = EVENT_TAGS[event];
@@ -291,6 +304,63 @@ var KniuTemplate = (function () {
     }
     const next = String(value);
     if (node.getAttribute(name) !== next) node.setAttribute(name, next);
+  }
+
+  // kniu:style 支持 CSS 字符串及对象两种形式。对象属性使用 JS 常见的 camelCase
+  // 写法，例如 { marginTop: 'calc(15/var(--kniu_vw))' }；不能把对象转成
+  // "[object Object]" 写回 style attribute。
+  function stylePropertyName(name) {
+    const raw = String(name || '');
+    if (raw.startsWith('--')) return raw;
+    return raw.replace(/[A-Z]/g, function (letter) { return '-' + letter.toLowerCase(); })
+      .replace(/^-ms-/, '-ms-');
+  }
+
+  function normalizeStyleValue(node, value) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return Object.entries(value).map(function ([name, item]) {
+        return [stylePropertyName(name), item];
+      });
+    }
+    if (typeof value !== 'string') return [];
+    const documentRef = node.ownerDocument || (typeof document !== 'undefined' ? document : null);
+    if (!documentRef?.createElement) return [];
+    const probe = documentRef.createElement('span');
+    probe.style.cssText = value;
+    return Array.from(probe.style).map(function (name) { return [name, probe.style.getPropertyValue(name)]; });
+  }
+
+  function optionAttributeName(name) {
+    const raw = String(name || '');
+    if (raw.startsWith('data-') || raw.startsWith('aria-')) return raw;
+    return 'data-' + raw.replace(/[A-Z]/g, function (letter) { return '-' + letter.toLowerCase(); });
+  }
+
+  function optionEventDescriptor(name) {
+    const raw = String(name || '');
+    if (!/^on[A-Z][A-Za-z0-9]*$/.test(raw)) return null;
+    const eventNames = Object.keys(EVENT_TAGS).sort(function (left, right) { return right.length - left.length; });
+    const matchedEvent = eventNames.find(function (eventName) {
+      const eventToken = eventName.charAt(0).toUpperCase() + eventName.slice(1);
+      return raw.startsWith('on' + eventToken);
+    });
+    if (!matchedEvent) return null;
+    let suffix = raw.slice(('on' + matchedEvent.charAt(0).toUpperCase() + matchedEvent.slice(1)).length);
+    const modifierTokens = [
+      ['Capture', 'capture'], ['Prevent', 'prevent'], ['Passive', 'passive'], ['Native', 'native'],
+      ['Middle', 'middle'], ['Delete', 'delete'], ['Exact', 'exact'], ['Shift', 'shift'],
+      ['Space', 'space'], ['Right', 'right'], ['Enter', 'enter'], ['Left', 'left'],
+      ['Ctrl', 'ctrl'], ['Meta', 'meta'], ['Once', 'once'], ['Self', 'self'], ['Stop', 'stop'],
+      ['Alt', 'alt'], ['Tab', 'tab'], ['Esc', 'esc'], ['Down', 'down'], ['Up', 'up']
+    ];
+    const modifiers = [];
+    while (suffix) {
+      const token = modifierTokens.find(function (item) { return suffix.startsWith(item[0]); });
+      if (!token) return null;
+      modifiers.push(token[1]);
+      suffix = suffix.slice(token[0].length);
+    }
+    return { eventName: matchedEvent, modifiers: modifiers };
   }
 
   function warn(msg) {
@@ -661,15 +731,20 @@ var KniuTemplate = (function () {
               rawNodes.delete(textNode);
             }
             const built = [];
+            const onlyRawValue = segments.length === 1 && segments[0].t === 'key' && segments[0].raw;
             segments.forEach(function (s, index) {
               if (s.t === 'text') {
                 built.push(document.createTextNode(s.v));
               } else if (!s.raw) {
                 built.push(document.createTextNode(values[index]));
               } else {
-                const span = document.createElement('span');
-                span.innerHTML = sanitizeHtml(values[index]);
-                built.push(span);
+                const holder = onlyRawValue ? document.createElement('template') : document.createElement('span');
+                holder.innerHTML = sanitizeHtml(values[index]);
+                if (onlyRawValue) {
+                  built.push(...Array.from(holder.content.childNodes));
+                } else {
+                  built.push(holder);
+                }
               }
             });
             const frag = document.createDocumentFragment();
@@ -749,15 +824,94 @@ var KniuTemplate = (function () {
             const componentCtor = tag.includes('-') && typeof customElements !== 'undefined'
               ? customElements.get(tag) : null;
             const isUnupgradedComponent = !!componentCtor && !(node instanceof componentCtor);
+            const nativeOptionAttributes = new Set();
+            const nativeOptionEvents = new Map();
             const renderOptions = function () {
               const value = resolve(expr);
               // 只有解析出真实对象才写入；解析不到（undefined/null/非对象）时保持原值，
               // 防止重复/伪绑定（如异步间隙里用数据对象当 state 的 auto-bind）把
               // 已写入的 expando 覆盖成 {}（2026-09-01 修复）。
               if (value && typeof value === 'object') {
-                if ('options' in node) node.options = value;
+                // 仅自定义组件使用 options property；原生 <select>.options 等浏览器
+                // 内建字段不能误写成业务配置对象，原生标签统一走下方通用映射。
+                const usesComponentOptions = tag.includes('-') && 'options' in node;
+                if (usesComponentOptions) node.options = value;
                 else if (isUnupgradedComponent) node.__kniuOptionsValue = value;
-                else warn(`kniu:option 不能用在 <${node.tagName.toLowerCase()}> 上（组件未提供 options property）。`);
+                // `on*` 事件字段无论目标是原生标签还是 kniu 组件都绑定到宿主事件；
+                // 组件仍会同时收到完整 options，用于其自身的回调型配置协议。
+                const usesNativeOptionMapping = !usesComponentOptions && !isUnupgradedComponent;
+                if (usesNativeOptionMapping) {
+                  nativeOptionAttributes.forEach(function (name) { node.removeAttribute(name); });
+                  nativeOptionAttributes.clear();
+                }
+                nativeOptionEvents.forEach(function (entry, eventName) {
+                  node.removeEventListener(eventName, entry.handler, entry.options);
+                });
+                nativeOptionEvents.clear();
+                Object.entries(value).forEach(function ([name, item]) {
+                    const eventDescriptor = typeof item === 'function' ? optionEventDescriptor(name) : null;
+                    if (eventDescriptor) {
+                      const eventName = eventDescriptor.eventName;
+                      const modifiers = eventDescriptor.modifiers;
+                      const unknownModifiers = modifiers.filter(function (modifier) {
+                        return !EVENT_OPTION_MODIFIERS.has(modifier) && !EVENT_BEHAVIOR_MODIFIERS.has(modifier);
+                      });
+                      if (unknownModifiers.length || (modifiers.includes('passive') && modifiers.includes('prevent'))) {
+                        warn(`<${tag}> 的 kniu:option 事件 "${name}" 修饰符无效，已跳过绑定。`);
+                        return;
+                      }
+                      const handler = function (event) {
+                        if ((DEFAULT_PREVENT_EVENTS.has(eventName) || eventName === 'click')
+                          && !modifiers.includes('native') && !modifiers.includes('passive') && !event.defaultPrevented) {
+                          event.preventDefault();
+                        }
+                        const isKeyboardEvent = event.type.startsWith('key');
+                        const keyModifiers = isKeyboardEvent
+                          ? modifiers.filter(function (modifier) { return Object.prototype.hasOwnProperty.call(KEY_MODIFIER_VALUES, modifier); })
+                          : [];
+                        if (keyModifiers.length && !keyModifiers.some(function (modifier) { return KEY_MODIFIER_VALUES[modifier].includes(event.key); })) return;
+                        const requiredSystemKeys = new Set(modifiers.filter(function (modifier) {
+                          return ['ctrl', 'shift', 'alt', 'meta'].includes(modifier);
+                        }));
+                        for (const modifier of modifiers) {
+                          if (EVENT_OPTION_MODIFIERS.has(modifier) || keyModifiers.includes(modifier)) continue;
+                          if (modifier === 'self' && event.target !== event.currentTarget) return;
+                          if (modifier === 'ctrl' && !event.ctrlKey) return;
+                          if (modifier === 'shift' && !event.shiftKey) return;
+                          if (modifier === 'alt' && !event.altKey) return;
+                          if (modifier === 'meta' && !event.metaKey) return;
+                          if (modifier === 'exact' && (
+                            event.ctrlKey !== requiredSystemKeys.has('ctrl') || event.shiftKey !== requiredSystemKeys.has('shift') ||
+                            event.altKey !== requiredSystemKeys.has('alt') || event.metaKey !== requiredSystemKeys.has('meta')
+                          )) return;
+                          if (!isKeyboardEvent) {
+                            if (modifier === 'left' && event.button !== 0) return;
+                            if (modifier === 'middle' && event.button !== 1) return;
+                            if (modifier === 'right' && event.button !== 2) return;
+                          }
+                          if (modifier === 'stop') event.stopPropagation();
+                          if (modifier === 'prevent') event.preventDefault();
+                        }
+                        return item.call(base, event);
+                      };
+                      const listenerOptions = {
+                        capture: modifiers.includes('capture'), once: modifiers.includes('once'), passive: modifiers.includes('passive')
+                      };
+                      node.addEventListener(eventName, handler, listenerOptions);
+                      nativeOptionEvents.set(eventName, { handler: handler, options: listenerOptions });
+                      listeners.push([node, eventName, handler, listenerOptions]);
+                      return;
+                    }
+                    if (typeof item === 'function') {
+                      if (usesNativeOptionMapping) warn(`<${tag}> 的 kniu:option 事件字段必须以 on 开头（如 onClick），已跳过 "${name}"。`);
+                      return;
+                    }
+                    if (!usesNativeOptionMapping) return;
+                    const attrName = isValidForTag(name, tag) ? name : optionAttributeName(name);
+                    const bool = isBooleanAttr(attrName);
+                    setAttr(node, attrName, item, bool);
+                    if (item != null && item !== false) nativeOptionAttributes.add(attrName);
+                });
               }
             };
             renderOptions();
@@ -774,6 +928,27 @@ var KniuTemplate = (function () {
           if (node.hasAttribute('kniu:rules')) {
             warn('kniu:rules 已作废，请改用 kniu:option，在字段上声明 value / condition / message。');
             node.removeAttribute('kniu:rules');
+          }
+
+          if (node.hasAttribute('kniu:style')) {
+            const expr = stripBraces(node.getAttribute('kniu:style'));
+            const managedProperties = new Set();
+            const renderStyle = function () {
+              const value = resolve(expr);
+              // 只回收该指令曾写入的属性，保留原有静态 style 与 class 样式。
+              managedProperties.forEach(function (name) { node.style.removeProperty(name); });
+              managedProperties.clear();
+              normalizeStyleValue(node, value).forEach(function ([name, item]) {
+                if (!name || item == null || item === false) return;
+                const cssValue = String(item).trim();
+                if (!cssValue) return;
+                node.style.setProperty(name, cssValue);
+                managedProperties.add(name);
+              });
+            };
+            renderStyle();
+            subscribe(expr, renderStyle);
+            node.removeAttribute('kniu:style');
           }
 
           // kniu:loading 指令：区域 / 全屏加载遮罩。
@@ -913,23 +1088,6 @@ var KniuTemplate = (function () {
           });
 
           const EVENT_RE = /^kniu@([a-z][a-z0-9-]*)(?:\.([a-z0-9.]+))?$/i;
-          const EVENT_OPTION_MODIFIERS = new Set(['capture', 'once', 'passive', 'native']);
-          const EVENT_BEHAVIOR_MODIFIERS = new Set([
-            'prevent', 'stop', 'self', 'ctrl', 'shift', 'alt', 'meta', 'exact',
-            'left', 'right', 'middle', 'enter', 'tab', 'delete', 'esc', 'space',
-            'up', 'down'
-          ]);
-          const KEY_MODIFIER_VALUES = {
-            enter: ['Enter'],
-            tab: ['Tab'],
-            delete: ['Backspace', 'Delete'],
-            esc: ['Escape', 'Esc'],
-            space: [' ', 'Spacebar'],
-            up: ['ArrowUp'],
-            down: ['ArrowDown'],
-            left: ['ArrowLeft'],
-            right: ['ArrowRight']
-          };
           const eventState = new WeakMap();
           [...node.attributes].forEach(function (attr) {
             const evMatch = attr.name.match(EVENT_RE);

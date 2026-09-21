@@ -1,4 +1,3 @@
-import PROCESS_ENV from './kniudotenv.mjs';
 import { createServer } from 'node:http';
 import { request as httpRequest } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';

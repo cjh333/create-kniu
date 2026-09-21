@@ -1,6 +1,12 @@
 <style scoped>
   @import url("@kniu/kniu.min.css");
+  @import url("@style/web.min.css");
   @import url("@style/index/home.min.css");
+
+  .index_advertise_img {
+    background-color: transparent;
+  }
+
   @media (min-width: calc(1280px - 60px)) {
     .kniu_web_body .kniu_container {
       width: calc(100vw - 320 / var(--kniu_vw) * 2);
@@ -12,12 +18,12 @@
   <!-- 2.内容 -->
   <main class="kniu_web_body">
     <section class="index_cells">
-      <div class="index_cell index_cell1">
+      <div class="index_cell index_cell_1">
         <div class="kniu_container">
-          <div class="index_group1">
-            <article class="index_wrap11">
+          <div class="index_group_1">
+            <article class="index_wrap_11">
               <template kniu:for="{{dailys}}" kniu:key="id">
-                <div class="index_item11">
+                <div class="index_item_11">
                   <div class="index_daily_group">
                     <p class="index_daily_title">({{today}}) 每日一句：</p>
                     <p class="index_daily_cn">{{item.cn}}</p>
@@ -25,8 +31,15 @@
                   </div>
                 </div>
               </template>
+              <kniu-input class="kniu_md_mt_15 kniu_md_main" kniu:form="{{keyword}}" kniu:option="{{name:'keyword',placeholder:'请输入文章标题'}}" kniu@keydown.enter="searchList" kniu@input="debouncedSearch">
+                <template #append label-width="48px">
+                  <kniu-btn block aria-label="搜索" kniu:option="{{text:true}}" kniu@click="searchList">
+                    <kniu-icon kniu:option="{{icon:'Search'}}" />
+                  </kniu-btn>
+                </template>
+              </kniu-input>
               <template kniu:for="{{articles}}" kniu:key="id">
-                <a class="index_item11" kniu@click="toDetail" kniu:[article-id]="{{item.id}}" href="#/detail">
+                <a class="kniu_md_mt_15 index_item_11" kniu:option="{{articleId:item.id,onClick:toDetail}}" href="javascript:;">
                   <div class="index_article_group">
                     <div class="index_article_title_group">
                       <span class="index_article_title">{{item.title}}</span>
@@ -42,25 +55,26 @@
                 </a>
               </template>
             </article>
-            <article class="index_wrap12">
-              <div class="index_item12">
+            <article class="index_wrap_12">
+              <div class="index_item_12">
                 <template kniu:if="{{loggedIn}}">
                   <div class="index_user_group">
                     <div class="index_user_wrap">
-                      <a class="index_user_photo_group" href="javascript:;">
-                        <kniu-image class="kniu_md_img_fill" src="{{photo}}" />
-                      </a>
+                      <div class="index_user_photo_group">
+                        <kniu-image class="index_user_photo" src="{{photo}}" />
+                      </div>
                       <p class="index_user_note">{{note}}</p>
                     </div>
                   </div>
                 </template>
                 <ul class="index_advertise_group{{!loggedIn ? ' kniu_md_mt_0' : ''}}">
-                  <li class="index_advertise">
-                    <a class="index_advertise_link" href="javascript:;">广告位</a>
-                  </li>
-                  <li class="index_advertise">
-                    <a class="index_advertise_link" href="javascript:;">广告位</a>
-                  </li>
+                  <template kniu:for="{{advertises}}" kniu:key="id">
+                    <li class="index_advertise">
+                      <a class="index_advertise_link" href="{{item.url}}" title="{{item.title}}" target="_blank">
+                        <kniu-image class="index_advertise_img" src="{{item.img}}" />
+                      </a>
+                    </li>
+                  </template>
                 </ul>
               </div>
             </article>

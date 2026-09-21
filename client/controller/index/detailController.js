@@ -2,26 +2,30 @@ import MVVM from '../../core/kniumvvm.mjs';
 import UI from '../../core/kniuui.js';
 import REQUEST from '../../core/kniurequest.mjs';
 import IDENTITY from '../../core/kniuidentity.mjs';
-import { marked } from 'marked';
+import { enhanceCodeBlocks, renderMarkdown } from '../../core/kniucode.mjs';
+import { sanitizeRichHtml } from '../../core/kniusanitizer.mjs';
 
-const { controller, onMounted, reactive } = MVVM;
+const { controller, onBeforeMount, onMounted, reactive } = MVVM;
 const PENDING_COMMENT_KEY = 'kniu_pending_comment';
 
-function renderCodeBlocks(value) {
-  marked.setOptions({
-    highlight(code, lang) {
-      return code;
-    }
-  });
-  const source = String(value || '').replace(/&lt;br\s*\/??&gt;|<br\s*\/?>/gi, '\n');
-  return marked.parse(source);
+function unwrapEditorCodeFence(value) {
+  return String(value || '')
+    .replace(/((?:^|<\/(?:p|div)>|<br\s*\/?>|\n)\s*)(?:<(?:p|div)[^>]*>\s*)?```[a-z0-9_-]*\s*(?:<\/(?:p|div)>|<br\s*\/?>|\n)+(\s*<pre\b)/gi, '$1$2')
+    .replace(/(<\/pre>\s*)(?:<(?:p|div)[^>]*>\s*)?```\s*(?:<\/(?:p|div)>|<br\s*\/?>)?/gi, '$1');
 }
 
-const detailController = controller(({ navigateTo, getRouteData, onRouteChange, onScopeDispose }) => {
+function renderMarkdownArticle(value) {
+  const source = unwrapEditorCodeFence(value);
+  return enhanceCodeBlocks(renderMarkdown(source));
+}
+
+const detailController = controller(({ navigateTo, getRouteData, onRouteChange, onScopeDispose, root }) => {
   const identity = IDENTITY.getIdentity();
   const state = reactive({
     title: '',
+    subtitle: '',
     content: '',
+    content_mode: 'rich',
     publisher: '',
     create_time: '',
     hits: 0,
@@ -55,13 +59,18 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
       currentUser: identity.nickname,
       currentUserId: 0,
       filter: 'B,逼,屌,操',
-      placeholder: '请输入评论...',
+      placeholder: '说点什么吧...',
       canSubmit: Boolean(identity.nickname)
     }
   });
 
   function getArticleId() {
     return state.articleId;
+  }
+
+  function getRouteArticleId() {
+    const routeId = Number(getRouteData()?.id);
+    return Number.isInteger(routeId) && routeId > 0 ? routeId : 0;
   }
 
   function savePendingComment(payload) {
@@ -102,13 +111,34 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     state.articleTabOptions = Object.assign({}, state.articleTabOptions, patch);
   }
 
-  function onArticleTabChange(detail) {
-    const id = Number(detail?.id);
-    if (Number.isInteger(id) && id > 0) {
-      navigateTo('/detail', { id: id });
-      return;
+  function scrollArticleToTop() {
+    const documentRef = globalThis.document;
+    const targets = [
+      documentRef?.scrollingElement,
+      documentRef?.documentElement,
+      documentRef?.body
+    ];
+    let parent = root?.host || null;
+    while (parent) {
+      targets.push(parent);
+      parent = parent.parentElement;
     }
-    navigateTo('/');
+    targets.filter(Boolean).forEach(function (target) {
+      target.scrollTop = 0;
+      target.scrollTo?.({ top: 0, behavior: 'auto' });
+    });
+    globalThis.scrollTo?.({ top: 0, behavior: 'auto' });
+  }
+
+  function onArticleTabChange(detail, event) {
+    const payload = detail?.detail && typeof detail.detail === 'object'
+      ? detail.detail
+      : (detail && typeof detail === 'object' ? detail : event?.detail);
+    const id = Number(payload?.id);
+    if (Number.isInteger(id) && id > 0) {
+      // 地址保持 /detail，文章 id 只放在应用路由状态中，避免污染地址栏。
+      navigateTo('/detail', { id: id });
+    }
   }
 
   let likeRequestActive = false;
@@ -149,7 +179,7 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
         liked: result.data?.liked === true,
         disabled: false,
         loading: false,
-        feedback: liked ? Date.now() : 0
+        feedback: result.data?.liked === true ? Date.now() : 0
       });
     } finally {
       if (!succeeded) updateLikeOptions({ loading: false });
@@ -197,7 +227,7 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
       const result = await REQUEST({
         url: '/getComments',
         type: 'POST',
-        data: { article_id: id, identity_token: IDENTITY.getIdentity().token, _ts: Date.now() },
+        data: { article_id: id, identity_token: IDENTITY.getIdentity().token },
         headers: { 'Cache-Control': 'no-cache, no-store', Pragma: 'no-cache' },
         redirectOnUnauthorized: false
       });
@@ -278,12 +308,14 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
       return;
     }
     const next = (state.commentOptions.list || []).map(function (item) {
-      if (Number(item.id) !== commentId) return item;
+      if (Number(item.id) !== commentId) {
+        return item.likeFeedback ? Object.assign({}, item, { likeFeedback: 0 }) : item;
+      }
       return Object.assign({}, item, {
         likes: Number(result.data?.likes ?? item.likes),
         liked: result.data?.liked === true,
         locked: false,
-        likeFeedback: liked
+        likeFeedback: result.data?.liked === true ? Date.now() : 0
       });
     });
     updateCommentOptions({ list: next });
@@ -327,28 +359,24 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     updateCommentOptions({
       currentUser: result.data.nickname,
       currentUserId: Number(result.data.roleId || result.data.id) || 0,
-      placeholder: '请输入评论...',
       canSubmit: Number(result.data.comment_ban) !== 1
     });
   }
 
-  let loadSeq = 0;
   let detailRequestActive = false;
   let detailReloadPending = false;
-  let initialRouteReplayPending = true;
 
   async function loadDetail() {
     if (detailRequestActive) {
-      const requestedId = Number(getRouteData()?.id);
+      const requestedId = getRouteArticleId();
       if (Number.isInteger(requestedId) && requestedId > 0 && requestedId !== state.articleId) {
         detailReloadPending = true;
       }
       return;
     }
     detailRequestActive = true;
-    const seq = ++loadSeq;
     try {
-      const id = Number(getRouteData()?.id);
+      const id = getRouteArticleId();
       if (!Number.isInteger(id) || id <= 0) {
         state.error = '文章参数无效';
         state.loading = false;
@@ -361,7 +389,6 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
         data: { id, identity_token: IDENTITY.getIdentity().token },
         redirectOnUnauthorized: false
       });
-      if (seq !== loadSeq) { detailRequestActive = false; return; }
       if (result.status !== 1 || !result.data) {
         state.error = result.msg || '文章加载失败';
         state.loading = false;
@@ -369,7 +396,17 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
         return;
       }
       state.title = result.data.title || '';
-      state.content = renderCodeBlocks(result.data.content || '');
+      state.subtitle = result.data.subtitle || '';
+      state.content_mode = result.data.content_mode === 'markdown' ? 'markdown' : 'rich';
+      if (result.data.content_mode === 'markdown') {
+        UI.installMarkdownStyles(root);
+        state.content = renderMarkdownArticle(result.data.content || '');
+      } else {
+        UI.installRichTextStyles(root);
+        // 富文本正文也通过统一清洗器：被转义保存的 <script setup> 会恢复为行内 code，
+        // 同时避免服务端历史数据将危险标签再次作为真实 DOM 注入前台。
+        state.content = sanitizeRichHtml(result.data.content || '');
+      }
       state.publisher = result.data.publisher || '';
       state.create_time = result.data.create_time || '';
       state.hits = Number(result.data.hits) || 0;
@@ -405,17 +442,14 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
   state.commentOptions.onLike = onLikeComment;
   state.commentOptions.onDelete = onDeleteComment;
   const offRouteChange = onRouteChange(function (hash, prev) {
-    if (prev === null) return;
-    if (String(hash || '').split('?')[0] !== '/detail') return;
-    const routeId = Number(getRouteData()?.id);
-    if (initialRouteReplayPending) {
-      initialRouteReplayPending = false;
-      if (Number.isInteger(routeId) && routeId > 0 && routeId === state.articleId) return;
-    }
+    if (prev === null || String(hash || '').split('?')[0] !== '/detail') return;
+    const routeId = getRouteArticleId();
+    if (!Number.isInteger(routeId) || routeId <= 0 || routeId === state.articleId) return;
     loadDetail();
   });
   onScopeDispose(offRouteChange);
 
+  onBeforeMount(scrollArticleToTop);
   onMounted(loadDetail);
   return { state, loadDetail, toBack, toggleFavorite };
 });

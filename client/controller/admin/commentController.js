@@ -48,7 +48,7 @@ function createCommentManagementController(managementType = 'comment') {
       state,
       self,
       url: '/comment_list',
-      field: 'id',
+      field: 'sid',
       sort: 'asc',
       params: () => ({ keyword: state.keyword, type: state.type, audit: state.audit }),
       tableKey: 'commentTable',
@@ -70,6 +70,7 @@ function createCommentManagementController(managementType = 'comment') {
     async function toggleReadState(index, list, value) {
       const row = list[index];
       if (!row) return;
+      let saved = false;
       await REQUEST({
         url: '/comment_reply_update',
         type: 'POST',
@@ -77,18 +78,18 @@ function createCommentManagementController(managementType = 'comment') {
         success(res) {
           if (res.status !== 1) {
             self.$msg({ content: res.msg, type: 'error' });
-            loadList(state.currentPage);
             return;
           }
+          saved = true;
+          row.is_read = Number(value) === 1 ? 1 : 0;
           self.$msg({ content: res.msg, type: 'success' });
           globalThis.dispatchEvent(new CustomEvent('kniu:reply-notification-change'));
-          loadList(state.currentPage);
         },
         fail(res) {
           self.$msg({ content: res.msg, type: 'error' });
-          loadList(state.currentPage);
         }
       });
+      return saved;
     }
 
     async function auditRequest(id, audit) {
@@ -102,10 +103,26 @@ function createCommentManagementController(managementType = 'comment') {
             return;
           }
           self.$msg({ content: res.msg, type: 'success' });
-          loadList(state.currentPage);
         },
         fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
       });
+    }
+
+    async function updateSort(index, list, value) {
+      const row = list[index];
+      if (!row) return false;
+      let saved = false;
+      await REQUEST({
+        url: '/comment_update',
+        type: 'POST',
+        data: { id: row.id, sid: Math.max(0, Number(value) || 0) },
+        success(res) {
+          saved = res.status === 1;
+          self.$msg({ content: res.msg, type: saved ? 'success' : 'error' });
+        },
+        fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
+      });
+      return saved;
     }
 
     const deleteRow = createRowDeleteHandler({
@@ -123,7 +140,7 @@ function createCommentManagementController(managementType = 'comment') {
     }
 
     onMounted(function () { loadList(1); });
-    return { state, changePage, changePageSize, searchList, debouncedSearch, onFilterChange, toggleAudit, toggleReadState, deleteRow, goBack };
+    return { state, changePage, changePageSize, searchList, debouncedSearch, onFilterChange, toggleAudit, toggleReadState, updateSort, deleteRow, goBack };
   });
 }
 

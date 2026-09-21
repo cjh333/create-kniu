@@ -33,13 +33,20 @@ const profileController = controller(({ navigateTo, autoSync }) => {
     if (id > 0) navigateTo('/detail', { id: id });
   }
 
-  async function loadProfile() {
-    const result = await REQUEST({
+  let profileRequest = null;
+  let profileRefreshPending = false;
+
+  async function loadProfile(reason) {
+    if (profileRequest) {
+      if (typeof reason === 'string') profileRefreshPending = true;
+      return profileRequest;
+    }
+    const run = REQUEST({
       url: '/frontProfile',
       type: 'POST',
       data: { identity_token: state.identityToken },
       redirectOnUnauthorized: false
-    });
+    }).then(function (result) {
     if (result.status !== 1) return;
     state.articleLikeCount = Number(result.data?.articleLikeCount) || 0;
     state.commentLikeCount = Number(result.data?.commentLikeCount) || 0;
@@ -55,6 +62,15 @@ const profileController = controller(({ navigateTo, autoSync }) => {
       return;
     }
     state.profileHint = '登录后即可评论、点赞与收藏文章';
+    }).finally(function () {
+      profileRequest = null;
+      if (profileRefreshPending) {
+        profileRefreshPending = false;
+        queueMicrotask(function () { loadProfile('sse'); });
+      }
+    });
+    profileRequest = run;
+    return run;
   }
 
   function editNickname() {

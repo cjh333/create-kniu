@@ -8,10 +8,13 @@
 - 组件内部 DOM 类名使用 `kniu_sys_` 前缀。
 - 所有 `kniu-*` 组件的功能配置统一通过 `kniu:option` 对象接收；旧的组件配置 attribute 不再读取或兼容。
 - 组件使用 Shadow DOM 隔离内部结构与样式。
+- 所有 `kniu-*` 组件和项目页面统一只使用 `public/static/font/` 内现有的 `KniuHei` 字体文件，并按 ExtraLight(200)、Light(300)、Regular(400)、Normal(450)、Medium(500)、Bold(700)、Heavy(900) 映射实际 `font-weight`；正文和代码区域均使用 `KniuHei`，斜体使用浏览器合成样式；禁止引入 Noto/思源、微软雅黑、宋体、黑体、Arial、Georgia、Consolas、Robot 或其他系统字体作为默认字体，图标仍使用独立的 `kniu_iconfont`。
+- `kniu-editor` 的字体菜单只提供项目 `KniuHei` 和“无”两项；清除字体时恢复继承，不再提供旧字体或通用字体族选项。
+- 视口级下拉浮层关闭时必须恢复原始节点位置，并清除 `data-open`、`position`、`left`、`top`、`right`、`bottom`、`transform`、`visibility` 等临时定位状态；重复开闭不得复用上一次的显示或坐标状态。移动端用户菜单每次打开先清空旧坐标，在下一帧重新测量触发按钮，并在导航展开动画期间持续跟随锚点。
 
 ## 统一 options 协议（强制）
 
-组件标签只保留模板引擎接口：`ref`、`kniu:form`、条件/循环/样式指令、插槽以及 `kniu@...`。其他配置全部放入 `kniu:option`；组件自身产生的回调优先使用 `onXxx`，如 `onChange`、`onCurrentChange`、`onSizeChange`。
+组件标签只保留模板引擎接口：`ref`、`kniu:form`、条件/循环/样式指令、插槽以及 `kniu@...`。其他配置全部放入 `kniu:option`；对象字面量直接写在 `{{...}}` 中；组件自身产生的回调优先使用 `onXxx`，如 `onChange`、`onCurrentChange`、`onSizeChange`。
 
 ```html
 <kniu-table ref="table" kniu:option="{{userTable}}"></kniu-table>
@@ -21,7 +24,7 @@
 
 两个及以上按钮统一使用 `<kniu-btn-group>` 包裹，组件内置 `display:inline-flex; align-items:center; gap:10px`，页面不得再用零散 margin 拼按钮间距。
 
-表格的 `cols`、`data`、loading、编辑、开关、操作按钮和回调均属于 `tableOptions`，不再使用 `kniu-table-col`。options 数据变化时必须整体替换对象引用。以后新增组件也必须先实现本协议。
+表格的数据、loading 和表格级回调放在 `tableOptions` 中；列只允许使用 `<kniu-table-col>` HTML 子标签，列属性和列模板直接写在标签上。options 数据变化时必须整体替换对象引用。以后新增组件也必须先实现本协议。
 
 ### 双语配置（lang，强制约定）
 
@@ -34,7 +37,7 @@
 - 参考实现：编辑器工具栏 `_applyToolbarLang()` 遍历 `.kniu_sys_editor_btn` 按 `data-cmd` / `data-action` / `data-block` token 设 `title` / `aria-label`，`_sync()` 在 lang 变化时重建工具栏（`__kniuLastLang` 缓存比较）。
 
 ```html
-<kniu-empty kniu:option="{{({ lang:'en' })}}" />
+<kniu-empty kniu:option="{{ lang:'en' }}" />
 <kniu-comment kniu:option="{{commentOptions}}" />
 ```
 ```js
@@ -54,11 +57,11 @@ state.commentOptions = Object.assign({}, state.commentOptions, { lang: 'en' }); 
 - **避免强制同步布局**：禁止在 Shadow 内同步读写 `offsetHeight` / `getBoundingClientRect` / `scrollWidth` / `clientWidth` / `offsetWidth`。需要布局指标时用 `getLayoutMetrics()` 缓存，并在 resize / ResizeObserver / 内容变化 / `doLayout` 时失效；周期性刷新（如阴影显隐）用 `scheduleShadowVisibilityUpdate()` 合并到 rAF。
 - **批量渲染先建 Fragment**：表格行、分页页码、下拉项、单选项等一律先构建 `DocumentFragment`，再一次 `replaceChildren`，禁止在循环里逐个 `appendChild`。
 - **行/项节点复用时必须改事件委托**：复用会让监听器闭包持有陈旧数据。监听器挂容器（表格整表挂 tbody 两个），行索引写 `dataset.rowIndex`，事件处理时据此从数据数组取回当前对象。复用池还需校验结构签名（如表格的 `rowPoolColumnSignature`），列结构变化即整池作废。
-- **事件机制优化（已实现）**：跨 Shadow 边界通信优先用属性绑定；高频事件工具 `debounce` / `throttle` 已落到 `client/core/kniuutil.mjs`（纯函数、零依赖，浏览器/Node 通用）。`kniuheadfix.mjs` 的 `resize` 改用 `throttle(...,120)`；三个搜索页（article/daily/users）输入框绑定 `kniu@input="debouncedSearch"`（250ms 防抖，Enter/点击仍走即时 `searchList`）。
+- **事件机制优化（已实现）**：跨 Shadow 边界通信优先用属性绑定；高频事件工具 `debounce` / `throttle` 已落到 `client/core/kniuutil.mjs`（纯函数、零依赖，浏览器/Node 通用）。三个搜索页（article/daily/users）输入框绑定 `kniu@input="debouncedSearch"`（250ms 防抖，Enter/点击仍走即时 `searchList`）。固定导航的 `.kniu_sys_head_placeholder` 由 `kniu-navbar` 按导航实际高度同步维护。
 - **内存泄漏兜底**：页面/组件卸载时统一销毁 Shadow 根上的所有事件监听器（含 rAF 句柄、ResizeObserver、复用池、列宽缓存、布局指标缓存），避免残留引用导致内存泄漏。
 - **框架级 diff**：组件库自带 diff 更新能力，自动实现局部更新，避免全量重渲染。
 
-- 模块使用默认导出：`import KniuUI from './kniuui.js'`。
+- 模块使用默认导出，业务 Controller 统一命名为 `UI`：`import UI from '../../core/kniuui.js'`。
 
 ## 消息提示
 
@@ -80,7 +83,7 @@ this.$msg({
 ```html
 <section style="position:relative;">
   <article></article>
-  <kniu-loading kniu:option="{{({ contained:true, show:loading })}}" />
+  <kniu-loading kniu:option="{{ contained:true, show:loading }}" />
 </section>
 ```
 
@@ -97,7 +100,7 @@ this.$msg({
 `kniu-upload` 的 `kniu:option` 支持 `note` 字段，用于替换无文件时 `.kniu_upload_empty` 内的文字描述；未配置时使用内置文案。
 
 ```html
-<kniu-upload kniu:form="{{files}}" kniu:option="{{({ note:'请选择图片' })}}" />
+<kniu-upload kniu:form="{{files}}" kniu:option="{{ note:'请选择图片' }}" />
 ```
 
 - 组件只负责本地选择、Blob 预览、删除和回显，不会立即上传。
@@ -164,7 +167,7 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 ## Button
 
 ```html
-<kniu-btn kniu:option="{{({ type:'primary', size:'small', round:true })}}">保存</kniu-btn>
+<kniu-btn kniu:option="{{ type:'primary', size:'small', round:true }}">保存</kniu-btn>
 ```
 
 | 属性 | 可选值或说明 | 默认值 |
@@ -194,8 +197,7 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 ```html
 <kniu-input
   kniu:form="{{form.username}}"
-  placeholder="请输入用户名"
-  clearable
+  kniu:option="{{placeholder:'请输入用户名',clearable:true}}"
 ></kniu-input>
 ```
 
@@ -205,18 +207,18 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 - `show-password` 仅在 `type="password"` 时生效。
 - 清除和密码显示控件使用 `span[role="button"][tabindex="-1"]`，按 Tab 时会跳过，仅响应鼠标或触摸点击。
 - 密码隐藏时显示闭眼图标，密码显示时显示睁眼图标。
-- 支持 `name`、`placeholder`、`autocomplete`、`autocapitalize`、`maxlength`、`disabled`、`readonly`、`required`；昵称等需要保留用户输入大小写的字段可在 `options` 中配置 `autocapitalize: 'none'`。
+- 支持 `name`、`placeholder`、`autocomplete`、`autocapitalize`、`maxlength`、`disabled`、`readonly`、`required`；昵称等需要保留用户输入大小写的字段可在 `kniu:option` 中配置 `autocapitalize: 'none'`。
 - 提供 `focus()` 和 `select()` 方法。
 - Input 中按 Enter 会触发所属表单提交。
 - `readonly` 状态点击或聚焦时保持默认边框色，不显示可编辑状态的蓝色高亮。
-- `prepend`、`append` 内的 `kniu-btn` 自动铺满整个附加区域，完整区域均可点击。
+- `prepend`、`append` 内的 `kniu-btn` 自动铺满整个附加区域，完整区域均可点击；当默认插槽改为 `append` 时，按钮自动使用 `border: none; border-radius: 0`，与输入框连接为无缝附加按钮。
 
 ## Select
 
 ```html
 <kniu-select kniu:form="{{form.region}}" kniu:option="{{selectOptions}}">
-  <kniu-option kniu:option="{{({ label:'Zone one', value:'shanghai' })}}" />
-  <kniu-option kniu:option="{{({ label:'Zone two', value:'beijing' })}}" />
+  <kniu-option kniu:option="{{ label:'Zone one', value:'shanghai' }}" />
+  <kniu-option kniu:option="{{ label:'Zone two', value:'beijing' }}" />
 </kniu-select>
 ```
 
@@ -226,8 +228,8 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 
 ```html
 <kniu-radio-group kniu:form="{{form.role}}">
-  <kniu-radio kniu:option="{{({ value:'1', size:'large' })}}">管理员</kniu-radio>
-  <kniu-radio kniu:option="{{({ value:'2', size:'large' })}}">普通用户</kniu-radio>
+  <kniu-radio kniu:option="{{ value:'1', size:'large' }}">管理员</kniu-radio>
+  <kniu-radio kniu:option="{{ value:'2', size:'large' }}">普通用户</kniu-radio>
 </kniu-radio-group>
 ```
 
@@ -243,8 +245,8 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 ## Tag
 
 ```html
-<kniu-tag kniu:option="{{({ type:'success' })}}">已启用</kniu-tag>
-<kniu-tag kniu:option="{{({ type:'danger', effect:'dark', closable:true })}}">异常</kniu-tag>
+<kniu-tag kniu:option="{{ type:'success' }}">已启用</kniu-tag>
+<kniu-tag kniu:option="{{ type:'danger', effect:'dark', closable:true }}">异常</kniu-tag>
 ```
 
 - `type` 支持 `primary`（默认）、`success`、`warning`、`danger` 和 `info`。
@@ -255,8 +257,8 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 ## Status
 
 ```html
-<kniu-status kniu:option="{{({ type:'success' })}}">编辑</kniu-status>
-<kniu-status kniu:option="{{({ type:'primary' })}}">查看</kniu-status>
+<kniu-status kniu:option="{{ type:'success' }}">编辑</kniu-status>
+<kniu-status kniu:option="{{ type:'primary' }}">查看</kniu-status>
 ```
 
 - 显示形式为“彩色圆点 + 文本”，`type` 只改变圆点颜色，文字保持正文色。
@@ -268,8 +270,8 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 
 ```html
 <kniu-form ref="form" kniu:option="{{loginModel}}" kniu@submit.prevent="onSubmit">
-  <kniu-form-cell kniu:option="{{({ label:'用户名' })}}">
-    <kniu-input kniu:form="{{loginModel.username}}" kniu:option="{{({ name:'username' })}}"></kniu-input>
+  <kniu-form-cell kniu:option="{{ label:'用户名' }}">
+    <kniu-input kniu:form="{{loginModel.username}}" kniu:option="{{ name:'username' }}"></kniu-input>
   </kniu-form-cell>
 </kniu-form>
 ```
@@ -310,7 +312,7 @@ const loginModel = {
 
 标签位置同时镜像到宿主的 `data-label-position` 属性，供外部样式挂钩（原 `label-position` 属性已废）。
 
-`kniu-input-group` 与 `kniu-form-cell` 共用同一套实现（标签 + 内容布局）。带标签的表单单元写 `<kniu-form-cell kniu:option="{{({ label:'用户名' })}}">`，不带 label 的纯分组容器才用 `<kniu-input-group>`。
+`kniu-input-group` 与 `kniu-form-cell` 共用同一套实现（标签 + 内容布局）。带标签的表单单元写 `<kniu-form-cell kniu:option="{{ label:'用户名' }}">`，不带 label 的纯分组容器才用 `<kniu-input-group>`。
 
 `kniu-form-cell` 也支持模板结构：`<template #prepend label-width="120px">权限</template>` 声明标签，`<template #append>` 放置 `kniu-radio-group` 等自定义表单内容。条件渲染延迟插入模板时组件会自动重新挂载；模板式 prepend 标签与输入组件附加标签保持一致，文字默认水平、垂直居中并使用 `#909399`。
 
@@ -321,18 +323,20 @@ const loginModel = {
 ```html
 <kniu-image
   style="width:100px;height:40px;"
-  src="{{imageUrl}}"
-  fit="{{fit}}"
-  alt="验证码"
+  kniu:option="{{src:imageUrl,fit:fit,alt:'验证码'}}"
 ></kniu-image>
 ```
 
-`fit` 支持 `fill`、`contain`、`cover`、`none`、`scale-down`，未设置或值无效时默认为 `contain`。组件内置暂无图片、加载中和加载失败状态，并触发 `load`、`error` 事件。
+`fit` 支持 `fill`、`contain`、`cover`、`none`、`scale-down`，未设置或值无效时默认为 `contain`。没有 `src` 时不渲染 `.kniu_sys_image`，只显示暂无图片状态；有 `src` 时再创建图片元素。组件内置加载中和加载失败状态，并触发 `load`、`error` 事件。
 
 表格图片列在默认插槽中声明，`field` 指定图片地址字段：
 
 ```html
-{ field: 'cover', label: '封面', width: 180, align: 'center', image: { options: { fit: 'cover' } } }
+<kniu-table-col field="cover" label="封面" width="180" align="center">
+  <template #default>
+    <kniu-image kniu:option="{{fit:'cover'}}" />
+  </template>
+</kniu-table-col>
 ```
 
 ## Switch
@@ -341,7 +345,7 @@ const loginModel = {
 
 ```html
 <kniu-switch
-  kniu:form="{{row.is_show}}"
+  kniu:form="{{form.enabled}}"
   kniu:option="{{switchOptions}}"
   kniu@change="onSwitchChange"
 ></kniu-switch>
@@ -370,14 +374,14 @@ state.switchOptions = {
 
 - `kniu:form` 双向绑定（同 kniu-input），状态变化触发 `change`（表格列内开关的 `kniu@change` 同样有效），提供 `focus()`。
 - **整体替换 options 对象即刷新**（响应式订阅注册在表达式路径，原地改子属性不触发，见 `kniutemplate.md`）。
-- 表格列内开关：在 `tableOptions.cols` 中配置 `switch: { options: switchOptions, onChange }`。
+- 表格列内开关直接放在列模板中；普通模板绑定使用当前行变量 `row`，列条件等元数据表达式可使用 `scope.row`；开关配置统一写入 `kniu:option`。
 
 ## Editor（富文本编辑器）
 
 ```html
 <kniu-editor
   ref="editor"
-  kniu:option="{{toolbar:(toolbar)}}"
+  kniu:option="{{editor}}"
   kniu:form="{{editForm.content}}"
 >
   <template #prepend label-width="100px">正文</template>
@@ -385,48 +389,84 @@ state.switchOptions = {
 ```
 
 - `kniu:form` 双向绑定到表单字段（同 kniu-input），`name` 供表单识别，`#prepend` 插槽渲染前置标签（`#append` 同理预留）。
+- 前台文章正文必须按编辑模式分别使用根类：Markdown 使用 `.kniu_markdown_body` 并调用 `UI.installMarkdownStyles(root)`；富文本使用 `.kniu_richtext_body` 并调用 `UI.installRichTextStyles(root)`。两套样式不得写入 `detail.css` 或互相覆盖。危险标签源码的尖括号必须保留 HTML 实体，避免浏览器将其解析为真实元素；外层只保留一层 `<code>`。
 - 内容变更派发 `input` 事件，失焦派发 `change` 事件。
+- 仅富文本模式会对 `script`、`style`、`iframe` 等危险原始标签做可见文本转义：无论来自粘贴、输入、值回写或源码切换，都不会被浏览器解析为真实节点或删除其后续内容；普通 `<p>`、`<strong>` 等富文本标签仍按原行为解析。Markdown 模式不经过该富文本清洗链路。
+- 仅富文本模式的“代码块”按钮始终生成块级 `<pre><code>`；“行内代码”按钮将选中的内容包裹为 `<code>`，再次点击可取消包裹。Markdown 模式只编辑原始文本，所有富文本工具栏命令均不会执行。
 - 媒体上传大小通过 options 配置 `imgMaxSize`、`videoMaxSize`、`audioMaxSize`，单位为字节；分别限制图片、视频和音频文件，默认值由业务页面显式传入。
 - **最大化（`maximize`）时自动隐藏 `#prepend` / `#append` 修饰框**，编辑器组改为竖向撑满视口，还原后恢复显示。
 - 代码模式（`code`）：在富文本视图与源码（`textarea`）视图间切换；源码视图下除 `code` / `maximize` 外工具栏全部禁用。**进入源码视图时自动美化**（`_beautifyHtml`）：块级标签换行+缩进、仅含行内内容的块闭合标签紧跟同行（如 `<li>item1</li>`）、行内标签与文本保持同行、`<pre>` 代码块内容原样保留不破坏缩进、纯空白文本相邻块级标签时丢弃（保证美化往返稳定）。切回富文本时直接以源码内容设回 innerHTML，渲染等价。
-- 内置功能参考 KindEditor 设计、UI 现代化：撤销/重做、预览、打印、代码模式、最大化、加粗/斜体/下划线/删除线/上下标、对齐（左中右两端）、增减缩进、有序/无序列表、行距、H1–H3/段落、引用、代码块、分割线、表格、字体/字号/文字色/背景色、链接/取消链接、表情、清除格式、清理 HTML、全选。
-- **默认工具栏顺序对齐 KindEditor 默认布局**：`code`(源码) → `undo`/`redo` → `preview`/`print`/`pre`(代码块) → 对齐组 → 列表组 → 缩进组 → 上下标 → `clearhtml`/`selectAll` → `maximize`(全屏) → `formatblock`(H1–H3/段落/引用) → `fontname`/`fontsize` → 颜色组 → 字形组(加粗/斜体/下划线/删除线/行距/清除格式) → `table`/`hr`/`emoticons` → `link`/`unlink`。映射：KindEditor `source`→`code`、`code`(插入代码)→`pre`、`fullscreen`→`maximize`；图片/flash/media/map 等需后端能力项按项目约定跳过。
+- 美化必须同时覆盖**行内型正文**：正文实际靠 `<br>` 分行（区块标签很少）时，只按块级标签断行会让整篇挤在一行，因此每个 `<br>` 之后按当前层级断行+缩进，`<br>` 后面文本的行首缩进在下一轮被丢弃以保持幂等；`<br>` 紧跟块级闭合标签（如 `<p>文字<br></p>`）时不落断行、不改动原文。整篇**没有任何标签**时（纯文本 / Markdown / 被转义过的正文）不做空白折叠，只统一 `CRLF`，否则整篇会被压成一行。美化对同一输入必须可重复执行（`v1 === v2`）。`tb_article` 正文的真实形态就是「Markdown 纯文本 + `<br>` + `CRLF`」，回归探针见 `test/beautify_probe.mjs`。
+- Markdown 模式由 `client/core/kniucode.mjs` 独立解析：块级语法遵循 CommonMark（标题、段落、引用、列表、分割线、围栏代码块），表格和删除线采用 GFM 扩展。所有 `- `、`+ `、`* ` 列表项一律输出语义化 `<ul><li>`，无论项目内容以行内代码、占位符或中文开头；段落行尾两个及以上空格或反斜杠必须按 CommonMark 输出硬换行 `<br>`。不得为单篇文章增加改变列表结构的特例。详细回归样例见 `test/detail_code_fence_probe.mjs`。
+- 控制器生命周期支持 `onBeforeMount`、`onMounted`、`onUnmounted`：`onBeforeMount` 在模板绑定和 `onMounted` 前执行，适用于进入页面前的滚动复位等不依赖已渲染 DOM 的工作。
+- 内置功能包括撤销/重做、代码模式、最大化、加粗/斜体/下划线/删除线、对齐、有序/无序列表、H1–H3/段落、引用、行内代码、代码块、分割线、表格、字体/字号/文字色/背景色、链接/取消链接、图片、媒体、表情、清除格式、清理 HTML 和全选；具体显示哪些按钮由 `toolbar` 数组唯一决定。
+- 业务页面当前统一使用扁平数组，并按 `abouteditController.js` / `articleController.js` 的顺序配置；文档和业务代码均不得再写旧 token 或嵌套分组数组。
 
 ### toolbar 可配置属性
 
-工具栏通过 `kniu:option` 的 `toolbar` 配置按需设置，未设置时使用默认（全部功能）。
+工具栏通过 `kniu:option` 的 `toolbar` 配置按需设置，唯一格式是扁平字符串数组；数组中的 `'|'` 表示分组分隔线。未设置时使用组件默认工具栏。
 
-- 取值为字符串：**以 `|` 分隔分组**（分组间自动渲染分隔线），组内以空格或逗号分隔 token。
-- 可用 token（与功能一一对应）：
+- 取值只能是字符串数组；不支持工具栏字符串、嵌套数组或其它快捷格式。
+- 可用 token（大小写和名称以此为准；与功能一一对应）：
 
   | 分组 | token |
   |---|---|
-  | 历史/视图 | `undo` `redo` `preview` `print` `code` `maximize` |
-  | 字体样式 | `bold` `italic` `underline` `strikeThrough` `subscript` `superscript` |
-  | 对齐/缩进 | `justifyLeft` `justifyCenter` `justifyRight` `justifyFull` `indent` `outdent` |
-  | 列表/行距 | `insertOrderedList` `insertUnorderedList` `lineheight` |
-  | 块级 | `h1` `h2` `h3` `p` `blockquote` `pre` `hr` `table` |
-  | 字体/颜色 | `fontname` `fontsize` `forecolor` `hilitecolor` |
-  | 插入 | `link` `unlink` `emoticons` |
-  | 清理 | `removeFormat` `clearhtml` `selectAll` |
+  | 视图 | `code` `fullscreen` |
+  | 历史 | `undo` `redo` |
+  | 字体样式 | `bold` `italic` `underline` `strikeThrough` |
+  | 对齐 | `justifyLeft` `justifyCenter` `justifyRight` `justifyFull` |
+  | 列表 | `insertOrderedList` `insertUnorderedList` |
+  | 块级 | `h1` `h2` `h3` `p` `blockquote` `pre` `inlineCode` `hr` `table` |
+  | 字体/颜色 | `fontName` `fontSize` `foreColor` `hiliteColor` |
+  | 插入 | `link` `unlink` `image` `media` `emoticons` |
+  | 清理 | `removeFormat` `clear` `selectAll` |
 
 - 示例：仅保留基础排版
 
   ```js
-  state.toolbar = 'bold italic underline | insertOrderedList insertUnorderedList | link';
+  state.editor = {
+    imgMaxSize: 5 * 1024 * 1024,
+    videoMaxSize: 20 * 1024 * 1024,
+    audioMaxSize: 10 * 1024 * 1024,
+    toolbar: [
+      'code', '|', 'undo', 'redo', '|',
+      'bold', 'italic', 'underline', 'strikeThrough', '|',
+      'justifyLeft', 'justifyCenter', 'justifyRight', 'justifyFull', '|',
+      'insertOrderedList', 'insertUnorderedList', '|',
+      'h1', 'h2', 'h3', 'p', '|',
+      'blockquote', 'pre', 'hr', 'table', '|',
+      'fontName', 'fontSize', 'foreColor', 'hiliteColor', '|',
+      'link', 'unlink', 'image', 'media', 'emoticons', '|',
+      'removeFormat', 'clear', 'selectAll', '|',
+      'fullscreen'
+    ]
+  };
   ```
 
   未知 token 会被忽略（不会渲染），因此可安全裁剪。
 
 ## Table
 
-表格数据、loading 和回调由控制器 options 提供；列布局唯一使用 `kniu-table-col` HTML 子标签，`cols` 配置不再支持：
+表格数据、loading 和表格级回调由 `kniu:option` 提供；列布局唯一使用 `kniu-table-col` HTML 子标签，公开配置不接收列数组：
 
-内部原生 `.kniu_sys_table` 固定使用 `width:100%`；列配置的总宽度仅生成 `min-width`，超出父容器时由 viewport 横向滚动，不会写入内联像素 `width` 覆盖 100%。
+内部原生 `.kniu_sys_table` 固定使用 `width:100%`；列配置的总宽度仅生成 `min-width`，超出父容器时由 viewport 横向滚动，不会写入内联像素 `width` 覆盖 100%。普通表头和单元格默认使用 `padding:5px 10px`；`small` 尺寸有自己的紧凑间距。
 
 ```html
 <kniu-table ref="table" kniu:option="{{tableOptions}}">
   <kniu-table-col field="name" label="名称" />
+  <kniu-table-col field="is_show" label="显示" width="120" align="center">
+    <template #default>
+      <kniu-switch
+        kniu:option="{{switchOptions}}"
+        kniu@change="updateShow"
+      />
+    </template>
+  </kniu-table-col>
+  <kniu-table-col label="操作" width="160" fixed="right">
+    <template #default>
+      <kniu-btn kniu:option="{{type:'danger',size:'small',link:true}}" kniu@click="deleteRow">删除</kniu-btn>
+    </template>
+  </kniu-table-col>
 </kniu-table>
 ```
 
@@ -460,17 +500,16 @@ state.tableOptions = {
 | `emptyText` | 无数据时表格**内置空行**的文案。不设置时默认「暂无数据」；显式写 `emptyText: ''`（空串）会**隐藏**内置空行——当你改用 `<kniu-empty>` 自定义空状态时必须加它，否则内置文案与 `<kniu-empty>` 会重复出现。**优先级**：`<template #empty>` 插槽 > `emptyText` > 默认「暂无数据」 | `暂无数据` |
 | `loading` | 区域加载遮罩开关，必须随 table options 整体更新 | `false` |
 | `loadingText` | 加载遮罩中央文案 | — |
-| `cols` | 列定义数组，包含字段、宽度、编辑、开关、操作等 | `[]` |
+> `data` 由 `tableOptions.data` 提供；**原地改 `tableOptions.data` 不触发刷新**，必须整体替换 `tableOptions`。
 
-> `data` 可作 `options.data` 传入，也可单独用 `kniu:option` 整体替换时一并更新；**原地改 `options.data` 不触发刷新**，必须整体替换对象。
-
-`cols` 列对象：
+`kniu-table-col` 支持的常用属性：
 
 - 列标题使用 `label`，字段使用 `field`。
 - `width` / `min-width` 设置列宽，`align` / `header-align` 支持 `left / center / right`。
 - `fixed` 或 `fixed="left"` 固定在左侧，`fixed="right"` 固定在右侧。
 - `type="checkbox"` 创建选择列（每行复选框 + 表头全选），`type="index"` 创建索引列。
-- `sortable` 开启排序；可通过 `sort-method="{{sortMethod}}"` 绑定自定义排序函数（纯属性）。
+- `sortable` 开启排序；排序处理通过表格 options 的 `onSortChange` 接收结果。
+- 列模板内的控件事件必须绑定在实际支持该原生事件的控件上，例如将 `kniu@change` 写在列模板内的 `<kniu-switch>`；不要把 `kniu@change` 直接写在 `<kniu-table-col>` 上，列组件不支持该事件。
 - **排序三态循环**：点击排序列头依次为「升序 → 降序 → 恢复初始顺序」（第三次点击回到 `setData` 时的数据源顺序，而非在已排序结果上停留）；切换列或编程 `sort()` 同理，`order=''`/`clearSort()` 即恢复原始顺序。
 - 数据为空时表头自动锁定：排序、全选及其他表头交互均不可操作；数据恢复后自动解锁。
 - `show-overflow-tooltip` 为溢出（被省略号裁切）的单元格提供悬浮提示。仅当单元格内容实际溢出时才弹层，避免每条都提示。定位策略（自动避让）：
@@ -484,7 +523,7 @@ state.tableOptions = {
 
 ### 事件
 
-表格通过自定义事件向外通信，优先在 options 中写 `onRowClick`、`onCurrentChange`、`onSelectionChange`、`onSortChange`；模板事件仍可作为模板引擎接口使用。
+表格通过自定义事件向外通信，优先在 options 中写 `onRowClick`、`onCurrentChange`、`onSelectionChange`、`onSortChange`；模板事件仍可作为模板引擎接口使用，但必须绑定在列模板中的实际控件上，不能直接绑定到 `<kniu-table-col>`。
 
 | 事件名 | `detail` 载荷 | 触发时机 |
 | --- | --- | --- |
@@ -547,12 +586,12 @@ relayout() { this.tableRef.doLayout(); }                                  // 重
 
 ### 空数据插槽 `#empty`
 
-表格无数据时，除 `empty-text` 文案和外部 `<kniu-empty>` 外，还支持 `<template #empty>` 具名插槽直接在表格内部渲染自定义空状态：
+表格无数据时，除 `tableOptions.emptyText` 文案和外部 `<kniu-empty>` 外，还支持 `<template #empty>` 具名插槽直接在表格内部渲染自定义空状态：
 
 ```html
 <kniu-table kniu:option="{{tableOptions}}">
   <template #empty>
-    <kniu-empty kniu:option="{{({ note:'暂无文章' })}}" />
+    <kniu-empty kniu:option="{{ note:'暂无文章' }}" />
   </template>
 </kniu-table>
 ```
@@ -562,11 +601,11 @@ relayout() { this.tableRef.doLayout(); }                                  // 重
 **空状态优先级**（从高到低）：
 
 1. `<template #empty>` 插槽存在 → 投影插槽内容
-2. `empty-text=""` → 隐藏内置空行（配合外部 `<kniu-empty>`）
-3. `empty-text="自定义文案"` → 显示自定义文案
-4. 不设 `empty-text` → 显示默认「暂无数据」
+2. `tableOptions.emptyText = ''` → 隐藏内置空行（配合外部 `<kniu-empty>`）
+3. `tableOptions.emptyText = '自定义文案'` → 显示自定义文案
+4. 不设 `emptyText` → 显示默认「暂无数据」
 
-> 注意：`<template #empty>` 与外部 `<kniu-empty>` 是两种不同方式。用 `<template #empty>` 时无需写 `empty-text=""`，因为插槽优先级高于文案。
+> 注意：`<template #empty>` 与外部 `<kniu-empty>` 是两种不同方式。用 `<template #empty>` 时无需设置 `emptyText: ''`，因为插槽优先级高于文案。
 
 ## 空状态 Empty
 
@@ -574,10 +613,10 @@ relayout() { this.tableRef.doLayout(); }                                  // 重
 
 ```html
 <!-- 典型用法：列表为空、且不在加载/报错时才显示 -->
-<kniu-empty kniu:if="{{!list.length && !loading && !error}}" note="暂无数据" />
+<kniu-empty kniu:if="{{!list.length && !loading && !error}}" kniu:option="{{note:'暂无数据'}}" />
 
 <!-- 隐藏（例如交给其它逻辑控制时） -->
-<kniu-empty hidden note="暂无数据" />
+<kniu-empty kniu:option="{{hidden:true,note:'暂无数据'}}" />
 ```
 
 | 属性 | 说明 | 默认值 |
@@ -588,13 +627,13 @@ relayout() { this.tableRef.doLayout(); }                                  // 重
 - `<slot>` 可投影自定义内容（插画下方区域），与 `note` 文案互补。
 - `kniu:if` 守卫里的 `!loading && !error`：加载中由 `kniu:loading` 区域遮罩覆盖、报错由 `$msg` 浮层提示，二者都不应再显示「暂无数据」。
 
-**与 `kniu-table` 配合的关键约定**：表格自身已有内置空行（`empty-text`，默认「暂无数据」）。若同页同时用 `<kniu-table>` 和 `<kniu-empty>`，务必给 `<kniu-table>` 加 `empty-text=""` 以隐藏内置空行，否则会出现两份空状态文案：
+**与 `kniu-table` 配合的关键约定**：表格自身已有内置空行（`tableOptions.emptyText`，默认「暂无数据」）。若同页同时用 `<kniu-table>` 和 `<kniu-empty>`，务必把 `tableOptions.emptyText` 设为空字符串以隐藏内置空行，否则会出现两份空状态文案：
 
 ```html
 <kniu-table kniu:option="{{tableOptionsWithEmpty}}">
   ...
 </kniu-table>
-<kniu-empty kniu:if="{{!list.length && !loading && !error}}" note="暂无数据" />
+<kniu-empty kniu:if="{{!list.length && !loading && !error}}" kniu:option="{{note:'暂无数据'}}" />
 ```
 
 其中 `tableOptionsWithEmpty` 需带 `emptyText: ''` 隐藏内置空行。
@@ -645,7 +684,8 @@ state.pageOptions = {
 
 ```js
 // pageSize: 15 → 下拉为 15/30/45/60/75/90
-const { usePagination } = KniuUI;
+import UI from '../../core/kniuui.js';
+const { usePagination } = UI;
 const state = reactive({ pageOptions: { pageSize: 15 } });
 ```
 
@@ -662,8 +702,8 @@ const state = reactive({ pageOptions: { pageSize: 15 } });
 `usePagination(options)` 返回 `loadList / changePage / changePageSize` 三个方法，负责请求后端、写回响应式 state；上一页和下一页由分页组件转换成 `current-change`，不再提供重复的控制器函数：
 
 ```js
-import KniuUI from '../core/kniuui.js';
-const { usePagination } = KniuUI;
+import UI from '../../core/kniuui.js';
+const { usePagination } = UI;
 
 const myController = controller(function () {
     const state = reactive({
@@ -688,29 +728,34 @@ const myController = controller(function () {
 - `usePagination` 请求体固定携带 `page_current`、`page_rows`(= `state.pageRows`)、`field`、`sort`；成功回写 `list / currentPage / pageTotal / total`，页码窗口由 `kniu-page` 自行计算；失败回写 `error` 并调用 `self.$msg(...)` 弹错误浮层。
 - `state.pageRows` 是每页条数的**唯一数据源**，`kniu:option` 里的 `pageSize` 必须绑定它；`size-change` 由组件回写 `state.pageRows` 后自动重新拉取。
 - 切换每页大小时组件会把 `currentPage` 重置为 1，再从第 1 页加载。
+- `usePagination` 内部已通过 `SYNC.autoSync` 监听服务端数据变更并刷新当前页；新增、修改或审核成功后的控制器回调不得再次手动调用同一页的 `loadList`，否则会造成列表接口重复请求。搜索、翻页和切换每页大小等用户主动操作仍正常调用 `loadList`。
+- `createRowDeleteHandler` 默认同样不在删除成功回调中调用 `loadList`；文章、每日一句、评论等内容表由 `SYNC.autoSync` 统一刷新。静默表（例如账号表 `tb_role`）应使用 `onSuccess` 局部同步状态，只有确实无法局部同步时才显式开启 `reloadOnSuccess`。
+- 同时使用 `onMounted(load)` 与 `autoSync(load)` 的非分页页面，`load` 必须复用当前进行中的 Promise；加载期间收到的数据变更只登记一次待刷新，当前请求结束后最多补刷一次，避免初始请求与 SSE 在请求边界重复调用接口。
 
 ## 导航栏 Navbar
 
-`<kniu-navbar>` 自带桌面横向导航与移动端菜单，不需要分别维护两套头部结构。移动端页面头部始终保留在原位，展开按钮的三横线通过旋转动画变为 `X`，关闭时再同步还原；只有头部下方的菜单面板从左侧滑入并覆盖剩余视口，关闭时向左滑出，导航项从菜单顶部开始排列。菜单内容仍完全来自现有插槽，不自动虚构搜索、语言或退出等业务入口。
+所有 `kniu-*` 组件的 Shadow DOM 样式都经过统一兼容处理：组件内部的固定尺寸会转换为 `calc(数值 / var(--kniu_vw))`，例如 `220 / var(--kniu_vw)` 的写法；字体尺寸转换后使用 `max(12px,calc(数值 / var(--kniu_vw)))`，移动端最终字号不得小于 `12px`；移动端到桌面端的统一断点为 `calc(1280px - 60px)`，1024px 仍按移动端布局处理；媒体查询断点保留原始 `px`，避免改变响应式断点。项目普通页面通过 `web.min.css` 将移动端 `html/body` 的正文基准设为 `14px`，不再使用 `1em` 把字号锁回浏览器默认的 `16px`，也不再用通配符覆盖页面内部已有的字号层级。日期选择器的普通日历和范围日历分别使用各自渲染方法中的 `weekLabels` 局部变量。
+
+`<kniu-navbar>` 自带桌面横向导航与移动端菜单，不需要分别维护两套头部结构。组件自身的 `:host` 内置 `display:flex;justify-content:space-between;align-items:center;width:100%;height:inherit`，并通过 `--kniu-navbar-font-size` 提供统一导航字号；菜单、`kniu-navbar-cells`、`kniu-navbar-cell`、`kniu-sub-navbar` 与 `kniu-user-login` 的普通文案均继承该字号，品牌文字仍可单独放大，避免导航出现大大小小的字体。页面模板不再重复声明 `kniu-navbar` 布局；组件生成的 `.kniu_sys_head_placeholder` 由组件统一注入 `z-index:-999;position:relative;display:block;width:100%;height:100%` 样式，页面只使用组件生成的占位元素，不再维护外部占位样式。内部 `.kniu_sys_navbar_bar` 删除原有 `padding` 和 `margin:0 auto`，基础样式使用 `margin-right:auto;margin-left:auto;width:calc(100vw - 30 / var(--kniu_vw) * 2);height:inherit`；在 `@media (min-width:calc(1280px - 60px))` 下使用 `width:calc(100vw - 220 / var(--kniu_vw) * 2)` 和 `min-height:72px`。`fixed:'top'` / `fixed:'bottom'` 使导航悬浮在对应位置，存在 `fixed` 时默认启用 `placeholder`；`placeholder:true` 会在组件后生成 `.kniu_sys_head_placeholder`，并按导航实际高度占位。桌面端 `slot[name="default"]` 位于 `.menu` 外并排在 `.menu` 前面，`slot[name="append"]` 位于右侧 `.menu` 内；移动端页面头部始终保留在原位，展开按钮的三横线通过旋转动画变为 `X`，关闭时再同步还原；只有头部下方的菜单面板从左侧滑入并覆盖剩余视口，菜单 `top` 使用外层 `.kniu_web_head` 的实际高度，头部尺寸变化时自动同步，导航项从菜单顶部开始排列，`#default`、`#append` 和未命名兼容内容均投影在 `.menu` 内。active/side 状态使用原生 `toggleAttribute` 同步，避免调用不存在的自定义方法。菜单打开期间组件会将根元素 `html` 设置为 `overflow:hidden`，关闭或卸载后恢复原值。菜单内容仍完全来自现有插槽，不自动虚构搜索、语言或退出等业务入口。`kniu-navbar-cell` 使用 `route` 配置匹配当前路由，使用 `href` 配置导航地址。
 
 ```html
-<kniu-navbar home="#/">
+<kniu-navbar kniu:option="{{home:'#/'}}">
   <template #brand>
-    <kniu-image kniu:option="{{({ src:'/static/logo.png' })}}" />
+    <kniu-image kniu:option="{{src:'/static/logo.png'}}" />
   </template>
   <template #append>
     <kniu-navbar-cells>
-      <kniu-navbar-cell kniu:option="{{({index:'/',href:'#/'})}}">首页</kniu-navbar-cell>
-      <kniu-navbar-cell kniu:option="{{({index:'/about',href:'#/about'})}}">关于我</kniu-navbar-cell>
+      <kniu-navbar-cell kniu:option="{{route:'/',href:'#/'}}">首页</kniu-navbar-cell>
+      <kniu-navbar-cell kniu:option="{{route:'/about',href:'#/about'}}">关于我</kniu-navbar-cell>
       <kniu-sub-navbar>
         <template #title>更多</template>
-        <kniu-navbar-cell kniu:option="{{({index:'/help',href:'#/help'})}}">帮助</kniu-navbar-cell>
+        <kniu-navbar-cell kniu:option="{{route:'/help',href:'#/help'}}">帮助</kniu-navbar-cell>
         <kniu-sub-navbar>
           <template #title>文档</template>
-          <kniu-navbar-cell kniu:option="{{({index:'/docs/start',href:'#/docs/start'})}}">入门</kniu-navbar-cell>
+          <kniu-navbar-cell kniu:option="{{route:'/docs/start',href:'#/docs/start'}}">入门</kniu-navbar-cell>
           <kniu-sub-navbar>
             <template #title>进阶</template>
-            <kniu-navbar-cell kniu:option="{{({index:'/docs/api',href:'#/docs/api'})}}">接口</kniu-navbar-cell>
+            <kniu-navbar-cell kniu:option="{{route:'/docs/api',href:'#/docs/api'}}">接口</kniu-navbar-cell>
           </kniu-sub-navbar>
         </kniu-sub-navbar>
       </kniu-sub-navbar>
@@ -721,14 +766,16 @@ const myController = controller(function () {
 
 | 组件/属性 | 说明 |
 | --- | --- |
-| `kniu-navbar[brand]` | 左侧名称 |
-| `kniu-navbar[home]` | 名称点击地址，默认 `#/` |
-| `kniu-navbar[active]` | 当前激活路径；不设置时自动读取当前路由 |
-| `kniu-navbar[type="side"]` | 纵向侧栏导航；与 `kniu-navbar-cell` 配合用于应用工作台 |
-| `template #brand` | 左侧品牌内容；未设置时显示 `brand` 属性文字 |
+| `kniu-navbar` options `brand` | 左侧名称 |
+| `kniu-navbar` options `home` | 名称点击地址，默认 `#/` |
+| `kniu-navbar` options `active` | 当前激活路径；不设置时自动读取当前路由 |
+| `kniu-navbar` options `fixed` | 悬浮位置，支持 `top` / `bottom`；存在时默认启用占位 |
+| `kniu-navbar` options `placeholder` | 是否在组件后生成 `.kniu_sys_head_placeholder`；显式 `false` 可关闭 |
+| `kniu-navbar` options `type:'side'` | 纵向侧栏导航；与 `kniu-navbar-cell` 配合用于应用工作台 |
+| `template #brand` | 左侧品牌内容；未设置时显示 options 的 `brand` 文字 |
 | `template #append` | 右侧导航内容；仍兼容直接写入默认插槽 |
 | `kniu-navbar-cells` | 导航项横向包裹容器，固定 `gap:10px`；移动端纵向排列并保持相同间距 |
-| `kniu-navbar-cell[index]` | 用于匹配当前路由的唯一索引 |
+| `kniu-navbar-cell[route]` | 用于匹配当前路由的路径 |
 | `kniu-navbar-cell[href]` | 导航地址 |
 | `kniu-navbar-cell[disabled]` | 禁用导航项 |
 | `kniu-sub-navbar` | 可嵌套至三级的子导航容器；父级标题负责展开，点击实际的 `kniu-navbar-cell` 后才关闭移动菜单 |
@@ -736,10 +783,10 @@ const myController = controller(function () {
 ## 返回顶部 Backtop
 
 ```html
-<kniu-backtop right="100" bottom="100" />
+<kniu-backtop kniu:option="{{right:100,bottom:100}}" />
 ```
 
-组件固定显示并自动查找当前可滚动容器；在窄屏设备上会自动使用安全边距。`right`、`bottom` 单位均为像素。
+组件固定显示并自动查找当前可滚动容器；在窄屏设备上会自动使用安全边距。options 的 `right`、`bottom` 单位均为像素。
 
 ## 日期选择器
 
@@ -814,7 +861,7 @@ format 字母大小写不敏感，组件会在内部自动规范化：日期部�
 
 前台文章底部的评论留言组件，配置只通过 `kniu:option` 传入。
 
-前台业务必须提供真实的 `currentUser` 昵称，不能用“游客”作为兜底直接提交。未设置昵称时，详情页打开昵称与算术验证码模态框，验证码由 `/captcha` 生成，后端在首次创建身份时强制校验；保存唯一昵称后继续提交原评论。本人评论通过 `onDelete` 接收 `{ commentId }`，业务确认后调用删除接口并刷新列表；非本人不渲染删除按钮，服务端仍需校验所有权。
+前台业务只在已登录、已绑定账号且未禁言时渲染评论输入区。`currentUserId` 始终传 `tb_role.id`，`currentUser` 只用于展示昵称，不能用昵称判断归属或提交身份。本人评论通过 `onDelete` 接收 `{ commentId }`，业务确认后调用删除接口并刷新列表；服务端仍需校验所有权。未登录时仍显示评论点赞状态和按钮外观，但点击应跳转登录页，不渲染回复按钮；禁言账号保留评论列表，不渲染输入区。
 
 ```html
 <kniu-comment kniu:option="{{commentOptions}}" />
@@ -828,7 +875,9 @@ state.commentOptions = {
   submitText: '发表评论',
   emptyText: '暂无评论，快来抢沙发吧！',
   emojis: ['😀', '😄', ...],         // 可选，默认内置常用表情
-  currentUser: '游客',
+  currentUser: '',                   // 当前登录账号的昵称，仅用于展示
+  currentUserId: 0,                  // tb_role.id；未登录为 0
+  canSubmit: false,                  // 未登录或禁言时为 false
   onSubmit: async (detail) => { /* detail: {content, parentId} */ },
   onLike: async (detail) => { /* detail: {commentId, liked} */ },
   onDelete: async (detail) => { /* detail: {commentId} */ }
@@ -837,24 +886,26 @@ state.commentOptions = {
 
 | options 字段 | 说明 |
 | --- | --- |
-| `list` | 评论列表，每项含 `id`、`userId`、`isOwn`、`parentId`、`replyTo`、`username`、`avatar`、`time`、`content`、`likes`、`liked`；本人评论只显示常驻删除按钮，不渲染回复和点赞操作 |
+| `list` | 评论列表，每项含 `id`、`userId`（其值为 `tb_role.id`）、`isOwn`、`parentId`、`replyTo`、`username`、`avatar`、`time`、`content`、`likes`、`liked`；可选 `likeFeedback` 使用新的时间戳触发一次上漂红心；本人评论显示删除按钮，不渲染回复和点赞操作 |
 | `placeholder` | 输入框占位文字 |
 | `maxLength` | 评论最大字数；大于 0 时限制输入、表情插入与提交，并在输入框内部右下角实时显示“当前字数/上限” |
 | `filter` | 逗号分隔的敏感词，例如 `B,逼,屌,操`；提交事件派发前进行不区分大小写匹配，命中后提示“您的评论涉及敏感字不可提交评论”并直接终止 |
-| `currentUserId` | 当前访客数据库用户 ID；与列表 `userId/isOwn` 一起识别本人评论 |
+| `currentUserId` | 当前登录账号的 `tb_role.id`；与列表 `userId/isOwn` 一起识别本人评论，不能改用昵称 |
 | `submitText` | 提交按钮文字，默认“评论” |
 | `emptyText` | 空态提示文字 |
 | `emojis` | 表情面板内可选表情数组，默认内置 46 个常用表情 |
-| `currentUser` | 当前用户昵称，提交评论时作为 `name` 传给后端 |
+| `currentUser` | 当前登录账号昵称，仅用于展示；后端从身份令牌解析 `tb_role.id`，不接收昵称作为归属字段 |
 | `onSubmit` | 提交评论回调，`detail` 含 `content` 与 `parentId`（回复目标） |
-| `onLike` | 点赞/取消点赞回调，`detail` 含 `commentId` 与 `liked` |
+| `onLike` | 点赞/取消点赞回调，`detail` 含 `commentId` 与 `liked`；登录后可反选，未登录由业务引导到登录页 |
 | `onDelete` | 删除按钮回调，`detail` 含 `commentId`；评论操作组与昵称、时间处于同一信息行并靠右，删除按钮固定在“回复”左侧且默认隐藏，鼠标移入或键盘聚焦 actions 区域时显示 |
 
 事件回调（`onSubmit`/`onLike`/`onDelete`）由统一 options 协议映射为组件内部派发的 `submit`/`like`/`delete` 事件，回调收到的 `detail` 即事件负载。
 
+评论点赞成功后，控制器必须以接口返回的最新 `liked` 状态写入目标项的 `likeFeedback`：返回 `true` 时播放上漂红心，返回 `false` 时不播放；不能使用请求前的旧 `liked` 状态判断。`likeFeedback` 是一次性信号，组件以“评论 ID + 反馈标记”消费一次，控制器更新目标项时也应清除其它项残留的旧信号，避免多条评论因一次列表重渲染同时播放。红心保留评论按钮独立的 `left:50%` 与负 `margin-left` 水平居中方式，垂直位移保持原有 `-4px`、`-18px` 起点和中间点，仅将终点从 `-48px` 小幅缩短为 `-42px`；插入节点后先强制建立首帧再启动动画，避免评论按钮的 flex 布局或同帧渲染导致红心不移动。组件样式转换器会把负 px 值转换为 `calc(-数值 / var(--kniu_vw))`，不生成 `-calc(...)`。
+
 ### 下拉面板样式统一约定
 
-表情面板与分页下拉、日期选择器下拉使用同一套面板样式（本次已统一）：
+所有组件内的普通下拉面板使用同一套面板表面样式，包括 `kniu-select`、分页条数、日期选择器、编辑器的字体/字号/颜色/表格/表情面板、评论表情面板、前台用户菜单和桌面端导航子菜单：
 
 ```css
 background-color: #fff;
@@ -863,7 +914,9 @@ border-radius: 4px;
 box-shadow: 0 2px 12px rgba(0,0,0,.1);
 ```
 
-网格型面板（表情）额外声明 `overflow-y:auto; overflow-x:hidden`，去除横向滚动条。**以后凡新增这类下拉面板，样式一律对齐此基准。**
+普通下拉选项统一使用 `min-height:32px; padding:0 12px`，悬停或聚焦时使用 `#f5f7fa` 背景和 `#409eff` 文字；网格型面板（表情、颜色）可以保留自身网格尺寸，但面板表面仍必须遵循上述基准。编辑器的行距原生 `select` 的关闭态也遵循相同的边框与圆角。
+
+链接、图片、媒体编辑等表单型弹窗不属于普通下拉，不得套用下拉选项布局；`kniu-modal` 和移动端全屏导航面板同样不在本约定范围内。**以后凡新增组件普通下拉面板，必须复用核心共享下拉样式，不得另设一套视觉基准。**
 
 ### 下拉弹框定位约定（默认下方，不足翻上方）
 
@@ -892,11 +945,11 @@ box-shadow: 0 2px 12px rgba(0,0,0,.1);
 
 ## 前台登录状态 kniu-user-login
 
-前台公共头部始终使用 `<kniu-user-login></kniu-user-login>`。未建立账号时显示“你好，访客！”、头像和下拉箭头，菜单仅提供“登录”；统一登录页可以切换登录和注册。建立账号后显示头像、“你好，昵称”和下拉箭头，菜单提供“个人中心”“后台管理”和“退出”；“后台管理”在新标签页打开后台登录页。点击退出后先清除本地身份使前台立即变为访客，再由 `/frontProfileClear` 销毁前后台 Session；数据库账号仍保留。其它后台标签通过跨标签退出事件立即回到登录页。组件监听 `kniu-identity-change` 实时更新。
+前台公共头部始终使用 `<kniu-user-login></kniu-user-login>`。移动端用户区域 `.user` 使用 `padding: 0 16px 0 calc(16px + var(--kniu-navbar-level, 0) * 16px)`，桌面端恢复为无内边距。未建立账号时显示“你好，访客！”、头像和下拉箭头，菜单仅提供“登录”；统一登录页可以切换登录和注册。建立账号后显示头像、“你好，昵称”和下拉箭头，菜单提供“个人中心”“后台管理”和“退出”；“后台管理”在新标签页打开后台登录页。点击退出后先清除本地身份使前台立即变为访客，再由 `/frontProfileClear` 销毁前后台 Session；数据库账号仍保留。其它后台标签通过跨标签退出事件立即回到登录页。组件监听 `kniu-identity-change` 实时更新。移动端导航收起时必须同步关闭用户下拉菜单；浮层 portal 关闭后恢复到原始节点位置，清除所有临时定位状态；每次打开都在下一帧重新测量触发按钮，导航动画期间持续跟随锚点，反复开闭不得沿用失效坐标。
 
 ## 点赞组件 kniu-like
 
-文章点赞组件只通过 `kniu:option` 配置，按钮显示大拇指图标及括号包裹的点赞数，例如“大拇指图标 (360)”。组件始终渲染；`own=true` 时按钮禁用但仍显示点赞数，不能把整个组件隐藏。组件在内容区域水平居中并保留 `24px` 上下间距；按钮最小高度 `44px`，图标 `24px`，文字 `16px`。点击未点赞的大拇指后立即向上飘出蓝色 `+1`；组件重渲染时保留正在播放的动画节点，取消点赞不播放，并遵循 `prefers-reduced-motion`。
+文章点赞组件只通过 `kniu:option` 配置，按钮显示大拇指图标及括号包裹的点赞数，例如“大拇指图标 (360)”。组件始终渲染；`own=true` 时按钮禁用但仍显示点赞数，不能把整个组件隐藏。组件在内容区域水平居中并保留 `24px` 上下间距；按钮最小高度 `44px`，图标 `24px`，文字 `16px`。仅当状态为已点赞且收到新的 `feedback` 标记时向上飘出蓝色 `+1`；取消点赞、旧反馈重渲染和待处理的取消请求都不播放，并遵循 `prefers-reduced-motion`。
 
 ```html
 <kniu-like kniu:option="{{likeOptions}}" />
@@ -909,6 +962,7 @@ state.likeOptions = {
   own: false,
   loading: false,
   disabled: false,
+  feedback: 0,             // 每次成功点赞使用新的时间戳触发一次 +1 动画
   onChange: async ({ liked, count }) => { /* 提交后以服务端计数覆盖 count */ }
 };
 ```
@@ -947,8 +1001,8 @@ state.articleTabOptions = {
 ## 默认导出
 
 ```js
-import KniuUI from './kniuui.js';
+import UI from '../../core/kniuui.js';
 
-KniuUI.msg('消息');
-KniuUI.confirm('确认操作？', '提示');
+UI.msg('消息');
+UI.confirm('确认操作？', '提示');
 ```

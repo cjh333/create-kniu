@@ -1,6 +1,6 @@
 # KniuSystem 全项目优化审计报告
 
-> 审计时间：2026-09-03
+> 审计时间：2026-09-16
 > 范围：前端 `client/`（controller / core / views）+ 后端 `api/`（PHP 控制器 / core / config）
 > 方法：通读架构与关键运行路径，定位真实瓶颈与可落地优化点，不臆测。
 
@@ -10,13 +10,13 @@
 
 | # | 优化项 | 类型 | 收益 | 工作量/风险 | 是否该做 |
 |---|--------|------|------|------------|---------|
-| 1 | 后台"回复通知"60s 轮询 → WebSocket 推送 | 实时性/后端负载 | 高（红点从 ≤60s 延迟降到近实时，去掉无意义轮询） | 中 / 中 | ✅ 推荐 |
+| 1 | 后台回复通知由轮询改为 SSE 信号 + 状态接口 | 实时性/后端负载 | 高（红点近实时且避免无意义轮询） | 已完成 | ✅ 已落地 |
 | 2 | 富文本/大文本「序列化+清洗」移到 Web Worker | 主线程流畅度 | 中（编辑/评论大内容时不再卡顿输入） | 低 / 低 | ✅ 推荐 |
 | 3 | 评论/敏感词过滤批量处理下沉 Worker | 主线程流畅度 | 低-中 | 低 / 低 | 视数据量 |
 | 4 | 图片上传前压缩/预处理 | 带宽/上传速度 | 中 | 中 / 中 | 可选 |
-| 5 | 450KB 主 JS 瘦身（按需、gzip、去重复） | 首屏加载 | 中 | 中 / 中 | ✅ 推荐 |
-| 6 | 服务端静态资源 HTTP 缓存 + ETag（当前全 NO_CACHE） | 加载速度/带宽 | 高（当前每次重下） | 低 / 低 | ✅ 推荐 |
-| 7 | PHP 侧重复逻辑收敛（关键词 LIKE/前台用户映射/验证码/通知 SQL） | 可维护性 | 中 | 低 / 低 | ✅ 推荐 |
+| 5 | 538KB 主 JS 瘦身（按需、gzip、去重复） | 首屏加载 | 中 | 中 / 中 | ✅ 推荐 |
+| 6 | 服务端静态资源 HTTP 缓存 + gzip | 加载速度/带宽 | 已落地 | — | ✅ 已完成 |
+| 7 | PHP 侧重复逻辑收敛（关键词 LIKE/统一账号映射/验证码/通知 SQL） | 可维护性 | 中 | 低 / 低 | ✅ 推荐 |
 | 8 | 前端 CRUD 交互工厂已落地（上一轮） | — | 已做 | — | 完成 |
 | 9 | 首页时钟 setInterval(1000) 与富文本防抖——维持现状 | — | 现状合理 | — | 不折腾 |
 
@@ -26,7 +26,7 @@
 
 ```
 浏览器
-  │  fetch  (POST, /api/*)          ← 全部为请求/响应，全项目无 WS/SSE/EventSource
+  │  fetch  (POST, /api/*) + EventSource (/events) ← 请求/响应与单向信号并存
   ▼
 Node 服务端  client/core/kniuserver.mjs  (6173)
   │  开发态：直出 client/ 下的源码；生产态：直出 dist/
@@ -36,65 +36,37 @@ Node 服务端  client/core/kniuserver.mjs  (6173)
 PHP 后端  api/app/{admin,index}/Controllers，Db(PDO/mysqli) → MySQL
 ```
 
-- Node 侧是**长驻进程**（dev 与 prod 都用它当 Web 服务 + 反代），天然可作为 WebSocket 网关宿主。
+- Node 侧是**长驻进程**（dev 与 prod 都用它当 Web 服务 + 反代），同时提供 `/events` SSE 长连接和回环通知入口 `/__notify`。
 - PHP 会话：Cookie 名 `KNIU_<48hex>`（`api/core/SessionName.php`），session 文件在 `api/runtime/session/sess_<id>`。含 `admin_token`（后台）与 `front_token`（前台）两套独立会话，见 `api/index.php` 与 `Controller.php::validateToken()`。
 - 身份同步：登录/登出跨标签靠 `storage` 事件（`kniuauth.mjs:113`）；前台身份变化发 `kniu-identity-change`；后台回复通知变化发 `kniu:reply-notification-change`。
 
-> 结论：跨标签已靠事件 + storage 做到"即时"；但**跨账号**（别人回复了我）目前只能靠轮询/重新聚焦/事件，这正是 WebSocket 的价值所在。
+> 结论：跨标签靠事件 + storage；跨账号回复通过 Node SSE 信号唤起前端，再由前端调用受保护的状态接口读取真实数据。SSE 已覆盖当前单向通知需求，不需要 WebSocket。
 
 ---
 
-## 三、前端能否用 WebSocket —— 分析与落地建议
+## 三、通知实时性现状
 
-### 3.1 现有轮询（最该替换的点）
+### 3.1 已落地的 SSE 链路
 
-`client/controller/admin/headerController.js:90-112`：
+当前通知中心由 `client/core/kniunotify.mjs` 单例维护一个 `EventSource('/events')`，开发服务器和预览服务器都直接返回 `text/event-stream`。Node 端的 `/__notify` 只接受本机回环通知，并广播两类轻量信号：
 
-```js
-onMounted(function () {
-  loadReplyNotification();                          // 首次拉
-  const notificationTimer = setInterval(loadReplyNotification, 60000); // ← 每 60s 轮询
-  const handleVisibility = function () {
-    if (document.visibilityState === 'visible') loadReplyNotification();
-  };
-  document.addEventListener('visibilitychange', handleVisibility);
-  globalThis.addEventListener('kniu:reply-notification-change', loadReplyNotification);
-  ...
-});
-```
+- `reply-refresh`：回复审核或回复状态变化后，后台头部重新调用 `POST /comment_reply_state`。
+- `data-change`：写库后的数据版本信号，页面按需增量刷新自己的数据源。
 
-- 接口：`POST /comment_reply_state`（`CommentController::commentReplyState`）。
-- 问题：后台所有在线的管理/普通账号只要停留在后台壳层，就会每 60s 打一次该接口；而这条数据只有在"别人回复了你"时才变化。多数请求是"空轮询"。
-- 另外：后台/前台是两个标签页时，即便前台有新评论，后台红点也要等 60s 或手动刷新/切回才更新。
+`headerController` 在首次挂载时读取一次状态，之后只由 SSE 或显式本地事件触发，不再设置 60 秒无条件轮询；请求层仍保留并发去重窗口，避免同一信号造成重复请求。SSE 只传“需要刷新”的信号，不携带账号或评论内容，真实数据始终由 PHP 接口按当前会话返回。
 
-### 3.2 推荐方案（Node 网关 + 推送 + 兜底轮询降频）
+### 3.2 鉴权与故障边界
 
-| 层 | 做法 |
-|----|------|
-| 连接 | 浏览器 → `ws://host:6173/ws`（与页面同源，Cookie 自动带上，无需改鉴权跨域） |
-| 网关宿主 | 在 `kniuserver.mjs` 里用 `ws` 库（或原生 `http` upgrade）开一个 WS 端点 |
-| 握手鉴权 | Node 读到请求 Cookie 中的 `KNIU_...` session id，去 `api/runtime/session/sess_<id>` 校验 `admin_token.id` / `front_token.id`（Node 直读 PHP session 文件，绕开一次 HTTP） |
-| 订阅语义 | 客户端发 `{type:'subscribe', channel:'reply:<roleId>'}` 或按 `front_user_id`；Node 按"接收人"建频道索引 |
-| 事件来源 | 两种：①PHP 写评论/审核通过后，由 Node 推送；②最简方案：PHP 端在 `submitComment`/`replyNotification` 落库后，让 Node 触发一次订阅者刷新 |
-| 兜底 | 保留一个低频心跳轮询（如 5~10 分钟）或 `visibilitychange` 重新拉取，防止 WS 断线漏消息；WS 断开自动重连 + 指数退避 |
+- `/events` 只建立同源单向连接，不替代 PHP 的身份鉴权。
+- `/comment_reply_state`、`/comment_reply_read`、`/comment_reply_update` 仍由后端校验当前 `tb_role.id` 和管理员权限。
+- `/__notify` 仅允许本机回环请求；不能开放为公网广播入口。
+- EventSource 断线由浏览器自动重连；若浏览器不支持 EventSource，页面只能依靠显式刷新或业务接口的低频兜底，不得把 HTML 页面误当作事件流返回。
 
-**跨账号即时"回复我"的完整链路**（以最简、对现有代码侵入最小为原则）：
-1. `CommentController::commentReplyState` 现成可复用作兜底。
-2. Node 网关维护 `Map<recipientId, Set<ws>>`。
-3. 推送触发点（任选其一，推荐 A）：
-   - **A（推荐，后端无感知）**：Node 网关在收到"回复状态变更"信号后，调用 PHP 现有查询、把 `{has_unread:true}` 推给该 recipient 的所有连接。信号来源可以是 PHP 在 `submitComment` 后向 Node 的一个内部端点 POST（内网本机，无鉴权风险）。
-   - **B**：直接读库触发（PHP 写库后 `exec("curl ... /_ws_emit")`，跨进程触发，运维稍繁琐）。
-4. 客户端 `headerController` 收到推送 → 复用现有 `syncNotificationBadge(true,count)` → 红点即时亮起，`setInterval(60s)` 可降为低频心跳或直接删除（保留 `visibilitychange` 兜底）。
+### 3.3 当前不建议扩展的场景
 
-> 冒烟：Node 与 PHP 分进程，务必用**内网本机回环**做触发，不要经公网/代理；会话文件直读需与 `SessionName::resolve` + `session.save_path` 对齐（当前已固定到 `api/runtime/session`，Node 可直读）。
-
-### 3.3 其它可用到 WS/SSE 的场景（暂不需要，列为可扩展）
-
-- 前台文章详情页的"评论实时更新"（多人围观时）——当前 `getComments` 是进页面拉一次 + 自己提交后刷新，暂无他人评论实时需求，**不建议现在做**。
-- 收藏数/点赞数实时——由操作者自身响应即更新，无需推送。
-- **若只想要"服务端→浏览器单向"，SSE（`EventSource`）比 WS 更简单**：浏览器一行、服务端普通 HTTP 长连接，天然带重连，不需要 `ws` 握手子协议。本项目"红点推送"是纯单向，**SSE 其实是最省事的首选**；只有未来要双向（在线编辑协作、聊天）才值得上 WS。
-
-> 结论：**实时性场景真实存在且只有一处（回复通知红点）**。建议先做 **SSE**（单向够用、实现最简），架构上把"通知中心"做成 `client/core/kniunotify.mjs` 单例，Node 端开 `/api/notify` 长连接端点，PHP 写库后由 Node 触发。WebSocket 留到有双向需求再上，避免过度设计。
+- 前台文章详情页的评论实时更新：当前进入详情和提交成功后局部刷新已经足够。
+- 收藏数与点赞数实时推送：操作者直接使用接口返回值局部更新即可。
+- WebSocket 双向通信：只有在线协作或聊天等双向需求出现时再单独评估。
 
 ---
 
@@ -102,7 +74,7 @@ onMounted(function () {
 
 ### 4.1 关键事实
 
-- `kniuui.js` 源码 **492KB**（一个文件承载所有组件），dist 主 bundle **~450KB**（`dist/views/client.b9a4ad5b4c.js`）；`kniutemplate.mjs` 62KB（响应式/模板编译）。
+- `kniuui.js` 源码约 **541KB**（一个文件承载所有组件），当前 dist 主 bundle **约 526KB**（`dist/views/client.169dfa571c.js`）；`kniutemplate.mjs` 约 62KB，生产模板 bundle 约 78KB。
 - 模板编译、响应式代理、Shadow DOM 渲染、富文本编辑器等都**重度依赖 DOM**，**无法**也不应塞进 Worker（Worker 无 DOM，靠 postMessage 传结构体，传输本身也有开销）。
 - 已确认纯函数工具（`kniuutil.mjs` 的 debounce/throttle/updateListRecord 等）本就是 O(1)/轻量，无需 Worker。
 
@@ -128,15 +100,15 @@ onMounted(function () {
 
 ## 五、服务端与传输层优化（性价比最高，建议最先做）
 
-### 5.1 静态资源缓存缺失（高收益低风险）
+### 5.1 静态资源缓存与压缩（已落地）
 
-`kniuserver.mjs` 对所有响应（含 CSS/JS/图片）一律 `Cache-Control: no-store`（`NO_CACHE`，见 81-84 行、132 行）。生产态 `dist/` 文件名带内容哈希（`client.b9a4ad5b4c.js`），**非常适合强缓存**，现在却每次重新下载 450KB。
+`client/core/kniustatic.mjs` 已统一处理静态资源缓存和 gzip：HTML、模板清单及开发态源码继续使用 `no-store`；生产态文件名带内容哈希的 JS/CSS/图片等资源使用 `Cache-Control: public, max-age=31536000, immutable`。生产环境在客户端声明支持 gzip 且响应体超过 1KB 时压缩可压缩文本资源。
 
-建议：对 `dist/` 下带哈希的静态资源发 `Cache-Control: public, max-age=31536000, immutable`；对 `/index.html`、`/templates.js` 维持 `no-cache`（HTML 需实时）。改造集中在 `kniuserver.mjs` 的静态分支，风险极低。
+维护时只需同步修改 `kniustatic.mjs` 的缓存命中规则；不要把 `/index.html`、`/templates.js` 或用户上传内容改成长期 immutable 缓存。
 
 ### 5.2 gzip / Brotli
 
-- dev 不必；**prod 建议**：`dist` 预压缩（gzip/brotli）或 Node 侧 `zlib` 动态压缩 JS/CSS/HTML（>1KB 才压）。450KB JS 压缩后通常 <120KB，首屏明显变快。
+- gzip 已由 Node 静态发送层在生产环境按需启用；当前未引入 Brotli，是否增加需单独评估兼容性和部署收益。
 - 注意当前经反代转发 PHP 响应，压缩应只针对 Node 直出的静态资源，勿压缩 API JSON（后端已在 `index.php` 处理 CORS/头，避免重复 Content-Encoding）。
 
 ### 5.3 主 bundle 瘦身（450KB 是一个体量信号）
@@ -154,9 +126,9 @@ onMounted(function () {
 
 ### 6.2 重复逻辑收敛（上轮调研未动，本轮列为待办）
 - 关键词模糊 LIKE 编码段（4 处）：`Article/Comment/Daily/Role`
-- 前台用户 ID 映射 `role_id → tb_front_user.id`：`CommentController` + `AuthController` 等多处
+- 统一账号 ID 映射：所有文章、评论、资料、收藏和历史均使用 `role_id → tb_role.id`
 - 算术验证码校验块：`AuthController::logup` / `IndexController`（frontProfileSave / verifyFrontCaptcha）3 处近似重复
-- 回复通知 3 段相同的复杂 join SQL（`CommentController::commentReplyState/Read/Update` 内）——**这是 WebSocket 推送改造时最该顺手抽公共方法的地方**。
+- 回复状态 3 段相同的复杂 join SQL（`CommentController::commentReplyState/Read/Update` 内）——可继续抽到公共查询方法；SSE 只负责触发刷新，不改变权限查询。
 
 ### 6.3 会话/权限
 - 现状合理（前后台会话隔离、`Base`（`api/core/Base.php`）统一鉴权）。若上 WS/SSE，注意**不要**为长连接暴露新鉴权漏洞：SSE/WS 端点必须复用 `validateToken` 同等的 session 校验，不能让"能连上长连接"绕过登录。
@@ -168,11 +140,11 @@ onMounted(function () {
 ### 第一优先（低成本高收益，建议本轮或下轮做）
 - [ ] P1 静态资源强缓存（带哈希资源 immutable）+ HTML 保持 no-cache
 - [ ] P1 prod 开启 gzip（预压缩 dist）
-- [ ] P1 前端 CRUD 交互工厂（已做，见 SKILL #98）——保持用
-- [ ] P1 后端重复函数收敛到 core（关键词 LIKE / 前台用户 ID / 验证码 / 通知 join SQL）
+- [x] P1 前端 CRUD 交互工厂（已做）——保持用
+- [ ] P1 后端重复函数收敛到 core（关键词 LIKE / 统一账号 ID / 验证码 / 通知 join SQL）
 
-### 第二优先（实时性，值得做但要先定方向）
-- [ ] P2 通知中心：**先 SSE 单向推送**（Node 端 `/api/notify` + `kniunotify.mjs` 单例），替换 `headerController` 的 60s 轮询为「SSE + 低频心跳 + visibilitychange 兜底」
+### 第二优先（实时性，已完成的维护项）
+- [x] P2 通知中心：SSE 单向推送（Node `/events` + `kniunotify.mjs` 单例），替代 header 的 60 秒无条件轮询
 - [ ] P2 富文本保存前清洗改为异步切分或 Worker 化（先做异步切分，成本最低）
 
 ### 第三优先（大工程，单独立项评估）
@@ -194,4 +166,4 @@ onMounted(function () {
 
 ## 九、一句话总结
 
-> 项目当前是**干净的请求/响应 + 事件驱动**架构，无脏轮询之外的真实时性欠账，也几乎没有计算热点。**最值得做的**是「静态资源缓存/gzip」这类传输层优化（立刻见效）与「回复通知红点用 SSE 替代 60s 轮询」这一处真实实时场景；**Web Worker 仅富文本大内容清洗一处值得、且建议先用异步切分过渡**；**WebSocket 双向暂不需要**，SSE 已覆盖当前唯一单向需求。
+> 项目当前是**干净的请求/响应 + 事件驱动**架构，静态资源哈希缓存、生产 gzip 和回复通知 SSE 已落地，无脏轮询之外的真实时性欠账，也几乎没有计算热点。下一步收益主要来自按需拆分 `kniuui.js` 和针对富文本大内容的异步清洗；**WebSocket 双向暂不需要**，SSE 已覆盖当前唯一单向需求。

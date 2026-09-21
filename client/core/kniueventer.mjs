@@ -417,12 +417,11 @@ var KniuEventer = (function () {
       const slotName = slotNameOfTemplate(template);
       const parent = template.parentNode;
       if (!parent) return;
-      const isNavbarDefaultSlot = parent.tagName.toLowerCase() === 'kniu-navbar' && slotName === 'default';
       const frag = document.createDocumentFragment();
       [...template.content.childNodes].forEach(function (node) {
         if (node.nodeType === 1) {
           // 元素节点：直接补上 slot 属性（已有则保留）。
-          if (!isNavbarDefaultSlot && !node.hasAttribute('slot')) node.setAttribute('slot', slotName);
+          if (!node.hasAttribute('slot')) node.setAttribute('slot', slotName);
           frag.appendChild(node);
         } else if (node.nodeType === 3) {
           // 文本节点无法携带 slot 属性，必须包一层带 slot 的元素，
@@ -431,7 +430,7 @@ var KniuEventer = (function () {
           // 而非默认插槽（navbar 的 .menu，右侧）。
           if (node.textContent.trim() === '') return;
           const wrap = document.createElement('span');
-          if (!isNavbarDefaultSlot) wrap.setAttribute('slot', slotName);
+          wrap.setAttribute('slot', slotName);
           wrap.textContent = node.textContent;
           frag.appendChild(wrap);
         }
@@ -575,10 +574,10 @@ var KniuEventer = (function () {
     return '/' + value.replace(/^\/+|\/+$/g, '');
   }
 
-  // 路由注册表：底层是数组，提供语义明确的 addRoute 注册方法。
+  // 路由注册表：底层是数组，提供统一的 add 注册方法。
   class RouterRegistry extends Array {
     #authLevel = 0;
-    addRoute(path, controller) {
+    add(path, controller) {
       const authRequired = this.#authLevel > 0;
       const routeController = typeof controller === 'string'
         ? function loadRouteController() { return loadController(controller); }

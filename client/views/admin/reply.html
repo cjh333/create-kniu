@@ -1,5 +1,6 @@
 <style scoped>
   @import url("@kniu/kniu.min.css");
+  @import url("@style/web.min.css");
   @import url("@style/admin/admin.min.css");
   @import url("@style/admin/admin_home.min.css");
 
@@ -80,7 +81,8 @@
         <kniu-table ref="table" kniu:option="{{commentTable}}">
           <kniu-table-col type="checkbox" width="60" align="center" fixed="left" />
           <kniu-table-col field="id" label="ID" width="80" align="center" fixed="left" sortable />
-          <kniu-table-col field="account_name" label="用户名" width="100" show-overflow-tooltip />
+          <kniu-table-col field="sid" label="排序" width="100" align="center" editable="number" fixed="left" sortable kniu:option="{{onChange:updateSort}}" />
+          <kniu-table-col field="account_name" label="账号" width="100" show-overflow-tooltip />
           <kniu-table-col field="nickname" label="昵称" width="80" show-overflow-tooltip />
           <kniu-table-col field="message" label="回复内容" min-width="220" show-overflow-tooltip />
           <kniu-table-col field="article_title" label="所属文章标题" min-width="160" show-overflow-tooltip />

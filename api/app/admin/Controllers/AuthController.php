@@ -151,7 +151,8 @@ class AuthController extends Controller
       return ['id' => 0, 'nickname' => $nickname];
     }
     $tokenHash = hash('sha256', strtolower($token));
-    Db::name('tb_role')->where('identity_token', '=', $tokenHash)->where('id', '<>', $roleId)->update(['identity_token' => null]);
+    // Db::update 会过滤 PHP null；使用原始 NULL 才能真正解除旧账号绑定。
+    Db::name('tb_role')->where('identity_token', '=', $tokenHash)->where('id', '<>', $roleId)->update(['identity_token' => Db::raw('NULL')]);
     Db::name('tb_role')->where('id', '=', $roleId)->update([
       'identity_token' => $tokenHash,
       'nickname' => Db::name('tb_role')->where('id', '=', $roleId)->value('nickname')

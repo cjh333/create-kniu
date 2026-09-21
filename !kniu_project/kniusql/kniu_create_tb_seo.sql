@@ -8,7 +8,7 @@ CREATE TABLE `tb_seo` (
     `keywords` varchar(1000) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '关键词',
     `author` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '作者',
     `copyright` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '版权',
-    `record` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '备案号',
+    `icp` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT 'ICP备案号',
     `email` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '联系邮箱',
     `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `issue_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发表时间',

@@ -1,5 +1,6 @@
 <style scoped>
   @import url("@kniu/kniu.min.css");
+  @import url("@style/web.min.css");
   @import url("@style/admin/admin.min.css");
   @import url("@style/admin/admin_home.min.css");
 
@@ -104,7 +105,7 @@
   </template>
   <template #default>
     <kniu-form ref="form" kniu:option="{{userModel}}">
-      <kniu-form-cell kniu:if="{{canAdministerUsers && isAddDialog}}">
+      <kniu-form-cell kniu:if="{{isAddDialog && canAdministerUsers}}">
         <kniu-input kniu:form="{{userModel.name}}" kniu:option="{{name:'name',placeholder:'请输入账号'}}">
           <template #prepend label-width="120px">账号</template>
         </kniu-input>
@@ -115,7 +116,7 @@
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell kniu:if="{{isAddDialog || canAdministerUsers}}">
-        <kniu-input kniu:form="{{userModel.password}}" kniu:option="{{name:'password',type:'password',showPassword:true,placeholder:'8位以上，含大小写、数字、特殊字符'}}">
+        <kniu-input kniu:form="{{userModel.password}}" kniu:option="{{name:'password',type:'password',showPassword:true,placeholder:'请输入密码',tip:'• 8 位以上;• 含大写字母;• 含小写字母;• 含数字;• 含特殊字符'}}">
           <template #prepend label-width="120px">{{isAddDialog ? '密码' : '新密码'}}</template>
         </kniu-input>
       </kniu-form-cell>
@@ -134,7 +135,7 @@
           <template #prepend label-width="120px">确认新密码</template>
         </kniu-input>
       </kniu-form-cell>
-      <kniu-form-cell kniu:if="{{canAdministerUsers && isAddDialog}}">
+      <kniu-form-cell kniu:if="{{isAddDialog && canAdministerUsers}}">
         <template #prepend label-width="120px">角色</template>
         <template #append>
           <kniu-radio-group kniu:form="{{userModel.role}}" kniu@change="onRoleChange">
@@ -143,12 +144,12 @@
           </kniu-radio-group>
         </template>
       </kniu-form-cell>
-      <kniu-form-cell kniu:if="{{canAdministerUsers && isAddDialog}}">
+      <kniu-form-cell kniu:if="{{isAddDialog && canAdministerUsers}}">
         <kniu-input kniu:form="{{userModel.sid}}" kniu:option="{{name:'sid',placeholder:'请输入排序'}}">
           <template #prepend label-width="120px">排序</template>
         </kniu-input>
       </kniu-form-cell>
-      <kniu-form-cell kniu:if="{{canAdministerUsers && isAddDialog}}">
+      <kniu-form-cell kniu:if="{{isAddDialog && canAdministerUsers}}">
         <kniu-switch kniu:form="{{userModel.is_show}}" kniu:option="{{disabledSwitch}}">
           <template #prepend label-width="120px">禁用</template>
         </kniu-switch>

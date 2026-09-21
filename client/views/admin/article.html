@@ -1,5 +1,6 @@
 <style scoped>
   @import url("@kniu/kniu.min.css");
+  @import url("@style/web.min.css");
   @import url("@style/admin/admin.min.css");
   @import url("@style/admin/admin_home.min.css");
 
@@ -60,7 +61,7 @@
     <div class="detail_head">
       <span class="detail_title">文章</span>
       <div class="detail_head_actions">
-        <kniu-btn kniu:option="{{type:'primary'}}" kniu@click="addRow">添加</kniu-btn>
+        <kniu-btn style="height:40px;" kniu:option="{{type:'primary'}}" kniu@click="addRow">添加</kniu-btn>
         <kniu-input kniu:form="{{keyword}}" kniu:option="{{name:'keyword',placeholder:'请输入标题'}}" kniu@keydown.enter="searchList" kniu@input="debouncedSearch">
           <template #append label-width="48px">
             <kniu-btn aria-label="搜索" kniu:option="{{text:true}}" kniu@click="searchList">
@@ -77,8 +78,9 @@
           <kniu-table-col width="60" align="center" fixed="left" type="checkbox" />
           <kniu-table-col field="id" label="ID" width="80" align="center" fixed="left" sortable />
           <kniu-table-col field="sid" label="排序" width="100" align="center" editable="number" fixed="left" sortable />
+          <kniu-table-col field="account" label="账号" width="120" align="center" />
+          <kniu-table-col field="nickname" label="昵称" width="120" align="center" />
           <kniu-table-col field="title" label="标题" min-width="360" show-overflow-tooltip />
-          <kniu-table-col field="publisher" label="发布者" width="120" align="center" />
           <kniu-table-col field="cover" label="封面" width="180" align="center">
             <template #default>
               <kniu-image kniu:if="{{row.cover}}" style="width:60px;height:60px;" src="{{row.cover}}" />
@@ -109,7 +111,7 @@
   </div>
 </section>
 <!-- 弹框 -->
-<kniu-modal style="width:90vw;" kniu:option="{{show:(showmodal)}}" kniu@close="closeDialog">
+<kniu-modal style="width:90vw;" kniu:option="{{show:(showmodal),onClose:closeDialog}}">
   <template #header>
     <span>{{dialogTitle}}</span>
     <kniu-btn kniu:option="{{type:'primary',size:'small',link:true}}" kniu@click="closeDialog">
@@ -148,7 +150,7 @@
       </kniu-date-picker>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-editor ref="editor" kniu:form="{{editform.content}}" kniu:option="{{...(editor),name:'content'}}">
+      <kniu-editor ref="editor" kniu:form="{{editform.content}}" kniu:option="{{...(editor),name:'content',mode:editform.content_mode}}">
         <template #prepend label-width="100px">正文</template>
       </kniu-editor>
     </kniu-form-cell>

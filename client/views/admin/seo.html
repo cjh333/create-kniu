@@ -1,5 +1,6 @@
 <style scoped>
   @import url("@kniu/kniu.min.css");
+  @import url("@style/web.min.css");
   @import url("@style/admin/admin.min.css");
   @import url("@style/admin/admin_home.min.css");
 </style>
@@ -45,8 +46,8 @@
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
-        <kniu-input kniu:form="{{seoModel.record}}" kniu:option="{{readonly:(!canEditContent),name:'record',placeholder:'请输入备案号'}}">
-          <template #prepend label-width="120px">record</template>
+        <kniu-input kniu:form="{{seoModel.icp}}" kniu:option="{{readonly:(!canEditContent),name:'icp',placeholder:'请输入备案号'}}">
+          <template #prepend label-width="120px">icp</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>

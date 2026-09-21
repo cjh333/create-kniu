@@ -29,6 +29,9 @@ KniuSystem/
 │  ├─ config/                # 路由、数据库、鉴权、日志等配置
 │  ├─ core/                  # Router、Controller、Db 等基础设施
 │  └─ app/                   # index/admin 业务控制器
+├─ !kniu_project/
+│  ├─ KNIU-API-CONTRACT.md   # 与语言无关的 API 行为契约
+│  └─ kniusql/               # 当前数据库建表与初始化数据基线
 ├─ public/                   # CSS、图片、字体和 Kniu 插件资源
 ├─ dist/                     # 生产构建产物
 └─ package.json              # 前端开发与构建命令
@@ -48,10 +51,10 @@ KniuSystem/
 
 ### 视图、路由与组件
 
-- `client/views/index/*.html` 是公开前台页面，`client/views/admin/*.html` 是后台页面；页面会映射为包含目录的唯一组件标识，避免前后台同名模板相互覆盖。
+- `client/views/index/*.html` 是前台页面，其中部分页面需要登录鉴权；`client/views/admin/*.html` 是后台页面。页面会映射为包含目录的唯一组件标识，避免前后台同名模板相互覆盖。
 - `client/views/admin/common/*.html` 与 `client/views/index/common/*.html` 是各自区域的公共布局组件，不直接进入页面路由。
 - `SERVER.HOME` 当前为 `index/index`，因此 `/` 默认渲染前台 `index.html`。
-- 路由使用 Location Hash，例如 `#/login`、`#/seo`、`#/nav`、`#/articledetail`。
+- 路由使用 Location Hash，例如 `#/login`、`#/register`、`#/seo`、`#/article`、`#/detail`。
 - 页面模板在独立 Shadow Root 内渲染，样式与 DOM 查询默认限制在组件作用域内。
 
 当前路由配置如下：
@@ -59,15 +62,20 @@ KniuSystem/
 | 路径 | Controller | 鉴权 |
 | --- | --- | --- |
 | `/` | `index/homeController` | 公开 |
-| `/about` | `index/aboutController` | 公开 |
 | `/detail` | `index/detailController` | 公开；文章 ID 通过路由状态传递，不显示在地址栏 |
 | `/login` | `admin/loginController` | 公开 |
+| `/register` | `admin/loginController` | 公开 |
 | `/admin` | `admin/homeController` | 需要登录；后台入口 |
 | `/home` | `admin/homeController` | 需要登录 |
 | `/seo` | `admin/seoController` | 需要登录 |
-| `/nav` | `admin/navController` | 需要登录 |
-| `/dailydetail` | `admin/dailydetailController` | 需要登录 |
-| `/articledetail` | `admin/articledetailController` | 需要登录 |
+| `/aboutedit` | `admin/abouteditController` | 需要登录 |
+| `/user` | `admin/userController` | 需要登录 |
+| `/daily` | `admin/dailyController` | 需要登录 |
+| `/article` | `admin/articleController` | 需要登录 |
+| `/comment` | `admin/commentController` | 需要登录 |
+| `/reply` | `admin/replyController` | 需要登录 |
+| `/about` | `index/aboutController` | 需要登录 |
+| `/profile` | `index/profileController` | 需要登录 |
 
 路由的 Controller 必须填写包含目录的完整相对路径；公开前台使用 `index/`，后台使用 `admin/`。`admin/mainController`、`admin/asideController` 和 `admin/headerController` 由公共布局装配；模板目录中存在但未注册到路由表的页面会被收集为组件，但不会成为显式业务路由。
 
@@ -82,7 +90,9 @@ KniuSystem/
 控制器直接返回需要给模板使用的状态和方法：
 
 ```js
-const { controller, reactive, onMounted } = KniuMvvm;
+import MVVM from './client/core/kniumvvm.mjs';
+
+const { controller, reactive, onMounted } = MVVM;
 
 export default controller(() => {
   const state = reactive({ loading: false });
@@ -102,11 +112,11 @@ MVVM 提供 `ref()`、`computed()`、getter/多来源 `watch()` 和 `watchEffect
 | `kniumvvm.mjs` | Controller 动态加载、组件定义、ViewModel 创建、生命周期与 `watch()` |
 | `kniutemplate.mjs` | 响应式状态、依赖观察、`kniu:*` 声明式模板绑定与清理 |
 | `kniuscheduler.mjs` | 更新任务去重、微任务批处理与 `nextTick()` 刷新边界 |
-| `kniueventer.mjs` | 事件总线、作用域 DOM 工具、模板加载、模板嵌入和路由注册表 |
+| `kniueventer.mjs` | 事件总线、作用域 DOM 工具、模板加载、模板嵌入和路由注册表；业务入口统一命名为 `EVENTER` |
 | `kniuauth.mjs` | `AUTH` 登录状态、用户信息、会话恢复、退出和失效复位 |
 | `kniurequest.mjs` | `/api` 请求封装、响应归一化、并发去重和 401 处理 |
-| `kniuui.js` | 系统 UI 组件、消息提示与路径别名替换 |
-| `kniulogger.mjs` | 按环境配置的前端/构建日志 |
+| `kniuui.js` | 系统 UI 组件、消息提示与路径别名替换；业务入口统一命名为 `UI` |
+| `kniulogger.mjs` | 按环境配置的前端/构建日志；业务入口统一命名为 `LOGGER` |
 | `kniuserver.mjs` | 开发静态服务、模板清单生成和 API 反向代理 |
 | `kniubuilder.mjs` | 生产打包、模板内联、内容哈希、资源引用改写和产物输出 |
 
@@ -116,7 +126,7 @@ MVVM 提供 `ref()`、`computed()`、getter/多来源 `watch()` 和 `watchEffect
 
 ### 鉴权与请求链路
 
-1. `AUTH.restoreSession()` 在应用启动时请求 `/api/system` 校验服务端持久会话；会话有效则恢复账号信息，访问登录页时直接进入后台。
+1. `AUTH.restoreSession()` 在应用启动时先安静探测 `/api/session_status`；后台会话有效时再读取 `/api/system` 恢复账号信息，访问后台登录页时进入后台。
 2. `ROUTER.auth()` 内注册的路由标记为 `authRequired`，未登录访问时跳转 `#/login`。
 3. `REQUEST` 自动为相对接口添加 `/api` 前缀，默认携带 Cookie，并将响应归一为 `{ status, msg, data, httpStatus, request }`。
 4. 任意接口返回 HTTP 401 时，`AUTH.markLoggedOut()` 清理本地登录态并跳转登录页。
@@ -129,16 +139,16 @@ MVVM 提供 `ref()`、`computed()`、getter/多来源 `watch()` 和 `watchEffect
 
 `api/index.php` 是统一入口：初始化 Composer 自动加载和 Session，读取应用/日志配置，处理 CORS，解析请求 URI，随后交给 `Core\Router` 分发。控制器按应用划分：
 
-- `api/app/index/Controllers/`：公开内容接口。
+- `api/app/index/Controllers/`：公开内容、前台身份、评论、点赞、收藏和个人中心接口。
 - `api/app/admin/Controllers/`：登录、系统信息、SEO、导航、每日内容、文章、角色和缓存管理。
 - `api/core/Base.php`：后台控制器的公共鉴权基础。
 - `api/core/Controller.php`：请求参数和 JSON 响应等控制器基础能力。
 
 接口统一在 `api/config/router.php` 注册，当前均使用 POST，包括：
 
-- 公共内容：`/getDaily`、`/getArticle`、`/getInfo`、`/getDetail`
-- 会话与系统：`/logup`、`/logout`、`/captcha`、`/admin`、`/system`
-- 后台业务：SEO、导航、每日内容、文章、角色的增删改查，以及 `/clearCache`
+- 公共内容与前台身份：`/getDaily`、`/getArticle`、`/getInfo`、`/getAbout`、`/getDetail`、`/getComments`、`/submitComment`、`/likeComment`、`/deleteComment`、`/likeArticle`、`/favoriteArticle`、`/frontProfile`、`/frontProfileSave`、`/frontProfileClear`、`/frontSessionSync`、`/frontRegister`、`/frontLogin`、`/frontBind`、`/email_code`、`/password_reset`、`/data_revision`
+- 后台会话与系统：`/logup`、`/logout`、`/captcha`、`/session_status`、`/admin`、`/system`
+- 后台业务：SEO、导航、每日内容、文章、评论、回复、角色、关于我的增删改查，以及 `/clearCache`、`/article_media_upload`
 
 ## 配置说明
 
@@ -183,11 +193,7 @@ npm run dev
 npm run build
 ```
 
-`build` 脚本已固定为 `cross-env PROCESS_ENV=production node client/core/kniubuilder.mjs`（生产环境开启模板内联、压缩与内容哈希）。若需显式控制，也可手动运行：
-
-```bash
-rm -rf dist && PROCESS_ENV=production node client/core/kniubuilder.mjs
-```
+`build` 脚本已固定为 `cross-env PROCESS_ENV=production node client/core/kniubuilder.mjs`（生产环境开启模板内联、压缩与内容哈希）。构建器会自动清理并重新生成 `dist/`，无需手动执行删除命令。
 
 > 环境约定：前端核心启动时自动读取项目根目录 `.env`，外部进程已显式设置的变量优先；`client/core/kniudotenv.mjs` 在未配置时默认使用 `development`，只有显式 `PROCESS_ENV=production`（或 `npm run build`）才产出生产产物。
 
@@ -213,8 +219,8 @@ dist/
 - 单能力核心模块使用默认导出；`kniuutil.mjs` 这类纯函数集合使用命名导出，让调用处明确表达依赖。
 - 项目内系统级 UI 的类名、元素标识及相关样式统一使用 `kniu_sys_` 前缀，业务页面自身命名不受此约束。
 - **禁止外部品牌字眼**：所有源码、注释、变量、样式、文案、资源名和构建产物统一使用项目自身命名；自动检查发现违规内容时直接阻止交付。
-- **HTML 编解码后端全责（铁律）**：增 / 改 → 写库前 `Controller::encodeFields()` 单轮 `htmlspecialchars($str, ENT_QUOTES)`；查 → 返回前端前 `Controller::decodeFields()` 单轮 `htmlspecialchars_decode($str, ENT_QUOTES)`（兼容 `find` 单行 / `select` 行数组 / `null`）；删 → 不处理；**前端不做任何编解码**，单元格 / 文本插值直接 `textContent` 直出（已移除 `decodeHtml` 系）。历史脏数据由根目录 `normalise_db.php` 一次性归一（dry-run 默认，`php normalise_db.php --apply` 写库）。
-- 系统 UI 优先封装为数据驱动组件；自定义组件通过现有的 `kniu:[property-name]` 绑定对象、数组或函数，业务 Controller 不直接查询和创建组件内部 DOM。
+- **HTML 编解码后端全责（铁律）**：增 / 改 → 写库前 `Controller::encodeFields()` 单轮 `htmlspecialchars($str, ENT_QUOTES)`；查 → 返回前端前 `Controller::decodeFields()` 单轮 `htmlspecialchars_decode($str, ENT_QUOTES)`（兼容 `find` 单行 / `select` 行数组 / `null`）；删 → 不处理；**前端不做任何编解码**，单元格 / 文本插值直接 `textContent` 直出（已移除 `decodeHtml` 系）。当前仓库未提供历史脏数据自动归一脚本，遇到多层编码数据时应先备份，再由部署环境的迁移工具按字段白名单处理。
+- 系统 UI 优先封装为数据驱动组件；组件功能配置统一通过 `kniu:option` 绑定对象、数组或函数，原生元素的自定义 `data-*` 属性才使用 `kniu:[name]`，业务 Controller 不直接查询和创建组件内部 DOM。
 - 前端路由守卫负责交互体验，后端 Session 鉴权与角色授权是最终安全边界；退出必须调用 `POST /api/logout`。
 
 ## 安全与统一检查
@@ -222,8 +228,7 @@ dist/
 - 数据库凭据只从环境变量读取，复制 `.env.example` 后在本机填写，禁止提交真实密钥。
 - 后台 Cookie 使用 `HttpOnly`、`SameSite=Strict`，API 校验同源请求并返回 CSP 等安全响应头。
 - 富文本进入编辑器前执行白名单清洗；上传删除路径必须位于 `public/upload/` 内。
-- `npm run check` 依次运行核心测试、生产构建、项目命名门禁和 PHP 语法检查。
-- `npm run benchmark` 运行核心性能基准，结果用于同一设备上的版本纵向比较。
+- 当前 `package.json` 提供 `npm run dev`、`npm run preview`、`npm run build` 和 `npm run kill`；没有未实现的 `check` 或 `benchmark` 脚本。
 - 新增公开页面时，同时添加 `client/views/index/<name>.html`、`client/controller/index/<name>Controller.js`，并以 `index/<name>Controller` 注册到普通路由。
 - 新增后台页面时，同时添加 `client/views/admin/<name>.html`、`client/controller/admin/<name>Controller.js`，并以 `admin/<name>Controller` 注册到 `ROUTER.auth()` 鉴权分组。
 - 新增公共布局时，将模板放入对应区域的 `common/`，将 Controller 放入同名区域目录，并在 `client/client.mjs` 的 `useViews()` 中使用 `区域/名称` 键装配。
@@ -231,6 +236,6 @@ dist/
 - 后端新增接口时，在 `api/config/router.php` 注册，并将控制器放入对应应用的 `Controllers` 目录；部署到区分大小写的环境时必须保持目录名大小写正确。
 - `dist/` 是生成目录，不应直接编辑。
 
-更细的模板语法参见 `client/core/kniutemplate.md`，系统 UI 组件（`kniu-table` / `kniu-page` / `kniu-empty` / `kniu-modal` / `kniu-form` / `kniu-input` / `kniu-switch` / `kniu-editor` 等）用法参见 `client/core/kniuui.md`，后端补充说明（含 HTML 编解码、接口清单）参见 `api/API.md`。
+更细的模板语法参见 [`client/core/kniutemplate.md`](client/core/kniutemplate.md)，系统 UI 组件（`kniu-table` / `kniu-page` / `kniu-empty` / `kniu-modal` / `kniu-form` / `kniu-input` / `kniu-switch` / `kniu-editor` 等）用法参见 [`client/core/kniuui.md`](client/core/kniuui.md)，当前 PHP API 说明参见 [`api/API.md`](api/API.md)，跨语言 API 契约参见 [`!kniu_project/KNIU-API-CONTRACT.md`](./!kniu_project/KNIU-API-CONTRACT.md)。
 
 所有 `kniu-*` 自定义组件统一使用 `kniu:option` 配置，旧的零散组件属性不再兼容。模板标签仅保留 `ref`、`kniu:form`、模板指令、插槽和模板事件；组件回调优先配置为 options 中的 `onXxx`。

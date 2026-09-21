@@ -72,6 +72,7 @@ function controller(setup) {
     async mount(services, root) {
       const refs = {};
       const viewModel = createViewModel(component, services, root, refs);
+      await viewModel.beforeMount();
       const binding = services.bind(root, viewModel.state, refs);
       const disposeViewModel = await viewModel.mount();
       return function disposeComponent() {
@@ -85,6 +86,7 @@ function controller(setup) {
 
 function createViewModel(component, services = {}, root, refs = {}) {
   const instance = {
+    beforeMounted: [],
     mounted: [],
     unmounted: [],
     cleanups: [],
@@ -95,7 +97,7 @@ function createViewModel(component, services = {}, root, refs = {}) {
   const setupContext = createTimerServices({ ...services, root: root || services.root, $refs: refs, refs: refs }, instance.timers);
   Object.assign(setupContext, {
     reactive, ref, computed, watch, watchEffect,
-    onMounted, onUnmounted, onScopeDispose, autoSync
+    onBeforeMount, onMounted, onUnmounted, onScopeDispose, autoSync
   });
   setupContext.$msg = KniuUI.msg;
   setupContext.$confirm = KniuUI.confirm;
@@ -129,6 +131,10 @@ function createViewModel(component, services = {}, root, refs = {}) {
     return dispose;
   }
 
+  async function beforeMount() {
+    for (const hook of instance.beforeMounted) await hook();
+  }
+
   function dispose() {
     if (instance.stopped) return;
     instance.stopped = true;
@@ -147,7 +153,11 @@ function createViewModel(component, services = {}, root, refs = {}) {
     instance.timers.clear();
   }
 
-  return { state, mount, dispose };
+  return { state, beforeMount, mount, dispose };
+}
+
+function onBeforeMount(hook) {
+  registerLifecycleHook('beforeMounted', hook);
 }
 
 function onMounted(hook) {
@@ -278,6 +288,7 @@ export default {
   loadController,
   controller,
   createViewModel,
+  onBeforeMount,
   onMounted,
   onUnmounted,
   onScopeDispose,

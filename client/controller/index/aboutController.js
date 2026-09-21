@@ -6,18 +6,33 @@ const { controller, reactive, onMounted } = MVVM;
 
 const aboutController = controller(({ autoSync }) => {
   const state = reactive({ content: '', loading: true, currentYear: new Date().getFullYear() });
+  let aboutRequest = null;
+  let aboutRefreshPending = false;
 
   // reason 为字符串时表示由数据变更信号自动重放：静默刷新，不闪 loading。
   async function loadAbout(reason) {
+    if (aboutRequest) {
+      if (typeof reason === 'string') aboutRefreshPending = true;
+      return aboutRequest;
+    }
     if (typeof reason !== 'string') state.loading = true;
-    const result = await REQUEST({
+    const run = REQUEST({
       url: '/getAbout',
       type: 'POST',
       data: { identity_token: IDENTITY.getIdentity().token },
       redirectOnUnauthorized: false
+    }).then(function (result) {
+      state.content = result?.status === 1 ? String(result.data?.content || '') : '';
+      state.loading = false;
+    }).finally(function () {
+      aboutRequest = null;
+      if (aboutRefreshPending) {
+        aboutRefreshPending = false;
+        queueMicrotask(function () { loadAbout('sse'); });
+      }
     });
-    state.content = result?.status === 1 ? String(result.data?.content || '') : '';
-    state.loading = false;
+    aboutRequest = run;
+    return run;
   }
 
   onMounted(loadAbout);

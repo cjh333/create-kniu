@@ -29,7 +29,7 @@ html {
   min-height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
-  font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--kniu-font-family);
   background-color: var(--paper);
   color: var(--ink);
 }
@@ -500,7 +500,7 @@ shadow-app-host[hidden] {
   }
 }
 
-@media (min-width:561px) {
+@media (min-width: calc(1280px - 60px)) {
   .kniu_web_aside_crumb {
     display: inline
   }
@@ -510,7 +510,7 @@ shadow-app-host[hidden] {
   }
 }
 
-@media (min-width:851px) {
+@media (min-width:calc(1280px - 60px)) {
   .kniu_web_aside_sidebar_group {
     display: flex;
     display: -webkit-flex

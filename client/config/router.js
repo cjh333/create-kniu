@@ -1,29 +1,29 @@
-import KniuEventer from '../core/kniueventer.mjs';
-import KniuLogger from '../core/kniulogger.mjs';
+import EVENTER from '../core/kniueventer.mjs';
+import LOGGER from '../core/kniulogger.mjs';
 
-const { ROUTER } = KniuEventer;
-const { appLogger } = KniuLogger;
+const { ROUTER } = EVENTER;
+const { appLogger } = LOGGER;
 
 // 需要登录鉴权的路由。
 ROUTER.auth(function (router) {
-  router.addRoute('admin', 'admin/homeController');
-  router.addRoute('home', 'admin/homeController');
-  router.addRoute('seo', 'admin/seoController');
-  router.addRoute('aboutedit', 'admin/abouteditController');
-  router.addRoute('user', 'admin/userController');
-  router.addRoute('daily', 'admin/dailyController');
-  router.addRoute('article', 'admin/articleController');
-  router.addRoute('comment', 'admin/commentController');
-  router.addRoute('reply', 'admin/replyController');
-  router.addRoute('about', 'index/aboutController');
-  router.addRoute('profile', 'index/profileController');
+  router.add('admin', 'admin/homeController');
+  router.add('home', 'admin/homeController');
+  router.add('seo', 'admin/seoController');
+  router.add('aboutedit', 'admin/abouteditController');
+  router.add('user', 'admin/userController');
+  router.add('daily', 'admin/dailyController');
+  router.add('article', 'admin/articleController');
+  router.add('comment', 'admin/commentController');
+  router.add('reply', 'admin/replyController');
+  router.add('about', 'index/aboutController');
+  router.add('profile', 'index/profileController');
 });
 
 // 无需登录鉴权的路由。
-ROUTER.addRoute('login', 'admin/loginController');
-ROUTER.addRoute('register', 'admin/loginController');
-ROUTER.addRoute('/', 'index/homeController');
-ROUTER.addRoute('detail', 'index/detailController');
+ROUTER.add('login', 'admin/loginController');
+ROUTER.add('register', 'admin/loginController');
+ROUTER.add('/', 'index/homeController');
+ROUTER.add('detail', 'index/detailController');
 
 export default ROUTER;
 appLogger.info(`KniuSystem router loaded with ${ROUTER.length} routes`, ROUTER.map(function (r) { return r.path; }));

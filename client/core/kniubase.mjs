@@ -127,6 +127,27 @@ var KniuBase = (function () {
   function createApp() {
     const eventBus = createEventBus();
     let renderNavigation = null;
+    function routePathFromHash(hash) {
+      const value = String(hash || '').replace(/^#/, '') || '/';
+      return (value.split('?')[0].split('#')[0]) || '/';
+    }
+    function isRegisteredRouteHash(hash) {
+      const path = routePathFromHash(hash);
+      return state.routes.some(function (route) {
+        return route.path === path;
+      });
+    }
+    function fixedTopNavbarHeight(root = document) {
+      const nodes = root.querySelectorAll ? [...root.querySelectorAll('*')] : [];
+      let height = 0;
+      nodes.forEach(function (node) {
+        if (node.matches?.('kniu-navbar[fixed="top"], kniu-navbar[fixed=""]')) {
+          height = Math.max(height, node.getBoundingClientRect?.().height || node.offsetHeight || 0);
+        }
+        if (node.shadowRoot) height = Math.max(height, fixedTopNavbarHeight(node.shadowRoot));
+      });
+      return height;
+    }
     const navigateTo = function (path, data) {
       const rawPath = String(path || '/').trim().replace(/^#/, '');
       const normalizedPath = '/' + rawPath.replace(/^\/+|\/+$/g, '');
@@ -137,6 +158,7 @@ var KniuBase = (function () {
         key: Date.now() + Math.random()
       };
       state.routeData = routeState.data;
+      state.routeKey = routeState.key;
       if (globalThis.history?.pushState) {
         globalThis.history.pushState({ ...(globalThis.history.state || {}), kniuRoute: routeState }, '', '#' + routePath);
         notifyRouteChange(routePath);
@@ -224,6 +246,8 @@ var KniuBase = (function () {
       routeListeners: [],
       currentPath: '/',
       lastRenderedHash: null,
+      lastRenderedRouteKey: null,
+      routeKey: null,
       routeData: null
     };
     return {
@@ -285,17 +309,63 @@ var KniuBase = (function () {
         });
         state.host = document.querySelector(mountSelector);
         if (!state.host) return this;
+        document.addEventListener('click', function (event) {
+          const target = event.composedPath().find(function (node) {
+            return node instanceof Element && node.matches('a[href]');
+          });
+          if (!target) return;
+          const href = target.getAttribute('href') || '';
+          if (!href.startsWith('#') || href.startsWith('#/')) return;
+          const anchorId = decodeURIComponent(href.slice(1));
+          const root = target.getRootNode();
+          const anchor = root.querySelectorAll
+            ? [...root.querySelectorAll('[id]')].find(function (node) { return node.id === anchorId; })
+            : document.getElementById(anchorId);
+          if (!anchor || isRegisteredRouteHash(anchorId)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const top = anchor.getBoundingClientRect().top + globalThis.scrollY - fixedTopNavbarHeight();
+          globalThis.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
+          const currentRoute = state.currentPath || routePathFromHash(location.hash);
+          const routeHash = currentRoute + '#' + anchorId;
+          if (globalThis.history?.replaceState) {
+            globalThis.history.replaceState(
+              { ...(globalThis.history.state || {}), kniuRoute: globalThis.history.state?.kniuRoute },
+              '',
+              '#' + routeHash
+            );
+          }
+        }, true);
         await AUTH.restoreSession();
-        const currentHash = location.hash.replace(/^#/, '') || '/';
+        const currentHash = routePathFromHash(location.hash);
         const initialRouteState = globalThis.history?.state?.kniuRoute;
         state.routeData = initialRouteState?.path === currentHash ? initialRouteState.data : null;
+        state.routeKey = initialRouteState?.path === currentHash ? initialRouteState.key : null;
         renderNavigation = this._renderRoute.bind(this);
         await this._renderRoute(currentHash);
         notifyRouteChange(currentHash);
         const handleBrowserNavigation = function () {
-          const hash = location.hash.replace(/^#/, '') || '/';
+          const rawHash = location.hash.replace(/^#/, '') || '/';
+          const hash = routePathFromHash(rawHash);
+          // 未命中的 hash 是当前页面的 Markdown 锚点（如 #主要功能），
+          // 不能交给应用路由，否则会回退到默认首页。保留浏览器已经完成的
+          // 锚点定位，并把地址恢复为当前应用路由。
+          if (!isRegisteredRouteHash(hash)) {
+            const currentRoute = state.currentPath || '/';
+            const anchor = rawHash.replace(/^[^#]*#/, '');
+            const routeHash = anchor ? currentRoute + '#' + anchor : currentRoute;
+            if (globalThis.history?.replaceState && location.hash !== '#' + routeHash) {
+              globalThis.history.replaceState(
+                { ...(globalThis.history.state || {}), kniuRoute: globalThis.history.state?.kniuRoute },
+                '',
+                '#' + routeHash
+              );
+            }
+            return;
+          }
           const routeState = globalThis.history?.state?.kniuRoute;
           state.routeData = routeState?.path === hash ? routeState.data : null;
+          state.routeKey = routeState?.path === hash ? routeState.key : null;
           notifyRouteChange(hash);
           this._renderRoute(hash);
         }.bind(this);
@@ -325,12 +395,13 @@ var KniuBase = (function () {
               const loginTag = state.pathToTag.get(pathOnly) || state.pathToTag.get('/login');
               // /login 与 /register 共用同一模板标签，但必须按路径重新挂载，
               // 否则同一标签会被误判为当前页面，导致登录/注册表单无法互相切换。
-              if (!loginTag || (state.currentViewTag === loginTag && hash === state.lastRenderedHash)) return;
+              if (!loginTag || (state.currentViewTag === loginTag && hash === state.lastRenderedHash && state.routeKey === state.lastRenderedRouteKey)) return;
               await replacePageWhenReady(state.host, loginTag);
               globalThis.dispatchEvent?.(new CustomEvent('kniu-route-rendered', { detail: { path: pathOnly } }));
               state.contentArea = null;
               state.currentViewTag = loginTag;
               state.lastRenderedHash = hash;
+              state.lastRenderedRouteKey = state.routeKey;
               return;
             }
             const route = currentRoute;
@@ -339,12 +410,13 @@ var KniuBase = (function () {
               const tag = state.pathToTag.get(pathOnly) || state.pathToTag.get('/') || state.tags[0]?.tag;
               if (!tag) return;
               const existing = getActivePage(state.host);
-              if (existing && existing.tagName.toLowerCase() === tag && state.currentViewTag === tag && hash === state.lastRenderedHash) return;
+              if (existing && existing.tagName.toLowerCase() === tag && state.currentViewTag === tag && hash === state.lastRenderedHash && state.routeKey === state.lastRenderedRouteKey) return;
               await replacePageWhenReady(state.host, tag);
               globalThis.dispatchEvent?.(new CustomEvent('kniu-route-rendered', { detail: { path: pathOnly } }));
               state.contentArea = null;
               state.currentViewTag = tag;
               state.lastRenderedHash = hash;
+              state.lastRenderedRouteKey = state.routeKey;
               return;
             }
             const mainTag = state.commonTags.get('admin/main') || 'kniu-system-admin-common-main';
@@ -363,11 +435,12 @@ var KniuBase = (function () {
             if (!tag) return;
             const existing = state.contentArea.firstElementChild;
             // 同一视图但查询参数（如 ?id=）变化时需要重新渲染，以便详情页读取新参数。
-            if (existing && existing.tagName.toLowerCase() === tag && state.currentViewTag === tag && hash === state.lastRenderedHash) return;
+            if (existing && existing.tagName.toLowerCase() === tag && state.currentViewTag === tag && hash === state.lastRenderedHash && state.routeKey === state.lastRenderedRouteKey) return;
             await replacePageWhenReady(state.contentArea, tag);
             globalThis.dispatchEvent?.(new CustomEvent('kniu-route-rendered', { detail: { path: pathOnly } }));
             state.currentViewTag = tag;
             state.lastRenderedHash = hash;
+            state.lastRenderedRouteKey = state.routeKey;
           } finally {
             if (useLoading) {
               const elapsed = performance.now() - startTs;
@@ -383,7 +456,7 @@ var KniuBase = (function () {
           if (state._renderLock === lock) state._renderLock = null;
           const pendingHash = state.pendingHash;
           state.pendingHash = null;
-          if (pendingHash && pendingHash !== state.lastRenderedHash) {
+          if (pendingHash && (pendingHash !== state.lastRenderedHash || state.routeKey !== state.lastRenderedRouteKey)) {
             this._renderRoute(pendingHash);
           }
         }.bind(this));

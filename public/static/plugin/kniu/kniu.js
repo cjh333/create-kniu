@@ -3466,7 +3466,7 @@
             var drawPosterTextStyle = drawPosterOptions.text[m];
             drawPosterCtx.textAlign = drawPosterTextStyle.align || 'center';
             drawPosterCtx.textBaseline = drawPosterTextStyle.position || 'middle';
-            drawPosterCtx.font = drawPosterTextStyle.font || '400 12px/1 Arial';
+            drawPosterCtx.font = drawPosterTextStyle.font || '400 12px/1 KniuHei';
             drawPosterCtx.fillStyle = drawPosterTextStyle.color || '#000';
             drawPosterCtx.fillText(
               drawPosterTextStyle.text || 'Hello World',

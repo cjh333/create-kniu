@@ -42,6 +42,28 @@ var KniuRequest = (function () {
     return { status: 0, msg, data: null, httpStatus, request };
   }
 
+  // 同一请求的参数对象可能有不同的属性插入顺序。生成去重 key 时按键名排序，
+  // 避免等价的并发请求因 JSON.stringify 顺序不同而各自发出网络请求。
+  function stableSerialize(value, seen = new WeakSet()) {
+    if (value === null || typeof value !== 'object') {
+      if (typeof value === 'undefined') return '"[undefined]"';
+      if (typeof value === 'number' && Number.isNaN(value)) return '"[NaN]"';
+      return JSON.stringify(value);
+    }
+    if (seen.has(value)) return '"[Circular]"';
+    seen.add(value);
+    if (Array.isArray(value)) {
+      const result = '[' + value.map(function (item) { return stableSerialize(item, seen); }).join(',') + ']';
+      seen.delete(value);
+      return result;
+    }
+    const result = '{' + Object.keys(value).sort().map(function (key) {
+      return JSON.stringify(key) + ':' + stableSerialize(value[key], seen);
+    }).join(',') + '}';
+    seen.delete(value);
+    return result;
+  }
+
   // 防止多个并发请求同时返回 401 时重复跳转登录页。
   let isAuthenticationRedirecting = false;
   function handleAuthenticationExpired() {
@@ -116,10 +138,10 @@ var KniuRequest = (function () {
       const isFormData = typeof FormData !== 'undefined' && normalized.data instanceof FormData;
       const key = isFormData
         ? `${normalized.type}:${normalized.url}:form-data:${Math.random()}`
-        : `${normalized.type}:${normalized.url}:${JSON.stringify(normalized.data ?? null)}`;
+        : `${normalized.type}:${buildRequestUrl(normalized.url, normalized.data, normalized.type)}:${normalized.dataType}:${stableSerialize(normalized.data ?? null)}`;
       const ongoing = REQUEST_DEDUP.get(key);
       if (ongoing) return ongoing;
-      const promise = executeRequest(req).finally(function clearPendingRequest() {
+      const promise = executeRequest(normalized).finally(function clearPendingRequest() {
         if (REQUEST_DEDUP.get(key) === promise) REQUEST_DEDUP.delete(key);
       });
       REQUEST_DEDUP.set(key, promise);

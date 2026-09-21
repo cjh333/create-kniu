@@ -9,6 +9,7 @@
 /* 初始化 */
 :root,
 :host {
+  --kniu-font-family: "KniuHei_Regular";
   --kniu_border_alpha: 1;
   --kniu_text_alpha: 1;
   --kniu_bg_alpha: 1;
@@ -231,7 +232,7 @@ html {
   -ms-overflow-style: scrollbar;
   -webkit-tap-highlight-color: var(--kniu_color_transparent);
   min-height: 100vh;
-  font: calc(16 / var(--kniu_vw)) / 1 "Microsoft Yahei";
+  font: calc(16 / var(--kniu_vw)) / 1 var(--kniu-font-family);
   background-color: rgba(var(--kniu_color_white), 1);
   color: rgba(var(--kniu_color_neutral_80), 1);
   animation: animate_fadein .3s;
@@ -337,6 +338,62 @@ hr {
 
 /* --------------------------------------------------------------------------------------------------------------------------- */
 /* 字体图标 */
+@font-face {
+  font-family: KniuHei_Bold;
+  src: url("../../font/KniuHei-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: KniuHei_BoldSemi;
+  src: url("../../font/KniuHei-BoldSemi.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: KniuHei_Heavy;
+  src: url("../../font/KniuHei-Heavy.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: KniuHei_Light;
+  src: url("../../font/KniuHei-Light.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: KniuHei_LightExtra;
+  src: url("../../font/KniuHei-LightExtra.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 200;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: KniuHei_Medium;
+  src: url("../../font/KniuHei-Medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: KniuHei_Regular;
+  src: url("../../font/KniuHei-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 @font-face {
   font-family: kniu_iconfont;
   src: url("font/kniu_iconfont.eot");
@@ -1342,7 +1399,7 @@ hr {
 
 .kniu_md_nav_title_icon_1,
 .kniu_md_nav_title_icon_2 {
-  font-family: monospace;
+  font-family: var(--kniu-font-family);
 }
 
 .kniu_md_navtool>.kniu_mask_fixed {
@@ -9072,7 +9129,7 @@ thead .kniu_table_cell {
   -o-border-radius: 3px;
   margin: 0 3px;
   padding: 3px 6px;
-  font-family: Consolas;
+  font-family: var(--kniu-font-family);
   background-color: rgba(var(--kniu_color_neutral_10), 1);
 }
 
@@ -9338,7 +9395,7 @@ thead .kniu_table_cell {
 .kniu_page_prev,
 .kniu_page_next {
   font-weight: 700;
-  font-family: monospace;
+  font-family: var(--kniu-font-family);
   transition: color .3s, opacity .3s;
   -webkit-transition: color .3s, opacity .3s;
   -moz-transition: color .3s, opacity .3s;
@@ -10541,7 +10598,7 @@ a.kniu_foot_logo_group:hover {
   border: 1px solid rgba(var(--kniu_color_neutral_80), 1);
   width: calc(50 / var(--kniu_vw));
   height: calc(50 / var(--kniu_vw));
-  font-family: "Microsoft Yahei";
+  font-family: var(--kniu-font-family);
   cursor: pointer;
   background-color: rgba(var(--kniu_color_white), 1);
   transition: border-color .18s, background-color .18s, color .18s;
@@ -10751,7 +10808,7 @@ video {
   -o-align-items: center;
   width: 100%;
   height: 100%;
-  font-family: Arial;
+  font-family: var(--kniu-font-family);
   background-color: rgba(var(--kniu_color_black), 1);
   color: rgba(var(--kniu_color_white), 1);
 }
@@ -10929,7 +10986,7 @@ audio::-webkit-media-controls-enclosure {
   -moz-flex-flow: column;
   -ms-flex-flow: column;
   -o-flex-flow: column;
-  font-family: Consolas;
+  font-family: var(--kniu-font-family);
   line-height: 1.8;
 }
 
@@ -12413,7 +12470,7 @@ textarea.kniu_input {
 .kniu_switch_on {
   height: 100%;
   font-size: calc(12 / var(--kniu_vw));
-  font-family: Robot;
+  font-family: var(--kniu-font-family);
   transition: .2s;
   -webkit-transition: .2s;
   -moz-transition: .2s;
@@ -14193,7 +14250,7 @@ a.kniu_bottom_nav_link:hover {
   -moz-align-items: center;
   -ms-align-items: center;
   -o-align-items: center;
-  font-family: Arial;
+  font-family: var(--kniu-font-family);
   color: rgba(var(--kniu_color_neutral_60), var(--kniu_text_alpha));
 }
 
@@ -14474,7 +14531,7 @@ a.kniu_bottom_nav_link:hover {
   -ms-user-select: none;
   -o-user-select: none;
   font-weight: 700;
-  font-family: monospace;
+  font-family: var(--kniu-font-family);
   cursor: pointer;
   color: #006aff;
 }
@@ -15126,7 +15183,7 @@ a.kniu_bottom_nav_link:hover {
   }
 }
 
-@media (min-width: calc(1024px - 60px)) {
+@media (min-width: calc(1280px - 60px)) {
   :root {
     --kniu_vw: 1920 * 100vw;
     --kniu_vh: 1080 * 100vh;
@@ -18610,7 +18667,7 @@ a.kniu_bottom_nav_link:hover {
 }
 
 /* Desktop utility parity: mirrors shared mobile utilities. */
-@media (min-width: calc(1024px - 60px)) {
+@media (min-width: calc(1280px - 60px)) {
   .kniu_dd_grid_lc {
     display: grid;
     place-content: flex-start !important;
@@ -20465,7 +20522,7 @@ a.kniu_bottom_nav_link:hover {
 }
 
 /* End desktop utility parity */
-@media (min-width: calc(1024px - 60px)) {
+@media (min-width: calc(1280px - 60px)) {
 
   .kniu_dd_mix_mult,
   .kniu_dd_mix_multiply {

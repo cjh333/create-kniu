@@ -20,6 +20,27 @@ export function getCurrentRoutePath() {
   return hash.split('?')[0].split('#')[0] || '/';
 }
 
+// 返回本地时间的常用组成部分，适合表单默认值和日期组件初始化。
+export function getLocalDateParts(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  const pad = function (number) { return String(number).padStart(2, '0'); };
+  return {
+    year: date.getFullYear(),
+    month: pad(date.getMonth() + 1),
+    date: pad(date.getDate()),
+    week: date.getDay(),
+    hour: pad(date.getHours()),
+    minute: pad(date.getMinutes()),
+    second: pad(date.getSeconds())
+  };
+}
+
+// 使用本地时区生成后端 datetime 字段所需的 yyyy-mm-dd hh:mm:ss。
+export function formatLocalDateTime(value = new Date()) {
+  const parts = getLocalDateParts(value);
+  return `${parts.year}-${parts.month}-${parts.date} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
 /**
  * 将普通表单模型与一个单文件字段组装为 multipart/form-data。
  * 新选择的 File 优先于数据库回显 URL；两者都没有时提交空值。

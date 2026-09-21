@@ -17,7 +17,20 @@ var KniuUI = (function () {
   var shadowTemplateCache = new Map();
   var shadowStyleSheetCache = new Map();
   var KNIU_BASE_CONTAIN_CSS = ':host{contain:layout}';
+  // 组件和页面统一使用项目自带的 KniuHei 字体，不依赖操作系统字体。
+  var KNIU_FONT_FAMILY = 'KniuHei_Regular';
+  var KNIU_FONT_MONO_FAMILY = 'KniuHei_Regular';
+  var KNIU_FONT_SERIF_FAMILY = 'KniuHei_Regular';
+  var KNIU_FONT_FACE_CSS = '@font-face{font-family:KniuHei_Bold;src:url("/public/static/font/KniuHei-Bold.woff2") format("woff2");font-style:normal;font-weight:700;font-display:swap}@font-face{font-family:KniuHei_BoldSemi;src:url("/public/static/font/KniuHei-BoldSemi.woff2") format("woff2");font-style:normal;font-weight:600;font-display:swap}@font-face{font-family:KniuHei_Heavy;src:url("/public/static/font/KniuHei-Heavy.woff2") format("woff2");font-style:normal;font-weight:900;font-display:swap}@font-face{font-family:KniuHei_Light;src:url("/public/static/font/KniuHei-Light.woff2") format("woff2");font-style:normal;font-weight:300;font-display:swap}@font-face{font-family:KniuHei_LightExtra;src:url("/public/static/font/KniuHei-LightExtra.woff2") format("woff2");font-style:normal;font-weight:200;font-display:swap}@font-face{font-family:KniuHei_Medium;src:url("/public/static/font/KniuHei-Medium.woff2") format("woff2");font-style:normal;font-weight:500;font-display:swap}@font-face{font-family:KniuHei_Regular;src:url("/public/static/font/KniuHei-Regular.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap}';
+  var KNIU_BASE_FONT_CSS = KNIU_FONT_FACE_CSS + ':host{--kniu-font-family:' + KNIU_FONT_FAMILY + ';--kniu-font-mono-family:' + KNIU_FONT_MONO_FAMILY + ';--kniu-font-serif-family:' + KNIU_FONT_SERIF_FAMILY + ';--kniu-navbar-font-size:max(12px,calc(14 / var(--kniu_vw)));font-family:var(--kniu-font-family)}';
   var KNIU_CONTAIN_EXCLUDE_TAGS = { 'KNIU-TABLE': 1, 'KNIU-NAVBAR': 1, 'KNIU-MODAL': 1, 'KNIU-DATE-PICKER': 1, 'KNIU-SELECT': 1, 'KNIU-USER-LOGIN': 1, 'KNIU-INPUT': 1 };
+  // 粘贴到 contenteditable 的原始标签会被浏览器解析。危险标签必须作为正文文本保留，
+  // 否则未闭合的 <script setup> 会把后续内容吞进 script 节点。
+  var RICH_TEXT_LITERAL_TAG_RE = /<(\/?)(script|iframe|object|embed|link|meta|style|base|form)(?=\s|\/?>)/gi;
+  function hasRichTextLiteralTag(value) {
+    RICH_TEXT_LITERAL_TAG_RE.lastIndex = 0;
+    return RICH_TEXT_LITERAL_TAG_RE.test(String(value || ''));
+  }
   function shouldContainHost(tag) { return !KNIU_CONTAIN_EXCLUDE_TAGS[String(tag || '').toUpperCase()]; }
 
   var KNIU_I18N = {
@@ -75,6 +88,7 @@ var KniuUI = (function () {
       'editor.p': '段落',
       'editor.blockquote': '引用',
       'editor.pre': '代码块',
+      'editor.inlineCode': '行内代码',
       'editor.hr': '分割线',
       'editor.table': '表格',
       'editor.fontname': '字体',
@@ -232,6 +246,7 @@ var KniuUI = (function () {
       'editor.p': 'Paragraph',
       'editor.blockquote': 'Quote',
       'editor.pre': 'Code block',
+      'editor.inlineCode': 'Inline code',
       'editor.hr': 'Divider',
       'editor.table': 'Table',
       'editor.fontname': 'Font',
@@ -371,8 +386,29 @@ var KniuUI = (function () {
     return sheet;
   }
 
+  function normalizeComponentCss(cssText) {
+    const source = String(cssText == null ? '' : cssText)
+      .replace(/\.day\b/g, '.kniu_sys_date_picker_day');
+
+    // 组件内部的尺寸统一使用项目的 vw 兼容单位。只处理 CSS 声明值，
+    // 媒体查询中的断点不属于声明值，因而保留原始 px，避免断点被缩放。
+    return source.replace(/(^|[;{}])([^{};]+):([^{};]+)/g, function (full, prefix, property, value) {
+      const name = property.trim().toLowerCase();
+      if (name.startsWith('@')) return full;
+      const isFont = name === 'font' || name === 'font-size';
+      const converted = value.replace(/(-?)(\d+(?:\.\d+)?)px\b/g, function (_, sign, number) {
+        if (number === '0') return '0';
+        const signedNumber = sign === '-' ? '-' + number : number;
+        return isFont
+          ? 'max(12px,calc(' + signedNumber + ' / var(--kniu_vw)))'
+          : 'calc(' + signedNumber + ' / var(--kniu_vw))';
+      });
+      return prefix + property + ':' + converted;
+    });
+  }
+
   function adoptSharedStyle(root, cssText) {
-    const css = String(cssText == null ? '' : cssText);
+    const css = normalizeComponentCss(cssText);
     if (!css) return null;
     if (supportsAdoptedStyleSheets(root)) {
       const sheet = getSharedStyleSheet(css);
@@ -387,12 +423,44 @@ var KniuUI = (function () {
     return element;
   }
 
+  function appendRawStyle(root, cssText) {
+    if (!root || !cssText) return null;
+    const css = String(cssText);
+    if (supportsAdoptedStyleSheets(root)) {
+      const sheet = getSharedStyleSheet(css);
+      if (!root.adoptedStyleSheets.includes(sheet)) {
+        root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+      }
+      return null;
+    }
+    const documentRef = root.ownerDocument || root.host?.ownerDocument || document;
+    const element = documentRef.createElement('style');
+    element.textContent = css;
+    root.appendChild(element);
+    return element;
+  }
+
+  // 普通下拉面板的唯一视觉基准。仅用于组件内的下拉/选择面板，
+  // 不用于 kniu-modal 或编辑器的链接、图片、媒体表单弹窗。
+  var KNIU_DROPDOWN_CSS = [
+    '.kniu_sys_dropdown_panel{background-color:#fff;border:1px solid #e4e7ed;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1)}',
+    '.kniu_sys_dropdown_option{display:flex;align-items:center;width:100%;min-height:32px;padding:0 12px;border:0;border-radius:0;background-color:transparent;color:#606266;font:inherit;text-align:left;cursor:pointer;box-sizing:border-box}',
+    '.kniu_sys_dropdown_option:hover:not([disabled]),.kniu_sys_dropdown_option:focus-visible:not([disabled]){color:#409eff;background-color:#f5f7fa;outline:0}',
+    '.kniu_sys_dropdown_option[disabled]{color:#c0c4cc;cursor:not-allowed}'
+  ].join('');
+
+  function adoptDropdownStyle(root) {
+    adoptSharedStyle(root, KNIU_DROPDOWN_CSS);
+    appendRawStyle(root, '.kniu_sys_dropdown_option{min-height:max(28px,calc(32 / var(--kniu_vw)))}');
+  }
+
   // 所有组件统一通过 Shadow DOM 隔离。模板字符串只在首次出现时解析，
   // 后续实例直接克隆缓存的 DocumentFragment，一次性挂载到 ShadowRoot。
   // 其中 <style> 块被抽离为共享样式表（adoptedStyleSheets），不逐实例重复解析。
   function attachComponentShadow(host) {
     const root = host.attachShadow({ mode: 'open' });
     if (typeof ShadowRoot === 'undefined') return root;
+    adoptSharedStyle(root, KNIU_BASE_FONT_CSS);
     // 渲染隔离：给 :host 加 contain:layout（排除含视口固定后代的组件，见 KNIU_CONTAIN_EXCLUDE_TAGS）。
     if (shouldContainHost(host.tagName)) adoptSharedStyle(root, KNIU_BASE_CONTAIN_CSS);
     let prototype = ShadowRoot.prototype;
@@ -423,7 +491,7 @@ var KniuUI = (function () {
         if (styleText) {
           if (supportsAdoptedStyleSheets(root)) {
             // replaceChildren + 重设 adoptedStyleSheets 会清空基础渲染隔离样式，这里补回流。
-            root.adoptedStyleSheets = shouldContainHost(host.tagName) ? [getSharedStyleSheet(KNIU_BASE_CONTAIN_CSS)] : [];
+            root.adoptedStyleSheets = (shouldContainHost(host.tagName) ? [getSharedStyleSheet(KNIU_BASE_CONTAIN_CSS)] : []).concat(getSharedStyleSheet(KNIU_BASE_FONT_CSS));
             adoptSharedStyle(root, styleText);
           } else {
             // 退回逐实例 <style>：replaceChildren 已清空原先的基础 <style>，这里补回再追加组件样式。
@@ -432,6 +500,9 @@ var KniuUI = (function () {
               base.textContent = KNIU_BASE_CONTAIN_CSS;
               root.appendChild(base);
             }
+            const fontBase = (root.ownerDocument || root.host && root.host.ownerDocument || document).createElement('style');
+            fontBase.textContent = KNIU_BASE_FONT_CSS;
+            root.appendChild(fontBase);
             adoptSharedStyle(root, styleText);
           }
         }
@@ -467,11 +538,13 @@ var KniuUI = (function () {
     const cfg = opts || {};
     const offset = cfg.offset == null ? 6 : cfg.offset;
     const measureWidth = (panel && panel.offsetWidth) || cfg.width || 0;
-    const width = Math.min(measureWidth, globalThis.innerWidth - 16);
-    let left = Math.min(anchorRect.left, globalThis.innerWidth - width - 8);
+    const viewportWidth = Math.max(0, Number(globalThis.innerWidth) || document.documentElement?.clientWidth || 0);
+    const viewportHeight = Math.max(0, Number(globalThis.innerHeight) || document.documentElement?.clientHeight || 0);
+    const width = Math.min(measureWidth, Math.max(0, viewportWidth - 16));
+    let left = Math.min(anchorRect.left, viewportWidth - width - 8);
     left = Math.max(8, left);
     const panelHeight = (panel && panel.offsetHeight) || cfg.height || 0;
-    const spaceBelow = globalThis.innerHeight - anchorRect.bottom - 8;
+    const spaceBelow = viewportHeight - anchorRect.bottom - 8;
     const spaceAbove = anchorRect.top - 8;
     // 默认下方；仅下方不足且上方足够时向上。若上下都不足，仍默认向下显示。
     const placement = spaceBelow < panelHeight && spaceAbove >= panelHeight ? 'top' : 'bottom';
@@ -518,8 +591,14 @@ var KniuUI = (function () {
   function mountPopoverPortal(panel, hostRoot, opts) {
     const cfg = opts || {};
     if (typeof document === 'undefined' || !panel || !hostRoot) return null;
-    if (panel.__kniuPortalState && panel.__kniuPortalState.portal?.isConnected) return panel.__kniuPortalState;
+    if (panel.__kniuPortalState) {
+      if (panel.__kniuPortalState.portal?.isConnected) return panel.__kniuPortalState;
+      panel.__kniuPortalState.unmount();
+    }
     const portal = document.createElement('span');
+    const homeParent = panel.parentNode;
+    const homeMarker = document.createComment('kniu-popover-home');
+    if (homeParent) homeParent.insertBefore(homeMarker, panel);
     portal.setAttribute(cfg.attribute || 'data-kniu-popover', '');
     const zIndex = cfg.zIndex == null ? 10030 : cfg.zIndex;
     portal.style.cssText = 'position:fixed;inset:0;display:block;width:0;height:0;pointer-events:none;z-index:' + zIndex;
@@ -541,9 +620,12 @@ var KniuUI = (function () {
       root: root,
       panel: panel,
       unmount: function () {
-        if (!portal.isConnected) return;
-        // 把面板移回宿主 shadow（非 portal root），再销毁 portal 壳。
-        hostRoot.appendChild(panel);
+        // 无论 portal 壳是否仍连接，都把面板恢复到打开前的位置；
+        // 防止反复开闭后节点留在 body portal 中，下一次定位找不到稳定的面板。
+        if (homeMarker.parentNode) homeMarker.parentNode.insertBefore(panel, homeMarker);
+        else if (homeParent && homeParent.isConnected) homeParent.appendChild(panel);
+        else hostRoot.appendChild(panel);
+        homeMarker.remove();
         portal.remove();
         if (panel.__kniuPortalState === state) panel.__kniuPortalState = null;
       }
@@ -750,7 +832,7 @@ var KniuUI = (function () {
       @media (prefers-color-scheme:dark){.kniu_sys_table_group{--kniu-table-edge-fade:rgba(255,255,255,.1)}}
       .kniu_sys_table .kniu_sys_table_fixed_left,.kniu_sys_table .kniu_sys_table_fixed_right{position:static;z-index:auto}
       .kniu_sys_table_fixed_shadow{display:none}
-      @media (min-width:851px){
+      @media (min-width:calc(1280px - 60px)){
         .kniu_sys_table_group[data-mobile-overflow-left="true"]::before,.kniu_sys_table_group[data-mobile-overflow-right="true"]::after{display:none}
         .kniu_sys_table .kniu_sys_table_fixed_left,.kniu_sys_table .kniu_sys_table_fixed_right{position:sticky;z-index:2}
         .kniu_sys_table th.kniu_sys_table_fixed_left,.kniu_sys_table th.kniu_sys_table_fixed_right{z-index:5}
@@ -763,7 +845,7 @@ var KniuUI = (function () {
       ? (adoptSharedStyle(target, tableStyleSheetText), null)
       : (function () {
         const element = documentRef.createElement('style');
-        element.textContent = tableStyleSheetText;
+        element.textContent = normalizeComponentCss(tableStyleSheetText);
         return element;
       })();
     const group = documentRef.createElement('div');
@@ -1406,7 +1488,7 @@ var KniuUI = (function () {
     function getLayoutMetrics() {
       if (layoutMetrics) return layoutMetrics;
       if (!mobileMediaQuery && typeof globalThis.matchMedia === 'function') {
-        mobileMediaQuery = globalThis.matchMedia('(max-width: 850px)');
+        mobileMediaQuery = globalThis.matchMedia('(max-width: calc(1280px - 60px))');
       }
       const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
       layoutMetrics = {
@@ -1804,14 +1886,16 @@ var KniuUI = (function () {
       constructor() {
         super();
         attachComponentShadow(this);
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-flex;vertical-align:middle;flex-shrink:0}:host([block]){display:flex;width:100%}.kniu_sys_button{--kniu-button-color:#606266;--kniu-button-bg:#fff;--kniu-button-border:#dcdfe6;--kniu-button-hover-color:#409eff;--kniu-button-hover-bg:#ecf5ff;--kniu-button-hover-border:#c6e2ff;--kniu-button-active-bg:#ecf5ff;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;min-height:32px;margin:0;padding:8px 15px;border:1px solid var(--kniu-button-border);border-radius:4px;outline:0;background-color:var(--kniu-button-bg);color:var(--kniu-button-color);font:500 14px/1 Arial,"Microsoft YaHei",sans-serif;text-decoration:none;white-space:nowrap;cursor:pointer;user-select:none;transition:.1s}.kniu_sys_button:hover,.kniu_sys_button:focus-visible{border-color:var(--kniu-button-hover-border);background-color:var(--kniu-button-hover-bg);color:var(--kniu-button-hover-color)}.kniu_sys_button:active{background-color:var(--kniu-button-active-bg);filter:brightness(.94)}.kniu_sys_button[data-type="primary"]{--kniu-button-color:#fff;--kniu-button-bg:#409eff;--kniu-button-border:#409eff;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#79bbff;--kniu-button-hover-border:#79bbff}.kniu_sys_button[data-type="success"]{--kniu-button-color:#fff;--kniu-button-bg:#67c23a;--kniu-button-border:#67c23a;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#95d475;--kniu-button-hover-border:#95d475}.kniu_sys_button[data-type="warning"]{--kniu-button-color:#fff;--kniu-button-bg:#e6a23c;--kniu-button-border:#e6a23c;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#eebe77;--kniu-button-hover-border:#eebe77}.kniu_sys_button[data-type="danger"]{--kniu-button-color:#fff;--kniu-button-bg:#f56c6c;--kniu-button-border:#f56c6c;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#f89898;--kniu-button-hover-border:#f89898}.kniu_sys_button[data-type="info"]{--kniu-button-color:#fff;--kniu-button-bg:#909399;--kniu-button-border:#909399;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#b1b3b8;--kniu-button-hover-border:#b1b3b8}.kniu_sys_button[data-plain="true"]{--kniu-button-color:var(--kniu-button-border);--kniu-button-bg:color-mix(in srgb,var(--kniu-button-border) 10%,#fff);--kniu-button-hover-color:#fff;--kniu-button-hover-bg:var(--kniu-button-border);--kniu-button-hover-border:var(--kniu-button-border)}.kniu_sys_button[data-type="default"][data-plain="true"]{--kniu-button-color:#606266;--kniu-button-bg:#fff;--kniu-button-border:#dcdfe6;--kniu-button-hover-color:#409eff;--kniu-button-hover-bg:#ecf5ff;--kniu-button-hover-border:#c6e2ff}.kniu_sys_button[data-text="true"],.kniu_sys_button[data-link="true"]{border-color:transparent;background-color:transparent;color:var(--kniu-button-border)}.kniu_sys_button[data-type="default"][data-text="true"],.kniu_sys_button[data-type="default"][data-link="true"]{color:#606266}.kniu_sys_button[data-text="true"]:hover{border-color:transparent;background-color:#f5f7fa}.kniu_sys_button[data-text="true"][data-bg="true"]{background-color:#f5f7fa}.kniu_sys_button[data-text="true"][data-bg="true"]:hover{background-color:#e9e9eb}.kniu_sys_button[data-unstyled="true"]{border:0;background-color:transparent;padding:0;margin:0;min-height:0;width:100%;justify-content:flex-start;color:inherit;font:inherit;border-radius:0}.kniu_sys_button[data-link="true"]{height:auto;min-height:0;padding:2px}.kniu_sys_button[data-link="true"]:hover,.kniu_sys_button[data-link="true"]:focus-visible{border-color:transparent;background-color:transparent;filter:brightness(.8)}.kniu_sys_button[data-size="large"]{min-height:40px;padding:12px 19px;font-size:14px}.kniu_sys_button[data-size="small"]{min-height:24px;padding:5px 11px;font-size:12px}.kniu_sys_button[data-round="true"]{border-radius:999px}.kniu_sys_button[data-circle="true"]{width:32px;height:32px;padding:0;border-radius:50%}.kniu_sys_button[data-circle="true"][data-size="large"]{width:40px;height:40px}.kniu_sys_button[data-circle="true"][data-size="small"]{width:24px;height:24px}.kniu_sys_button:disabled{border-color:#e4e7ed;background-color:#fff;color:#a8abb2;cursor:not-allowed;filter:none;opacity:.6}.kniu_sys_button[data-block="true"]{width:100%}.kniu_sys_button_icon:empty{display:none}.kniu_sys_button_loading{display:none;width:12px;height:12px;box-sizing:border-box;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:kniu_sys_button_spin .8s linear infinite}.kniu_sys_button_loading[class]:not([class="kniu_sys_button_loading"]){border:0;animation:none}.kniu_sys_button[data-loading="true"] .kniu_sys_button_loading{display:inline-block}.kniu_sys_button_label{display:inline-flex;align-items:center;gap:6px;min-width:0}.kniu_sys_button_label[data-auto-space="true"]{letter-spacing:.25em;margin-right:-.25em}@keyframes kniu_sys_button_spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.kniu_sys_button_loading{animation:none}}</style><button class="kniu_sys_button" type="button"><span class="kniu_sys_button_loading" aria-hidden="true"></span><i class="kniu_sys_button_icon" aria-hidden="true"></i><span class="kniu_sys_button_label"><slot></slot></span></button>`;
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-flex;vertical-align:middle;flex-shrink:0}:host([block]){display:flex;width:100%}.kniu_sys_button{--kniu-button-color:#606266;--kniu-button-bg:#fff;--kniu-button-border:#dcdfe6;--kniu-button-hover-color:#409eff;--kniu-button-hover-bg:#ecf5ff;--kniu-button-hover-border:#c6e2ff;--kniu-button-active-bg:#ecf5ff;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;min-height:32px;margin:0;padding:8px 15px;border:1px solid var(--kniu-button-border);border-radius:4px;outline:0;background-color:var(--kniu-button-bg);color:var(--kniu-button-color);font:500 14px/1 var(--kniu-font-family);text-decoration:none;white-space:nowrap;cursor:pointer;user-select:none;transition:.1s}.kniu_sys_button:hover,.kniu_sys_button:focus-visible{border-color:var(--kniu-button-hover-border);background-color:var(--kniu-button-hover-bg);color:var(--kniu-button-hover-color)}.kniu_sys_button:active{background-color:var(--kniu-button-active-bg);filter:brightness(.94)}.kniu_sys_button[data-type="primary"]{--kniu-button-color:#fff;--kniu-button-bg:#409eff;--kniu-button-border:#409eff;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#79bbff;--kniu-button-hover-border:#79bbff}.kniu_sys_button[data-type="success"]{--kniu-button-color:#fff;--kniu-button-bg:#67c23a;--kniu-button-border:#67c23a;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#95d475;--kniu-button-hover-border:#95d475}.kniu_sys_button[data-type="warning"]{--kniu-button-color:#fff;--kniu-button-bg:#e6a23c;--kniu-button-border:#e6a23c;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#eebe77;--kniu-button-hover-border:#eebe77}.kniu_sys_button[data-type="danger"]{--kniu-button-color:#fff;--kniu-button-bg:#f56c6c;--kniu-button-border:#f56c6c;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#f89898;--kniu-button-hover-border:#f89898}.kniu_sys_button[data-type="info"]{--kniu-button-color:#fff;--kniu-button-bg:#909399;--kniu-button-border:#909399;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#b1b3b8;--kniu-button-hover-border:#b1b3b8}.kniu_sys_button[data-plain="true"]{--kniu-button-color:var(--kniu-button-border);--kniu-button-bg:color-mix(in srgb,var(--kniu-button-border) 10%,#fff);--kniu-button-hover-color:#fff;--kniu-button-hover-bg:var(--kniu-button-border);--kniu-button-hover-border:var(--kniu-button-border)}.kniu_sys_button[data-type="default"][data-plain="true"]{--kniu-button-color:#606266;--kniu-button-bg:#fff;--kniu-button-border:#dcdfe6;--kniu-button-hover-color:#409eff;--kniu-button-hover-bg:#ecf5ff;--kniu-button-hover-border:#c6e2ff}.kniu_sys_button[data-text="true"],.kniu_sys_button[data-link="true"]{border-color:transparent;background-color:transparent;color:var(--kniu-button-border)}.kniu_sys_button[data-type="default"][data-text="true"],.kniu_sys_button[data-type="default"][data-link="true"]{color:#606266}.kniu_sys_button[data-text="true"]:hover{border-color:transparent;background-color:#f5f7fa}.kniu_sys_button[data-text="true"][data-bg="true"]{background-color:#f5f7fa}.kniu_sys_button[data-text="true"][data-bg="true"]:hover{background-color:#e9e9eb}.kniu_sys_button[data-unstyled="true"]{border:0;background-color:transparent;padding:0;margin:0;min-height:0;width:100%;justify-content:flex-start;color:inherit;font:inherit;border-radius:0}.kniu_sys_button[data-link="true"]{height:auto;min-height:0;padding:2px}.kniu_sys_button[data-link="true"]:hover,.kniu_sys_button[data-link="true"]:focus-visible{border-color:transparent;background-color:transparent;filter:brightness(.8)}.kniu_sys_button[data-size="large"]{min-height:40px;padding:12px 19px;font-size:14px}.kniu_sys_button[data-size="small"]{min-height:24px;padding:5px 11px;font-size:12px}.kniu_sys_button[data-round="true"]{border-radius:999px}.kniu_sys_button[data-circle="true"]{width:32px;height:32px;padding:0;border-radius:50%}.kniu_sys_button[data-circle="true"][data-size="large"]{width:40px;height:40px}.kniu_sys_button[data-circle="true"][data-size="small"]{width:24px;height:24px}.kniu_sys_button:disabled{border-color:#e4e7ed;background-color:#fff;color:#a8abb2;cursor:not-allowed;filter:none;opacity:.6}.kniu_sys_button[data-block="true"]{width:100%}.kniu_sys_button_icon:empty{display:none}.kniu_sys_button_loading{display:none;width:12px;height:12px;box-sizing:border-box;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:kniu_sys_button_spin .8s linear infinite}.kniu_sys_button_loading[class]:not([class="kniu_sys_button_loading"]){border:0;animation:none}.kniu_sys_button[data-loading="true"] .kniu_sys_button_loading{display:inline-block}.kniu_sys_button_label{display:inline-flex;align-items:center;gap:6px;min-width:0}.kniu_sys_button_label[data-auto-space="true"]{letter-spacing:.25em;margin-right:-.25em}@keyframes kniu_sys_button_spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.kniu_sys_button_loading{animation:none}}</style><button class="kniu_sys_button" type="button"><span class="kniu_sys_button_loading" aria-hidden="true"></span><i class="kniu_sys_button_icon" aria-hidden="true"></i><span class="kniu_sys_button_label"><slot></slot></span></button>`;
         this._button = this.shadowRoot.querySelector('.kniu_sys_button');
+        appendRawStyle(this.shadowRoot, '.kniu_sys_button{height:max(28px,calc(40 / var(--kniu_vw)))!important;min-height:max(28px,calc(40 / var(--kniu_vw)))!important;padding:0 15px}.kniu_sys_button[data-size="large"]{height:max(28px,calc(40 / var(--kniu_vw)))!important;min-height:max(28px,calc(40 / var(--kniu_vw)))!important;padding:0 19px}.kniu_sys_button[data-size="small"]{height:max(28px,calc(28 / var(--kniu_vw)))!important;min-height:max(28px,calc(28 / var(--kniu_vw)))!important;padding:0 11px}.kniu_sys_button[data-circle="true"]{width:max(28px,calc(40 / var(--kniu_vw)))!important;height:max(28px,calc(40 / var(--kniu_vw)))!important}.kniu_sys_button[data-circle="true"][data-size="large"]{width:max(28px,calc(40 / var(--kniu_vw)))!important;height:max(28px,calc(40 / var(--kniu_vw)))!important}.kniu_sys_button[data-circle="true"][data-size="small"]{width:max(28px,calc(28 / var(--kniu_vw)))!important;height:max(28px,calc(28 / var(--kniu_vw)))!important}');
+        appendRawStyle(this.shadowRoot, ':host([block]){min-height:28px;vertical-align:top}:host([block]) .kniu_sys_button{height:100%!important;min-height:28px!important;padding-top:0;padding-bottom:0}');
         this._bindButton();
         this.shadowRoot.querySelector('slot').addEventListener('slotchange', () => this._syncAutoSpace());
         adoptSharedStyle(this.shadowRoot, '.kniu_sys_button_icon{display:inline-flex;align-items:center;justify-content:center}.kniu_sys_button_icon svg{display:block;width:1em;height:1em;fill:currentColor;overflow:visible}');
         adoptSharedStyle(this.shadowRoot, ':host([block]){height:100%}:host([block]) .kniu_sys_button{width:100%;height:100%}');
-          adoptSharedStyle(this.shadowRoot, 'slot::slotted(kniu-icon){font-size:var(--kniu-button-icon-size,1em)}');
-          adoptSharedStyle(this.shadowRoot, ':host([append-borderless]) .kniu_sys_button{border:none;border-radius:0}');
+        adoptSharedStyle(this.shadowRoot, 'slot::slotted(kniu-icon){font-size:var(--kniu-button-icon-size,1em)}');
+        adoptSharedStyle(this.shadowRoot, ':host([append-borderless]) .kniu_sys_button{border:none;border-radius:0}');
       }
       _bindButton() {
         this._icon = this._button.querySelector('.kniu_sys_button_icon');
@@ -1960,6 +2044,7 @@ var KniuUI = (function () {
       }
       connectedCallback() {
         this._mountAffixes();
+        if (this.getAttribute('mode') === 'markdown') this.setMode('markdown');
         this._sync();
       }
       attributeChangedCallback() { if (this._root) this._sync(); }
@@ -2032,46 +2117,46 @@ var KniuUI = (function () {
     const GENERIC_HTML = '<style>'
       + ':host{position:fixed;inset:0;z-index:2000;display:none}'
       + ':host([show="true"]){display:block!important}'
-      + '.kniu_modal_mask{position:absolute;inset:0;background-color:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;animation:kniu_modal_mask_in .25s ease both}'
-      + '.kniu_modal_dialog{position:relative;width:var(--kniu-modal-width,auto);min-width:320px;max-width:100%;background-color:#fff;border-radius:6px;box-shadow:0 2px 12px rgba(0,0,0,.18);display:flex;flex-direction:column;max-height:90vh;overflow:visible;animation:kniu_modal_box_in .25s cubic-bezier(.25,.8,.25,1)}'
-      + '.kniu_modal_header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #ebeef5;font-size:16px;font-weight:600;color:#303133;flex:none}'
-      + '.kniu_modal_header slot::slotted(kniu-btn){--kniu-button-icon-size:24px}'
-      + '.kniu_modal_body{padding:20px 24px;overflow:auto;flex:1 1 auto;box-sizing:border-box}'
-      + '.kniu_modal_footer{padding:12px 20px;border-top:1px solid #ebeef5;text-align:right;flex:none}'
-      + '.kniu_modal_footer kniu-btn{margin-left:12px}'
-      + '@keyframes kniu_modal_mask_in{0%{opacity:0}100%{opacity:1}}@keyframes kniu_modal_box_in{0%{transform:translateY(-20px);opacity:0}100%{transform:translateY(0);opacity:1}}'
-      + '@keyframes kniu_modal_mask_out{0%{opacity:1}100%{opacity:0}}@keyframes kniu_modal_box_out{0%{transform:translateY(0);opacity:1}100%{transform:translateY(-20px);opacity:0}}'
-      + ':host([closing]) .kniu_modal_mask{animation:kniu_modal_mask_out .22s ease both}:host([closing]) .kniu_modal_dialog{animation:kniu_modal_box_out .22s cubic-bezier(.25,.8,.25,1) both}'
-      + '@media (prefers-reduced-motion:reduce){.kniu_modal_mask,.kniu_modal_dialog{animation:none}}</style>'
-      + '<div class="kniu_modal_mask" part="mask"><div class="kniu_modal_dialog" part="dialog">'
-      + '<div class="kniu_modal_header"><slot name="header"></slot></div>'
-      + '<div class="kniu_modal_body"><slot name="default"></slot></div>'
-      + '<div class="kniu_modal_footer"><slot name="footer"></slot></div>'
+      + '.kniu_sys_modal_mask{position:absolute;inset:0;background-color:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;animation:kniu_sys_modal_mask_in .25s ease both}'
+      + '.kniu_sys_modal_dialog{position:relative;width:var(--kniu-modal-width,auto);min-width:320px;max-width:100%;background-color:#fff;border-radius:6px;box-shadow:0 2px 12px rgba(0,0,0,.18);display:flex;flex-direction:column;max-height:90vh;overflow:visible;animation:kniu_sys_modal_box_in .25s cubic-bezier(.25,.8,.25,1)}'
+      + '.kniu_sys_modal_header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #ebeef5;font-size:16px;font-weight:600;color:#303133;flex:none}'
+      + '.kniu_sys_modal_header slot::slotted(kniu-btn){--kniu-button-icon-size:24px}'
+      + '.kniu_sys_modal_body{padding:20px 24px;overflow:auto;flex:1 1 auto;box-sizing:border-box}'
+      + '.kniu_sys_modal_footer{padding:12px 20px;border-top:1px solid #ebeef5;text-align:right;flex:none}'
+      + '.kniu_sys_modal_footer kniu-btn{margin-left:12px}'
+      + '@keyframes kniu_sys_modal_mask_in{0%{opacity:0}100%{opacity:1}}@keyframes kniu_sys_modal_box_in{0%{transform:translateY(-20px);opacity:0}100%{transform:translateY(0);opacity:1}}'
+      + '@keyframes kniu_sys_modal_mask_out{0%{opacity:1}100%{opacity:0}}@keyframes kniu_sys_modal_box_out{0%{transform:translateY(0);opacity:1}100%{transform:translateY(-20px);opacity:0}}'
+      + ':host([closing]) .kniu_sys_modal_mask{animation:kniu_sys_modal_mask_out .22s ease both}:host([closing]) .kniu_sys_modal_dialog{animation:kniu_sys_modal_box_out .22s cubic-bezier(.25,.8,.25,1) both}'
+      + '@media (prefers-reduced-motion:reduce){.kniu_sys_modal_mask,.kniu_sys_modal_dialog{animation:none}}</style>'
+      + '<div class="kniu_sys_modal_mask" part="mask"><div class="kniu_sys_modal_dialog" part="dialog">'
+      + '<div class="kniu_sys_modal_header"><slot name="header"></slot></div>'
+      + '<div class="kniu_sys_modal_body"><slot name="default"></slot></div>'
+      + '<div class="kniu_sys_modal_footer"><slot name="footer"></slot></div>'
       + '</div></div>';
 
     const CONFIRM_HTML = '<style>'
       + ':host{position:fixed;inset:0;z-index:2000;display:none}'
       + ':host([show="true"]){display:block!important}'
-      + '.kniu_modal_mask{position:absolute;inset:0;background-color:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;animation:kniu_modal_mask_in .25s ease both}'
-      + '.kniu_modal_dialog{position:relative;width:var(--kniu-modal-width,auto);min-width:320px;max-width:100%;background-color:#fff;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1);display:flex;flex-direction:column;overflow:hidden;animation:kniu_modal_box_in .25s cubic-bezier(.25,.8,.25,1) both}'
-      + '.kniu_modal_header{position:relative;padding:15px 15px 10px;flex:none}'
-      + '.kniu_modal_confirm_title{margin:0;padding-right:40px;color:#303133;font-size:18px;font-weight:400;line-height:1}'
-      + '.kniu_modal_close{position:absolute;top:0;right:6px;display:flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:0;background-color:transparent;color:#909399;cursor:pointer}'
-      + '.kniu_modal_close svg{display:block;width:26px;height:26px;fill:currentColor}'
-      + '.kniu_modal_close:hover{color:#409eff}'
-      + '.kniu_modal_body{display:flex;align-items:flex-start;padding:10px 15px 15px;color:#606266;font-size:14px;flex:none}'
-      + '.kniu_modal_confirm_icon{flex:none;margin-right:10px;font-size:24px;line-height:24px}'
-      + '.kniu_modal_confirm_message{margin:0;line-height:24px}'
-      + '.kniu_modal_footer{padding:10px 15px 15px;text-align:right;flex:none}'
-      + '.kniu_modal_footer kniu-btn{margin-left:12px}'
-      + '@keyframes kniu_modal_mask_in{0%{opacity:0}100%{opacity:1}}@keyframes kniu_modal_box_in{0%{transform:translateY(-20px);opacity:0}100%{transform:translateY(0);opacity:1}}'
-      + '@keyframes kniu_modal_mask_out{0%{opacity:1}100%{opacity:0}}@keyframes kniu_modal_box_out{0%{transform:translateY(0);opacity:1}100%{transform:translateY(-20px);opacity:0}}'
-      + ':host([closing]) .kniu_modal_mask{animation:kniu_modal_mask_out .22s ease both}:host([closing]) .kniu_modal_dialog{animation:kniu_modal_box_out .22s cubic-bezier(.25,.8,.25,1) both}'
-      + '@media (prefers-reduced-motion:reduce){.kniu_modal_mask,.kniu_modal_dialog{animation:none}}</style>'
-      + '<div class="kniu_modal_mask" part="mask"><div class="kniu_modal_dialog" part="dialog">'
-      + '<div class="kniu_modal_header"><h4 class="kniu_modal_confirm_title"></h4><button class="kniu_modal_close" type="button" aria-label="关闭"><svg viewBox="0 0 1024 1024" aria-hidden="true" focusable="false"><path fill="currentColor" d="M764.3 214.6 512 466.9 259.7 214.6a32 32 0 0 0-45.1 45.1L466.8 512 214.5 764.2a32 32 0 1 0 45.1 45.2L512 557.2l252.3 252.3a32 32 0 0 0 45.1-45.1L557.1 512l252.3-252.4a32 32 0 1 0-45.1-45.2z"/></svg></button></div>'
-      + '<div class="kniu_modal_body"><span class="kniu_modal_confirm_icon"></span><p class="kniu_modal_confirm_message"></p></div>'
-      + '<div class="kniu_modal_footer"><kniu-btn class="kniu_modal_cancel">取消</kniu-btn><kniu-btn type="primary" class="kniu_modal_confirm">确定</kniu-btn></div>'
+      + '.kniu_sys_modal_mask{position:absolute;inset:0;background-color:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;animation:kniu_sys_modal_mask_in .25s ease both}'
+      + '.kniu_sys_modal_dialog{position:relative;width:var(--kniu-modal-width,auto);min-width:320px;max-width:100%;background-color:#fff;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1);display:flex;flex-direction:column;overflow:hidden;animation:kniu_sys_modal_box_in .25s cubic-bezier(.25,.8,.25,1) both}'
+      + '.kniu_sys_modal_header{position:relative;padding:15px 15px 10px;flex:none}'
+      + '.kniu_sys_modal_confirm_title{margin:0;padding-right:40px;color:#303133;font-size:18px;font-weight:400;line-height:1}'
+      + '.kniu_sys_modal_close{position:absolute;top:0;right:6px;display:flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:0;background-color:transparent;color:#909399;cursor:pointer}'
+      + '.kniu_sys_modal_close svg{display:block;width:26px;height:26px;fill:currentColor}'
+      + '.kniu_sys_modal_close:hover{color:#409eff}'
+      + '.kniu_sys_modal_body{display:flex;align-items:flex-start;padding:10px 15px 15px;color:#606266;font-size:14px;flex:none}'
+      + '.kniu_sys_modal_confirm_icon{flex:none;margin-right:10px;font-size:24px;line-height:24px}'
+      + '.kniu_sys_modal_confirm_message{margin:0;line-height:24px}'
+      + '.kniu_sys_modal_footer{padding:10px 15px 15px;text-align:right;flex:none}'
+      + '.kniu_sys_modal_footer kniu-btn{margin-left:12px}'
+      + '@keyframes kniu_sys_modal_mask_in{0%{opacity:0}100%{opacity:1}}@keyframes kniu_sys_modal_box_in{0%{transform:translateY(-20px);opacity:0}100%{transform:translateY(0);opacity:1}}'
+      + '@keyframes kniu_sys_modal_mask_out{0%{opacity:1}100%{opacity:0}}@keyframes kniu_sys_modal_box_out{0%{transform:translateY(0);opacity:1}100%{transform:translateY(-20px);opacity:0}}'
+      + ':host([closing]) .kniu_sys_modal_mask{animation:kniu_sys_modal_mask_out .22s ease both}:host([closing]) .kniu_sys_modal_dialog{animation:kniu_sys_modal_box_out .22s cubic-bezier(.25,.8,.25,1) both}'
+      + '@media (prefers-reduced-motion:reduce){.kniu_sys_modal_mask,.kniu_sys_modal_dialog{animation:none}}</style>'
+      + '<div class="kniu_sys_modal_mask" part="mask"><div class="kniu_sys_modal_dialog" part="dialog">'
+      + '<div class="kniu_sys_modal_header"><h4 class="kniu_sys_modal_confirm_title"></h4><button class="kniu_sys_modal_close" type="button" aria-label="关闭"><svg viewBox="0 0 1024 1024" aria-hidden="true" focusable="false"><path fill="currentColor" d="M764.3 214.6 512 466.9 259.7 214.6a32 32 0 0 0-45.1 45.1L466.8 512 214.5 764.2a32 32 0 1 0 45.1 45.2L512 557.2l252.3 252.3a32 32 0 0 0 45.1-45.1L557.1 512l252.3-252.4a32 32 0 1 0-45.1-45.2z"/></svg></button></div>'
+      + '<div class="kniu_sys_modal_body"><span class="kniu_sys_modal_confirm_icon"></span><p class="kniu_sys_modal_confirm_message"></p></div>'
+      + '<div class="kniu_sys_modal_footer"><kniu-btn class="kniu_sys_modal_cancel">取消</kniu-btn><kniu-btn type="primary" class="kniu_sys_modal_confirm">确定</kniu-btn></div>'
       + '</div></div>';
 
     class KniuModal extends HTMLElement {
@@ -2144,7 +2229,7 @@ var KniuUI = (function () {
         if (reduce) { finalize(); return; }
         this.setAttribute('closing', '');
         this._closeTimer = setTimeout(finalize, 280);
-        const dialog = this.shadowRoot && this.shadowRoot.querySelector('.kniu_modal_dialog');
+        const dialog = this.shadowRoot && this.shadowRoot.querySelector('.kniu_sys_modal_dialog');
         if (dialog) {
           const onEnd = (e) => {
             if (e.animationName && e.animationName.indexOf('out') !== -1 && this.hasAttribute('closing')) {
@@ -2161,15 +2246,15 @@ var KniuUI = (function () {
         this._applyMask();
         if (this._confirmMode) {
           this._fillConfirm();
-          this.shadowRoot.querySelector('.kniu_modal_close')?.addEventListener('click', () => this._cancel());
-          this.shadowRoot.querySelector('.kniu_modal_cancel')?.addEventListener('click', () => this._cancel());
-          this.shadowRoot.querySelector('.kniu_modal_confirm')?.addEventListener('click', () => this._confirm());
-          this.shadowRoot.querySelector('.kniu_modal_mask')?.addEventListener('click', (e) => {
-            if (e.target === this.shadowRoot.querySelector('.kniu_modal_mask') && this._maskClose()) this._cancel();
+          this.shadowRoot.querySelector('.kniu_sys_modal_close')?.addEventListener('click', () => this._cancel());
+          this.shadowRoot.querySelector('.kniu_sys_modal_cancel')?.addEventListener('click', () => this._cancel());
+          this.shadowRoot.querySelector('.kniu_sys_modal_confirm')?.addEventListener('click', () => this._confirm());
+          this.shadowRoot.querySelector('.kniu_sys_modal_mask')?.addEventListener('click', (e) => {
+            if (e.target === this.shadowRoot.querySelector('.kniu_sys_modal_mask') && this._maskClose()) this._cancel();
           });
         } else {
-          this.shadowRoot.querySelector('.kniu_modal_mask')?.addEventListener('click', (e) => {
-            if (e.target === this.shadowRoot.querySelector('.kniu_modal_mask') && this._maskClose()) this.close();
+          this.shadowRoot.querySelector('.kniu_sys_modal_mask')?.addEventListener('click', (e) => {
+            if (e.target === this.shadowRoot.querySelector('.kniu_sys_modal_mask') && this._maskClose()) this.close();
           });
         }
       }
@@ -2186,7 +2271,7 @@ var KniuUI = (function () {
       }
       // 蒙版：mask 控制是否启用半透明蒙版（默认 true）；mask-alpha 控制蒙版透明度（默认 0.6，范围 0~1）。
       _applyMask() {
-        const maskEl = this.shadowRoot && this.shadowRoot.querySelector('.kniu_modal_mask');
+        const maskEl = this.shadowRoot && this.shadowRoot.querySelector('.kniu_sys_modal_mask');
         if (!maskEl) return;
         const maskOn = (this.getAttribute('mask') || 'true') !== 'false';
         if (!maskOn) { maskEl.style.backgroundColor = 'transparent'; return; }
@@ -2223,12 +2308,12 @@ var KniuUI = (function () {
         const type = ['success', 'warning', 'info', 'error'].includes(this.type) ? this.type : 'warning';
         const ICON = { success: '✓', warning: '⚠', info: 'ℹ', error: '×' };
         const COLOR = { success: '#67c23a', warning: '#e6a23c', info: '#909399', error: '#f56c6c' };
-        const t = this.shadowRoot.querySelector('.kniu_modal_confirm_title');
-        const m = this.shadowRoot.querySelector('.kniu_modal_confirm_message');
-        const i = this.shadowRoot.querySelector('.kniu_modal_confirm_icon');
-        const c = this.shadowRoot.querySelector('.kniu_modal_cancel');
-        const cf = this.shadowRoot.querySelector('.kniu_modal_confirm');
-        const close = this.shadowRoot.querySelector('.kniu_modal_close');
+        const t = this.shadowRoot.querySelector('.kniu_sys_modal_confirm_title');
+        const m = this.shadowRoot.querySelector('.kniu_sys_modal_confirm_message');
+        const i = this.shadowRoot.querySelector('.kniu_sys_modal_confirm_icon');
+        const c = this.shadowRoot.querySelector('.kniu_sys_modal_cancel');
+        const cf = this.shadowRoot.querySelector('.kniu_sys_modal_confirm');
+        const close = this.shadowRoot.querySelector('.kniu_sys_modal_close');
         if (t) t.textContent = this.title || componentText(componentLang(this.__kniuOptions), 'modal.title');
         if (m) m.textContent = this.message || '';
         if (i) { i.textContent = ICON[type]; i.style.color = COLOR[type]; }
@@ -2455,7 +2540,7 @@ var KniuUI = (function () {
             editable: element.hasAttribute('editable')
               ? (element.getAttribute('editable') === 'number' ? 'number'
                 : element.getAttribute('editable') === 'text' ? 'text'
-                : element.getAttribute('editable') !== 'false')
+                  : element.getAttribute('editable') !== 'false')
               : false,
             editMin: element.hasAttribute('edit-min') ? Number(element.getAttribute('edit-min')) : null,
             image: imageElement ? {
@@ -2740,53 +2825,77 @@ var KniuUI = (function () {
     // 重放用的是尚未更新的 state.currentPage，其 success 会把页码覆盖回旧页。
     // 故先挂起，等当前请求收尾后再补一次。
     let pendingReload = false;
+    let activeLoadKey = '';
+    let activeLoadPromise = null;
+
+    function serializeLoadParams(value) {
+      if (value === null || typeof value !== 'object') return JSON.stringify(value);
+      if (Array.isArray(value)) return '[' + value.map(serializeLoadParams).join(',') + ']';
+      return '{' + Object.keys(value).sort().map(function (key) {
+        return JSON.stringify(key) + ':' + serializeLoadParams(value[key]);
+      }).join(',') + '}';
+    }
 
     async function loadList(page) {
       const targetPage = Math.min(Math.max(Number(page) || 1, 1), state.pageTotal || 1);
-      state.loading = true;
-      syncOptions();
-      await REQUEST({
-        url,
-        type: 'POST',
-        data: {
-          page_current: targetPage,
-          page_rows: state.pageRows,
-          field,
-          sort,
-          ...resolveExtraParams()
-        },
-        success(res) {
-          if (res.status !== 1) {
-            state.error = res.msg || '加载失败';
+      const requestData = {
+        page_current: targetPage,
+        page_rows: state.pageRows,
+        field,
+        sort,
+        ...resolveExtraParams()
+      };
+      const loadKey = `${url}:${serializeLoadParams(requestData)}`;
+      // 初始化、SSE 自动刷新或重复绑定可能在同一请求尚未结束时同时进入
+      // loadList。请求层会合并网络请求，这里再合并列表的 success 状态处理。
+      if (activeLoadPromise && activeLoadKey === loadKey) return activeLoadPromise;
+
+      const run = (async function () {
+        state.loading = true;
+        syncOptions();
+        await REQUEST({
+          url,
+          type: 'POST',
+          data: requestData,
+          success(res) {
+            if (res.status !== 1) {
+              state.error = res.msg || '加载失败';
+              state.loading = false;
+              syncOptions();
+              self.$msg({ content: state.error, type: 'error' });
+              return;
+            }
+            const payload = res.data || {};
+            const records = getResponseRecords(payload);
+            state.list = typeof transform === 'function' ? transform(records) : records;
+            state.currentPage = payload.page_current || 1;
+            state.pageTotal = payload.page_total || 1;
+            state.total = payload.total || 0;
             state.loading = false;
             syncOptions();
+          },
+          fail(res) {
+            state.loading = false;
+            syncOptions();
+            state.error = res.msg || '加载失败';
             self.$msg({ content: state.error, type: 'error' });
-            return;
           }
-          const payload = res.data || {};
-          const records = getResponseRecords(payload);
-          state.list = typeof transform === 'function' ? transform(records) : records;
-          state.currentPage = payload.page_current || 1;
-          state.pageTotal = payload.page_total || 1;
-          state.total = payload.total || 0;
-          state.loading = false;
-          syncOptions();
-          if (pendingReload) {
-            pendingReload = false;
-            loadList(state.currentPage);
-          }
-        },
-        fail(res) {
-          state.loading = false;
-          syncOptions();
-          state.error = res.msg || '加载失败';
-          self.$msg({ content: state.error, type: 'error' });
-          if (pendingReload) {
-            pendingReload = false;
-            loadList(state.currentPage);
-          }
+        });
+      }());
+      activeLoadKey = loadKey;
+      activeLoadPromise = run;
+      try {
+        return await run;
+      } finally {
+        if (activeLoadPromise === run) {
+          activeLoadPromise = null;
+          activeLoadKey = '';
         }
-      });
+        if (pendingReload) {
+          pendingReload = false;
+          queueMicrotask(function () { loadList(state.currentPage); });
+        }
+      }
     }
 
     function changePage(event) {
@@ -2838,13 +2947,16 @@ var KniuUI = (function () {
     return { searchList: searchList, debouncedSearch: debounce(searchList, wait) };
   }
 
-  // 后台列表页“删除行”交互工厂：确认框 -> 调删除接口 -> 提示 + 刷新列表。
+  // 后台列表页“删除行”交互工厂：确认框 -> 调删除接口 -> 提示。
   // 复刻 article/daily/comment/users 高度重复的 deleteRow 样板；行为逐字节等价：
   //  - row 不存在直接 return false；未确认 return false。
   //  - gate 可选：传函数且返回假值时直接 return false（如 users 的仅管理员删除）。
   //  - 成功默认提示固定文案“删除成功!”；传 getSuccessMessage(res) 可改用服务端 msg。
+  //  - onSuccess 可选：在不重新请求列表的情况下同步本地状态（例如静默账号表）。
+  //  - 默认不再手动刷新：内容表的删除会由 usePagination 内部的 SYNC.autoSync 刷新，
+  //    避免“删除成功回调 + data-change”同时请求同一列表；静默表可显式传 reloadOnSuccess。
   function createRowDeleteHandler(config) {
-    const { self, state, loadList, url, confirmMessage, gate = null, getSuccessMessage = null } = config || {};
+    const { self, state, loadList, url, confirmMessage, gate = null, getSuccessMessage = null, onSuccess = null, reloadOnSuccess = false } = config || {};
     return async function deleteRow(index, list) {
       const row = list[index];
       if (!row) return false;
@@ -2869,7 +2981,8 @@ var KniuUI = (function () {
             return;
           }
           self.$msg({ content: typeof getSuccessMessage === 'function' ? getSuccessMessage(res) : '删除成功!', type: 'success' });
-          loadList(state.currentPage);
+          if (typeof onSuccess === 'function') onSuccess(row, res);
+          if (reloadOnSuccess) loadList(state.currentPage);
         },
         fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
       });
@@ -2909,7 +3022,8 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this._value = '';
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;min-width:120px}.kniu_sys_select_wrap{position:relative;width:100%}.kniu_sys_select{display:flex;align-items:center;width:100%;height:40px;padding:0 34px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px Arial,"Microsoft YaHei",sans-serif;cursor:pointer;box-sizing:border-box;white-space:nowrap}.kniu_sys_select:hover{border-color:#c0c4cc}.kniu_sys_select:focus-visible,.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select{border-color:#409eff}.kniu_sys_select:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_arrow{position:absolute;top:50%;right:12px;width:7px;height:7px;border-right:1px solid #909399;border-bottom:1px solid #909399;transform:translateY(-70%) rotate(45deg);transition:transform .2s;pointer-events:none}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_arrow{transform:translateY(-30%) rotate(225deg)}.kniu_sys_select_dropdown{position:fixed;z-index:10030;max-height:220px;overflow:auto;padding:5px 0;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);opacity:0;visibility:hidden;transform:translateY(-4px);transition:.16s}.kniu_sys_select_dropdown[data-placement="top"]{transform:translateY(4px)}.kniu_sys_select_dropdown[data-open="true"]{opacity:1;visibility:visible;transform:none}.kniu_sys_select_option{display:block;width:100%;height:32px;padding:0 12px;border:0;background-color:transparent;color:#606266;font:inherit;text-align:left;cursor:pointer}.kniu_sys_select_option:hover,.kniu_sys_select_option.is-selected{color:#409eff;background-color:#f5f7fa}.kniu_sys_select_option:disabled{color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_slot{display:none}</style><div class="kniu_sys_select_wrap" data-open="false" data-placement="bottom"><button type="button" class="kniu_sys_select" aria-haspopup="listbox" aria-expanded="false"></button><span class="kniu_sys_select_arrow" aria-hidden="true"></span><div class="kniu_sys_select_dropdown" role="listbox"></div></div><slot class="kniu_sys_select_slot"></slot>`;
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;min-width:120px}.kniu_sys_select_wrap{position:relative;width:100%}.kniu_sys_select{display:flex;align-items:center;width:100%;height:40px;padding:0 34px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px var(--kniu-font-family);cursor:pointer;box-sizing:border-box;white-space:nowrap}.kniu_sys_select:hover{border-color:#c0c4cc}.kniu_sys_select:focus-visible,.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select{border-color:#409eff}.kniu_sys_select:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_arrow{position:absolute;top:50%;right:12px;width:7px;height:7px;border-right:1px solid #909399;border-bottom:1px solid #909399;transform:translateY(-70%) rotate(45deg);transition:transform .2s;pointer-events:none}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_arrow{transform:translateY(-30%) rotate(225deg)}.kniu_sys_select_dropdown{position:fixed;z-index:10030;max-height:220px;overflow:auto;padding:5px 0;opacity:0;visibility:hidden;transform:translateY(-4px);transition:.16s}.kniu_sys_select_dropdown[data-placement="top"]{transform:translateY(4px)}.kniu_sys_select_dropdown[data-open="true"]{opacity:1;visibility:visible;transform:none}.kniu_sys_select_option{height:32px}.kniu_sys_select_option.kniu_sys_select_selected{color:#409eff;background-color:#f5f7fa}.kniu_sys_select_slot{display:none}</style><div class="kniu_sys_select_wrap" data-open="false" data-placement="bottom"><button type="button" class="kniu_sys_select" aria-haspopup="listbox" aria-expanded="false"></button><span class="kniu_sys_select_arrow" aria-hidden="true"></span><div class="kniu_sys_select_dropdown kniu_sys_dropdown_panel" role="listbox"></div></div><slot class="kniu_sys_select_slot"></slot>`;
+        adoptDropdownStyle(this.shadowRoot);
         this._wrap = this.shadowRoot.querySelector('.kniu_sys_select_wrap');
         this._select = this.shadowRoot.querySelector('.kniu_sys_select');
         this._dropdown = this.shadowRoot.querySelector('.kniu_sys_select_dropdown');
@@ -2983,7 +3097,7 @@ var KniuUI = (function () {
         if (placeholder) {
           const option = document.createElement('button');
           option.type = 'button';
-          option.className = 'kniu_sys_select_option';
+          option.className = 'kniu_sys_select_option kniu_sys_dropdown_option';
           option.dataset.value = '';
           option.textContent = placeholder;
           option.disabled = this.hasAttribute('required');
@@ -2992,13 +3106,13 @@ var KniuUI = (function () {
         this.querySelectorAll(':scope > kniu-option').forEach(function (source) {
           const option = document.createElement('button');
           option.type = 'button';
-          option.className = 'kniu_sys_select_option';
+          option.className = 'kniu_sys_select_option kniu_sys_dropdown_option';
           option.dataset.value = source.value;
           option.textContent = source.label;
           option.disabled = source.disabled;
           options.push(option);
         });
-        options.forEach((option) => option.classList.toggle('is-selected', option.dataset.value === this._value));
+        options.forEach((option) => option.classList.toggle('kniu_sys_select_selected', option.dataset.value === this._value));
         replaceChildrenWithFragment(this._dropdown, options);
         const selected = options.find((option) => option.dataset.value === this._value);
         this._select.textContent = selected?.textContent || placeholder || '';
@@ -3046,7 +3160,7 @@ var KniuUI = (function () {
         attachComponentShadow(this);
         this._value = '';
         this._radioName = `kniu-radio-${Math.random().toString(36).slice(2)}`;
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle}.kniu_sys_radio_group{display:flex;align-items:center;flex-wrap:wrap;gap:18px;min-height:40px}.kniu_sys_radio{display:inline-flex;align-items:center;gap:7px;color:#606266;font:14px/1.5 Arial,"Microsoft YaHei",sans-serif;cursor:pointer;user-select:none}.kniu_sys_radio_control{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none}.kniu_sys_radio_input{position:relative;-webkit-appearance:none;appearance:none;width:14px;height:14px;margin:0;border:1px solid #dcdfe6;border-radius:50%;outline:0;background-color:#fff;box-sizing:border-box;cursor:pointer;transition:border-color .2s,background-color .2s}.kniu_sys_radio_dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:5px;height:5px;border-radius:50%;background-color:#fff;display:none;pointer-events:none}.kniu_sys_radio_input:checked{border-color:#409eff;background-color:#409eff}.kniu_sys_radio_input:checked~.kniu_sys_radio_dot{display:block}.kniu_sys_radio_input:focus-visible{outline:2px solid rgba(64,158,255,.3);outline-offset:2px}.kniu_sys_radio:hover{color:#409eff}.kniu_sys_radio:hover .kniu_sys_radio_input{border-color:#409eff}.kniu_sys_radio[data-size="large"] .kniu_sys_radio_input{width:16px;height:16px}.kniu_sys_radio[data-size="large"] .kniu_sys_radio_dot{width:6px;height:6px}.kniu_sys_radio[data-size="small"]{font-size:12px}.kniu_sys_radio[data-size="small"] .kniu_sys_radio_input{width:12px;height:12px}.kniu_sys_radio[data-size="small"] .kniu_sys_radio_dot{width:4px;height:4px}.kniu_sys_radio[data-disabled="true"]{color:#c0c4cc;cursor:not-allowed}.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input{border-color:#dcdfe6;background-color:#f5f7fa;cursor:not-allowed}.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input:checked{border-color:#a0cfff;background-color:#a0cfff}</style><div class="kniu_sys_radio_group" role="radiogroup"></div><slot hidden></slot>`;
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle}.kniu_sys_radio_group{display:flex;align-items:center;flex-wrap:wrap;gap:18px;min-height:40px}.kniu_sys_radio{display:inline-flex;align-items:center;gap:7px;color:#606266;font:14px/1.5 var(--kniu-font-family);cursor:pointer;user-select:none}.kniu_sys_radio_control{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none}.kniu_sys_radio_input{position:relative;-webkit-appearance:none;appearance:none;width:14px;height:14px;margin:0;border:1px solid #dcdfe6;border-radius:50%;outline:0;background-color:#fff;box-sizing:border-box;cursor:pointer;transition:border-color .2s,background-color .2s}.kniu_sys_radio_dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:5px;height:5px;border-radius:50%;background-color:#fff;display:none;pointer-events:none}.kniu_sys_radio_input:checked{border-color:#409eff;background-color:#409eff}.kniu_sys_radio_input:checked~.kniu_sys_radio_dot{display:block}.kniu_sys_radio_input:focus-visible{outline:2px solid rgba(64,158,255,.3);outline-offset:2px}.kniu_sys_radio:hover{color:#409eff}.kniu_sys_radio:hover .kniu_sys_radio_input{border-color:#409eff}.kniu_sys_radio[data-size="large"] .kniu_sys_radio_input{width:16px;height:16px}.kniu_sys_radio[data-size="large"] .kniu_sys_radio_dot{width:6px;height:6px}.kniu_sys_radio[data-size="small"]{font-size:12px}.kniu_sys_radio[data-size="small"] .kniu_sys_radio_input{width:12px;height:12px}.kniu_sys_radio[data-size="small"] .kniu_sys_radio_dot{width:4px;height:4px}.kniu_sys_radio[data-disabled="true"]{color:#c0c4cc;cursor:not-allowed}.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input{border-color:#dcdfe6;background-color:#f5f7fa;cursor:not-allowed}.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input:checked{border-color:#a0cfff;background-color:#a0cfff}</style><div class="kniu_sys_radio_group" role="radiogroup"></div><slot hidden></slot>`;
         this._group = this.shadowRoot.querySelector('.kniu_sys_radio_group');
         this._group.addEventListener('change', (event) => {
           const input = event.target;
@@ -3380,27 +3494,17 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this._fit = 'contain';
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;overflow:hidden;flex-shrink:0}.kniu_sys_image_group{display:flex;width:100%;height:100%;align-items:stretch}.kniu_sys_image_content{position:relative;flex:1;min-width:0;height:100%;display:flex;align-items:center;justify-content:flex-start;padding:0 12px;background-color:#fff;box-sizing:border-box;overflow:hidden}.kniu_sys_image_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_image_group[data-affix="true"] .kniu_sys_image_content{border:1px solid #dcdfe6}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_content{border-radius:0 4px 4px 0}.kniu_sys_image_group[data-has-append="true"] .kniu_sys_image_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_image_group[data-affix="true"]{height:40px}.kniu_sys_image_group:not([data-affix="true"]) .kniu_sys_image_content{padding:0;background-color:transparent}.kniu_sys_image_wrap{position:relative;width:100%;height:100%;overflow:hidden;background-color:#f5f7fa}.kniu_sys_image{display:block;width:100%;height:100%}.kniu_sys_image_status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background-color:#f5f7fa;color:#909399;font-size:12px}.kniu_sys_image_status[data-hidden="true"]{display:none}</style><div class="kniu_sys_image_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_image_affix kniu_sys_image_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_image_content"><div class="kniu_sys_image_wrap"><img class="kniu_sys_image"><span class="kniu_sys_image_status">加载中…</span></div></div><span class="kniu_sys_image_affix kniu_sys_image_append"><slot name="append"></slot></span></div>`;
-        this._image = this.shadowRoot.querySelector('.kniu_sys_image');
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;overflow:hidden;flex-shrink:0;background-color:#f5f7fa}.kniu_sys_image_group{display:flex;width:100%;height:100%;align-items:stretch}.kniu_sys_image_content{position:relative;flex:1;min-width:0;height:100%;display:flex;align-items:center;justify-content:flex-start;padding:0 12px;background-color:#fff;box-sizing:border-box;overflow:hidden}.kniu_sys_image_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_image_group[data-affix="true"] .kniu_sys_image_content{border:1px solid #dcdfe6}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_content{border-radius:0 4px 4px 0}.kniu_sys_image_group[data-has-append="true"] .kniu_sys_image_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_image_group[data-affix="true"]{height:40px}.kniu_sys_image_group:not([data-affix="true"]) .kniu_sys_image_content{padding:0;background-color:transparent}.kniu_sys_image_wrap{position:relative;width:100%;height:100%;overflow:hidden;background-color:inherit}.kniu_sys_image{display:block;width:100%;height:100%}.kniu_sys_image_status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background-color:inherit;color:#909399;font-size:12px}.kniu_sys_image_status[data-hidden="true"]{display:none}</style><div class="kniu_sys_image_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_image_affix kniu_sys_image_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_image_content"><div class="kniu_sys_image_wrap"><span class="kniu_sys_image_status">加载中…</span></div></div><span class="kniu_sys_image_affix kniu_sys_image_append"><slot name="append"></slot></span></div>`;
+        this._image = null;
         // 允许页面通过宿主 class/style 设置尺寸，并让 Shadow DOM 内部完整继承宿主尺寸。
         adoptSharedStyle(this.shadowRoot, '.kniu_sys_image_group,.kniu_sys_image_wrap,.kniu_sys_image{width:100%;height:100%;box-sizing:border-box}');
         this._status = this.shadowRoot.querySelector('.kniu_sys_image_status');
-        this._image.addEventListener('load', () => {
-          this._status.dataset.hidden = 'true';
-          this.dispatchEvent(new Event('load', { bubbles: true, composed: true }));
-        });
-        this._image.addEventListener('error', () => {
-          this._status.textContent = componentText(componentLang(this.__kniuOptions), 'image.error');
-          this._status.dataset.hidden = 'false';
-          this.dispatchEvent(new Event('error', { bubbles: true, composed: true }));
-        });
       }
       connectedCallback() {
         this._mountAffixes();
         this._sync();
       }
       attributeChangedCallback(name) {
-        if (!this._image) return;
         if (name === 'src' || name === 'alt') this._sync();
         else if (name === 'fit') this.fit = this.getAttribute('fit');
       }
@@ -3418,28 +3522,51 @@ var KniuUI = (function () {
       }
       set fit(value) {
         this._fit = ['fill', 'contain', 'cover', 'none', 'scale-down'].includes(value) ? value : 'contain';
-        this._image.style.objectFit = this._fit;
+        if (this._image) this._image.style.objectFit = this._fit;
       }
       get fit() { return this._fit; }
       get src() { return this.getAttribute('src') || ''; }
       set src(value) { if (value == null) this.removeAttribute('src'); else this.setAttribute('src', String(value)); }
+      _createImage() {
+        if (this._image) return this._image;
+        const image = document.createElement('img');
+        image.className = 'kniu_sys_image';
+        image.addEventListener('load', () => {
+          this._status.dataset.hidden = 'true';
+          this.dispatchEvent(new Event('load', { bubbles: true, composed: true }));
+        });
+        image.addEventListener('error', () => {
+          this._status.textContent = componentText(componentLang(this.__kniuOptions), 'image.error');
+          this._status.dataset.hidden = 'false';
+          this.dispatchEvent(new Event('error', { bubbles: true, composed: true }));
+        });
+        this.shadowRoot.querySelector('.kniu_sys_image_wrap').prepend(image);
+        this._image = image;
+        return image;
+      }
+      _removeImage() {
+        if (!this._image) return;
+        this._image.remove();
+        this._image = null;
+      }
       _sync() {
         const src = this.getAttribute('src') || '';
-        this._image.alt = this.getAttribute('alt') || '';
-        // 读取 fit 属性（支持静态 fit="contain" 写法，避免始终 fill）
-        const fitAttr = this.getAttribute('fit');
-        if (fitAttr) this.fit = fitAttr;
-        this._image.style.objectFit = this._fit;
         if (!src) {
-          this._image.removeAttribute('src');
+          this._removeImage();
           this._status.textContent = componentText(componentLang(this.__kniuOptions), 'image.empty');
           this._status.dataset.hidden = 'false';
           return;
         }
-        if (this._image.src !== src) {
+        const image = this._createImage();
+        image.alt = this.getAttribute('alt') || '';
+        // 读取 fit 属性（支持静态 fit="contain" 写法，避免始终 fill）
+        const fitAttr = this.getAttribute('fit');
+        if (fitAttr) this.fit = fitAttr;
+        image.style.objectFit = this._fit;
+        if (image.src !== src) {
           this._status.textContent = componentText(componentLang(this.__kniuOptions), 'image.loading');
           this._status.dataset.hidden = 'false';
-          this._image.src = src;
+          image.src = src;
         }
       }
     }
@@ -3485,15 +3612,18 @@ var KniuUI = (function () {
         constructor() {
           super();
           attachComponentShadow(this);
-          this.shadowRoot.innerHTML = `<style>:host{display:block;width:100%}.kniu_sys_input_group{display:flex;width:100%;height:40px}.kniu_sys_input_wrap{position:relative;display:block;flex:1;min-width:0}.kniu_sys_input{display:block;width:100%;height:40px;padding:0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px/40px Arial,"Microsoft YaHei",sans-serif;box-sizing:border-box;transition:border-color .2s}.kniu_sys_input::placeholder{color:#c0c4cc}.kniu_sys_input:hover{border-color:#c0c4cc}.kniu_sys_input:focus{position:relative;z-index:1;border-color:#409eff}.kniu_sys_input:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_input_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input{border-radius:0 4px 4px 0}.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input{border-radius:4px 0 0 4px}.kniu_sys_input_group[data-has-prepend="true"][data-has-append="true"] .kniu_sys_input{border-radius:0}.kniu_sys_input_group[data-has-append-btn="true"] .kniu_sys_input_append,.kniu_sys_input_group[data-has-prepend-btn="true"] .kniu_sys_input_prepend{padding:0;align-items:stretch}.kniu_sys_input_append::slotted(kniu-btn),.kniu_sys_input_prepend::slotted(kniu-btn){display:flex;flex:1;align-items:center;justify-content:center;margin:0;width:100%;height:100%}</style><span class="kniu_sys_input_group" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_input_affix kniu_sys_input_prepend"><slot name="prepend"></slot></span><input class="kniu_sys_input" type="text"><span class="kniu_sys_input_affix kniu_sys_input_append"><slot name="append"></slot></span></span>`;
+          this.shadowRoot.innerHTML = `<style>:host{display:block;width:100%}.kniu_sys_input_group{display:flex;width:100%;height:40px}.kniu_sys_input_wrap{position:relative;display:block;flex:1;min-width:0}.kniu_sys_input{display:block;width:100%;height:40px;padding:0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px/40px var(--kniu-font-family);box-sizing:border-box;transition:border-color .2s}.kniu_sys_input::placeholder{color:#c0c4cc}.kniu_sys_input:hover{border-color:#c0c4cc}.kniu_sys_input:focus{position:relative;z-index:1;border-color:#409eff}.kniu_sys_input:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_input_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input{border-radius:0 4px 4px 0}.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input{border-radius:4px 0 0 4px}.kniu_sys_input_group[data-has-prepend="true"][data-has-append="true"] .kniu_sys_input{border-radius:0}.kniu_sys_input_group[data-has-append-btn="true"] .kniu_sys_input_append,.kniu_sys_input_group[data-has-prepend-btn="true"] .kniu_sys_input_prepend{padding:0;align-items:stretch}.kniu_sys_input_append::slotted(kniu-btn),.kniu_sys_input_prepend::slotted(kniu-btn){display:flex;flex:1;align-items:center;justify-content:center;margin:0;width:100%;height:100%}</style><span class="kniu_sys_input_group" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_input_affix kniu_sys_input_prepend"><slot name="prepend"></slot></span><input class="kniu_sys_input" type="text"><span class="kniu_sys_input_affix kniu_sys_input_append"><slot name="append"></slot></span></span>`;
           adoptSharedStyle(this.shadowRoot, ':host([data-invalid="true"]) .kniu_sys_input,:host([data-invalid="true"]) .kniu_sys_input_affix{border-color:#f56c6c}');
           adoptSharedStyle(this.shadowRoot, '.kniu_sys_input:read-only:hover,.kniu_sys_input:read-only:focus{z-index:auto;border-color:#dcdfe6;outline:0;box-shadow:none;cursor:default}');
           adoptSharedStyle(this.shadowRoot, '.kniu_sys_input_affix{width:var(--kniu-input-label-width,auto);flex-basis:var(--kniu-input-label-width,auto)}');
           adoptSharedStyle(this.shadowRoot, '.kniu_sys_input_group[data-upload-append="true"]{height:auto;align-items:flex-start}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_wrap{display:none}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_append{display:block;flex:1;width:auto!important;flex-basis:auto!important;padding:0;border:0;background-color:transparent;line-height:normal;text-align:left}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_prepend{height:40px}');
           this._input = this.shadowRoot.querySelector('.kniu_sys_input');
+          adoptSharedStyle(this.shadowRoot, '@media (min-width:calc(1280px - 60px)){.kniu_sys_input_group{height:40px}.kniu_sys_input{height:40px;min-height:40px;line-height:40px}.kniu_sys_input_affix{line-height:38px}}');
+          appendRawStyle(this.shadowRoot, '.kniu_sys_input_append::slotted(kniu-btn),.kniu_sys_input_prepend::slotted(kniu-btn){align-self:stretch;height:calc(100% + 2px);min-height:28px;margin-top:-1px;margin-bottom:-1px;vertical-align:top;box-sizing:border-box}');
           this._affixObserver = null;
           this._passwordVisible = false;
           const passwordStyle = `.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input:not(textarea),.kniu_sys_input_wrap[data-clearable="true"] .kniu_sys_input:not(textarea){padding-right:40px}.kniu_sys_input_wrap[data-show-password="true"][data-clearable="true"] .kniu_sys_input:not(textarea){padding-right:72px}.kniu_sys_input_wrap[data-clearable="true"] textarea.kniu_sys_input{padding-right:32px}.kniu_sys_input_password,.kniu_sys_input_clear{position:absolute;z-index:2;top:0;right:0;display:flex;visibility:hidden;align-items:center;justify-content:center;width:36px;height:40px;padding:0;border:0;outline:0;background-color:transparent;color:#c0c4cc;font-size:17px;line-height:40px;text-align:center;cursor:pointer;opacity:0;pointer-events:none}.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input_password,.kniu_sys_input_wrap[data-clear-visible="true"] .kniu_sys_input_clear{visibility:visible;opacity:1;pointer-events:auto}.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input_clear{right:34px}.kniu_sys_input_wrap[data-clear-visible="true"] textarea.kniu_sys_input ~ .kniu_sys_input_clear{top:8px;right:8px;width:auto;height:auto;line-height:1}.kniu_sys_input_password:hover,.kniu_sys_input_password:focus,.kniu_sys_input_clear:hover,.kniu_sys_input_clear:focus{color:#409eff}.kniu_sys_input_password[aria-disabled="true"],.kniu_sys_input_clear[aria-disabled="true"]{cursor:not-allowed;color:#dcdfe6}.kniu_sys_input_password_icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}`;
+          adoptSharedStyle(this.shadowRoot, '@media (min-width:calc(1280px - 60px)){.kniu_sys_input_password,.kniu_sys_input_clear{height:40px;line-height:40px}}');
           const wrap = document.createElement('span');
           wrap.className = 'kniu_sys_input_wrap';
           const passwordButton = document.createElement('span');
@@ -3539,7 +3669,8 @@ var KniuUI = (function () {
             if (this.shadowRoot.activeElement !== this._input) this._input.focus({ preventScroll: true });
           });
           this._bindControl(this._input);
-          adoptSharedStyle(this.shadowRoot, 'textarea.kniu_sys_input{height:auto;min-height:120px;padding:8px 12px;line-height:1.5;font:14px/1.5 Arial,"Microsoft YaHei",sans-serif;resize:vertical;white-space:pre-wrap;overflow:auto}.kniu_sys_input_group[data-is-textarea="true"]{height:auto;min-height:40px;align-items:stretch}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{align-self:flex-start;height:40px;display:flex;align-items:center;padding-top:0;padding-bottom:0;box-sizing:border-box}');
+          adoptSharedStyle(this.shadowRoot, 'textarea.kniu_sys_input{height:auto;min-height:120px;padding:8px 12px;line-height:1.5;font:14px/1.5 var(--kniu-font-family);resize:vertical;white-space:pre-wrap;overflow:auto}.kniu_sys_input_group[data-is-textarea="true"]{height:auto;align-items:stretch}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{align-self:flex-start;display:flex;align-items:center;padding-top:0;padding-bottom:0;box-sizing:border-box}@media (min-width:calc(1280px - 60px)){.kniu_sys_input_group[data-is-textarea="true"]{min-height:40px}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{height:40px}}');
+          appendRawStyle(this.shadowRoot, '.kniu_sys_input_group{height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_input{height:max(28px,calc(40 / var(--kniu_vw)));min-height:28px;line-height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_input_affix{line-height:max(26px,calc(38 / var(--kniu_vw)))}.kniu_sys_input_password,.kniu_sys_input_clear{height:max(28px,calc(40 / var(--kniu_vw)));line-height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_input_group[data-upload-append="true"]{height:auto}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_prepend{height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_input_group[data-is-textarea="true"]{height:auto;min-height:28px}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{height:max(28px,calc(40 / var(--kniu_vw)))})');
         }
         connectedCallback() {
           if (!this.hasAttribute('autocomplete')) this.setAttribute('autocomplete', 'off');
@@ -3851,37 +3982,40 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this.shadowRoot.innerHTML = `<style>
-          :host{display:block;width:100%}.group{display:flex;width:100%;height:40px}.input-wrap{position:relative;display:block;flex:1;min-width:0}.input{display:block;width:100%;height:40px;padding:0 38px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px Arial,"Microsoft YaHei",sans-serif;cursor:pointer;box-sizing:border-box;transition:border-color .2s}.input:hover{border-color:#c0c4cc}.input:focus,:host([data-open="true"]) .input{position:relative;z-index:1;border-color:#409eff}.input:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.calendar-icon{position:absolute;z-index:2;top:0;right:0;display:grid;width:38px;height:40px;place-items:center;color:#909399;pointer-events:none}.affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;white-space:nowrap;box-sizing:border-box}.group[data-has-prepend="true"] .prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.group[data-has-append="true"] .append{display:flex;border-left:0;border-radius:0 4px 4px 0}.group[data-has-prepend="true"] .input{border-radius:0 4px 4px 0}.group[data-has-append="true"] .input{border-radius:4px 0 0 4px}.group[data-has-prepend="true"][data-has-append="true"] .input{border-radius:0}
-          .panel{position:fixed;z-index:10020;width:calc(100vw - 16px);border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.panel[hidden]{display:none}.panel[data-placement="bottom"]{transform-origin:center top}.panel[data-placement="top"]{transform-origin:center bottom}.panel[data-state="open"][data-placement="bottom"]{animation:kniu_date_in_bottom .18s ease-out both}.panel[data-state="open"][data-placement="top"]{animation:kniu_date_in_top .18s ease-out both}.panel[data-state="closing"][data-placement="bottom"]{animation:kniu_date_out_bottom .15s ease-in both}.panel[data-state="closing"][data-placement="top"]{animation:kniu_date_out_top .15s ease-in both}@keyframes kniu_date_in_bottom{from{opacity:0;transform:translateY(-8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_in_top{from{opacity:0;transform:translateY(8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_out_bottom{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(-6px) scaleY(.97)}}@keyframes kniu_date_out_top{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(6px) scaleY(.97)}}.head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.head button,.day,.chooser button,.title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.head>button{height:30px;border-radius:4px;font-size:17px}.head button:hover,.day:hover,.chooser button:hover,.title button:hover{color:#409eff}.title{display:flex;align-items:center;justify-content:center;gap:0;color:#303133;font-size:15px;font-weight:500}.title button{padding:6px 4px;border-radius:4px;font:inherit}.week,.days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.week[hidden],.days[hidden],.time[hidden]{display:none}.week{border-bottom:1px solid #ebeef5}.week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.day{justify-self:center;width:30px;height:30px;padding:0;border-radius:50%;font-size:12px}.day.other{color:#c0c4cc}.day.today{color:#409eff;font-weight:600}.day.selected,.chooser button.selected{background-color:#409eff;color:#fff}.chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.chooser[hidden]{display:none}.chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;padding:0;border-radius:4px;font-size:13px;text-align:center}.time{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:10px 12px;border-bottom:1px solid #ebeef5}.time::before{content:'选择时间';margin-right:auto;color:#606266;font-size:13px}.time-field{position:relative}.time-value{width:48px;height:30px;padding:0;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;cursor:pointer}.time-value:hover,.time-value:focus,.time-field[data-open="true"] .time-value{border-color:#409eff;outline:0}.time-options{position:absolute;top:34px;left:0;z-index:4;display:block;width:48px;max-height:168px;padding:4px 0;overflow-y:auto;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.time-options[hidden]{display:none}.time-option{display:block;width:100%;height:28px;padding:0;border:0;background-color:#fff;color:#606266;font-size:12px;text-align:center;cursor:pointer}.time-option:hover{background-color:#f5f7fa}.time-option.selected{background-color:#ecf5ff;color:#409eff;font-weight:600}.footer{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-top:1px solid #ebeef5}.date-preview{min-width:0;overflow:hidden;color:#606266;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.footer div{display:flex;flex:none;gap:3px}.action{height:28px;padding:0 5px;border:0;border-radius:3px;background-color:#fff;color:#409eff;cursor:pointer}.action:hover{background-color:#ecf5ff}.action.primary{border:1px solid #dcdfe6;background-color:#fff;color:#606266}.action.primary:hover{color:#409eff;border-color:#c6e2ff}@media(min-width:361px){.panel{width:322px}}@media(prefers-reduced-motion:reduce){.panel[data-state]{animation:none}}
-        </style><span class="group" data-has-prepend="false" data-has-append="false"><span class="affix prepend"><slot name="prepend"></slot></span><span class="input-wrap"><input class="input" type="text" readonly placeholder="请选择日期时间"><span class="calendar-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M8 3v4M16 3v4M3 10h18"></path></svg></span></span><span class="affix append"><slot name="append"></slot></span></span><section class="panel" hidden><div class="head"><button type="button" data-action="prev-year">«</button><button type="button" data-action="prev-month">‹</button><div class="title"><button type="button" data-action="choose-year"></button><button type="button" data-action="choose-month"></button></div><button type="button" data-action="next-month">›</button><button type="button" data-action="next-year">»</button></div><div class="week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div class="days"></div><div class="chooser" hidden></div><div class="time"><span class="time-field" data-time-field="hour"><button class="time-value" type="button" aria-label="小时"></button><span class="time-options" hidden></span></span><span data-time-separator="minute">:</span><span class="time-field" data-time-field="minute"><button class="time-value" type="button" aria-label="分钟"></button><span class="time-options" hidden></span></span><span data-time-separator="second">:</span><span class="time-field" data-time-field="second"><button class="time-value" type="button" aria-label="秒"></button><span class="time-options" hidden></span></span></div><div class="footer"><span class="date-preview"></span><div><button class="action" type="button" data-action="reset">重置</button><button class="action" type="button" data-action="today">现在</button><button class="action" type="button" data-action="confirm">确定</button></div></div></section>`;
-        adoptSharedStyle(this.shadowRoot, '.day.disabled{color:#c0c4cc;cursor:not-allowed}.day.disabled:hover{color:#c0c4cc}');
-        adoptSharedStyle(this.shadowRoot, '.head[hidden]{display:none}.time::before{content:attr(data-label)}.day[data-mark]{position:relative;font-size:11px}.day[data-mark]::after{content:"";position:absolute;top:2px;right:2px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.day.selected[data-mark]::after{background-color:#fff}.panel[data-range="true"]{width:min(650px,calc(100vw - 16px))}.range-calendars{display:grid;grid-template-columns:repeat(2,280px);overflow-x:auto}.range-calendars[hidden]{display:none}.range-pane+ .range-pane{border-left:1px solid #ebeef5}.range-head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.range-head button,.range-day,.range-chooser button,.range-title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.range-head button{height:30px;border-radius:4px;font-size:17px}.range-head button:hover,.range-day:hover,.range-chooser button:hover,.range-title button:hover{color:#409eff}.range-title{display:flex;align-items:center;justify-content:center;color:#303133;font-size:15px;font-weight:500}.range-title button{padding:6px 4px;border-radius:4px;font:inherit}.range-week,.range-days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.range-week[hidden],.range-days[hidden],.range-chooser[hidden]{display:none}.range-week{border-bottom:1px solid #ebeef5}.range-week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.range-day{position:relative;justify-self:stretch;height:30px;padding:0;font-size:12px}.range-day.other{color:#c0c4cc}.range-day.in-range{background-color:#ecf5ff;color:#409eff}.range-day.range-start,.range-day.range-end{border-radius:4px;background-color:#409eff;color:#fff}.range-day[data-mark]{font-size:11px}.range-day[data-mark]::after{content:"";position:absolute;top:2px;right:4px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.range-day.range-start[data-mark]::after,.range-day.range-end[data-mark]::after{background-color:#fff}.range-chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.range-chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;border-radius:4px;font-size:13px}.range-chooser button.selected{background-color:#409eff;color:#fff}@media(min-width:621px){.range-calendars{grid-template-columns:repeat(2,minmax(280px,1fr))}}');
-        adoptSharedStyle(this.shadowRoot, '.panel,.panel[data-range="true"]{width:min(218px,calc(100vw - 16px))}.head,.range-head{grid-template-columns:24px 24px minmax(0,1fr) 24px 24px;padding:6px 6px 2px}.head>button,.range-head button{height:26px;font-size:14px}.title,.range-title{font-size:12px;white-space:nowrap}.title button,.range-title button{padding:4px 2px}.title[data-lang="en"] [data-action="choose-month"],.range-title[data-lang="en"] [data-range-choose="month"]{order:-1}.week,.days,.range-week,.range-days{gap:0;margin:0 6px}.days,.range-days{padding:4px 0}.week span,.range-week span{height:24px;font-size:10px;line-height:24px}.day,.range-day{height:26px;font-size:10px}.day{width:26px}.day[data-mark],.range-day[data-mark]{font-size:8px}.day.selected[data-mark]::after,.range-day.in-range[data-mark]::after,.range-day.range-start[data-mark]::after,.range-day.range-end[data-mark]::after{display:none}.chooser,.range-chooser{grid-template-columns:repeat(3,minmax(0,1fr));height:189px;min-height:0;padding:8px;gap:4px;box-sizing:border-box}.chooser[data-mode="year"],.range-chooser[data-mode="year"]{grid-template-rows:repeat(5,minmax(0,1fr))}.chooser[data-mode="month"],.range-chooser[data-mode="month"]{grid-template-rows:repeat(4,minmax(0,1fr))}.chooser button,.range-chooser button{min-height:0;font-size:11px}.time{gap:2px;padding:6px}.panel[data-type="datetime"] .time[hidden]{display:flex;visibility:hidden}.time::before{font-size:10px}.time-value{width:38px;height:26px;font-size:11px}.time-options{top:29px;width:38px;max-height:140px}.time-option{height:25px}.footer{padding:5px 6px}.action{width:42px;height:25px;padding:0;font-size:11px}.range-calendars{grid-template-columns:minmax(0,1fr);overflow:visible}.range-pane+ .range-pane{border-top:1px solid #ebeef5;border-left:0}');
-        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"]{display:grid;width:min(350px,calc(100vw - 16px));grid-template-columns:minmax(0,218px) minmax(0,132px)}.panel[data-type="datetime"]>.head{grid-column:1;grid-row:1}.panel[data-type="datetime"]>.week{grid-column:1;grid-row:2}.panel[data-type="datetime"]>.days{grid-column:1;grid-row:3}.panel[data-type="datetime"]>.chooser{grid-column:1;grid-row:2 / span 2}.panel[data-type="datetime"]>.range-calendars{grid-column:1;grid-row:1 / span 3}.panel[data-type="datetime"]>.time{display:grid;grid-column:2;grid-row:1 / span 3;align-self:start;width:100%;height:223px;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch;gap:0;padding:0;overflow:hidden;border-bottom:0;border-left:1px solid #ebeef5;box-sizing:border-box}.panel[data-type="datetime"]>.time[hidden]{display:grid;visibility:hidden}.panel[data-type="datetime"]>.time::before,.panel[data-type="datetime"]>.time>span:not(.time-field){display:none}.panel[data-type="datetime"] .time-field{display:flex;min-width:0;height:223px;overflow:hidden;flex-direction:column;border-left:1px solid #ebeef5;box-sizing:border-box}.panel[data-type="datetime"] .time-field:first-of-type{border-left:0}.panel[data-type="datetime"] .time-field::before{content:attr(data-label);display:block;flex:none;height:34px;border-bottom:1px solid #ebeef5;color:#606266;font-size:10px;line-height:34px;text-align:center;box-sizing:border-box}.panel[data-type="datetime"] .time-value{display:none}.panel[data-type="datetime"] .time-options,.panel[data-type="datetime"] .time-options[hidden]{position:static;display:block;width:100%;height:189px;max-height:189px;padding:0;overflow-x:hidden;overflow-y:auto;border:0;border-radius:0;background-color:#fff;box-shadow:none;box-sizing:border-box}.panel[data-type="datetime"] .time-option{height:25px}.panel[data-type="datetime"]>.footer{grid-column:1 / -1;grid-row:4}.panel[data-type="datetime"][data-range="true"]{width:min(350px,calc(100vw - 16px))}');
-        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"]:not([data-range="true"])>.head{grid-column:1 / -1;grid-row:1}.panel[data-type="datetime"]:not([data-range="true"])>.time{grid-column:2;grid-row:2 / span 2;height:189px}.panel[data-type="datetime"]:not([data-range="true"]) .time-field{height:189px}.panel[data-type="datetime"]:not([data-range="true"]) .time-field::before{height:25px;line-height:25px}.panel[data-type="datetime"]:not([data-range="true"]) .time-options,.panel[data-type="datetime"]:not([data-range="true"]) .time-options[hidden]{height:164px;max-height:164px}');
-        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"] .time-options{scrollbar-width:none}.panel[data-type="datetime"] .time-options:hover{scrollbar-width:thin;scrollbar-color:#c0c4cc transparent}.panel[data-type="datetime"] .time-options::-webkit-scrollbar{width:0}.panel[data-type="datetime"] .time-options:hover::-webkit-scrollbar{width:6px}.panel[data-type="datetime"] .time-options::-webkit-scrollbar-thumb{border-radius:6px;background-color:#c0c4cc}.panel[data-type="datetime"] .time-options::-webkit-scrollbar-track{background-color:transparent}');
-        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"]>.time{position:relative;border-left:0}.panel[data-type="datetime"] .time-field{border-left:0}.panel[data-type="datetime"] .time-field::before{border-bottom:0}.panel[data-type="datetime"] .time-field:not(:first-of-type) .time-options{border-left:1px solid #dcdfe6}.panel[data-type="datetime"]>.time::after{content:"";position:absolute;z-index:2;top:34px;right:0;bottom:0;left:0;border:1px solid #dcdfe6;pointer-events:none;box-sizing:border-box}.panel[data-type="datetime"]:not([data-range="true"])>.time::after{top:25px}');
-        adoptSharedStyle(this.shadowRoot, '.week,.range-week{border-bottom:0}');
-        adoptSharedStyle(this.shadowRoot, '.head,.range-head{border-bottom:1px solid #ebeef5}');
-        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"] .time-options,.panel[data-type="datetime"] .time-options[hidden]{border:1px solid #dcdfe6}.panel[data-type="datetime"]>.time::after{display:none}');
-        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"] .time-field:not(:first-of-type) .time-options{border-left:0}.panel[data-type="datetime"] .time-options,.panel[data-type="datetime"] .time-options[hidden]{height:185px;max-height:185px}.panel[data-type="datetime"]:not([data-range="true"]) .time-options,.panel[data-type="datetime"]:not([data-range="true"]) .time-options[hidden]{height:160px;max-height:160px}');
-        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"]>.time[data-show-hour="false"] [data-time-field="minute"] .time-options,.panel[data-type="datetime"]>.time[data-show-hour="false"][data-show-minute="false"] [data-time-field="second"] .time-options{border-left:1px solid #dcdfe6!important}');
-        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"]>.time{padding-right:4px}');
-        adoptSharedStyle(this.shadowRoot, '.panel[hidden]{display:none!important}');
-        adoptSharedStyle(this.shadowRoot, '.time[data-show-seconds="false"]{grid-template-columns:repeat(2,minmax(0,1fr))}.time[data-show-seconds="false"] [data-time-field="second"],.time[data-show-seconds="false"] [data-time-separator="second"]{display:none!important}');
-        adoptSharedStyle(this.shadowRoot, '.panel[data-type="datetime"][data-show-seconds="false"]{width:min(306px,calc(100vw - 16px));grid-template-columns:minmax(0,218px) minmax(0,88px)}.panel[data-type="datetime"][data-show-seconds="false"]>.time{grid-template-columns:repeat(2,minmax(0,1fr))}.panel[data-type="datetime"][data-range="true"][data-show-seconds="false"]{width:min(306px,calc(100vw - 16px))}');
-        adoptSharedStyle(this.shadowRoot, '.time[data-show-hour="false"] [data-time-field="hour"],.time[data-show-minute="false"] [data-time-field="minute"],.time[data-show-seconds="false"] [data-time-field="second"]{display:none!important}.time[data-show-minute-separator="false"] [data-time-separator="minute"],.time[data-show-second-separator="false"] [data-time-separator="second"]{display:none!important}.panel[data-type="datetime"][data-time-columns="1"]{width:min(262px,calc(100vw - 16px))!important;grid-template-columns:minmax(0,218px) minmax(0,44px)!important}.panel[data-type="datetime"][data-time-columns="2"]{width:min(306px,calc(100vw - 16px))!important;grid-template-columns:minmax(0,218px) minmax(0,88px)!important}.panel[data-type="datetime"][data-time-columns="3"]{width:min(350px,calc(100vw - 16px))!important;grid-template-columns:minmax(0,218px) minmax(0,132px)!important}.panel[data-type="datetime"]>.time[data-time-columns="1"]{grid-template-columns:minmax(0,1fr)!important}.panel[data-type="datetime"]>.time[data-time-columns="2"]{grid-template-columns:repeat(2,minmax(0,1fr))!important}.panel[data-type="datetime"]>.time[data-time-columns="3"]{grid-template-columns:repeat(3,minmax(0,1fr))!important}');
-        this._input = this.shadowRoot.querySelector('.input');
-        this._panel = this.shadowRoot.querySelector('.panel');
-        this._days = this.shadowRoot.querySelector('.days');
-        this._title = this.shadowRoot.querySelector('.title');
-        this._chooser = this.shadowRoot.querySelector('.chooser');
+          :host{display:block;width:100%}.kniu_sys_date_picker_group{display:flex;width:100%;height:40px}.kniu_sys_date_picker_input_wrap{position:relative;display:block;flex:1;min-width:0}.kniu_sys_date_picker_input{display:block;width:100%;height:40px;padding:0 38px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px var(--kniu-font-family);cursor:pointer;box-sizing:border-box;transition:border-color .2s}.kniu_sys_date_picker_input:hover{border-color:#c0c4cc}.kniu_sys_date_picker_input:focus,:host([data-open="true"]) .kniu_sys_date_picker_input{position:relative;z-index:1;border-color:#409eff}.kniu_sys_date_picker_input:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_date_picker_calendar_icon{position:absolute;z-index:2;top:0;right:0;display:grid;width:38px;height:40px;place-items:center;color:#909399;pointer-events:none}.kniu_sys_date_picker_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;white-space:nowrap;box-sizing:border-box}.kniu_sys_date_picker_group[data-has-prepend="true"] .kniu_sys_date_picker_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_date_picker_group[data-has-append="true"] .kniu_sys_date_picker_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_date_picker_group[data-has-prepend="true"] .kniu_sys_date_picker_input{border-radius:0 4px 4px 0}.kniu_sys_date_picker_group[data-has-append="true"] .kniu_sys_date_picker_input{border-radius:4px 0 0 4px}.kniu_sys_date_picker_group[data-has-prepend="true"][data-has-append="true"] .kniu_sys_date_picker_input{border-radius:0}
+          .kniu_sys_date_picker_panel{position:fixed;z-index:10020;width:calc(100vw - 16px);border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.kniu_sys_date_picker_panel[hidden]{display:none}.kniu_sys_date_picker_panel[data-placement="bottom"]{transform-origin:center top}.kniu_sys_date_picker_panel[data-placement="top"]{transform-origin:center bottom}.kniu_sys_date_picker_panel[data-state="open"][data-placement="bottom"]{animation:kniu_date_in_bottom .18s ease-out both}.kniu_sys_date_picker_panel[data-state="open"][data-placement="top"]{animation:kniu_date_in_top .18s ease-out both}.kniu_sys_date_picker_panel[data-state="closing"][data-placement="bottom"]{animation:kniu_date_out_bottom .15s ease-in both}.kniu_sys_date_picker_panel[data-state="closing"][data-placement="top"]{animation:kniu_date_out_top .15s ease-in both}@keyframes kniu_date_in_bottom{from{opacity:0;transform:translateY(-8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_in_top{from{opacity:0;transform:translateY(8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_out_bottom{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(-6px) scaleY(.97)}}@keyframes kniu_date_out_top{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(6px) scaleY(.97)}}.kniu_sys_date_picker_head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.kniu_sys_date_picker_head button,.day,.kniu_sys_date_picker_chooser button,.kniu_sys_date_picker_title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.kniu_sys_date_picker_head>button{height:30px;border-radius:4px;font-size:17px}.kniu_sys_date_picker_head button:hover,.day:hover,.kniu_sys_date_picker_chooser button:hover,.kniu_sys_date_picker_title button:hover{color:#409eff}.kniu_sys_date_picker_title{display:flex;align-items:center;justify-content:center;gap:0;color:#303133;font-size:15px;font-weight:500}.kniu_sys_date_picker_title button{padding:6px 4px;border-radius:4px;font:inherit}.kniu_sys_date_picker_week,.kniu_sys_date_picker_days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.kniu_sys_date_picker_week[hidden],.kniu_sys_date_picker_days[hidden],.kniu_sys_date_picker_time[hidden]{display:none}.kniu_sys_date_picker_week{border-bottom:1px solid #ebeef5}.kniu_sys_date_picker_week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.day{justify-self:center;width:30px;height:30px;padding:0;border-radius:50%;font-size:12px}.day.kniu_sys_date_picker_other{color:#c0c4cc}.day.kniu_sys_date_picker_today{color:#409eff;font-weight:600}.day.kniu_sys_date_picker_selected,.kniu_sys_date_picker_chooser button.kniu_sys_date_picker_selected{background-color:#409eff;color:#fff}.kniu_sys_date_picker_chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.kniu_sys_date_picker_chooser[hidden]{display:none}.kniu_sys_date_picker_chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;padding:0;border-radius:4px;font-size:13px;text-align:center}.kniu_sys_date_picker_time{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:10px 12px;border-bottom:1px solid #ebeef5}.kniu_sys_date_picker_time::before{content:'选择时间';margin-right:auto;color:#606266;font-size:13px}.kniu_sys_date_picker_time_field{position:relative}.kniu_sys_date_picker_time_value{width:48px;height:30px;padding:0;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;cursor:pointer}.kniu_sys_date_picker_time_value:hover,.kniu_sys_date_picker_time_value:focus,.kniu_sys_date_picker_time_field[data-open="true"] .kniu_sys_date_picker_time_value{border-color:#409eff;outline:0}.kniu_sys_date_picker_time_options{position:absolute;top:34px;left:0;z-index:4;display:block;width:48px;max-height:168px;padding:4px 0;overflow-y:auto;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.kniu_sys_date_picker_time_options[hidden]{display:none}.kniu_sys_date_picker_time_option{display:block;width:100%;height:28px;padding:0;border:0;background-color:#fff;color:#606266;font-size:12px;text-align:center;cursor:pointer}.kniu_sys_date_picker_time_option:hover{background-color:#f5f7fa}.kniu_sys_date_picker_time_option.kniu_sys_date_picker_selected{background-color:#ecf5ff;color:#409eff;font-weight:600}.kniu_sys_date_picker_footer{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-top:1px solid #ebeef5}.kniu_sys_date_picker_date_preview{min-width:0;overflow:hidden;color:#606266;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.kniu_sys_date_picker_footer div{display:flex;flex:none;gap:3px}.kniu_sys_date_picker_action{height:28px;padding:0 5px;border:0;border-radius:3px;background-color:#fff;color:#409eff;cursor:pointer}.kniu_sys_date_picker_action:hover{background-color:#ecf5ff}.kniu_sys_date_picker_action.primary{border:1px solid #dcdfe6;background-color:#fff;color:#606266}.kniu_sys_date_picker_action.primary:hover{color:#409eff;border-color:#c6e2ff}@media(min-width:361px){.kniu_sys_date_picker_panel{width:322px}}@media(prefers-reduced-motion:reduce){.kniu_sys_date_picker_panel[data-state]{animation:none}}
+        </style><span class="kniu_sys_date_picker_group" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_date_picker_affix kniu_sys_date_picker_prepend"><slot name="prepend"></slot></span><span class="kniu_sys_date_picker_input_wrap"><input class="kniu_sys_date_picker_input" type="text" readonly placeholder="请选择日期时间"><span class="kniu_sys_date_picker_calendar_icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M8 3v4M16 3v4M3 10h18"></path></svg></span></span><span class="kniu_sys_date_picker_affix kniu_sys_date_picker_append"><slot name="append"></slot></span></span><section class="kniu_sys_date_picker_panel" hidden><div class="kniu_sys_date_picker_head"><button type="button" data-action="prev-year">«</button><button type="button" data-action="prev-month">‹</button><div class="kniu_sys_date_picker_title"><button type="button" data-action="choose-year"></button><button type="button" data-action="choose-month"></button></div><button type="button" data-action="next-month">›</button><button type="button" data-action="next-year">»</button></div><div class="kniu_sys_date_picker_week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div class="kniu_sys_date_picker_days"></div><div class="kniu_sys_date_picker_chooser" hidden></div><div class="kniu_sys_date_picker_time"><span class="kniu_sys_date_picker_time_field" data-time-field="hour"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="小时"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span><span data-time-separator="minute">:</span><span class="kniu_sys_date_picker_time_field" data-time-field="minute"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="分钟"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span><span data-time-separator="second">:</span><span class="kniu_sys_date_picker_time_field" data-time-field="second"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="秒"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span></div><div class="kniu_sys_date_picker_footer"><span class="kniu_sys_date_picker_date_preview"></span><div><button class="kniu_sys_date_picker_action" type="button" data-action="reset">重置</button><button class="kniu_sys_date_picker_action" type="button" data-action="today">现在</button><button class="kniu_sys_date_picker_action" type="button" data-action="confirm">确定</button></div></div></section>`;
+        const datePanel = this.shadowRoot.querySelector('.kniu_sys_date_picker_panel');
+        if (datePanel) datePanel.classList.add('kniu_sys_dropdown_panel');
+        adoptDropdownStyle(this.shadowRoot);
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_day.kniu_sys_date_picker_disabled{color:#c0c4cc;cursor:not-allowed}.kniu_sys_date_picker_day.kniu_sys_date_picker_disabled:hover{color:#c0c4cc}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_head[hidden]{display:none}.kniu_sys_date_picker_time::before{content:attr(data-label)}.day[data-mark]{position:relative;font-size:11px}.day[data-mark]::after{content:"";position:absolute;top:2px;right:2px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.day.kniu_sys_date_picker_selected[data-mark]::after{background-color:#fff}.kniu_sys_date_picker_panel[data-range="true"]{width:min(650px,calc(100vw - 16px))}.kniu_sys_date_picker_range_calendars{display:grid;grid-template-columns:repeat(2,280px);overflow-x:auto}.kniu_sys_date_picker_range_calendars[hidden]{display:none}.kniu_sys_date_picker_range_pane+ .kniu_sys_date_picker_range_pane{border-left:1px solid #ebeef5}.kniu_sys_date_picker_range_head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.kniu_sys_date_picker_range_head button,.kniu_sys_date_picker_range_day,.kniu_sys_date_picker_range_chooser button,.kniu_sys_date_picker_range_title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.kniu_sys_date_picker_range_head button{height:30px;border-radius:4px;font-size:17px}.kniu_sys_date_picker_range_head button:hover,.kniu_sys_date_picker_range_day:hover,.kniu_sys_date_picker_range_chooser button:hover,.kniu_sys_date_picker_range_title button:hover{color:#409eff}.kniu_sys_date_picker_range_title{display:flex;align-items:center;justify-content:center;color:#303133;font-size:15px;font-weight:500}.kniu_sys_date_picker_range_title button{padding:6px 4px;border-radius:4px;font:inherit}.kniu_sys_date_picker_range_week,.kniu_sys_date_picker_range_days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.kniu_sys_date_picker_range_week[hidden],.kniu_sys_date_picker_range_days[hidden],.kniu_sys_date_picker_range_chooser[hidden]{display:none}.kniu_sys_date_picker_range_week{border-bottom:1px solid #ebeef5}.kniu_sys_date_picker_range_week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.kniu_sys_date_picker_range_day{position:relative;justify-self:stretch;height:30px;padding:0;font-size:12px}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_other{color:#c0c4cc}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_in_range{background-color:#ecf5ff;color:#409eff}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_start,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_end{border-radius:4px;background-color:#409eff;color:#fff}.kniu_sys_date_picker_range_day[data-mark]{font-size:11px}.kniu_sys_date_picker_range_day[data-mark]::after{content:"";position:absolute;top:2px;right:4px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_start[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_end[data-mark]::after{background-color:#fff}.kniu_sys_date_picker_range_chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.kniu_sys_date_picker_range_chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;border-radius:4px;font-size:13px}.kniu_sys_date_picker_range_chooser button.kniu_sys_date_picker_selected{background-color:#409eff;color:#fff}@media(min-width:621px){.kniu_sys_date_picker_range_calendars{grid-template-columns:repeat(2,minmax(280px,1fr))}}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel,.kniu_sys_date_picker_panel[data-range="true"]{width:min(218px,calc(100vw - 16px))}.kniu_sys_date_picker_head,.kniu_sys_date_picker_range_head{grid-template-columns:24px 24px minmax(0,1fr) 24px 24px;padding:6px 6px 2px}.kniu_sys_date_picker_head>button,.kniu_sys_date_picker_range_head button{height:26px;font-size:14px}.kniu_sys_date_picker_title,.kniu_sys_date_picker_range_title{font-size:12px;white-space:nowrap}.kniu_sys_date_picker_title button,.kniu_sys_date_picker_range_title button{padding:4px 2px}.kniu_sys_date_picker_title[data-lang="en"] [data-action="choose-month"],.kniu_sys_date_picker_range_title[data-lang="en"] [data-range-choose="month"]{order:-1}.kniu_sys_date_picker_week,.kniu_sys_date_picker_days,.kniu_sys_date_picker_range_week,.kniu_sys_date_picker_range_days{gap:0;margin:0 6px}.kniu_sys_date_picker_days,.kniu_sys_date_picker_range_days{padding:4px 0}.kniu_sys_date_picker_week span,.kniu_sys_date_picker_range_week span{height:24px;font-size:10px;line-height:24px}.day,.kniu_sys_date_picker_range_day{height:26px;font-size:10px}.day{width:26px}.day[data-mark],.kniu_sys_date_picker_range_day[data-mark]{font-size:8px}.day.kniu_sys_date_picker_selected[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_in_range[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_start[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_end[data-mark]::after{display:none}.kniu_sys_date_picker_chooser,.kniu_sys_date_picker_range_chooser{grid-template-columns:repeat(3,minmax(0,1fr));height:189px;min-height:0;padding:8px;gap:4px;box-sizing:border-box}.kniu_sys_date_picker_chooser[data-mode="year"],.kniu_sys_date_picker_range_chooser[data-mode="year"]{grid-template-rows:repeat(5,minmax(0,1fr))}.kniu_sys_date_picker_chooser[data-mode="month"],.kniu_sys_date_picker_range_chooser[data-mode="month"]{grid-template-rows:repeat(4,minmax(0,1fr))}.kniu_sys_date_picker_chooser button,.kniu_sys_date_picker_range_chooser button{min-height:0;font-size:11px}.kniu_sys_date_picker_time{gap:2px;padding:6px}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time[hidden]{display:flex;visibility:hidden}.kniu_sys_date_picker_time::before{font-size:10px}.kniu_sys_date_picker_time_value{width:38px;height:26px;font-size:11px}.kniu_sys_date_picker_time_options{top:29px;width:38px;max-height:140px}.kniu_sys_date_picker_time_option{height:25px}.kniu_sys_date_picker_footer{padding:5px 6px}.kniu_sys_date_picker_action{width:42px;height:25px;padding:0;font-size:11px}.kniu_sys_date_picker_range_calendars{grid-template-columns:minmax(0,1fr);overflow:visible}.kniu_sys_date_picker_range_pane+ .kniu_sys_date_picker_range_pane{border-top:1px solid #ebeef5;border-left:0}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"]{display:grid;width:min(350px,calc(100vw - 16px));grid-template-columns:minmax(0,218px) minmax(0,132px)}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_head{grid-column:1;grid-row:1}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_week{grid-column:1;grid-row:2}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_days{grid-column:1;grid-row:3}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_chooser{grid-column:1;grid-row:2 / span 2}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_range_calendars{grid-column:1;grid-row:1 / span 3}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time{display:grid;grid-column:2;grid-row:1 / span 3;align-self:start;width:100%;height:223px;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch;gap:0;padding:0;overflow:hidden;border-bottom:0;border-left:1px solid #ebeef5;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[hidden]{display:grid;visibility:hidden}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time::before,.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time>span:not(.kniu_sys_date_picker_time_field){display:none}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field{display:flex;min-width:0;height:223px;overflow:hidden;flex-direction:column;border-left:1px solid #ebeef5;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field:first-of-type{border-left:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field::before{content:attr(data-label);display:block;flex:none;height:34px;border-bottom:1px solid #ebeef5;color:#606266;font-size:10px;line-height:34px;text-align:center;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_value{display:none}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options[hidden]{position:static;display:block;width:100%;height:189px;max-height:189px;padding:0;overflow-x:hidden;overflow-y:auto;border:0;border-radius:0;background-color:#fff;box-shadow:none;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_option{height:25px}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_footer{grid-column:1 / -1;grid-row:4}.kniu_sys_date_picker_panel[data-type="datetime"][data-range="true"]{width:min(350px,calc(100vw - 16px))}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"])>.kniu_sys_date_picker_head{grid-column:1 / -1;grid-row:1}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"])>.kniu_sys_date_picker_time{grid-column:2;grid-row:2 / span 2;height:189px}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_field{height:189px}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_field::before{height:25px;line-height:25px}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options[hidden]{height:164px;max-height:164px}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options{scrollbar-width:none}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options:hover{scrollbar-width:thin;scrollbar-color:#c0c4cc transparent}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options::-webkit-scrollbar{width:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options:hover::-webkit-scrollbar{width:6px}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options::-webkit-scrollbar-thumb{border-radius:6px;background-color:#c0c4cc}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options::-webkit-scrollbar-track{background-color:transparent}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time{position:relative;border-left:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field{border-left:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field::before{border-bottom:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field:not(:first-of-type) .kniu_sys_date_picker_time_options{border-left:1px solid #dcdfe6}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time::after{content:"";position:absolute;z-index:2;top:34px;right:0;bottom:0;left:0;border:1px solid #dcdfe6;pointer-events:none;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"])>.kniu_sys_date_picker_time::after{top:25px}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_week,.kniu_sys_date_picker_range_week{border-bottom:0}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_head,.kniu_sys_date_picker_range_head{border-bottom:1px solid #ebeef5}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options[hidden]{border:1px solid #dcdfe6}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time::after{display:none}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field:not(:first-of-type) .kniu_sys_date_picker_time_options{border-left:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options[hidden]{height:185px;max-height:185px}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options[hidden]{height:160px;max-height:160px}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-show-hour="false"] [data-time-field="minute"] .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-show-hour="false"][data-show-minute="false"] [data-time-field="second"] .kniu_sys_date_picker_time_options{border-left:1px solid #dcdfe6!important}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time{padding-right:4px}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[hidden]{display:none!important}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_time[data-show-seconds="false"]{grid-template-columns:repeat(2,minmax(0,1fr))}.kniu_sys_date_picker_time[data-show-seconds="false"] [data-time-field="second"],.kniu_sys_date_picker_time[data-show-seconds="false"] [data-time-separator="second"]{display:none!important}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"][data-show-seconds="false"]{width:min(306px,calc(100vw - 16px));grid-template-columns:minmax(0,218px) minmax(0,88px)}.kniu_sys_date_picker_panel[data-type="datetime"][data-show-seconds="false"]>.kniu_sys_date_picker_time{grid-template-columns:repeat(2,minmax(0,1fr))}.kniu_sys_date_picker_panel[data-type="datetime"][data-range="true"][data-show-seconds="false"]{width:min(306px,calc(100vw - 16px))}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_time[data-show-hour="false"] [data-time-field="hour"],.kniu_sys_date_picker_time[data-show-minute="false"] [data-time-field="minute"],.kniu_sys_date_picker_time[data-show-seconds="false"] [data-time-field="second"]{display:none!important}.kniu_sys_date_picker_time[data-show-minute-separator="false"] [data-time-separator="minute"],.kniu_sys_date_picker_time[data-show-second-separator="false"] [data-time-separator="second"]{display:none!important}.kniu_sys_date_picker_panel[data-type="datetime"][data-time-columns="1"]{width:min(262px,calc(100vw - 16px))!important;grid-template-columns:minmax(0,218px) minmax(0,44px)!important}.kniu_sys_date_picker_panel[data-type="datetime"][data-time-columns="2"]{width:min(306px,calc(100vw - 16px))!important;grid-template-columns:minmax(0,218px) minmax(0,88px)!important}.kniu_sys_date_picker_panel[data-type="datetime"][data-time-columns="3"]{width:min(350px,calc(100vw - 16px))!important;grid-template-columns:minmax(0,218px) minmax(0,132px)!important}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-time-columns="1"]{grid-template-columns:minmax(0,1fr)!important}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-time-columns="2"]{grid-template-columns:repeat(2,minmax(0,1fr))!important}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-time-columns="3"]{grid-template-columns:repeat(3,minmax(0,1fr))!important}');
+        this._input = this.shadowRoot.querySelector('.kniu_sys_date_picker_input');
+        this._panel = this.shadowRoot.querySelector('.kniu_sys_date_picker_panel');
+        this._days = this.shadowRoot.querySelector('.kniu_sys_date_picker_days');
+        this._title = this.shadowRoot.querySelector('.kniu_sys_date_picker_title');
+        this._chooser = this.shadowRoot.querySelector('.kniu_sys_date_picker_chooser');
         this._rangeCalendars = document.createElement('div');
-        this._rangeCalendars.className = 'range-calendars';
+        this._rangeCalendars.className = 'kniu_sys_date_picker_range_calendars';
         this._rangeCalendars.hidden = true;
-        this._rangeCalendars.innerHTML = `<section class="range-pane" data-range-pane="left"><div class="range-head"><button type="button" data-range-action="prev-year">«</button><button type="button" data-range-action="prev-month">‹</button><div class="range-title"><button type="button" data-range-choose="year"></button><button type="button" data-range-choose="month"></button></div><span></span><span></span></div><div class="range-week"></div><div class="range-days"></div><div class="range-chooser" hidden></div></section><section class="range-pane" data-range-pane="right"><div class="range-head"><span></span><span></span><div class="range-title"><button type="button" data-range-choose="year"></button><button type="button" data-range-choose="month"></button></div><button type="button" data-range-action="next-month">›</button><button type="button" data-range-action="next-year">»</button></div><div class="range-week"></div><div class="range-days"></div><div class="range-chooser" hidden></div></section>`;
+        this._rangeCalendars.innerHTML = `<section class="kniu_sys_date_picker_range_pane" data-range-pane="left"><div class="kniu_sys_date_picker_range_head"><button type="button" data-range-action="prev-year">«</button><button type="button" data-range-action="prev-month">‹</button><div class="kniu_sys_date_picker_range_title"><button type="button" data-range-choose="year"></button><button type="button" data-range-choose="month"></button></div><span></span><span></span></div><div class="kniu_sys_date_picker_range_week"></div><div class="kniu_sys_date_picker_range_days"></div><div class="kniu_sys_date_picker_range_chooser" hidden></div></section><section class="kniu_sys_date_picker_range_pane" data-range-pane="right"><div class="kniu_sys_date_picker_range_head"><span></span><span></span><div class="kniu_sys_date_picker_range_title"><button type="button" data-range-choose="year"></button><button type="button" data-range-choose="month"></button></div><button type="button" data-range-action="next-month">›</button><button type="button" data-range-action="next-year">»</button></div><div class="kniu_sys_date_picker_range_week"></div><div class="kniu_sys_date_picker_range_days"></div><div class="kniu_sys_date_picker_range_chooser" hidden></div></section>`;
         this._chooser.after(this._rangeCalendars);
-        this._panel.insertBefore(this._panel.querySelector('.time'), this._panel.querySelector('.head'));
+        this._panel.insertBefore(this._panel.querySelector('.kniu_sys_date_picker_time'), this._panel.querySelector('.kniu_sys_date_picker_head'));
         this._panelMode = 'day';
         this._draft = new Date();
         this._preferredDay = this._draft.getDate();
@@ -3908,11 +4042,11 @@ var KniuUI = (function () {
         });
         this._panel.addEventListener('click', (event) => this._handleClick(event));
         ['hour', 'minute', 'second'].forEach((unit) => {
-          const options = this._panel.querySelector(`[data-time-field="${unit}"] .time-options`);
+          const options = this._panel.querySelector(`[data-time-field="${unit}"] .kniu_sys_date_picker_time_options`);
           const max = unit === 'hour' ? 23 : 59;
           for (let number = 0; number <= max; number += 1) {
             const option = document.createElement('button');
-            option.type = 'button'; option.className = 'time-option'; option.dataset.timeOption = unit; option.dataset.value = String(number);
+            option.type = 'button'; option.className = 'kniu_sys_date_picker_time_option'; option.dataset.timeOption = unit; option.dataset.value = String(number);
             option.textContent = String(number).padStart(2, '0');
             options.appendChild(option);
           }
@@ -3973,7 +4107,7 @@ var KniuUI = (function () {
         this._portal = portal;
       }
       _mountAffixes() {
-        const group = this.shadowRoot.querySelector('.group');
+        const group = this.shadowRoot.querySelector('.kniu_sys_date_picker_group');
         ['prepend', 'append'].forEach((name) => {
           const template = Array.from(this.children).find((child) => child.tagName === 'TEMPLATE' && child.hasAttribute(`#${name}`));
           let templateWidth = '';
@@ -3991,7 +4125,7 @@ var KniuUI = (function () {
             template.replaceWith(fragment);
           }
           const content = this.querySelector(`[slot="${name}"]`);
-          const affix = this.shadowRoot.querySelector(`.${name}`);
+          const affix = this.shadowRoot.querySelector(`.kniu_sys_date_picker_${name}`);
           const width = templateWidth || content?.dataset.labelWidth || '';
           group.dataset[`has${name[0].toUpperCase()}${name.slice(1)}`] = String(Boolean(content));
           if (width && CSS.supports('width', width)) { affix.style.width = width; affix.style.flexBasis = width; }
@@ -4178,7 +4312,7 @@ var KniuUI = (function () {
         monthTitle.hidden = false;
         const timeOnly = this._options.type === 'time';
         const choosing = this._panelMode !== 'day';
-        const week = this._panel.querySelector('.week');
+        const week = this._panel.querySelector('.kniu_sys_date_picker_week');
         const weekLabels = isEnglish
           ? (this._firstDayOfWeek() === 1 ? ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'] : ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'])
           : (this._firstDayOfWeek() === 1 ? ['一', '二', '三', '四', '五', '六', '日'] : ['日', '一', '二', '三', '四', '五', '六']);
@@ -4198,14 +4332,14 @@ var KniuUI = (function () {
           for (let year = startYear; year < startYear + 15; year += 1) {
             const button = document.createElement('button');
             button.type = 'button'; button.textContent = isEnglish ? String(year) : `${year} 年`; button.dataset.year = String(year);
-            if (year === this._viewYear) button.classList.add('selected');
+            if (year === this._viewYear) button.classList.add('kniu_sys_date_picker_selected');
             this._chooser.appendChild(button);
           }
         } else if (this._panelMode === 'month') {
           for (let month = 0; month < 12; month += 1) {
             const button = document.createElement('button');
             button.type = 'button'; button.textContent = isEnglish ? monthNames[month] : `${month + 1} 月`; button.dataset.month = String(month);
-            if (month === this._viewMonth) button.classList.add('selected');
+            if (month === this._viewMonth) button.classList.add('kniu_sys_date_picker_selected');
             this._chooser.appendChild(button);
           }
         }
@@ -4217,11 +4351,11 @@ var KniuUI = (function () {
         for (let index = 0; index < 42; index += 1) {
           const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index);
           const button = document.createElement('button');
-          button.type = 'button'; button.className = 'day'; button.textContent = String(date.getDate());
+          button.type = 'button'; button.className = 'kniu_sys_date_picker_day'; button.textContent = String(date.getDate());
           button.dataset.date = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
-          if (date.getMonth() !== this._viewMonth) button.classList.add('other');
-          if (this._isDateDisabled(date)) { button.disabled = true; button.classList.add('disabled'); }
-          if (this._sameDay(date, today)) button.classList.add('today');
+          if (date.getMonth() !== this._viewMonth) button.classList.add('kniu_sys_date_picker_other');
+          if (this._isDateDisabled(date)) { button.disabled = true; button.classList.add('kniu_sys_date_picker_disabled'); }
+          if (this._sameDay(date, today)) button.classList.add('kniu_sys_date_picker_today');
           const mark = this._resolveMark(date);
           if (mark) { button.dataset.mark = mark; button.title = mark; button.textContent = mark; }
           // 月份/年份翻页时保留已选“日号”，只高亮当前视图月份中的同一日，
@@ -4229,15 +4363,15 @@ var KniuUI = (function () {
           const selectedDay = Math.min(this._preferredDay, new Date(this._viewYear, this._viewMonth + 1, 0).getDate());
           if (date.getFullYear() === this._viewYear
             && date.getMonth() === this._viewMonth
-            && date.getDate() === selectedDay) button.classList.add('selected');
+            && date.getDate() === selectedDay) button.classList.add('kniu_sys_date_picker_selected');
           this._days.appendChild(button);
         }
-        this._panel.querySelector('.head').hidden = timeOnly || rangeMode;
+        this._panel.querySelector('.kniu_sys_date_picker_head').hidden = timeOnly || rangeMode;
         this._chooser.hidden = timeOnly || rangeMode || !choosing;
         this._panel.dataset.range = String(rangeMode);
         this._panel.dataset.type = this._options.type || 'date';
         if (rangeMode) this._renderRangeCalendars(isEnglish);
-        const timePanel = this._panel.querySelector('.time');
+        const timePanel = this._panel.querySelector('.kniu_sys_date_picker_time');
         const displayFormat = this._normalizeFormat(this._options.format || (this._options.type === 'datetime' ? 'yyyy-MM-dd HH:mm:ss' : 'HH:mm:ss'));
         const showHour = /HH|hh/.test(displayFormat);
         const showMinute = /mm|ii/.test(displayFormat);
@@ -4260,7 +4394,7 @@ var KniuUI = (function () {
         this._panel.querySelector('[data-action="reset"]').textContent = isEnglish ? 'Reset' : '重置';
         this._panel.querySelector('[data-action="today"]').textContent = isEnglish ? 'Now' : '现在';
         this._panel.querySelector('[data-action="confirm"]').textContent = isEnglish ? 'Confirm' : '确定';
-        const preview = this._panel.querySelector('.date-preview');
+        const preview = this._panel.querySelector('.kniu_sys_date_picker_date_preview');
         if (rangeMode) {
           preview.textContent = this._rangeValue.map((item) => {
             const parsed = this._parse(item);
@@ -4277,12 +4411,12 @@ var KniuUI = (function () {
         const values = { hour: this._draft.getHours(), minute: this._draft.getMinutes(), second: this._draft.getSeconds() };
         Object.entries(values).forEach(([unit, value]) => {
           const field = this._panel.querySelector(`[data-time-field="${unit}"]`);
-          const button = field.querySelector('.time-value');
+          const button = field.querySelector('.kniu_sys_date_picker_time_value');
           button.dataset.value = String(value);
           button.textContent = String(value).padStart(2, '0');
-          field.querySelectorAll('.time-option').forEach((option) => option.classList.toggle('selected', Number(option.dataset.value) === value));
+          field.querySelectorAll('.kniu_sys_date_picker_time_option').forEach((option) => option.classList.toggle('kniu_sys_date_picker_selected', Number(option.dataset.value) === value));
           if (this._options.type === 'datetime' && !choosing) {
-            queueMicrotask(() => field.querySelector('.time-option.selected')?.scrollIntoView({ block: 'center' }));
+            queueMicrotask(() => field.querySelector('.kniu_sys_date_picker_time_option.kniu_sys_date_picker_selected')?.scrollIntoView({ block: 'center' }));
           }
         });
       }
@@ -4311,22 +4445,22 @@ var KniuUI = (function () {
           const monthNames = isEnglish ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] : null;
           const choosing = this._rangeChooser.pane === paneData.name ? this._rangeChooser.mode : '';
           const yearPageStart = paneData.year - 7;
-          const title = pane.querySelector('.range-title');
+          const title = pane.querySelector('.kniu_sys_date_picker_range_title');
           const yearButton = pane.querySelector('[data-range-choose="year"]');
           const monthButton = pane.querySelector('[data-range-choose="month"]');
           title.dataset.lang = isEnglish ? 'en' : 'cn';
           yearButton.textContent = isEnglish ? String(paneData.year) : `${paneData.year} 年`;
           monthButton.textContent = isEnglish ? monthNames[paneData.month] : `${paneData.month + 1} 月`;
           monthButton.hidden = false;
-          const week = pane.querySelector('.range-week');
+          const week = pane.querySelector('.kniu_sys_date_picker_range_week');
           week.replaceChildren(...weekLabels.map((label) => {
             const item = document.createElement('span'); item.textContent = label; return item;
           }));
-          const days = pane.querySelector('.range-days');
+          const days = pane.querySelector('.kniu_sys_date_picker_range_days');
           days.replaceChildren();
           week.hidden = Boolean(choosing);
           days.hidden = Boolean(choosing);
-          const chooser = pane.querySelector('.range-chooser');
+          const chooser = pane.querySelector('.kniu_sys_date_picker_range_chooser');
           chooser.hidden = !choosing;
           chooser.dataset.mode = choosing || 'day';
           chooser.replaceChildren();
@@ -4335,7 +4469,7 @@ var KniuUI = (function () {
               const button = document.createElement('button');
               button.type = 'button'; button.dataset.rangeYear = String(year); button.dataset.pane = paneData.name;
               button.textContent = isEnglish ? String(year) : `${year} 年`;
-              if (year === paneData.year) button.classList.add('selected');
+              if (year === paneData.year) button.classList.add('kniu_sys_date_picker_selected');
               chooser.appendChild(button);
             }
           } else if (choosing === 'month') {
@@ -4343,7 +4477,7 @@ var KniuUI = (function () {
               const button = document.createElement('button');
               button.type = 'button'; button.dataset.rangeMonth = String(month); button.dataset.pane = paneData.name;
               button.textContent = isEnglish ? monthNames[month] : `${month + 1} 月`;
-              if (month === paneData.month) button.classList.add('selected');
+              if (month === paneData.month) button.classList.add('kniu_sys_date_picker_selected');
               chooser.appendChild(button);
             }
           }
@@ -4353,14 +4487,14 @@ var KniuUI = (function () {
           for (let index = 0; index < 42; index += 1) {
             const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index);
             const button = document.createElement('button');
-            button.type = 'button'; button.className = 'range-day';
+            button.type = 'button'; button.className = 'kniu_sys_date_picker_range_day';
             button.dataset.rangeDate = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
             button.textContent = String(date.getDate());
-            if (date.getMonth() !== paneData.month) button.classList.add('other');
-            if (this._isDateDisabled(date)) { button.disabled = true; button.classList.add('disabled'); }
-            if (rangeStart && this._sameDay(date, rangeStart)) button.classList.add('range-start');
-            if (rangeEnd && this._sameDay(date, rangeEnd)) button.classList.add('range-end');
-            if (rangeStart && rangeEnd && date > rangeStart && date < rangeEnd) button.classList.add('in-range');
+            if (date.getMonth() !== paneData.month) button.classList.add('kniu_sys_date_picker_other');
+            if (this._isDateDisabled(date)) { button.disabled = true; button.classList.add('kniu_sys_date_picker_disabled'); }
+            if (rangeStart && this._sameDay(date, rangeStart)) button.classList.add('kniu_sys_date_picker_range_start');
+            if (rangeEnd && this._sameDay(date, rangeEnd)) button.classList.add('kniu_sys_date_picker_range_end');
+            if (rangeStart && rangeEnd && date > rangeStart && date < rangeEnd) button.classList.add('kniu_sys_date_picker_in_range');
             const mark = this._resolveMark(date);
             if (mark) { button.dataset.mark = mark; button.title = mark; button.textContent = mark; }
             days.appendChild(button);
@@ -4377,10 +4511,10 @@ var KniuUI = (function () {
         return (minValue != null && dayValue < minValue) || (maxValue != null && dayValue > maxValue);
       }
       _setDraftTime() {
-        const timePanel = this._panel.querySelector('.time');
-        const hours = timePanel.dataset.showHour === 'true' ? +this._panel.querySelector('[data-time-field="hour"] .time-value').dataset.value : 0;
-        const minutes = timePanel.dataset.showMinute === 'true' ? +this._panel.querySelector('[data-time-field="minute"] .time-value').dataset.value : 0;
-        const seconds = timePanel.dataset.showSeconds === 'true' ? +this._panel.querySelector('[data-time-field="second"] .time-value').dataset.value : 0;
+        const timePanel = this._panel.querySelector('.kniu_sys_date_picker_time');
+        const hours = timePanel.dataset.showHour === 'true' ? +this._panel.querySelector('[data-time-field="hour"] .kniu_sys_date_picker_time_value').dataset.value : 0;
+        const minutes = timePanel.dataset.showMinute === 'true' ? +this._panel.querySelector('[data-time-field="minute"] .kniu_sys_date_picker_time_value').dataset.value : 0;
+        const seconds = timePanel.dataset.showSeconds === 'true' ? +this._panel.querySelector('[data-time-field="second"] .kniu_sys_date_picker_time_value').dataset.value : 0;
         this._draft.setHours(hours, minutes, seconds, 0);
       }
       _handleClick(event) {
@@ -4447,7 +4581,7 @@ var KniuUI = (function () {
         if (timeOption) {
           const unit = timeOption.dataset.timeOption;
           const field = this._panel.querySelector(`[data-time-field="${unit}"]`);
-          const button = field.querySelector('.time-value');
+          const button = field.querySelector('.kniu_sys_date_picker_time_value');
           button.dataset.value = timeOption.dataset.value;
           button.textContent = timeOption.textContent;
           this._setDraftTime();
@@ -4455,16 +4589,16 @@ var KniuUI = (function () {
           this._render();
           return;
         }
-        const timeButton = event.target.closest('.time-value');
+        const timeButton = event.target.closest('.kniu_sys_date_picker_time_value');
         if (timeButton) {
-          const field = timeButton.closest('.time-field');
+          const field = timeButton.closest('.kniu_sys_date_picker_time_field');
           const willOpen = field.dataset.open !== 'true';
           this._closeTimeMenus();
           if (willOpen) {
             field.dataset.open = 'true';
-            const options = field.querySelector('.time-options');
+            const options = field.querySelector('.kniu_sys_date_picker_time_options');
             options.hidden = false;
-            queueMicrotask(() => field.querySelector('.time-option.selected')?.scrollIntoView({ block: 'center' }));
+            queueMicrotask(() => field.querySelector('.kniu_sys_date_picker_time_option.kniu_sys_date_picker_selected')?.scrollIntoView({ block: 'center' }));
           }
           return;
         }
@@ -4487,7 +4621,7 @@ var KniuUI = (function () {
           this._draft.setDate(Math.min(dayOfMonth, new Date(this._viewYear, this._viewMonth + 1, 0).getDate()));
           this._panelMode = 'day'; this._render(); return;
         }
-        const day = event.target.closest('.day');
+        const day = event.target.closest('.kniu_sys_date_picker_day');
         if (day) {
           const [year, month, date] = day.dataset.date.split('-').map(Number);
           this._draft.setFullYear(year, month - 1, date);
@@ -4571,9 +4705,9 @@ var KniuUI = (function () {
         this._viewMonth = previous.getMonth();
       }
       _closeTimeMenus() {
-        this._panel.querySelectorAll('.time-field').forEach((field) => {
+        this._panel.querySelectorAll('.kniu_sys_date_picker_time_field').forEach((field) => {
           delete field.dataset.open;
-          field.querySelector('.time-options').hidden = true;
+          field.querySelector('.kniu_sys_date_picker_time_options').hidden = true;
         });
       }
     }
@@ -4797,18 +4931,18 @@ var KniuUI = (function () {
         this._files = [];
         this._objectUrls = new Map();
         this.shadowRoot.innerHTML = `<style>
-          :host{display:block;width:100%;color:#606266;font:14px/1.5 Arial,"Microsoft YaHei",sans-serif}:host([disabled]){background-color:transparent!important}.kniu_upload_bar{display:flex;align-items:stretch;width:100%;min-height:40px}.kniu_upload_hint{display:flex;flex:1;align-items:center;min-width:0;padding:0 12px;border:1px solid #dcdfe6;border-right:0;background-color:#f5f7fa;color:#c0c4cc;box-sizing:border-box}.kniu_upload_btn{flex:none;padding:0 20px;border:1px solid #409eff;border-radius:0 4px 4px 0;background-color:#409eff;color:#fff;font:inherit;cursor:pointer}.kniu_upload_btn:hover{background-color:#66b1ff;border-color:#66b1ff}.kniu_upload_btn:focus-visible{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}.kniu_upload_btn:disabled{background-color:#a0cfff;border-color:#a0cfff;cursor:not-allowed}.kniu_upload_input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.kniu_upload_wall{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}.kniu_upload_item{position:relative;width:160px;height:160px;overflow:hidden;background-color:#f5f7fa}.kniu_upload_image{display:block;width:100%;height:100%;object-fit:contain}.kniu_upload_remove{position:absolute;top:8px;right:8px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background-color:#aab4c4;color:#fff;font:18px/1 Arial;cursor:pointer}.kniu_upload_remove:hover{background-color:#f56c6c}.kniu_upload_empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#c0c4cc;font-size:18px;background-image:linear-gradient(135deg,#f7f9fc,#f1f4fa)}.kniu_upload_empty svg{width:38px;height:38px;fill:none;stroke:currentColor;stroke-width:1.8}
-        </style><div class="kniu_upload_bar"><span class="kniu_upload_hint"></span><button class="kniu_upload_btn" type="button"><slot>选择图片</slot></button><input class="kniu_upload_input" type="file"></div><div class="kniu_upload_wall" aria-live="polite"></div>`;
-        this._input = this.shadowRoot.querySelector('.kniu_upload_input');
-        this._button = this.shadowRoot.querySelector('.kniu_upload_btn');
-        this._hint = this.shadowRoot.querySelector('.kniu_upload_hint');
-        this._wall = this.shadowRoot.querySelector('.kniu_upload_wall');
+          :host{display:block;width:100%;color:#606266;font:14px/1.5 var(--kniu-font-family)}:host([disabled]){background-color:transparent!important}.kniu_sys_upload_bar{display:flex;align-items:stretch;width:100%;min-height:40px}.kniu_sys_upload_hint{display:flex;flex:1;align-items:center;min-width:0;padding:0 12px;border:1px solid #dcdfe6;border-right:0;background-color:#f5f7fa;color:#c0c4cc;box-sizing:border-box}.kniu_sys_upload_btn{flex:none;padding:0 20px;border:1px solid #409eff;border-radius:0 4px 4px 0;background-color:#409eff;color:#fff;font:inherit;cursor:pointer}.kniu_sys_upload_btn:hover{background-color:#66b1ff;border-color:#66b1ff}.kniu_sys_upload_btn:focus-visible{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}.kniu_sys_upload_btn:disabled{background-color:#a0cfff;border-color:#a0cfff;cursor:not-allowed}.kniu_sys_upload_input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.kniu_sys_upload_wall{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}.kniu_sys_upload_item{position:relative;width:160px;height:160px;overflow:hidden;background-color:#f5f7fa}.kniu_sys_upload_image{display:block;width:100%;height:100%;object-fit:contain}.kniu_sys_upload_remove{position:absolute;top:8px;right:8px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background-color:#aab4c4;color:#fff;font:18px/1 var(--kniu-font-family);cursor:pointer}.kniu_sys_upload_remove:hover{background-color:#f56c6c}.kniu_sys_upload_empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#c0c4cc;font-size:18px;background-image:linear-gradient(135deg,#f7f9fc,#f1f4fa)}.kniu_sys_upload_empty svg{width:38px;height:38px;fill:none;stroke:currentColor;stroke-width:1.8}
+        </style><div class="kniu_sys_upload_bar"><span class="kniu_sys_upload_hint"></span><button class="kniu_sys_upload_btn" type="button"><slot>选择图片</slot></button><input class="kniu_sys_upload_input" type="file"></div><div class="kniu_sys_upload_wall" aria-live="polite"></div>`;
+        this._input = this.shadowRoot.querySelector('.kniu_sys_upload_input');
+        this._button = this.shadowRoot.querySelector('.kniu_sys_upload_btn');
+        this._hint = this.shadowRoot.querySelector('.kniu_sys_upload_hint');
+        this._wall = this.shadowRoot.querySelector('.kniu_sys_upload_wall');
         this._button.addEventListener('click', () => this._input.click());
         this._input.addEventListener('change', () => this._select(Array.from(this._input.files || [])));
         this._wall.addEventListener('click', (event) => {
           if (this.hasAttribute('disabled')) return;
           const target = event.target instanceof Element ? event.target : event.target.parentElement;
-          const button = target && target.closest('.kniu_upload_remove');
+          const button = target && target.closest('.kniu_sys_upload_remove');
           if (button) this.removeAt(Number(button.dataset.index));
         });
       }
@@ -4890,9 +5024,9 @@ var KniuUI = (function () {
       _render() {
         const previews = this._files.map((file, index) => {
           const item = document.createElement('div');
-          item.className = 'kniu_upload_item';
+          item.className = 'kniu_sys_upload_item';
           const image = document.createElement('img');
-          image.className = 'kniu_upload_image';
+          image.className = 'kniu_sys_upload_image';
           const isStoredImage = typeof file === 'string';
           const uploadT = (k, p) => componentText(componentLang(this.__kniuOptions), k, p);
           image.alt = isStoredImage ? uploadT('upload.uploaded') : file.name;
@@ -4903,7 +5037,7 @@ var KniuUI = (function () {
           }
           image.src = url;
           const remove = document.createElement('button');
-          remove.className = 'kniu_upload_remove';
+          remove.className = 'kniu_sys_upload_remove';
           remove.type = 'button';
           remove.disabled = this.hasAttribute('disabled');
           remove.dataset.index = String(index);
@@ -4914,7 +5048,7 @@ var KniuUI = (function () {
         });
         if (previews.length === 0) {
           const empty = document.createElement('div');
-          empty.className = 'kniu_upload_item kniu_upload_empty';
+          empty.className = 'kniu_sys_upload_item kniu_sys_upload_empty';
           const emptyNote = this.__kniuOptions?.note ?? componentText(componentLang(this.__kniuOptions), 'upload.empty');
           empty.setAttribute('aria-label', String(emptyNote));
           empty.innerHTML = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="6" width="24" height="20" rx="1"></rect><circle cx="21" cy="12" r="2"></circle><path d="m6 23 7-8 5 5 3-3 5 6"></path></svg><span></span>';
@@ -4937,7 +5071,7 @@ var KniuUI = (function () {
           ? t('upload.selectedCount', { '1': this._files.length })
           : (this.hasAttribute('multiple') ? t('upload.selectPreview', { '1': limits.count }) : t('upload.selectPreviewSingle'));
         // 本地化按钮默认 slot 文案（仅当用户未提供自定义按钮内容时生效）
-        const btnSlot = this.shadowRoot.querySelector('.kniu_upload_btn > slot');
+        const btnSlot = this.shadowRoot.querySelector('.kniu_sys_upload_btn > slot');
         if (btnSlot && (!btnSlot.assignedNodes || btnSlot.assignedNodes().length === 0)) btnSlot.textContent = t('upload.select');
       }
     }
@@ -5165,7 +5299,7 @@ var KniuUI = (function () {
       constructor() {
         super();
         attachComponentShadow(this);
-        this.shadowRoot.innerHTML = `<style>:host{--kniu-tag-color:#409eff;--kniu-tag-bg:#ecf5ff;--kniu-tag-border:#d9ecff;display:inline-flex;vertical-align:middle}.kniu_sys_tag{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:24px;padding:0 9px;border:1px solid var(--kniu-tag-border);border-radius:4px;background-color:var(--kniu-tag-bg);color:var(--kniu-tag-color);font:12px/1 Arial,"Microsoft YaHei",sans-serif;white-space:nowrap;box-sizing:border-box}:host([type="success"]){--kniu-tag-color:#67c23a;--kniu-tag-bg:#f0f9eb;--kniu-tag-border:#e1f3d8}:host([type="warning"]){--kniu-tag-color:#e6a23c;--kniu-tag-bg:#fdf6ec;--kniu-tag-border:#faecd8}:host([type="danger"]){--kniu-tag-color:#f56c6c;--kniu-tag-bg:#fef0f0;--kniu-tag-border:#fde2e2}:host([type="info"]){--kniu-tag-color:#909399;--kniu-tag-bg:#f4f4f5;--kniu-tag-border:#e9e9eb}:host([effect="dark"]){--kniu-tag-bg:var(--kniu-tag-color);--kniu-tag-border:var(--kniu-tag-color)}:host([effect="dark"]) .kniu_sys_tag{color:#fff}:host([effect="plain"]){--kniu-tag-bg:#fff}:host([size="large"]) .kniu_sys_tag{height:28px;padding:0 11px;font-size:13px}:host([size="small"]) .kniu_sys_tag{height:20px;padding:0 7px}:host([round]) .kniu_sys_tag{border-radius:999px}:host([disabled]){opacity:.55;pointer-events:none}.kniu_sys_tag_close{display:none;width:14px;height:14px;padding:0;border:0;border-radius:50%;background-color:transparent;color:inherit;font:14px/12px Arial;cursor:pointer}:host([closable]) .kniu_sys_tag_close{display:inline-flex;align-items:center;justify-content:center}</style><span class="kniu_sys_tag"><slot></slot><button class="kniu_sys_tag_close" type="button" aria-label="关闭">×</button></span>`;
+        this.shadowRoot.innerHTML = `<style>:host{--kniu-tag-color:#409eff;--kniu-tag-bg:#ecf5ff;--kniu-tag-border:#d9ecff;display:inline-flex;vertical-align:middle}.kniu_sys_tag{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:24px;padding:0 9px;border:1px solid var(--kniu-tag-border);border-radius:4px;background-color:var(--kniu-tag-bg);color:var(--kniu-tag-color);font:12px/1 var(--kniu-font-family);white-space:nowrap;box-sizing:border-box}:host([type="success"]){--kniu-tag-color:#67c23a;--kniu-tag-bg:#f0f9eb;--kniu-tag-border:#e1f3d8}:host([type="warning"]){--kniu-tag-color:#e6a23c;--kniu-tag-bg:#fdf6ec;--kniu-tag-border:#faecd8}:host([type="danger"]){--kniu-tag-color:#f56c6c;--kniu-tag-bg:#fef0f0;--kniu-tag-border:#fde2e2}:host([type="info"]){--kniu-tag-color:#909399;--kniu-tag-bg:#f4f4f5;--kniu-tag-border:#e9e9eb}:host([effect="dark"]){--kniu-tag-bg:var(--kniu-tag-color);--kniu-tag-border:var(--kniu-tag-color)}:host([effect="dark"]) .kniu_sys_tag{color:#fff}:host([effect="plain"]){--kniu-tag-bg:#fff}:host([size="large"]) .kniu_sys_tag{height:28px;padding:0 11px;font-size:13px}:host([size="small"]) .kniu_sys_tag{height:20px;padding:0 7px}:host([round]) .kniu_sys_tag{border-radius:999px}:host([disabled]){opacity:.55;pointer-events:none}.kniu_sys_tag_close{display:none;width:14px;height:14px;padding:0;border:0;border-radius:50%;background-color:transparent;color:inherit;font:14px/12px var(--kniu-font-family);cursor:pointer}:host([closable]) .kniu_sys_tag_close{display:inline-flex;align-items:center;justify-content:center}</style><span class="kniu_sys_tag"><slot></slot><button class="kniu_sys_tag_close" type="button" aria-label="关闭">×</button></span>`;
         this.shadowRoot.querySelector('.kniu_sys_tag_close').addEventListener('click', (event) => {
           event.stopPropagation();
           if (this.hasAttribute('disabled')) return;
@@ -5185,7 +5319,7 @@ var KniuUI = (function () {
       constructor() {
         super();
         attachComponentShadow(this);
-        this.shadowRoot.innerHTML = `<style>:host{--kniu-status-color:#409eff;display:inline-flex;vertical-align:middle}:host([type="success"]){--kniu-status-color:#67c23a}:host([type="warning"]){--kniu-status-color:#e6a23c}:host([type="danger"]){--kniu-status-color:#f56c6c}:host([type="info"]){--kniu-status-color:#909399}.kniu_sys_status{display:inline-flex;align-items:center;gap:6px;color:#606266;font:14px/1.5 Arial,"Microsoft YaHei",sans-serif;white-space:nowrap}.kniu_sys_status_dot{width:6px;height:6px;border-radius:50%;background-color:var(--kniu-status-color);flex:none}:host([size="large"]) .kniu_sys_status{font-size:16px}:host([size="large"]) .kniu_sys_status_dot{width:8px;height:8px}:host([size="small"]) .kniu_sys_status{gap:5px;font-size:12px}:host([size="small"]) .kniu_sys_status_dot{width:5px;height:5px}</style><span class="kniu_sys_status"><i class="kniu_sys_status_dot" aria-hidden="true"></i><slot></slot></span>`;
+        this.shadowRoot.innerHTML = `<style>:host{--kniu-status-color:#409eff;display:inline-flex;vertical-align:middle}:host([type="success"]){--kniu-status-color:#67c23a}:host([type="warning"]){--kniu-status-color:#e6a23c}:host([type="danger"]){--kniu-status-color:#f56c6c}:host([type="info"]){--kniu-status-color:#909399}.kniu_sys_status{display:inline-flex;align-items:center;gap:6px;color:#606266;font:14px/1.5 var(--kniu-font-family);white-space:nowrap}.kniu_sys_status_dot{width:6px;height:6px;border-radius:50%;background-color:var(--kniu-status-color);flex:none}:host([size="large"]) .kniu_sys_status{font-size:16px}:host([size="large"]) .kniu_sys_status_dot{width:8px;height:8px}:host([size="small"]) .kniu_sys_status{gap:5px;font-size:12px}:host([size="small"]) .kniu_sys_status_dot{width:5px;height:5px}</style><span class="kniu_sys_status"><i class="kniu_sys_status_dot" aria-hidden="true"></i><slot></slot></span>`;
       }
     }
     customElements.define('kniu-status', KniuSysStatus);
@@ -5265,6 +5399,7 @@ var KniuUI = (function () {
     var EDITOR_ICON_UNLINK = '<svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M472.615385 175.261538c-11.815385 0-23.630769 1.969231-35.446154 5.907693-11.815385 1.969231-25.6 5.907692-37.415385 9.846154-7.876923 1.969231-15.753846 0-19.692308-3.938462l-7.876923-7.876923c-49.230769-49.230769-129.969231-55.138462-183.138461-9.846154-57.107692 51.2-61.046154 139.815385-5.907692 192.984616l129.96923 129.96923c17.723077 17.723077 37.415385 27.569231 59.076923 33.476923 27.569231 7.876923 57.107692 5.907692 82.707693-5.907692 15.753846-5.907692 31.507692-15.753846 43.323077-29.538461 5.907692-5.907692 11.815385-13.784615 17.723077-23.63077 5.907692-11.815385 21.661538-13.784615 31.507692-3.938461l49.230769 49.230769c7.876923 7.876923 7.876923 17.723077 1.969231 25.6-7.876923 9.846154-15.753846 17.723077-23.630769 27.569231-11.815385 11.815385-27.569231 23.630769-41.353847 33.476923-25.6 15.753846-51.2 25.6-80.738461 31.507692-53.169231 9.846154-110.276923 1.969231-161.476923-25.6-19.692308-9.846154-37.415385-23.630769-53.169231-39.384615l-126.030769-126.030769c-90.584615-90.584615-98.461538-238.276923-9.846154-332.8 92.553846-98.461538 248.123077-102.4 342.646154-5.907693l43.323077 43.323077c9.846154 9.846154 1.969231 29.538462-15.753846 31.507692z m324.923077 277.661539c94.523077 94.523077 92.553846 250.092308-5.907693 342.646154C697.107692 882.215385 549.415385 876.307692 458.830769 785.723077l-39.384615-39.384615c-11.815385-11.815385-3.938462-31.507692 11.815384-33.476924 23.630769-1.969231 49.230769-5.907692 72.861539-13.784615 7.876923-1.969231 15.753846 0 19.692308 3.938462l7.876923 7.876923c49.230769 49.230769 129.969231 55.138462 183.138461 9.846154 57.107692-51.2 61.046154-139.815385 5.907693-192.984616L590.769231 397.784615c-17.723077-17.723077-37.415385-27.569231-59.076923-33.476923-27.569231-7.876923-57.107692-5.907693-82.707693 5.907693-15.753846 5.907692-31.507692 15.753846-43.323077 29.538461-5.907692 5.907692-11.815385 13.784615-15.753846 21.661539-5.907692 11.815385-21.661538 13.784615-31.507692 3.938461l-47.261538-47.261538c-7.876923-7.876923-7.876923-17.723077-1.969231-25.6 7.876923-9.846154 13.784615-17.723077 23.630769-27.569231 13.784615-13.784615 27.569231-23.630769 41.353846-33.476923 25.6-15.753846 51.2-25.6 80.738462-31.507692 53.169231-9.846154 110.276923-1.969231 161.476923 25.6 19.692308 9.846154 37.415385 23.630769 53.169231 39.384615l128 128z" transform="translate(0,1025) scale(1,-1)"/></svg>';
 
     var EDITOR_TOOLBAR_ITEMS = {
+      'markdown': '<button type="button" class="kniu_sys_editor_btn" data-action="markdown" title="Markdown">MD</button>',
       'undo': '<button type="button" class="kniu_sys_editor_btn" data-cmd="undo" title="撤销"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 7L4 12l5 5"/><path d="M4 12h11a5 5 0 0 1 0 10h-2"/></svg></button>',
       'redo': '<button type="button" class="kniu_sys_editor_btn" data-cmd="redo" title="重做"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 7l5 5-5 5"/><path d="M20 12H9a5 5 0 0 0 0 10h2"/></svg></button>',
       'preview': '<button type="button" class="kniu_sys_editor_btn" data-action="preview" title="预览"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></button>',
@@ -5292,6 +5427,7 @@ var KniuUI = (function () {
       'p': '<button type="button" class="kniu_sys_editor_btn" data-block="p" title="段落">&para;</button>',
       'blockquote': '<button type="button" class="kniu_sys_editor_btn" data-block="blockquote" title="引用">&#10077;</button>',
       'pre': '<button type="button" class="kniu_sys_editor_btn" data-block="pre" title="代码块">{ }</button>',
+      'inlineCode': '<button type="button" class="kniu_sys_editor_btn" data-action="inlineCode" title="行内代码">&lt;/&gt;</button>',
       'hr': '<button type="button" class="kniu_sys_editor_btn" data-action="hr" title="分割线"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h18"/><path d="M3 8v8M21 8v8"/></svg></button>',
       'table': '<button type="button" class="kniu_sys_editor_btn" data-action="table" title="表格"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg></button>',
       'fontname': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_fontname" data-action="fontname" title="字体" aria-label="选择字体"><span class="kniu_sys_editor_font_icon">F</span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
@@ -5314,7 +5450,7 @@ var KniuUI = (function () {
     var EDITOR_DEFAULT_TOOLBAR = [
       ['code'],
       ['undo', 'redo'],
-      ['preview', 'print', 'pre'],
+      ['preview', 'print', 'pre', 'inlineCode'],
       ['justifyLeft', 'justifyCenter', 'justifyRight', 'justifyFull'],
       ['insertOrderedList', 'insertUnorderedList'],
       ['indent', 'outdent'],
@@ -5330,7 +5466,7 @@ var KniuUI = (function () {
     ];
 
     class KniuSysEditor extends HTMLElement {
-      static get observedAttributes() { return ['name', 'placeholder', 'readonly', 'disabled', 'toolbar']; }
+      static get observedAttributes() { return ['name', 'placeholder', 'readonly', 'disabled', 'toolbar', 'mode']; }
       constructor() {
         super();
         attachComponentShadow(this);
@@ -5355,7 +5491,9 @@ var KniuUI = (function () {
           '.kniu_sys_editor_btn[aria-pressed="true"]{background-color:#d9ecff;color:#409eff}',
           '.kniu_sys_editor_btn:disabled{opacity:.5;cursor:not-allowed}',
           '.kniu_sys_editor_divider{width:1px;height:20px;background-color:#dcdfe6;margin:5px 3px;flex:none}',
-          '.kniu_sys_editor_content{min-height:200px;max-height:400px;padding:10px 14px;outline:0;overflow-y:auto;font:14px/1.7 Arial,"Microsoft YaHei",sans-serif;color:#303133;word-break:break-word;cursor:text}',
+          '.kniu_sys_editor_content{min-height:200px;max-height:400px;padding:10px 14px;outline:0;overflow-y:auto;font:14px/1.7 var(--kniu-font-family);color:#303133;word-break:break-word;cursor:text}',
+          '.kniu_sys_editor_content_wrap{display:flex;min-height:200px;max-height:400px;overflow:hidden;background-color:#fff}',
+          '.kniu_sys_editor_content_wrap .kniu_sys_editor_content{flex:1;min-width:0;max-height:none}',
           '.kniu_sys_editor_content:empty::before{content:attr(data-placeholder);color:#c0c4cc;pointer-events:none}',
           '.kniu_sys_editor_content h1{font-size:1.6em;margin:.5em 0}',
           '.kniu_sys_editor_content h2{font-size:1.4em;margin:.5em 0}',
@@ -5363,24 +5501,37 @@ var KniuUI = (function () {
           '.kniu_sys_editor_content p{margin:.3em 0}',
           '.kniu_sys_editor_content ul,.kniu_sys_editor_content ol{padding-left:2em;margin:.3em 0}',
           '.kniu_sys_editor_content blockquote{margin:.5em 0;padding:.5em 1em;border-left:4px solid #dcdfe6;background-color:#f9fafc;color:#606266}',
-          '.kniu_sys_editor_content code{background-color:#f0f0f0;padding:2px 4px;border-radius:3px;font-family:Consolas,Monaco,monospace;font-size:.9em}',
-          '.kniu_sys_editor_content pre{margin:.5em 0;padding:.6em 1em;background-color:#f6f8fa;border-radius:4px;overflow-x:auto;font-family:Consolas,Monaco,monospace;font-size:.9em;line-height:1.5}',
-          '.kniu_sys_editor_content pre code{background-color:transparent;padding:0}',
+          '.kniu_sys_editor_content :not(pre)>code{padding:2px 5px;border-radius:3px;background-color:#f1f5f9;color:#be185d;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.9em}',
+          '.kniu_sys_editor_content pre{margin:.5em 0;padding:.6em 1em;background-color:#f6f8fa;border:1px solid #e5e7eb;border-radius:4px;overflow-x:auto;font-family:var(--kniu-font-family);font-size:.9em;line-height:1.5;white-space:pre}',
+          '.kniu_sys_editor_content pre code{display:block;background-color:transparent;padding:0;font:inherit;color:inherit;white-space:inherit}',
           '.kniu_sys_editor_content a{color:#409eff;text-decoration:underline}',
           '.kniu_sys_editor_content img,.kniu_sys_editor_content video{display:block;max-width:100%;height:auto;margin:.5em 0}',
           '.kniu_sys_editor_content audio{display:block;max-width:100%;margin:.5em 0}',
           '.kniu_sys_editor_content .kniu_sys_editor_media_selected{outline:0;filter:brightness(.62) sepia(.65) saturate(5) hue-rotate(175deg);transition:filter .15s ease}',
-          '.kniu_sys_editor_source{display:none;min-height:200px;max-height:400px;width:100%;padding:10px 14px;border:0;outline:0;resize:vertical;font:13px/1.6 Consolas,Monaco,monospace;color:#303133;box-sizing:border-box;background-color:#fbfbfc}',
+          '.kniu_sys_editor_source{display:none;min-height:200px;max-height:400px;width:100%;padding:10px 14px;border:0;outline:0;resize:vertical;font:13px/1.6 var(--kniu-font-family);color:#303133;box-sizing:border-box;background-color:#fbfbfc}',
+          '.kniu_sys_editor_source_wrap{display:none;position:relative;min-height:200px;max-height:400px;overflow:hidden;background-color:#fbfbfc}',
+          '.kniu_sys_editor_source_lines{display:none;flex:none;width:48px;padding:14px 8px 14px 0;overflow:hidden;color:#9ca3af;font:14px/1.7 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;text-align:right;user-select:none;box-sizing:border-box;background-color:#f3f4f6;border-right:1px solid #e5e7eb}',
+          '.kniu_sys_editor_source_lines_inner span{display:block;height:1.7em;white-space:nowrap}',
+          '.kniu_sys_editor_line_numbers{display:block;flex:none;width:48px;padding:10px 8px 10px 0;overflow:hidden;color:#9ca3af;font:14px/1.7 var(--kniu-font-family);text-align:right;user-select:none;box-sizing:border-box;background-color:#f3f4f6;border-right:1px solid #e5e7eb}',
+          '.kniu_sys_editor_line_numbers_inner span{display:block;height:1.7em;white-space:nowrap}',
           '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_content{display:none}',
-          '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source{display:block}',
-          '.kniu_sys_editor_select{height:28px;max-width:120px;padding:0 4px;border:1px solid #dcdfe6;border-radius:3px;background-color:#fff;color:#606266;font-size:12px;cursor:pointer;flex:none;box-sizing:border-box}',
+          '.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_content{display:none}',
+          '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_content_wrap,.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_content_wrap{display:none}',
+          '.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_source_wrap{display:flex;min-height:260px}',
+          '.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_source_lines{display:block}',
+          '.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_source{display:block;min-height:260px;max-height:none;flex:1;padding:14px;font:14px/1.7 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;white-space:pre-wrap;resize:none}',
+          '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source_wrap{display:flex}',
+          '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source_lines{display:block;padding:10px 8px 10px 0;font:13px/1.6 var(--kniu-font-family)}',
+          '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source_lines_inner span{height:1.6em}',
+          '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source{display:block;flex:1}',
+          '.kniu_sys_editor_select{height:28px;max-width:120px;padding:0 8px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:12px;cursor:pointer;flex:none;box-sizing:border-box}',
           '.kniu_sys_editor_fontname{position:relative;width:36px;padding-right:8px}',
-          '.kniu_sys_editor_font_icon{font-family:Georgia,serif;font-size:15px!important;font-style:italic;font-weight:700}',
+          '.kniu_sys_editor_font_icon{font-family:var(--kniu-font-family);font-size:15px!important;font-style:italic;font-weight:700}',
           '.kniu_sys_editor_fontsize{position:relative;width:36px;padding-right:8px}',
-          '.kniu_sys_editor_size_icon{display:inline-flex!important;align-items:flex-end!important;gap:1px;font-family:Arial,sans-serif;font-size:15px!important;font-weight:600}',
+          '.kniu_sys_editor_size_icon{display:inline-flex!important;align-items:flex-end!important;gap:1px;font-family:var(--kniu-font-family);font-size:15px!important;font-weight:600}',
           '.kniu_sys_editor_size_icon small{font-size:9px;line-height:1.2}',
           '.kniu_sys_editor_color_btn{position:relative;width:36px;padding-right:8px}',
-          '.kniu_sys_editor_color_letter{font-family:Arial,sans-serif;font-size:15px!important;font-weight:500;color:#409eff}',
+          '.kniu_sys_editor_color_letter{font-family:var(--kniu-font-family);font-size:15px!important;font-weight:500;color:#409eff}',
           '.kniu_sys_editor_color_letter_bg{padding:2px 3px;border-radius:2px;background-color:#ffd900;color:#222;font-size:12px!important;font-weight:700}',
           '.kniu_sys_editor_color_mark{position:absolute;left:8px;right:10px;bottom:3px;height:2px;min-width:0!important;min-height:0!important}',
           '.kniu_sys_editor_font_arrow{position:absolute;right:3px;bottom:3px;min-width:0!important;min-height:0!important;font-size:8px!important;color:#909399}',
@@ -5398,13 +5549,13 @@ var KniuUI = (function () {
           '.kniu_sys_editor_content table{border-collapse:collapse;width:100%;margin:.5em 0}',
           '.kniu_sys_editor_content td,.kniu_sys_editor_content th{border:1px solid #dcdfe6;padding:6px 10px;min-width:40px;height:22px}',
           '.kniu_sys_editor_toolbar{position:static}',
-          '.kniu_sys_editor_popover{position:absolute;top:0;left:0;z-index:30;background-color:#fff;border:1px solid #ebeef5;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:12px;min-width:210px;max-width:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;box-sizing:border-box}',
+          '.kniu_sys_editor_popover{position:absolute;top:0;left:0;z-index:30;padding:12px;min-width:210px;max-width:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;box-sizing:border-box}',
           '.kniu_sys_editor_popover[hidden]{display:none}',
           '.kniu_sys_editor_popover_row{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;color:#606266}',
           '.kniu_sys_editor_popover_row[hidden]{display:none}',
           '.kniu_sys_editor_popover_row label{flex:none;width:42px}',
           '.kniu_sys_editor_popover_row input{width:70px;height:28px;padding:0 6px;border:1px solid #dcdfe6;border-radius:4px;font-size:13px;box-sizing:border-box}',
-          '.kniu_sys_editor_popover_link{width:320px;padding:14px}',
+          '.kniu_sys_editor_popover_link{width:320px;padding:14px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14)}',
           '.kniu_sys_editor_popover_media_edit{box-shadow:0 0 0 9999px rgba(0,0,0,.6),0 8px 24px rgba(0,0,0,.22);animation:kniu_editor_media_modal_in .2s ease-out both}',
           '.kniu_sys_editor_popover_media_edit.kniu_sys_editor_popover_closing{animation:kniu_editor_media_modal_out .18s ease-in both;pointer-events:none}',
           '@keyframes kniu_editor_media_modal_in{from{opacity:0;scale:.94;box-shadow:0 0 0 9999px rgba(0,0,0,0),0 4px 12px rgba(0,0,0,0)}to{opacity:1;scale:1;box-shadow:0 0 0 9999px rgba(0,0,0,.6),0 8px 24px rgba(0,0,0,.22)}}',
@@ -5413,7 +5564,7 @@ var KniuUI = (function () {
           '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row label{width:58px}',
           '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row input{flex:1;width:auto;min-width:0}',
           '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row input[type="checkbox"]{appearance:none;flex:none;width:14px;height:14px;margin:0;border:1px solid #dcdfe6;border-radius:2px;outline:0;background-color:#fff;background-position:center;background-repeat:no-repeat;background-size:10px 8px;box-sizing:border-box;cursor:pointer}.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row input[type="checkbox"]:checked{border-color:#409eff;background-color:#409eff;background-image:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 12 10\'%3E%3Cpath d=\'M1 5l3 3 7-7\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'/%3E%3C/svg%3E")}.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row input[type="checkbox"]:focus-visible{outline:2px solid rgba(64,158,255,.3);outline-offset:2px}',
-          '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row select{flex:1;height:28px;padding:0 6px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:13px;box-sizing:border-box}',
+          '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row select{flex:1;height:28px;padding:0 8px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:13px;box-sizing:border-box}',
           '.kniu_sys_editor_popover_actions{display:flex;justify-content:flex-end;gap:8px;margin:2px 0 0}',
           '.kniu_sys_editor_popover_cancel{height:30px;padding:0 14px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:13px;cursor:pointer}',
           '.kniu_sys_editor_popover_delete{height:30px;margin-right:auto;padding:0 14px;border:1px solid #f56c6c;border-radius:4px;background-color:#fff;color:#f56c6c;font-size:13px;cursor:pointer}',
@@ -5424,12 +5575,12 @@ var KniuUI = (function () {
           '.kniu_sys_editor_popover_btn:hover{background-color:#66b1ff}',
           '.kniu_sys_editor_popover_grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;max-height:208px;overflow:auto}',
           '.kniu_sys_editor_font_list{display:flex;flex-direction:column;width:190px;max-width:100%}',
-          '.kniu_sys_editor_font_item{display:flex;align-items:center;width:100%;min-height:32px;padding:5px 10px;border:0;border-radius:4px;background-color:transparent;color:#303133;font-size:14px;text-align:left;cursor:pointer}',
+          '.kniu_sys_editor_font_item{min-height:32px;color:#303133;font-size:14px}',
           '.kniu_sys_editor_font_item:hover{background-color:#ecf5ff;color:#409eff}',
-          '.kniu_sys_editor_font_item[aria-checked="true"]::before{content:"✓";width:20px;color:#409eff;font-family:Arial,sans-serif}',
+          '.kniu_sys_editor_font_item[aria-checked="true"]::before{content:"✓";width:20px;color:#409eff;font-family:var(--kniu-font-family)}',
           '.kniu_sys_editor_font_item[aria-checked="false"]::before{content:"";width:20px}',
           '.kniu_sys_editor_size_list{display:flex;flex-direction:column;width:130px;max-width:100%}',
-          '.kniu_sys_editor_size_item{display:flex;align-items:center;width:100%;min-height:32px;padding:4px 12px;border:0;border-radius:4px;background-color:transparent;color:#303133;text-align:left;line-height:1.15;cursor:pointer}',
+          '.kniu_sys_editor_size_item{min-height:32px;color:#303133;line-height:1.15}',
           '.kniu_sys_editor_size_item:hover{background-color:#ecf5ff;color:#409eff}',
           '.kniu_sys_editor_palette{width:176px}',
           '.kniu_sys_editor_no_color{display:block;width:100%;height:30px;margin-bottom:8px;border:0;border-radius:4px;background-color:transparent;color:#606266;font-size:13px;cursor:pointer}',
@@ -5443,7 +5594,8 @@ var KniuUI = (function () {
           ':host([data-maximized="true"]){position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;width:auto;height:auto;background-color:#fff}',
           ':host([data-maximized="true"]) .kniu_sys_editor_group{height:100%;flex-direction:column}',
           ':host([data-maximized="true"]) .kniu_sys_editor_main{flex:1;max-height:none;border-radius:0;display:flex;flex-direction:column}',
-          ':host([data-maximized="true"]) .kniu_sys_editor_content,:host([data-maximized="true"]) .kniu_sys_editor_source{flex:1;min-height:0;max-height:none}',
+          ':host([data-maximized="true"]) .kniu_sys_editor_content_wrap,:host([data-maximized="true"]) .kniu_sys_editor_source_wrap{flex:1;min-height:0;max-height:none}',
+          ':host([data-maximized="true"]) .kniu_sys_editor_content,:host([data-maximized="true"]) .kniu_sys_editor_source{min-height:0;max-height:none}',
           ':host([data-maximized="true"]) .kniu_sys_editor_prepend,:host([data-maximized="true"]) .kniu_sys_editor_append{display:none}',
           ':host([data-invalid="true"]) .kniu_sys_editor_main{border-color:#f56c6c}',
           '</style>',
@@ -5518,10 +5670,10 @@ var KniuUI = (function () {
           '<button type="button" class="kniu_sys_editor_btn" data-cmd="removeFormat" title="清除格式"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 15l7-7 5 5-4 4H7z"/><path d="M9 20h11"/></svg></button>',
           '<button type="button" class="kniu_sys_editor_btn" data-action="clearhtml" title="清理HTML"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M19 4l1 1-8 8-2-2z"/><path d="M11 12L4 19l1 1 7-7"/></svg></button>',
           '<button type="button" class="kniu_sys_editor_btn" data-cmd="selectAll" title="全选"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M9 9h6v6H9z"/></svg></button>',
-          '<div class="kniu_sys_editor_popover" hidden></div>',
+          '<div class="kniu_sys_editor_popover kniu_sys_dropdown_panel" hidden></div>',
           '</div>',
-          '<div class="kniu_sys_editor_content" contenteditable="true" data-placeholder=""></div>',
-          '<textarea class="kniu_sys_editor_source" spellcheck="false"></textarea>',
+          '<div class="kniu_sys_editor_content_wrap"><div class="kniu_sys_editor_line_numbers" aria-hidden="true"><div class="kniu_sys_editor_line_numbers_inner"></div></div><div class="kniu_sys_editor_content" contenteditable="true" data-placeholder=""></div></div>',
+          '<div class="kniu_sys_editor_source_wrap"><div class="kniu_sys_editor_source_lines" aria-hidden="true"><div class="kniu_sys_editor_source_lines_inner"></div></div><textarea class="kniu_sys_editor_source" spellcheck="false"></textarea></div>',
           '</div>',
           '</div>'
         ].join('');
@@ -5529,12 +5681,19 @@ var KniuUI = (function () {
         this._group = this.shadowRoot.querySelector('.kniu_sys_editor_group');
         this._toolbar = this.shadowRoot.querySelector('.kniu_sys_editor_toolbar');
         this._source = this.shadowRoot.querySelector('.kniu_sys_editor_source');
+        this._sourceLines = this.shadowRoot.querySelector('.kniu_sys_editor_source_lines_inner');
+        this._editorLines = this.shadowRoot.querySelector('.kniu_sys_editor_line_numbers_inner');
+        adoptDropdownStyle(this.shadowRoot);
+        // 链接/图片/媒体编辑是表单型弹窗，不跟随普通下拉的阴影和圆角。
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_editor_popover_link{border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14)}.kniu_sys_editor_popover_media_edit{box-shadow:0 0 0 9999px rgba(0,0,0,.6),0 8px 24px rgba(0,0,0,.22)}');
         this._codeMode = false;
+        this._markdownMode = false;
         this._maximized = false;
         this._maxPrevParent = null;
         this._maxPrevNext = null;
         this._preview = false;
         this._popoverAction = null;
+        this._lineNumberResizeObserver = null;
 
         var self = this;
         this._buildToolbar(this._resolveToolbarConfig());
@@ -5547,15 +5706,39 @@ var KniuUI = (function () {
         });
 
         this._editor.addEventListener('input', function () {
+          self._escapeParsedRichTextNodes();
           self.removeAttribute('data-invalid');
+          self._updateLineNumbers();
           self.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         });
+        this._editor.addEventListener('beforeinput', function (e) {
+          // 输入法、语音输入等可能一次提交完整的标签字符串；不要让浏览器建成真实 script 节点。
+          if (e.inputType === 'insertText' && (e.data === '<' || hasRichTextLiteralTag(e.data))) {
+            e.preventDefault();
+            self._insertSafeRichText(e.data);
+          }
+        });
+        this._editor.addEventListener('paste', function (e) {
+          var clipboard = e.clipboardData;
+          var text = clipboard && clipboard.getData ? clipboard.getData('text/plain') : '';
+          if (!hasRichTextLiteralTag(text)) return;
+          // 仅拦截含危险原始标签的粘贴；普通富文本粘贴仍保持浏览器原有行为。
+          e.preventDefault();
+          self._insertSafeRichText(text);
+        });
+        this._editor.addEventListener('scroll', function () { self._updateLineNumbers(); });
+        this._editor.addEventListener('focus', function () { self._updateLineNumbers(); });
         this._editor.addEventListener('blur', function () {
           self.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
         });
         this._source.addEventListener('input', function () {
+          self._updateLineNumbers();
           self.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         });
+        this._source.addEventListener('scroll', function () {
+          self._updateLineNumbers();
+        });
+        this._source.addEventListener('focus', function () { self._updateLineNumbers(); });
         this._editor.addEventListener('keyup', function () { self._syncToolbarState(); });
         this._editor.addEventListener('mouseup', function () { self._syncToolbarState(); });
         this._editor.addEventListener('focus', function () { self._syncToolbarState(); });
@@ -5577,6 +5760,15 @@ var KniuUI = (function () {
       connectedCallback() {
         this._mountAffixes();
         this._sync();
+        this._updateLineNumbers();
+        this._scheduleSourceLineNumbers();
+        if (!this._lineNumberResizeObserver && typeof ResizeObserver !== 'undefined') {
+          this._lineNumberResizeObserver = new ResizeObserver(function () {
+            this._updateLineNumbers();
+          }.bind(this));
+          this._lineNumberResizeObserver.observe(this._editor);
+          this._lineNumberResizeObserver.observe(this._source);
+        }
         // 兜底：若构造时的硬编码 fallback 模板因某种旧缓存/解析异常导致最大化按钮缺失 SVG，重新填充
         var mb0 = this._toolbar && this._toolbar.querySelector('[data-action="maximize"]');
         if (mb0 && !mb0.querySelector('svg')) mb0.innerHTML = EDITOR_ICON_MAXIMIZE;
@@ -5589,7 +5781,14 @@ var KniuUI = (function () {
           this._sync();
           return;
         }
+        if (name === 'mode') this.setMode(this.getAttribute('mode'));
         this._sync();
+      }
+      disconnectedCallback() {
+        if (this._lineNumberResizeObserver) {
+          this._lineNumberResizeObserver.disconnect();
+          this._lineNumberResizeObserver = null;
+        }
       }
 
       get toolbar() {
@@ -5644,7 +5843,7 @@ var KniuUI = (function () {
             if (item) html.push(item);
           }
         }
-        html.push('<div class="kniu_sys_editor_popover" hidden></div>');
+        html.push('<div class="kniu_sys_editor_popover kniu_sys_dropdown_panel" hidden></div>');
         this._toolbar.innerHTML = html.join('');
         var linkBtn = this._toolbar.querySelector('[data-action="link"]');
         if (linkBtn) linkBtn.innerHTML = EDITOR_ICON_UNLINK;
@@ -5686,8 +5885,8 @@ var KniuUI = (function () {
           if (emojiBtn) { self._insertEmoji(emojiBtn.dataset.emoji); self._closePopover(); return; }
           var confirmBtn = t.closest ? t.closest('[data-confirm="table"]') : null;
           if (confirmBtn) {
-            var r = self._popover.querySelector('.pop_rows').value;
-            var c = self._popover.querySelector('.pop_cols').value;
+            var r = self._popover.querySelector('.kniu_sys_editor_pop_rows').value;
+            var c = self._popover.querySelector('.kniu_sys_editor_pop_cols').value;
             self._insertTable(r, c);
             self._closePopover();
             return;
@@ -5720,11 +5919,11 @@ var KniuUI = (function () {
           if (option) e.preventDefault();
         });
         this._popover.addEventListener('change', function (e) {
-          if (e.target.matches('.pop_image_source,.pop_media_source,.pop_edit_source,.pop_media_type')) self._syncMediaSourceFields();
-          if (e.target.matches('.pop_image_file,.pop_media_file,.pop_edit_file')) self._fillMediaNameFromFile(e.target);
+          if (e.target.matches('.kniu_sys_editor_pop_image_source,.kniu_sys_editor_pop_media_source,.kniu_sys_editor_pop_edit_source,.kniu_sys_editor_pop_media_type')) self._syncMediaSourceFields();
+          if (e.target.matches('.kniu_sys_editor_pop_image_file,.kniu_sys_editor_pop_media_file,.kniu_sys_editor_pop_edit_file')) self._fillMediaNameFromFile(e.target);
         });
         this._popover.addEventListener('input', function (e) {
-          if (e.target.matches('.pop_media_width,.pop_media_height')) self._syncMediaAspect(e.target);
+          if (e.target.matches('.kniu_sys_editor_pop_media_width,.kniu_sys_editor_pop_media_height')) self._syncMediaAspect(e.target);
         });
         this._popover.addEventListener('keydown', function (e) {
           if (e.key === 'Enter' && self._popoverAction === 'link') {
@@ -5775,7 +5974,7 @@ var KniuUI = (function () {
       }
 
       get value() {
-        if (this._codeMode) return this._source.value;
+        if (this._codeMode || this._markdownMode) return this._source.value;
         var clone = this._editor.cloneNode(true);
         clone.querySelectorAll('.kniu_sys_editor_media_selected').forEach(function (media) {
           media.classList.remove('kniu_sys_editor_media_selected');
@@ -5785,6 +5984,13 @@ var KniuUI = (function () {
       }
       set value(v) {
         var raw = v == null ? '' : String(v);
+        this._lastRawValue = raw;
+        if (this._markdownMode) {
+          this._source.value = raw.replace(/\r\n?/g, '\n');
+          this._updateLineNumbers();
+          this._scheduleSourceLineNumbers();
+          return;
+        }
         var self = this;
         // 超大内容用异步切分清洗（sanitizeRichHtmlAsync 内部按片让出主线程），
         // 避免打开大文章时一次同步清空卡顿；普通内容保持同步，产物完全一致。
@@ -5792,20 +5998,115 @@ var KniuUI = (function () {
         if (!large) {
           var html = sanitizeRichHtml(raw);
           this._applyEditorValue(html);
+          this._scheduleSourceLineNumbers();
           return;
         }
         var token = (this._pendingValueToken || 0) + 1;
         this._pendingValueToken = token;
         sanitizeRichHtmlAsync(raw).then(function (html) {
           // 期间若又被赋了新值，则丢弃本次迟到结果，避免覆盖更新。
-          if (self._pendingValueToken === token) self._applyEditorValue(html);
+          if (self._pendingValueToken === token) {
+            self._applyEditorValue(html);
+            self._scheduleSourceLineNumbers();
+          }
         }).catch(function () {
-          if (self._pendingValueToken === token) self._applyEditorValue(sanitizeRichHtml(raw));
+          if (self._pendingValueToken === token) {
+            self._applyEditorValue(sanitizeRichHtml(raw));
+            self._scheduleSourceLineNumbers();
+          }
         });
       }
       _applyEditorValue(html) {
         this._editor.innerHTML = html;
-        if (this._source) this._source.value = html;
+        this._normalizeCodeBlocks();
+        if (this._source) {
+          this._source.value = this._editor.innerHTML;
+          this._updateLineNumbers();
+        }
+      }
+      _insertSafeRichText(text) {
+        // 统一清洗器会将危险标签转成实体；正常的 p、strong 等标签仍可生效。
+        var html = sanitizeRichHtml(text);
+        var inserted = false;
+        this._editor.focus();
+        if (typeof document.execCommand === 'function') {
+          inserted = document.execCommand('insertHTML', false, html);
+        }
+        if (inserted) return;
+
+        // execCommand 不可用时使用 Range 回退，并补发 input 保持 kniu:form 双向同步。
+        var selection = document.getSelection();
+        if (!selection || !selection.rangeCount) return;
+        var range = selection.getRangeAt(0);
+        var template = document.createElement('template');
+        template.innerHTML = html;
+        var lastNode = template.content.lastChild;
+        range.deleteContents();
+        range.insertNode(template.content);
+        if (lastNode) {
+          range.setStartAfter(lastNode);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        this._editor.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      _escapeParsedRichTextNodes() {
+        // 极少数来源会绕过 paste（例如拖放或浏览器扩展），此时 DOM 已经形成危险节点。
+        // 用 outerHTML 还原为普通文本，保证内容完整进入 kniu:form 的值回写链路。
+        var nodes = this._editor.querySelectorAll('script,iframe,object,embed,link,meta,style,base,form');
+        if (!nodes.length) return;
+        var documentRef = this._editor.ownerDocument || document;
+        Array.prototype.forEach.call(nodes, function (node) {
+          var code = documentRef.createElement('code');
+          code.textContent = node.outerHTML;
+          node.replaceWith(code);
+        });
+      }
+      _updateLineNumbers() {
+        var sourceMode = this._codeMode || this._markdownMode;
+        var input = sourceMode ? this._source : this._editor;
+        var lines = sourceMode ? this._sourceLines : this._editorLines;
+        if (!input || !lines) return;
+        var text = sourceMode ? this._source.value : this._editor.innerText;
+        var normalizedText = String(text || '').replace(/\r\n?/g, '\n');
+        var lineCount;
+        var style = globalThis.getComputedStyle ? globalThis.getComputedStyle(input) : null;
+        var lineHeight = style ? parseFloat(style.lineHeight) : 0;
+        if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
+          var fontSize = style ? parseFloat(style.fontSize) : 14;
+          lineHeight = (Number.isFinite(fontSize) ? fontSize : 14) * 1.7;
+        }
+        var paddingTop = style ? parseFloat(style.paddingTop) || 0 : 0;
+        var paddingBottom = style ? parseFloat(style.paddingBottom) || 0 : 0;
+        if (normalizedText.length) {
+          lineCount = normalizedText.split('\n').length;
+        } else {
+          var availableHeight = Math.max(0, input.clientHeight - paddingTop - paddingBottom);
+          lineCount = Math.max(1, Math.floor(availableHeight / lineHeight));
+        }
+        // textarea 的自动换行和富文本的视觉折行也必须有行号占位，
+        // 否则长行会让内容继续向下而左栏提前结束。
+        var visualRows = Math.ceil(Math.max(0, input.scrollHeight - paddingTop - paddingBottom) / lineHeight);
+        lineCount = Math.max(lineCount, visualRows);
+        lineCount = Math.max(1, lineCount);
+        var numbers = '';
+        for (var index = 1; index <= lineCount; index++) numbers += '<span>' + index + '</span>';
+        lines.innerHTML = numbers;
+        lines.style.transform = 'translateY(-' + input.scrollTop + 'px)';
+      }
+      _scheduleSourceLineNumbers() {
+        var self = this;
+        var update = function () { self._updateLineNumbers(); };
+        if (typeof globalThis.requestAnimationFrame === 'function') {
+          globalThis.requestAnimationFrame(function () {
+            update();
+            globalThis.requestAnimationFrame(update);
+          });
+        } else {
+          setTimeout(update, 0);
+          setTimeout(update, 32);
+        }
       }
       focus() { this._editor.focus(); }
 
@@ -5814,7 +6115,21 @@ var KniuUI = (function () {
         var block = btn.dataset.block;
         var action = btn.dataset.action;
         if (action === 'maximize') { this._toggleMaximize(); return; }
-        if (action === 'code') { this._toggleCodeMode(); return; }
+        // Markdown 只操作 textarea 中的原始文本；富文本命令即使被意外触发也不能越界修改它。
+        if (this._markdownMode && action !== 'markdown') return;
+        if (action === 'code') {
+          if (this._markdownMode) return;
+          this._toggleCodeMode();
+          return;
+        }
+        if (action === 'inlineCode') {
+          if (this._markdownMode || this._codeMode) return;
+          this._toggleInlineCode();
+          this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          this._syncToolbarState();
+          return;
+        }
+        if (action === 'markdown') { this.setMode(this._markdownMode ? 'rich' : 'markdown'); return; }
         if (action === 'preview') { this._togglePreview(); return; }
         if (action === 'print') { this._print(); return; }
         if (action === 'table' || action === 'emoticons' || action === 'link' || action === 'image' || action === 'media' || action === 'fontname' || action === 'fontsize' || action === 'forecolor' || action === 'hilitecolor') { this._togglePopover(action, btn); return; }
@@ -5957,10 +6272,13 @@ var KniuUI = (function () {
         this._codeMode = !this._codeMode;
         if (this._codeMode) {
           this._source.value = this._beautifyHtml(this._editor.innerHTML);
+          this._updateLineNumbers();
+          this._scheduleSourceLineNumbers();
           this._group.dataset.codeMode = 'true';
           this._source.focus();
         } else {
           this._editor.innerHTML = sanitizeRichHtml(this._source.value);
+          this._normalizeCodeBlocks();
           this._group.dataset.codeMode = 'false';
           this._editor.focus();
         }
@@ -5970,15 +6288,48 @@ var KniuUI = (function () {
         this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
       }
 
+      get mode() { return this._markdownMode ? 'markdown' : 'rich'; }
+      set mode(value) { this.setMode(value); }
+      setMode(value) {
+        var markdown = String(value || '').toLowerCase() === 'markdown';
+        if (markdown === this._markdownMode) return;
+        if (markdown) {
+          this._source.value = this._codeMode ? this._source.value : (this._lastRawValue || this._editor.innerText);
+          this._codeMode = true;
+        } else {
+          this._editor.innerHTML = sanitizeRichHtml(this._source.value);
+          this._normalizeCodeBlocks();
+          this._codeMode = false;
+        }
+        this._markdownMode = markdown;
+        this._group.dataset.markdownMode = String(markdown);
+        this._updateLineNumbers();
+        this._scheduleSourceLineNumbers();
+        var button = this.shadowRoot.querySelector('[data-action="markdown"]');
+        if (button) button.setAttribute('aria-pressed', String(markdown));
+        this._sync();
+        this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      }
+
       _beautifyHtml(html) {
         if (!html) return html;
+        var source = String(html);
+        // 整篇没有任何标签（纯文本 / Markdown 正文 / 被转义过的正文）：
+        // 只需把 CRLF 统一，绝不能走下面的空白折叠分支，否则整篇会被压成一行。
+        if (!/<[a-zA-Z!\/]/.test(source)) {
+          return source.replace(/\r\n?/g, '\n');
+        }
         var BLOCK = 'p|div|h1|h2|h3|h4|h5|h6|ul|ol|li|dl|dt|dd|table|thead|tbody|tfoot|tr|td|th|blockquote|pre|hr|figure|figcaption|section|article|header|footer|aside|nav|main|form|fieldset|details|summary|address';
         var blockRe = new RegExp('^<\\s*/?\\s*(' + BLOCK + ')\\b', 'i');
         var voidRe = /^<\s*(?:br|hr|img|input|area|base|col|embed|source|track|wbr)\b/i;
-        var parts = String(html).split(/(<[^>]+>)/);
+        var parts = source.split(/(<[^>]+>)/);
         var out = [];
         var depth = 0;
         var stack = [];
+        // <br> 的断行延到「后面确实还有内容」时再落下，避免 <p>文字<br></p> 尾部多出空行。
+        var brPending = false;
+        // 紧随 <br> 断行之后的文本要丢掉行首缩进，保证美化可重复执行。
+        var afterBr = false;
         function pad() {
           var s = '';
           for (var i = 0; i < depth; i++) s += '  ';
@@ -5992,8 +6343,14 @@ var KniuUI = (function () {
           var t = parts[i];
           if (t === '') continue;
           if (t.charAt(0) !== '<') {
+            if (brPending) { brPending = false; out.push('\n' + pad()); afterBr = true; }
+            // <br> 之后的文本：行首空白是上一步为断行插入的缩进，渲染时行首空白不显示，
+            // 去掉它才能保证「进代码模式 → 切回 → 再进」结果稳定。
+            var chunk = afterBr ? t.replace(/^\s+/, '') : t;
+            afterBr = false;
+            if (chunk === '') continue;
             // 文本节点：连续空白折叠为单个空格（渲染等价；pre 内容走原样分支）
-            var txt = t.replace(/\s+/g, ' ');
+            var txt = chunk.replace(/\s+/g, ' ');
             if (txt === ' ') {
               // 纯空白且相邻块级标签 → 丢弃（保证美化往返稳定）
               var prevPart = i > 0 ? parts[i - 1] : '';
@@ -6008,6 +6365,19 @@ var KniuUI = (function () {
           var name = m ? m[1].toLowerCase() : '';
           var isBlock = blockRe.test(t);
           var isVoid = voidRe.test(t);
+          if (brPending) {
+            brPending = false;
+            // 紧跟块级闭合标签（如 <p>文字<br></p>）时不落断行，保持与原文一致。
+            if (!(isClose && isBlock)) { out.push('\n' + pad()); afterBr = true; }
+          }
+          // <br> 是可视换行：源码视图同样在它后面断行。
+          // 正文实际靠 <br> 分行（区块标签很少）时，只按块级标签断行会让整篇挤在一行。
+          if (!isClose && name === 'br') {
+            out.push(t);
+            brPending = true;
+            continue;
+          }
+          afterBr = false;
           if (!isClose && name === 'pre' && !/\/>$/.test(t)) {
             // <pre> 内容原样保留，避免破坏代码块缩进
             if (stack.length) stack[stack.length - 1].inline = false;
@@ -6060,7 +6430,7 @@ var KniuUI = (function () {
         try {
           var w = documentRef.defaultView.open('', '_blank');
           if (!w) return;
-          w.document.write('<html><head><meta charset="utf-8"><title>打印</title><style>body{font:14px/1.7 -apple-system,"Microsoft YaHei",sans-serif;padding:24px;color:#333}img{max-width:100%}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px 10px}</style></head><body>' + this._editor.innerHTML + '</body></html>');
+          w.document.write('<html><head><meta charset="utf-8"><title>打印</title><style>body{font:14px/1.7 "KniuHei";padding:24px;color:#333}img{max-width:100%}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px 10px}</style></head><body>' + this._editor.innerHTML + '</body></html>');
           w.document.close();
           w.focus();
           w.print();
@@ -6119,7 +6489,87 @@ var KniuUI = (function () {
       }
 
       _togglePre() {
-        this._formatBlockSafe(this._currentBlockTag() === 'pre' ? 'p' : 'pre');
+        if (this._currentBlockTag() === 'pre') {
+          var current = this._currentBlockElement();
+          if (current) this._unwrapCodeBlock(current);
+          this._formatBlockSafe('p');
+          return;
+        }
+        this._formatBlockSafe('pre');
+        this._normalizeCodeBlocks();
+      }
+
+      _toggleInlineCode() {
+        var selection = documentRef.getSelection();
+        if (!selection || !selection.rangeCount || selection.getRangeAt(0).collapsed) return;
+        var range = selection.getRangeAt(0);
+        var node = range.commonAncestorContainer;
+        if (node && node.nodeType === 3) node = node.parentNode;
+        var existing = node && node.closest ? node.closest('code') : null;
+        if (existing && this._editor.contains(existing) && !existing.parentNode.closest('pre')) {
+          while (existing.firstChild) existing.parentNode.insertBefore(existing.firstChild, existing);
+          existing.remove();
+          return;
+        }
+        this._wrapSelectedTextInCodeBlock();
+      }
+
+      _wrapSelectedTextInCodeBlock() {
+        var selection = documentRef.getSelection();
+        if (!selection || !selection.rangeCount) return false;
+        var range = selection.getRangeAt(0);
+        if (range.collapsed) return false;
+        var editor = this._editor;
+        var findRootBlock = function (node) {
+          if (node && node.nodeType === 3) node = node.parentNode;
+          while (node && node !== editor && node.parentNode !== editor) node = node.parentNode;
+          return node && node !== editor && node.parentNode === editor ? node : null;
+        };
+        var block = findRootBlock(range.startContainer);
+        if (!block || block !== findRootBlock(range.endContainer)) return false;
+
+        var code = documentRef.createElement('code');
+        // 有选区时生成行内 code，保留段落前后内容；仅无选区时才走整段 pre。
+        code.appendChild(range.extractContents());
+        range.insertNode(code);
+
+        var codeRange = documentRef.createRange();
+        codeRange.selectNodeContents(code);
+        selection.removeAllRanges();
+        selection.addRange(codeRange);
+        return true;
+      }
+
+      _currentBlockElement() {
+        try {
+          var sel = documentRef.getSelection();
+          if (!sel || sel.rangeCount === 0) return null;
+          var node = sel.anchorNode;
+          if (node && node.nodeType === 3) node = node.parentNode;
+          while (node && node !== this._editor) {
+            if ((node.tagName || '').toLowerCase() === 'pre') return node;
+            node = node.parentNode;
+          }
+        } catch (e) { /* 忽略失效选区 */ }
+        return null;
+      }
+
+      _normalizeCodeBlocks() {
+        var editor = this._editor;
+        editor.querySelectorAll('pre').forEach(function (pre) {
+          var first = pre.firstElementChild;
+          if (first && first.tagName.toLowerCase() === 'code' && first === pre.lastElementChild) return;
+          var code = documentRef.createElement('code');
+          while (pre.firstChild) code.appendChild(pre.firstChild);
+          pre.appendChild(code);
+        });
+      }
+
+      _unwrapCodeBlock(pre) {
+        var code = pre && pre.firstElementChild;
+        if (!code || code.tagName.toLowerCase() !== 'code' || code !== pre.lastElementChild) return;
+        while (code.firstChild) pre.insertBefore(code.firstChild, code);
+        code.remove();
       }
 
       // Chrome + Shadow DOM 下 execCommand('formatBlock') 执行后会把文档选区重置到 body
@@ -6226,7 +6676,7 @@ var KniuUI = (function () {
         this._popover.hidden = false;
         this._positionPopover(btn);
         if (action === 'link') {
-          var urlInput = this._popover.querySelector('.pop_link_url');
+          var urlInput = this._popover.querySelector('.kniu_sys_editor_pop_link_url');
           if (urlInput) setTimeout(function () { urlInput.focus(); urlInput.select(); }, 0);
         }
         var self = this;
@@ -6295,8 +6745,8 @@ var KniuUI = (function () {
 
       _tablePopoverHTML() {
         var t = this._editorT();
-        return '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.tableRows') + '</label><input type="number" class="pop_rows" min="1" max="20" value="3"></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.tableCols') + '</label><input type="number" class="pop_cols" min="1" max="20" value="3"></div>' +
+        return '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.tableRows') + '</label><input type="number" class="kniu_sys_editor_pop_rows" min="1" max="20" value="3"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.tableCols') + '</label><input type="number" class="kniu_sys_editor_pop_cols" min="1" max="20" value="3"></div>' +
           '<div class="kniu_sys_editor_popover_row"><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="table">' + t('editor.insertTable') + '</button></div>';
       }
 
@@ -6310,8 +6760,8 @@ var KniuUI = (function () {
         var t = this._editorT();
         var selectedText = this._linkRange ? this._linkRange.toString() : '';
         return '<div class="kniu_sys_editor_popover_title">' + t('editor.insertLink') + '</div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.linkUrl') + '</label><input type="url" class="pop_link_url" value="https://" autocomplete="off" placeholder="https://example.com"></div>' +
-          (selectedText ? '' : '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.linkText') + '</label><input type="text" class="pop_link_text" value="' + t('editor.link') + '" autocomplete="off" placeholder="' + t('editor.enterLinkText') + '"></div>') +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.linkUrl') + '</label><input type="url" class="kniu_sys_editor_pop_link_url" value="https://" autocomplete="off" placeholder="https://example.com"></div>' +
+          (selectedText ? '' : '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.linkText') + '</label><input type="text" class="kniu_sys_editor_pop_link_text" value="' + t('editor.link') + '" autocomplete="off" placeholder="' + t('editor.enterLinkText') + '"></div>') +
           '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
           '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">' + t('common.cancel') + '</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="link">' + t('common.ok') + '</button></div>';
       }
@@ -6319,10 +6769,10 @@ var KniuUI = (function () {
       _imagePopoverHTML() {
         var t = this._editorT();
         return '<div class="kniu_sys_editor_popover_title">' + t('editor.insertImage') + '</div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.sourceType') + '</label><select class="pop_image_source"><option value="cloud">' + t('common.cloud') + '</option><option value="local">' + t('common.localUpload') + '</option></select></div>' +
-          '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>' + t('editor.imageUrl') + '</label><input type="url" class="pop_image_url" autocomplete="off" placeholder="https://example.com/image.jpg"></div>' +
-          '<div class="kniu_sys_editor_popover_row pop_local_row" hidden><label>' + t('editor.localImage') + '</label><input type="file" class="pop_image_file" accept="image/jpeg,image/png,image/gif,image/webp"></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.mediaName') + '</label><input type="text" class="pop_image_name" autocomplete="off" placeholder="' + t('editor.enterMediaName') + '"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.sourceType') + '</label><select class="kniu_sys_editor_pop_image_source"><option value="cloud">' + t('common.cloud') + '</option><option value="local">' + t('common.localUpload') + '</option></select></div>' +
+          '<div class="kniu_sys_editor_popover_row kniu_sys_editor_pop_cloud_row"><label>' + t('editor.imageUrl') + '</label><input type="url" class="kniu_sys_editor_pop_image_url" autocomplete="off" placeholder="https://example.com/image.jpg"></div>' +
+          '<div class="kniu_sys_editor_popover_row kniu_sys_editor_pop_local_row" hidden><label>' + t('editor.localImage') + '</label><input type="file" class="kniu_sys_editor_pop_image_file" accept="image/jpeg,image/png,image/gif,image/webp"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.mediaName') + '</label><input type="text" class="kniu_sys_editor_pop_image_name" autocomplete="off" placeholder="' + t('editor.enterMediaName') + '"></div>' +
           '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
           '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">' + t('common.cancel') + '</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="image">' + t('common.ok') + '</button></div>';
       }
@@ -6330,11 +6780,11 @@ var KniuUI = (function () {
       _mediaPopoverHTML() {
         var t = this._editorT();
         return '<div class="kniu_sys_editor_popover_title">' + t('editor.insertMedia') + '</div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.mediaType') + '</label><select class="pop_media_type"><option value="video">' + t('editor.video') + '</option><option value="audio">' + t('editor.audio') + '</option></select></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.sourceType') + '</label><select class="pop_media_source"><option value="cloud">' + t('common.cloud') + '</option><option value="local">' + t('common.localUpload') + '</option></select></div>' +
-          '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>' + t('common.mediaUrl') + '</label><input type="url" class="pop_media_url" autocomplete="off" placeholder="https://example.com/media.mp4"></div>' +
-          '<div class="kniu_sys_editor_popover_row pop_local_row" hidden><label>' + t('common.localFile') + '</label><input type="file" class="pop_media_file" accept="video/mp4,video/webm,video/ogg,video/quicktime"></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.mediaName') + '</label><input type="text" class="pop_media_name" autocomplete="off" placeholder="' + t('editor.enterMediaName') + '"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('editor.mediaType') + '</label><select class="kniu_sys_editor_pop_media_type"><option value="video">' + t('editor.video') + '</option><option value="audio">' + t('editor.audio') + '</option></select></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.sourceType') + '</label><select class="kniu_sys_editor_pop_media_source"><option value="cloud">' + t('common.cloud') + '</option><option value="local">' + t('common.localUpload') + '</option></select></div>' +
+          '<div class="kniu_sys_editor_popover_row kniu_sys_editor_pop_cloud_row"><label>' + t('common.mediaUrl') + '</label><input type="url" class="kniu_sys_editor_pop_media_url" autocomplete="off" placeholder="https://example.com/media.mp4"></div>' +
+          '<div class="kniu_sys_editor_popover_row kniu_sys_editor_pop_local_row" hidden><label>' + t('common.localFile') + '</label><input type="file" class="kniu_sys_editor_pop_media_file" accept="video/mp4,video/webm,video/ogg,video/quicktime"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.mediaName') + '</label><input type="text" class="kniu_sys_editor_pop_media_name" autocomplete="off" placeholder="' + t('editor.enterMediaName') + '"></div>' +
           '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
           '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">' + t('common.cancel') + '</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="media">' + t('common.ok') + '</button></div>';
       }
@@ -6356,20 +6806,20 @@ var KniuUI = (function () {
           : media.tagName === 'AUDIO' ? 'audio/mpeg,audio/ogg,audio/wav,audio/mp4'
             : 'video/mp4,video/webm,video/ogg,video/quicktime';
         this._popover.innerHTML = '<div class="kniu_sys_editor_popover_title">' + t(editKey) + '</div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.sourceType') + '</label><select class="pop_edit_source"><option value="cloud">' + t('common.cloud') + '</option><option value="local">' + t('common.localUpload') + '</option></select></div>' +
-          '<div class="kniu_sys_editor_popover_row pop_cloud_row"><label>' + t('common.mediaUrl') + '</label><input type="url" class="pop_edit_url" value="' + source + '" autocomplete="off" placeholder="' + t('editor.enterMediaUrl') + '"></div>' +
-          '<div class="kniu_sys_editor_popover_row pop_local_row" hidden><label>' + t('common.localFile') + '</label><input type="file" class="pop_edit_file" accept="' + accept + '"></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.mediaName') + '</label><input type="text" class="pop_edit_name" value="' + name + '" autocomplete="off" placeholder="' + t('editor.enterMediaName') + '"></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.width') + '</label><input type="number" class="pop_media_width" min="1" max="5000" value="' + width + '" placeholder="' + t('common.auto') + '"><span>px</span></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.height') + '</label><input type="number" class="pop_media_height" min="1" max="5000" value="' + height + '" placeholder="' + t('common.auto') + '"><span>px</span></div>' +
-          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.scale') + '</label><input type="checkbox" class="pop_media_ratio_lock" checked><span>' + t('common.lockRatio') + '</span></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.sourceType') + '</label><select class="kniu_sys_editor_pop_edit_source"><option value="cloud">' + t('common.cloud') + '</option><option value="local">' + t('common.localUpload') + '</option></select></div>' +
+          '<div class="kniu_sys_editor_popover_row kniu_sys_editor_pop_cloud_row"><label>' + t('common.mediaUrl') + '</label><input type="url" class="kniu_sys_editor_pop_edit_url" value="' + source + '" autocomplete="off" placeholder="' + t('editor.enterMediaUrl') + '"></div>' +
+          '<div class="kniu_sys_editor_popover_row kniu_sys_editor_pop_local_row" hidden><label>' + t('common.localFile') + '</label><input type="file" class="kniu_sys_editor_pop_edit_file" accept="' + accept + '"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.mediaName') + '</label><input type="text" class="kniu_sys_editor_pop_edit_name" value="' + name + '" autocomplete="off" placeholder="' + t('editor.enterMediaName') + '"></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.width') + '</label><input type="number" class="kniu_sys_editor_pop_media_width" min="1" max="5000" value="' + width + '" placeholder="' + t('common.auto') + '"><span>px</span></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.height') + '</label><input type="number" class="kniu_sys_editor_pop_media_height" min="1" max="5000" value="' + height + '" placeholder="' + t('common.auto') + '"><span>px</span></div>' +
+          '<div class="kniu_sys_editor_popover_row"><label>' + t('common.scale') + '</label><input type="checkbox" class="kniu_sys_editor_pop_media_ratio_lock" checked><span>' + t('common.lockRatio') + '</span></div>' +
           '<div class="kniu_sys_editor_popover_error" role="alert"></div>' +
           '<div class="kniu_sys_editor_popover_actions"><button type="button" class="kniu_sys_editor_popover_delete" data-delete="media">' + t('common.delete') + ' ' + label + '</button><button type="button" class="kniu_sys_editor_popover_cancel" data-cancel="popover">' + t('common.cancel') + '</button><button type="button" class="kniu_sys_editor_popover_btn" data-confirm="media-size">' + t('common.ok') + '</button></div>';
         this._popover.classList.add('kniu_sys_editor_popover_link');
         this._popover.classList.add('kniu_sys_editor_popover_media_edit');
         this._popover.hidden = false;
         this._positionPopover(media);
-        var widthInput = this._popover.querySelector('.pop_media_width');
+        var widthInput = this._popover.querySelector('.kniu_sys_editor_pop_media_width');
         this._mediaAspectRatio = rect.width && rect.height ? rect.width / rect.height : 1;
         if (widthInput) { widthInput.focus(); widthInput.select(); }
       }
@@ -6411,10 +6861,10 @@ var KniuUI = (function () {
 
       _syncMediaAspect(changedInput) {
         if (this._syncingMediaAspect) return;
-        var lock = this._popover.querySelector('.pop_media_ratio_lock');
+        var lock = this._popover.querySelector('.kniu_sys_editor_pop_media_ratio_lock');
         if (!lock || !lock.checked || !this._mediaAspectRatio) return;
-        var widthInput = this._popover.querySelector('.pop_media_width');
-        var heightInput = this._popover.querySelector('.pop_media_height');
+        var widthInput = this._popover.querySelector('.kniu_sys_editor_pop_media_width');
+        var heightInput = this._popover.querySelector('.kniu_sys_editor_pop_media_height');
         if (!widthInput || !heightInput) return;
         this._syncingMediaAspect = true;
         if (changedInput === widthInput && Number(widthInput.value) > 0) {
@@ -6428,12 +6878,12 @@ var KniuUI = (function () {
       async _confirmMediaSize() {
         var media = this._editingMedia;
         if (!media) { this._closePopover(); return; }
-        var sourceInput = this._popover.querySelector('.pop_edit_source');
-        var urlInput = this._popover.querySelector('.pop_edit_url');
-        var fileInput = this._popover.querySelector('.pop_edit_file');
-        var nameInput = this._popover.querySelector('.pop_edit_name');
-        var widthInput = this._popover.querySelector('.pop_media_width');
-        var heightInput = this._popover.querySelector('.pop_media_height');
+        var sourceInput = this._popover.querySelector('.kniu_sys_editor_pop_edit_source');
+        var urlInput = this._popover.querySelector('.kniu_sys_editor_pop_edit_url');
+        var fileInput = this._popover.querySelector('.kniu_sys_editor_pop_edit_file');
+        var nameInput = this._popover.querySelector('.kniu_sys_editor_pop_edit_name');
+        var widthInput = this._popover.querySelector('.kniu_sys_editor_pop_media_width');
+        var heightInput = this._popover.querySelector('.kniu_sys_editor_pop_media_height');
         var error = this._popover.querySelector('.kniu_sys_editor_popover_error');
         var width = widthInput && widthInput.value !== '' ? Number(widthInput.value) : 0;
         var height = heightInput && heightInput.value !== '' ? Number(heightInput.value) : 0;
@@ -6468,15 +6918,15 @@ var KniuUI = (function () {
       }
 
       _syncMediaSourceFields() {
-        var source = this._popover.querySelector('.pop_image_source,.pop_media_source,.pop_edit_source');
+        var source = this._popover.querySelector('.kniu_sys_editor_pop_image_source,.kniu_sys_editor_pop_media_source,.kniu_sys_editor_pop_edit_source');
         if (!source) return;
         var isLocal = source.value === 'local';
-        var cloudRow = this._popover.querySelector('.pop_cloud_row');
-        var localRow = this._popover.querySelector('.pop_local_row');
+        var cloudRow = this._popover.querySelector('.kniu_sys_editor_pop_cloud_row');
+        var localRow = this._popover.querySelector('.kniu_sys_editor_pop_local_row');
         if (cloudRow) cloudRow.hidden = isLocal;
         if (localRow) localRow.hidden = !isLocal;
-        var mediaType = this._popover.querySelector('.pop_media_type');
-        var mediaFile = this._popover.querySelector('.pop_media_file');
+        var mediaType = this._popover.querySelector('.kniu_sys_editor_pop_media_type');
+        var mediaFile = this._popover.querySelector('.kniu_sys_editor_pop_media_file');
         if (mediaType && mediaFile) {
           mediaFile.accept = mediaType.value === 'audio'
             ? 'audio/mpeg,audio/ogg,audio/wav,audio/mp4'
@@ -6488,7 +6938,7 @@ var KniuUI = (function () {
       _fillMediaNameFromFile(fileInput) {
         var file = fileInput && fileInput.files ? fileInput.files[0] : null;
         if (!file) return;
-        var nameInput = this._popover.querySelector('.pop_image_name,.pop_media_name,.pop_edit_name');
+        var nameInput = this._popover.querySelector('.kniu_sys_editor_pop_image_name,.kniu_sys_editor_pop_media_name,.kniu_sys_editor_pop_edit_name');
         if (nameInput) nameInput.value = file.name;
       }
 
@@ -6541,10 +6991,10 @@ var KniuUI = (function () {
       }
 
       async _confirmImage() {
-        var sourceInput = this._popover.querySelector('.pop_image_source');
-        var urlInput = this._popover.querySelector('.pop_image_url');
-        var fileInput = this._popover.querySelector('.pop_image_file');
-        var nameInput = this._popover.querySelector('.pop_image_name');
+        var sourceInput = this._popover.querySelector('.kniu_sys_editor_pop_image_source');
+        var urlInput = this._popover.querySelector('.kniu_sys_editor_pop_image_url');
+        var fileInput = this._popover.querySelector('.kniu_sys_editor_pop_image_file');
+        var nameInput = this._popover.querySelector('.kniu_sys_editor_pop_image_name');
         var error = this._popover.querySelector('.kniu_sys_editor_popover_error');
         var isLocal = sourceInput && sourceInput.value === 'local';
         var localFile = fileInput && fileInput.files ? fileInput.files[0] : null;
@@ -6567,11 +7017,11 @@ var KniuUI = (function () {
       }
 
       async _confirmMedia() {
-        var typeInput = this._popover.querySelector('.pop_media_type');
-        var sourceInput = this._popover.querySelector('.pop_media_source');
-        var urlInput = this._popover.querySelector('.pop_media_url');
-        var fileInput = this._popover.querySelector('.pop_media_file');
-        var nameInput = this._popover.querySelector('.pop_media_name');
+        var typeInput = this._popover.querySelector('.kniu_sys_editor_pop_media_type');
+        var sourceInput = this._popover.querySelector('.kniu_sys_editor_pop_media_source');
+        var urlInput = this._popover.querySelector('.kniu_sys_editor_pop_media_url');
+        var fileInput = this._popover.querySelector('.kniu_sys_editor_pop_media_file');
+        var nameInput = this._popover.querySelector('.kniu_sys_editor_pop_media_name');
         var error = this._popover.querySelector('.kniu_sys_editor_popover_error');
         var type = typeInput && typeInput.value === 'audio' ? 'audio' : 'video';
         var isLocal = sourceInput && sourceInput.value === 'local';
@@ -6604,17 +7054,11 @@ var KniuUI = (function () {
 
       _fontPopoverHTML() {
         var fonts = [
-          ['', '无', 'inherit'], ['SimSun', '宋体', 'SimSun'],
-          ['Microsoft YaHei', '微软雅黑', 'Microsoft YaHei'], ['FangSong', '仿宋', 'FangSong'],
-          ['KaiTi', '楷体', 'KaiTi'], ['SimHei', '黑体', 'SimHei'],
-          ['Microsoft YaHei Light', '微软雅黑 Light', 'Microsoft YaHei Light'],
-          ['Arial', 'Arial', 'Arial'], ['Arial Black', 'Arial Black', 'Arial Black'],
-          ['Times New Roman', 'Times New Roman', 'Times New Roman'],
-          ['Courier New', 'Courier New', 'Courier New'], ['Tahoma', 'Tahoma', 'Tahoma'],
-          ['Verdana', 'Verdana', 'Verdana'], ['PingFang SC', 'PingFang SC', 'PingFang SC']
+          ['', '无', 'inherit'],
+          ['KniuHei', 'KniuHei', 'KniuHei']
         ];
         return '<div class="kniu_sys_editor_font_list" role="menu">' + fonts.map(function (font) {
-          return '<button type="button" class="kniu_sys_editor_font_item" role="menuitemradio" aria-checked="' + (font[0] ? 'false' : 'true') + '" data-font="' + font[0] + '" style="font-family:\'' + font[2] + '\'">' + font[1] + '</button>';
+          return '<button type="button" class="kniu_sys_editor_font_item kniu_sys_dropdown_option" role="menuitemradio" aria-checked="' + (font[0] ? 'false' : 'true') + '" data-font="' + font[0] + '" style="font-family:\'' + font[2] + '\'">' + font[1] + '</button>';
         }).join('') + '</div>';
       }
 
@@ -6635,7 +7079,7 @@ var KniuUI = (function () {
       _fontSizePopoverHTML() {
         var sizes = [['1', '12px'], ['2', '14px'], ['3', '16px'], ['4', '18px'], ['5', '22px'], ['6', '26px'], ['7', '32px']];
         return '<div class="kniu_sys_editor_size_list" role="menu">' + sizes.map(function (size) {
-          return '<button type="button" class="kniu_sys_editor_size_item" role="menuitem" data-font-size="' + size[0] + '" style="font-size:' + size[1] + '">' + size[1] + '</button>';
+          return '<button type="button" class="kniu_sys_editor_size_item kniu_sys_dropdown_option" role="menuitem" data-font-size="' + size[0] + '" style="font-size:' + size[1] + '">' + size[1] + '</button>';
         }).join('') + '</div>';
       }
 
@@ -6798,8 +7242,8 @@ var KniuUI = (function () {
       }
 
       _confirmLink() {
-        var urlInput = this._popover.querySelector('.pop_link_url');
-        var textInput = this._popover.querySelector('.pop_link_text');
+        var urlInput = this._popover.querySelector('.kniu_sys_editor_pop_link_url');
+        var textInput = this._popover.querySelector('.kniu_sys_editor_pop_link_text');
         var error = this._popover.querySelector('.kniu_sys_editor_popover_error');
         var url = urlInput ? urlInput.value.trim() : '';
         if (!url || /^(javascript|vbscript|data):/i.test(url)) {
@@ -6914,9 +7358,12 @@ var KniuUI = (function () {
         var ctrls = this.shadowRoot.querySelectorAll('.kniu_sys_editor_btn, .kniu_sys_editor_select, .kniu_sys_editor_color');
         for (var i = 0; i < ctrls.length; i++) {
           var c = ctrls[i];
-          var isCodeToggle = c.dataset.action === 'code';
+          var isCodeToggle = c.dataset.action === 'code' || c.dataset.action === 'markdown';
+          var isCodeAction = c.dataset.action === 'code';
           var isMax = c.dataset.action === 'maximize';
-          c.disabled = ro || (this._codeMode && !isCodeToggle && !isMax);
+          c.disabled = ro
+            || (this._markdownMode && isCodeAction)
+            || (this._codeMode && !isCodeToggle && !isMax);
         }
       }
 
@@ -6944,6 +7391,15 @@ var KniuUI = (function () {
   function registerNavbarComponent() {
     if (typeof customElements === 'undefined') return;
 
+    function ensureNavbarPlaceholderStyle(ownerDocument) {
+      const doc = ownerDocument || document;
+      if (!doc || doc.getElementById('kniu_sys_navbar_placeholder_style')) return;
+      const style = doc.createElement('style');
+      style.id = 'kniu_sys_navbar_placeholder_style';
+      style.textContent = '.kniu_sys_head_placeholder{z-index:-999;position:relative;display:block;width:100%;height:100%}';
+      (doc.head || doc.documentElement).appendChild(style);
+    }
+
     if (!customElements.get('kniu-navbar-cells')) {
       class KniuNavbarCells extends HTMLElement {
         constructor() {
@@ -6951,8 +7407,9 @@ var KniuUI = (function () {
           attachComponentShadow(this);
           this.shadowRoot.innerHTML = `
             <style>
-              :host{display:flex;width:100%;min-width:0;flex-direction:column;align-items:stretch;gap:10px}
-              @media(min-width:721px){:host{width:auto;flex-direction:row;align-items:center}}
+              :host{display:flex;width:100%;min-width:0;flex-direction:column;align-items:stretch;gap:10px;font-family:var(--kniu-font-family);font-size:var(--kniu-navbar-font-size)}
+              ::slotted(kniu-navbar-cell),::slotted(kniu-sub-navbar),::slotted(kniu-user-login){font-size:inherit}
+              @media(min-width:calc(1280px - 60px)){:host{width:auto;flex-direction:row;align-items:center}}
             </style>
             <slot></slot>`;
         }
@@ -6962,20 +7419,20 @@ var KniuUI = (function () {
 
     if (!customElements.get('kniu-navbar-cell')) {
       class KniuNavbarCell extends HTMLElement {
-        static get observedAttributes() { return ['href', 'active', 'disabled', 'side', 'level']; }
+        static get observedAttributes() { return ['route', 'href', 'active', 'disabled', 'side', 'level']; }
         constructor() {
           super();
           attachComponentShadow(this);
           this.shadowRoot.innerHTML = `
             <style>
-              :host{display:block;width:100%;min-width:0;border-bottom:1px solid #e5e7eb}
-              a{display:flex;align-items:center;width:100%;min-height:50px;padding:0 16px 0 calc(16px + var(--kniu-navbar-level,0) * 16px);border-radius:0;box-sizing:border-box;color:#4b5563;text-decoration:none;font:inherit;white-space:nowrap;transition:background-color .2s,color .2s}
+              :host{display:block;width:100%;min-width:0;border-bottom:1px solid #e5e7eb;font-family:var(--kniu-font-family);font-size:var(--kniu-navbar-font-size)}
+              a{display:flex;align-items:center;width:100%;min-height:50px;padding:0 16px 0 calc(16px + var(--kniu-navbar-level,0) * 16px);border-radius:0;box-sizing:border-box;color:#4b5563;text-decoration:none;font:inherit;font-size:inherit;white-space:nowrap;transition:background-color .2s,color .2s}
               a:hover,:host([active]) a{background-color:#f1f5f9;color:#111827}
               :host([disabled]){opacity:.45;pointer-events:none}
               :host([side]){width:100%}
               :host([side]) a{gap:8px;min-height:50px;width:100%;padding:0 12px;border-radius:11px;box-sizing:border-box;color:#9ca5bf}
               :host([side]) a:hover,:host([side][active]) a{background-color:#252b42;color:#fff}
-              @media(min-width:721px){:host(:not([side])){width:auto;border-bottom:0}:host(:not([side])) a{width:auto;min-height:44px;padding:0 18px;border-radius:8px}}
+              @media(min-width:calc(1280px - 60px)){:host(:not([side])){width:auto;border-bottom:0}:host(:not([side])) a{width:auto;min-height:44px;padding:0 18px;border-radius:8px}}
             </style>
             <a part="link"><slot></slot></a>`;
           this._link = this.shadowRoot.querySelector('a');
@@ -6984,7 +7441,7 @@ var KniuUI = (function () {
         attributeChangedCallback() { this._sync(); }
         _sync() {
           if (!this._link) return;
-          this._link.href = this.getAttribute('href') || '#/';
+          this._link.href = this.getAttribute('href') || ('#' + (this.getAttribute('route') || '/'));
           this._link.setAttribute('aria-current', this.hasAttribute('active') ? 'page' : 'false');
           this._link.setAttribute('aria-disabled', String(this.hasAttribute('disabled')));
         }
@@ -7000,18 +7457,20 @@ var KniuUI = (function () {
           attachComponentShadow(this);
           this.shadowRoot.innerHTML = `
             <style>
-              :host{position:relative;display:block;width:100%;border-bottom:1px solid #e5e7eb}
+              :host{position:relative;display:block;width:100%;border-bottom:1px solid #e5e7eb;font-family:var(--kniu-font-family);font-size:var(--kniu-navbar-font-size)}
               details{position:relative}
-              summary{display:flex;align-items:center;min-height:50px;padding:0 16px 0 calc(16px + (var(--kniu-navbar-level,1) - 1) * 16px);border-radius:0;color:#4b5563;cursor:pointer;list-style:none;white-space:nowrap}
+              summary{display:flex;align-items:center;min-height:50px;padding:0 16px 0 calc(16px + (var(--kniu-navbar-level,1) - 1) * 16px);border-radius:0;color:#4b5563;cursor:pointer;list-style:none;font:inherit;font-size:inherit;white-space:nowrap}
               summary::-webkit-details-marker{display:none}
               summary::after{content:'⌄';margin-left:auto;padding-left:8px;font-size:12px;transition:transform .2s}
               details[open]>summary::after{transform:rotate(180deg)}
               summary:hover,:host([active])>details>summary{background-color:#f1f5f9;color:#111827}
-              .panel{position:static;min-width:0;padding:0;border:0;border-radius:0;background-color:#fff;box-shadow:none}
-              @media(min-width:721px){:host{width:auto;border-bottom:0}summary{min-height:44px;padding:0 18px;border-radius:8px}.panel{position:absolute;top:100%;left:0;z-index:20;min-width:180px;padding:8px;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 12px 30px rgba(15,23,42,.12)}:host([level="2"]) .panel,:host([level="3"]) .panel{top:0;left:100%}}
+              .kniu_sys_navbar_cell_panel{position:static;min-width:0;padding:0;border:0;border-radius:0;background-color:#fff;box-shadow:none}
+              @media(min-width:calc(1280px - 60px)){:host{width:auto;border-bottom:0}summary{min-height:44px;padding:0 18px;border-radius:8px}.kniu_sys_navbar_cell_panel{position:absolute;top:100%;left:0;z-index:20;min-width:180px;padding:5px 0}:host([level="2"]) .kniu_sys_navbar_cell_panel,:host([level="3"]) .kniu_sys_navbar_cell_panel{top:0;left:100%}}
             </style>
-            <details><summary><slot name="title">菜单</slot></summary><div class="panel"><slot></slot></div></details>`;
+            <details><summary><slot name="title">菜单</slot></summary><div class="kniu_sys_navbar_cell_panel kniu_sys_dropdown_panel kniu_sys_dropdown_nav_panel"><slot></slot></div></details>`;
           this._details = this.shadowRoot.querySelector('details');
+          adoptDropdownStyle(this.shadowRoot);
+          adoptSharedStyle(this.shadowRoot, '@media(max-width:calc(1280px - 60px)){.kniu_sys_dropdown_nav_panel{border:0;border-radius:0;box-shadow:none}}');
         }
         connectedCallback() { this._sync(); }
         attributeChangedCallback() { this._sync(); }
@@ -7026,49 +7485,60 @@ var KniuUI = (function () {
 
     if (!customElements.get('kniu-navbar')) {
       class KniuNavbar extends HTMLElement {
-        static get observedAttributes() { return ['brand', 'home', 'active', 'type', 'open']; }
+        static get observedAttributes() { return ['brand', 'home', 'active', 'type', 'open', 'fixed', 'placeholder']; }
         constructor() {
           super();
           attachComponentShadow(this);
           this.shadowRoot.innerHTML = `
             <style>
-              :host{display:block;width:100%;background-color:#fff;color:#111827}
-              .bar{position:relative;display:flex;align-items:center;justify-content:space-between;gap:0;margin:0 auto;padding:0 16px;min-height:60px;max-width:1600px;flex-wrap:wrap;box-sizing:border-box}
-              .brand{display:flex;align-items:center;overflow:hidden;color:#111827;text-decoration:none;font-size:22px;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}
-              .brand-label{display:block}
-              ::slotted([slot="brand"]){display:block;max-width:min(220px,40vw);max-height:48px}
-              .toggle{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border:0;border-radius:8px;background-color:transparent;color:#111827;cursor:pointer}
-              .toggle-icon{position:relative;display:block;width:24px;height:18px}
-              .toggle-icon i{position:absolute;left:0;display:block;width:24px;height:2px;border-radius:2px;background-color:currentColor;transition:top .28s ease,transform .28s ease,opacity .2s ease}
-              .toggle-icon i:nth-child(1){top:0}.toggle-icon i:nth-child(2){top:8px}.toggle-icon i:nth-child(3){top:16px}
-              :host([open]:not([closing])) .toggle-icon i:nth-child(1){top:8px;transform:rotate(45deg)}
-              :host([open]:not([closing])) .toggle-icon i:nth-child(2){opacity:0;transform:scaleX(0)}
-              :host([open]:not([closing])) .toggle-icon i:nth-child(3){top:8px;transform:rotate(-45deg)}
-              .menu{display:none;flex:0 0 100%;align-items:stretch;min-width:0;padding:0}
-              :host([open]:not([type="side"])) .menu{position:fixed;top:60px;right:0;bottom:0;left:0;z-index:1000;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:0;width:auto;margin:0;padding:0;overflow-y:auto;background-color:#fff;animation:kniu_navbar_mobile_slide_in .28s ease-out both}
-              :host([closing]:not([type="side"])) .menu{animation-name:kniu_navbar_mobile_slide_out;animation-timing-function:ease-in}
+              :host{--kniu-navbar-font-size:max(12px,calc(14 / var(--kniu_vw)));display:flex;justify-content:space-between;align-items:center;width:100%;height:inherit;background-color:#fff;color:#111827;font-family:var(--kniu-font-family);font-size:var(--kniu-navbar-font-size)}
+              :host([fixed]){position:fixed;z-index:2;right:0;left:0}
+              :host([fixed="top"]),:host([fixed=""]){top:0}
+              :host([fixed="bottom"]){bottom:0}
+              .kniu_sys_navbar_bar{position:relative;display:flex;align-items:center;justify-content:space-between;gap:0;margin-right:auto;margin-left:auto;width:calc(100vw - 30 / var(--kniu_vw) * 2);height:inherit;flex-wrap:wrap;box-sizing:border-box}
+              .kniu_sys_navbar_brand{display:flex;align-items:center;overflow:hidden;color:#111827;text-decoration:none;font-size:22px;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}
+              .kniu_sys_navbar_brand_label{display:block}
+              ::slotted([slot="brand"]){display:block;max-width:min(220px,40vw)}
+              .kniu_sys_navbar_toggle{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border:0;border-radius:8px;background-color:transparent;color:#111827;cursor:pointer}
+              .kniu_sys_navbar_toggle_icon{position:relative;display:block;width:24px;height:18px}
+              .kniu_sys_navbar_toggle_icon i{position:absolute;left:0;display:block;width:24px;height:2px;border-radius:2px;background-color:currentColor;transition:top .28s ease,transform .28s ease,opacity .2s ease}
+              .kniu_sys_navbar_toggle_icon i:nth-child(1){top:0}.kniu_sys_navbar_toggle_icon i:nth-child(2){top:8px}.kniu_sys_navbar_toggle_icon i:nth-child(3){top:16px}
+              :host([open]:not([closing])) .kniu_sys_navbar_toggle_icon i:nth-child(1){top:8px;transform:rotate(45deg)}
+              :host([open]:not([closing])) .kniu_sys_navbar_toggle_icon i:nth-child(2){opacity:0;transform:scaleX(0)}
+              :host([open]:not([closing])) .kniu_sys_navbar_toggle_icon i:nth-child(3){top:8px;transform:rotate(-45deg)}
+              .kniu_sys_navbar_menu{display:none;flex:0 0 100%;align-items:stretch;min-width:0;padding:0;font-size:var(--kniu-navbar-font-size)}
+              :host([open]:not([type="side"])) .kniu_sys_navbar_menu{position:fixed;top:var(--kniu-navbar-menu-top,100%);right:0;bottom:0;left:0;z-index:1000;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:0;width:auto;margin:0;padding:0;overflow-y:auto;background-color:#fff;animation:kniu_navbar_mobile_slide_in .28s ease-out both}
+              :host([closing]:not([type="side"])) .kniu_sys_navbar_menu{animation-name:kniu_navbar_mobile_slide_out;animation-timing-function:ease-in}
               @keyframes kniu_navbar_mobile_slide_in{from{transform:translateX(-100%)}to{transform:translateX(0)}}
               @keyframes kniu_navbar_mobile_slide_out{from{transform:translateX(0)}to{transform:translateX(-100%)}}
               :host([type="side"]){color:#eef2ff;background-color:transparent}
-              :host([type="side"]) .bar{display:block;max-width:none;min-height:0;padding:0}
-              :host([type="side"]) .brand{gap:10px;padding:0 8px 30px;color:#eef2ff;font-size:20px;font-weight:800}
-              :host([type="side"]) .menu{display:grid;grid-template-columns:minmax(0,1fr);width:100%;justify-content:stretch;gap:6px}
-              :host([type="side"]) .menu > slot:not([name]){display:grid;grid-template-columns:minmax(0,1fr);width:100%;justify-content:stretch;gap:6px}
-              :host([type="side"]) .menu > slot:not([name])::slotted(kniu-navbar-cell){display:block;width:100%}
-              :host([type="side"]) .toggle{display:none}
-              @media(min-width:721px){.bar{gap:24px;padding:0 clamp(16px,4vw,60px);min-height:72px;flex-wrap:nowrap}.brand{font-size:clamp(22px,3vw,30px)}.toggle{display:none}.menu{display:flex;flex:initial;align-items:center;justify-content:flex-end;gap:4px;padding:0}}
-              @media(prefers-reduced-motion:reduce){.toggle-icon i{transition:none}:host([open]:not([type="side"])) .menu{animation:none}}
+              :host([type="side"]) .kniu_sys_navbar_bar{display:block;max-width:none;min-height:0}
+              :host([type="side"]) .kniu_sys_navbar_brand{gap:10px;padding:0 8px 30px;color:#eef2ff;font-size:20px;font-weight:800}
+              :host([type="side"]) .kniu_sys_navbar_menu{display:grid;grid-template-columns:minmax(0,1fr);width:100%;justify-content:stretch;gap:6px}
+              :host([type="side"]) .kniu_sys_navbar_menu > slot[name="default"],:host([type="side"]) .kniu_sys_navbar_menu > slot:not([name]){display:grid;grid-template-columns:minmax(0,1fr);width:100%;justify-content:stretch;gap:6px}
+              :host([type="side"]) .kniu_sys_navbar_menu > slot[name="default"]::slotted(kniu-navbar-cell),:host([type="side"]) .kniu_sys_navbar_menu > slot[name="default"]::slotted(kniu-navbar-cells),:host([type="side"]) .kniu_sys_navbar_menu > slot:not([name])::slotted(kniu-navbar-cell){display:block;width:100%}
+              :host([type="side"]) .kniu_sys_navbar_toggle{display:none}
+              @media (min-width:calc(1280px - 60px)){.kniu_sys_navbar_bar{gap:24px;width:calc(100vw - 220 / var(--kniu_vw) * 2);min-height:72px;flex-wrap:nowrap}.kniu_sys_navbar_brand{font-size:clamp(22px,3vw,30px)}.kniu_sys_navbar_toggle{display:none}.kniu_sys_navbar_menu{display:flex;flex:initial;align-items:center;justify-content:flex-end;gap:4px;padding:0}slot[name="default"]{display:block;flex:initial}}
+              @media(prefers-reduced-motion:reduce){.kniu_sys_navbar_toggle_icon i{transition:none}:host([open]:not([type="side"])) .kniu_sys_navbar_menu{animation:none}}
             </style>
-            <nav class="bar" aria-label="主导航">
-              <a class="brand"><slot name="brand"><span class="brand-label"></span></slot></a>
-              <button class="toggle" type="button" aria-label="展开导航" aria-expanded="false"><span class="toggle-icon" aria-hidden="true"><i></i><i></i><i></i></span></button>
-              <div class="menu"><slot name="append"></slot><slot></slot></div>
+            <nav class="kniu_sys_navbar_bar" aria-label="主导航">
+              <a class="kniu_sys_navbar_brand"><slot name="brand"><span class="kniu_sys_navbar_brand_label"></span></slot></a>
+              <button class="kniu_sys_navbar_toggle" type="button" aria-label="展开导航" aria-expanded="false"><span class="kniu_sys_navbar_toggle_icon" aria-hidden="true"><i></i><i></i><i></i></span></button>
+              <slot name="default"></slot><div class="kniu_sys_navbar_menu"><slot name="append"></slot><slot></slot></div>
             </nav>`;
-          this._brand = this.shadowRoot.querySelector('.brand');
-          this._brandLabel = this.shadowRoot.querySelector('.brand-label');
-          this._toggle = this.shadowRoot.querySelector('.toggle');
+          this._brand = this.shadowRoot.querySelector('.kniu_sys_navbar_brand');
+          this._brandLabel = this.shadowRoot.querySelector('.kniu_sys_navbar_brand_label');
+          this._toggle = this.shadowRoot.querySelector('.kniu_sys_navbar_toggle');
+          this._menu = this.shadowRoot.querySelector('.kniu_sys_navbar_menu');
+          this._defaultSlot = this.shadowRoot.querySelector('slot[name="default"]');
           this._slots = [...this.shadowRoot.querySelectorAll('slot')];
           this._handleHashChange = this._syncActive.bind(this);
+          this._handleViewportChange = this._syncSlotLayout.bind(this);
+          this._desktopMedia = globalThis.matchMedia?.('(min-width:calc(1280px - 60px))') || null;
+          this._headResizeObserver = null;
+          this._handleWindowResize = this._syncMenuTop.bind(this);
+          this._placeholder = null;
+          this._placeholderResizeObserver = null;
           this._handleToggleClick = function (event) {
             event.stopPropagation();
             if (this.hasAttribute('open')) this._closeMenu();
@@ -7082,23 +7552,116 @@ var KniuUI = (function () {
             if (!isNavigationLink) return;
             this._closeMenu();
           }.bind(this);
+          this._pageScrollLocked = false;
         }
         connectedCallback() {
           this._toggle.addEventListener('click', this._handleToggleClick);
           this._slots.forEach(function (slot) { slot.addEventListener('slotchange', this._handleHashChange); }, this);
+          if (this._desktopMedia) {
+            if (this._desktopMedia.addEventListener) this._desktopMedia.addEventListener('change', this._handleViewportChange);
+            else this._desktopMedia.addListener?.(this._handleViewportChange);
+          }
+          this._observeHeadSize();
+          this._syncFixedLayout();
           this.addEventListener('click', this._handleMenuClick);
           globalThis.addEventListener?.('hashchange', this._handleHashChange);
+          this._syncSlotLayout();
           this._sync();
         }
         disconnectedCallback() {
           this._toggle.removeEventListener('click', this._handleToggleClick);
+          if (this._desktopMedia) {
+            if (this._desktopMedia.removeEventListener) this._desktopMedia.removeEventListener('change', this._handleViewportChange);
+            else this._desktopMedia.removeListener?.(this._handleViewportChange);
+          }
+          this._headResizeObserver?.disconnect();
+          this._headResizeObserver = null;
+          this._placeholderResizeObserver?.disconnect();
+          this._placeholderResizeObserver = null;
+          this._removePlaceholder();
+          globalThis.removeEventListener?.('resize', this._handleWindowResize);
           globalThis.removeEventListener?.('hashchange', this._handleHashChange);
           this._slots.forEach(function (slot) { slot.removeEventListener('slotchange', this._handleHashChange); }, this);
           this.removeEventListener('click', this._handleMenuClick);
           if (this._closeTimer) globalThis.clearTimeout(this._closeTimer);
           this._closeTimer = null;
+          this._unlockPageScroll();
         }
-        attributeChangedCallback() { this._sync(); }
+        attributeChangedCallback() { this._syncSlotLayout(); this._syncFixedLayout(); this._sync(); }
+        _syncSlotLayout() {
+          if (!this._defaultSlot || !this._menu) return;
+          const isDesktop = this._desktopMedia ? this._desktopMedia.matches : true;
+          const keepDefaultInMenu = this.getAttribute('type') === 'side' || !isDesktop;
+          if (keepDefaultInMenu) {
+            if (this._defaultSlot.parentNode !== this._menu) this._menu.insertBefore(this._defaultSlot, this._menu.firstChild);
+          } else if (this._defaultSlot.parentNode !== this._menu.parentNode) {
+            this._menu.parentNode.insertBefore(this._defaultSlot, this._menu);
+          }
+        }
+        _observeHeadSize() {
+          const head = this.closest('.kniu_web_head');
+          this._headElement = head || null;
+          this._syncMenuTop();
+          if (head && typeof ResizeObserver === 'function') {
+            this._headResizeObserver = new ResizeObserver(this._handleWindowResize);
+            this._headResizeObserver.observe(head);
+          } else {
+            globalThis.addEventListener?.('resize', this._handleWindowResize, { passive: true });
+          }
+        }
+        _syncMenuTop() {
+          const head = this._headElement || this.closest('.kniu_web_head');
+          if (!head) return;
+          const height = head.getBoundingClientRect?.().height || head.offsetHeight || 0;
+          if (height > 0) this.style.setProperty('--kniu-navbar-menu-top', height + 'px');
+        }
+        _placeholderEnabled() {
+          const options = this.__kniuOptions || {};
+          if (Object.prototype.hasOwnProperty.call(options, 'placeholder')) {
+            return options.placeholder !== false && options.placeholder !== 'false';
+          }
+          if (this.hasAttribute('placeholder')) return this.getAttribute('placeholder') !== 'false';
+          return this.hasAttribute('fixed');
+        }
+        _syncFixedLayout() {
+          if (!this.isConnected) return;
+          if (this.hasAttribute('fixed') && !this.getAttribute('fixed')) this.setAttribute('fixed', 'top');
+          if (!this._placeholderEnabled()) {
+            this._removePlaceholder();
+            return;
+          }
+          ensureNavbarPlaceholderStyle(this.ownerDocument || document);
+          if (!this._placeholder) {
+            this._placeholder = (this.ownerDocument || document).createElement('div');
+            this._placeholder.className = 'kniu_sys_head_placeholder';
+            this._placeholder.setAttribute('aria-hidden', 'true');
+            this._placeholder.__kniuNavbarPlaceholder = true;
+          }
+          if (this.parentNode && this._placeholder.parentNode !== this.parentNode) {
+            this.parentNode.insertBefore(this._placeholder, this.nextSibling);
+          }
+          this._syncPlaceholderSize();
+          if (!this._placeholderResizeObserver && typeof ResizeObserver === 'function') {
+            this._placeholderResizeObserver = new ResizeObserver(() => this._syncPlaceholderSize());
+            this._placeholderResizeObserver.observe(this);
+          }
+        }
+        _syncPlaceholderSize() {
+          if (!this._placeholder) return;
+          const height = this.getBoundingClientRect?.().height || this.offsetHeight || 0;
+          if (height > 0) {
+            this._placeholder.style.height = height + 'px';
+            this.style.setProperty('--kniu-navbar-placeholder-height', height + 'px');
+          }
+          this._syncMenuTop();
+        }
+        _removePlaceholder() {
+          this._placeholderResizeObserver?.disconnect();
+          this._placeholderResizeObserver = null;
+          if (this._placeholder?.__kniuNavbarPlaceholder) this._placeholder.remove();
+          this._placeholder = null;
+          this.style.removeProperty('--kniu-navbar-placeholder-height');
+        }
         _sync() {
           if (!this._brand) return;
           const t = (k) => componentText(componentLang(this.__kniuOptions), k);
@@ -7106,6 +7669,40 @@ var KniuUI = (function () {
           this._brand.href = this.getAttribute('home') || '#/';
           this._syncActive();
           this._syncToggle();
+          if (this.hasAttribute('open') && !this.hasAttribute('closing') && this.getAttribute('type') !== 'side') this._lockPageScroll();
+          else if (!this.hasAttribute('open')) {
+            this._closeNestedUserMenus();
+            this._unlockPageScroll();
+          }
+        }
+        _closeNestedUserMenus() {
+          this.querySelectorAll('kniu-user-login').forEach(function (userLogin) {
+            userLogin._setMenuOpen?.(false);
+          });
+        }
+        _lockPageScroll() {
+          if (this._pageScrollLocked || typeof document === 'undefined' || !document.documentElement) return;
+          const html = document.documentElement;
+          const count = Number(html.dataset.kniuNavbarScrollLocks || 0);
+          if (count === 0) html.dataset.kniuNavbarPreviousOverflow = html.style.overflow;
+          html.dataset.kniuNavbarScrollLocks = String(count + 1);
+          html.style.overflow = 'hidden';
+          this._pageScrollLocked = true;
+        }
+        _unlockPageScroll() {
+          if (!this._pageScrollLocked || typeof document === 'undefined' || !document.documentElement) return;
+          const html = document.documentElement;
+          const count = Math.max(0, Number(html.dataset.kniuNavbarScrollLocks || 1) - 1);
+          if (count === 0) {
+            const previous = html.dataset.kniuNavbarPreviousOverflow || '';
+            if (previous) html.style.overflow = previous;
+            else html.style.removeProperty('overflow');
+            delete html.dataset.kniuNavbarScrollLocks;
+            delete html.dataset.kniuNavbarPreviousOverflow;
+          } else {
+            html.dataset.kniuNavbarScrollLocks = String(count);
+          }
+          this._pageScrollLocked = false;
         }
         _syncToggle() {
           const open = this.hasAttribute('open') && !this.hasAttribute('closing');
@@ -7118,10 +7715,12 @@ var KniuUI = (function () {
           this._closeTimer = null;
           this.removeAttribute('closing');
           this.setAttribute('open', '');
+          this._lockPageScroll();
           this._syncToggle();
         }
         _closeMenu() {
           if (!this.hasAttribute('open') || this.hasAttribute('closing')) return;
+          this._closeNestedUserMenus();
           this.setAttribute('closing', '');
           this._syncToggle();
           const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -7129,14 +7728,15 @@ var KniuUI = (function () {
             this.removeAttribute('open');
             this.removeAttribute('closing');
             this._closeTimer = null;
+            this._unlockPageScroll();
             this._syncToggle();
           }.bind(this), reducedMotion ? 0 : 280);
         }
         _syncActive() {
           const active = this.getAttribute('active') || (globalThis.location?.hash || '#/').replace(/^#/, '').split('?')[0] || '/';
           this.querySelectorAll('kniu-navbar-cell').forEach(function (cell) {
-            const index = cell.getAttribute('index') || cell.getAttribute('href')?.replace(/^#/, '').split('?')[0];
-            cell.toggleAttribute('active', index === active);
+            const route = cell.getAttribute('route') || cell.getAttribute('href')?.replace(/^#/, '').split('?')[0];
+            cell.toggleAttribute('active', route === active);
             cell.toggleAttribute('side', this.getAttribute('type') === 'side');
             let level = 0;
             let parent = cell.parentElement?.closest('kniu-sub-navbar');
@@ -7180,7 +7780,7 @@ var KniuUI = (function () {
             button{display:grid;place-items:center;width:40px;height:40px;border:1px solid #e5e7eb;border-radius:50%;background-color:#fff;color:#374151;cursor:pointer;box-shadow:0 8px 24px rgba(15,23,42,.14);transition:transform .2s,box-shadow .2s}
             button svg{width:18px;height:18px;display:block}
             button:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(15,23,42,.18)}
-            @media(min-width:721px){:host{right:min(var(--right,40px),calc(100vw - 56px))!important;bottom:min(var(--bottom,40px),calc(100vh - 56px))!important}button{width:44px;height:44px}button svg{width:20px;height:20px}}
+            @media(min-width:calc(1280px - 60px)){:host{right:min(var(--right,40px),calc(100vw - 56px))!important;bottom:min(var(--bottom,40px),calc(100vh - 56px))!important}button{width:44px;height:44px}button svg{width:20px;height:20px}}
             @media(prefers-reduced-motion:reduce){button{transition:none}}
           </style>
           <button type="button" aria-label="返回顶部">
@@ -7270,11 +7870,11 @@ var KniuUI = (function () {
       .kniu_sys_comment_textarea{display:block;width:100%;min-height:80px;padding:10px 12px 28px;border:1px solid #dcdfe6;border-radius:4px;resize:vertical;font:inherit;line-height:1.5;box-sizing:border-box;outline:0}
       .kniu_sys_comment_textarea:focus{border-color:#409eff}
       .kniu_sys_comment_toolbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:10px}
-      .kniu_sys_comment_count{position:absolute;right:20px;bottom:7px;z-index:1;color:#909399;font-size:12px;line-height:1.2;white-space:nowrap;pointer-events:none}.kniu_sys_comment_count.is-limit{color:#f56c6c}
+      .kniu_sys_comment_count{position:absolute;right:20px;bottom:7px;z-index:1;color:#909399;font-size:12px;line-height:1.2;white-space:nowrap;pointer-events:none}.kniu_sys_comment_count.kniu_sys_comment_limit{color:#f56c6c}
       .kniu_sys_comment_emoji_btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:8px 12px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:14px;line-height:1;cursor:pointer;user-select:none;transition:.1s}
       .kniu_sys_comment_emoji_btn:hover,.kniu_sys_comment_emoji_btn:focus-visible{border-color:#c6e2ff;background-color:#ecf5ff;color:#409eff}
       .kniu_sys_comment_emoji_btn:active{filter:brightness(.94)}
-      .kniu_sys_comment_submit{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:8px 15px;border:1px solid #409eff;border-radius:4px;background-color:#409eff;color:#fff;font:500 14px/1 Arial,"Microsoft YaHei",sans-serif;cursor:pointer;user-select:none;transition:.1s}
+      .kniu_sys_comment_submit{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:8px 15px;border:1px solid #409eff;border-radius:4px;background-color:#409eff;color:#fff;font:500 14px/1 var(--kniu-font-family);cursor:pointer;user-select:none;transition:.1s}
       .kniu_sys_comment_submit:hover,.kniu_sys_comment_submit:focus-visible{background-color:#79bbff;border-color:#79bbff}
       .kniu_sys_comment_submit:active{filter:brightness(.94)}
       .kniu_sys_comment_submit:disabled{border-color:#e4e7ed;background-color:#a0cfff;color:#fff;cursor:not-allowed;filter:none;opacity:.6}
@@ -7285,12 +7885,13 @@ var KniuUI = (function () {
       .kniu_sys_comment_emoji_item:hover{background-color:#f5f7fa;border-color:#dcdfe6}
       .kniu_sys_comment_list{}
       .kniu_sys_comment_empty{padding:40px 0;text-align:center;color:#909399;font-size:14px}
-      .kniu_sys_comment_item{display:flex;gap:12px;padding:16px 0;border-bottom:1px solid #ebeef5}
+      .kniu_sys_comment_item{display:flex;gap:12px;padding:16px 0;margin:calc(6 / var(--kniu_vw)) 0;border-bottom:1px solid #ebeef5}
+      .kniu_sys_comment_body>.kniu_sys_comment_item{padding:0;border:0}
       .kniu_sys_comment_item:last-child{border-bottom:0}
-      .kniu_sys_comment_item_own{flex-direction:row-reverse;text-align:right}
-      .kniu_sys_comment_item_own .kniu_sys_comment_body{text-align:right}
-      .kniu_sys_comment_item_own .kniu_sys_comment_meta{justify-content:flex-end}
-      .kniu_sys_comment_item_own .kniu_sys_comment_actions{order:-1;margin-left:0;margin-right:0}
+      .kniu_sys_comment_item_own{flex-direction:row;text-align:left}
+      .kniu_sys_comment_item_own .kniu_sys_comment_body{text-align:left}
+      .kniu_sys_comment_item_own .kniu_sys_comment_meta{justify-content:flex-start}
+      .kniu_sys_comment_item_own .kniu_sys_comment_actions{order:initial;margin-left:auto;margin-right:0}
       .kniu_sys_comment_avatar{width:40px;height:40px;border-radius:50%;overflow:hidden;flex-shrink:0;background-color:#e4e7ed;display:grid;place-items:center;color:#909399;font-size:14px}
       .kniu_sys_comment_avatar img{width:100%;height:100%;object-fit:cover;display:block}
       .kniu_sys_comment_body{flex:1;min-width:0}
@@ -7299,7 +7900,9 @@ var KniuUI = (function () {
       .kniu_sys_comment_reply_relation{color:#909399;font-size:12px}
       .kniu_sys_comment_reply_target{color:#409eff}
       .kniu_sys_comment_time{color:#909399;font-size:12px}
-      .kniu_sys_comment_content{margin:6px 0;color:#606266;word-break:break-all}
+      .kniu_sys_comment_content{color:#000;word-break:break-all;border-radius:calc(6 / var(--kniu_vw));display:inline-block;padding:calc(6 / var(--kniu_vw)) calc(12 / var(--kniu_vw));background-color:transparent}
+      .kniu_sys_comment_item_own .kniu_sys_comment_content{background-color:rgba(64,158,255,.2)}
+      .kniu_sys_comment_reply_prefix{color:#909399}
       .kniu_sys_comment_actions{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:13px;color:#606266}
       .kniu_sys_comment_action_sep{color:#dcdfe6}
       .kniu_sys_comment_action_reply,.kniu_sys_comment_action_like,.kniu_sys_comment_action_delete{background-color:transparent;border:0;padding:0;color:#606266;cursor:pointer;font:inherit;display:flex;align-items:center;gap:4px;transition:color .2s,opacity .2s}
@@ -7307,7 +7910,7 @@ var KniuUI = (function () {
       .kniu_sys_comment_action_delete{color:#f56c6c}
       .kniu_sys_comment_action_delete:hover,.kniu_sys_comment_action_delete:focus-visible{color:#f78989}
       .kniu_sys_comment_action_like.kniu_sys_comment_liked{color:#f56c6c}
-      .kniu_sys_comment_like_icon{font-size:12px}.kniu_sys_comment_action_like{position:relative;overflow:visible}.kniu_sys_comment_like_feedback{position:absolute;left:50%;top:0;color:#f56c6c;font-size:16px;line-height:1;pointer-events:none;animation:kniu_sys_comment_like_heart .9s ease-out forwards}@keyframes kniu_sys_comment_like_heart{0%{opacity:1;transform:translate(-50%,-2px) scale(.8)}30%{opacity:1;transform:translate(-50%,-16px) scale(1.1)}100%{opacity:0;transform:translate(-50%,-42px) scale(1.2)}}
+      .kniu_sys_comment_like_icon{font-size:12px}.kniu_sys_comment_action_like{position:relative;overflow:visible}.kniu_sys_comment_like_feedback{position:absolute;left:50%;top:2px;width:1em;height:1em;margin-left:-.5em;z-index:2;display:block;color:#f56c6c;font-size:18px;font-weight:600;line-height:1;text-align:center;white-space:nowrap;pointer-events:none;transform-origin:50% 50%;animation:kniu_sys_comment_like_heart .9s ease-out forwards}@keyframes kniu_sys_comment_like_heart{0%{opacity:1;transform:translateY(-4px) scale(.85)}30%{opacity:1;transform:translateY(-18px) scale(1)}100%{opacity:0;transform:translateY(-42px) scale(1.08)}}
       .kniu_sys_comment_reply_hint{padding:6px 10px;margin-bottom:8px;background-color:#f5f7fa;border-radius:4px;color:#606266;font-size:13px;display:flex;justify-content:space-between;align-items:center}
       .kniu_sys_comment_reply_hint button{background-color:transparent;border:0;color:#909399;cursor:pointer;font-size:16px;line-height:1}
       .kniu_sys_comment_reply_hint button:hover{color:#f56c6c}
@@ -7331,9 +7934,12 @@ var KniuUI = (function () {
         this._replyId = null;
         this._replyName = '';
         this._closeEmojiHandler = null;
+        // 点赞动画按“评论 ID + 反馈标记”消费一次。组件每次 options 更新都会重建
+        // 评论列表；不能仅因旧的 likeFeedback 仍在 state 中就把其他评论再播一遍。
+        this._playedLikeFeedback = new Map();
       }
       connectedCallback() { this._render(); }
-      attributeChangedCallback() {}
+      attributeChangedCallback() { }
       // kniu:option 统一配置入口：必须提供本组件自身的 options accessor，
       // 否则 installOptionsOnlyProtocol 因无 ownDescriptor.set 会退回属性反射
       // （reflectOptions），_options 恒空、_render 渲染不出任何内容
@@ -7372,7 +7978,7 @@ var KniuUI = (function () {
           htmlParts.push('<button type="button" class="kniu_sys_comment_emoji_btn" title="' + t('comment.emoji') + '">😊</button>');
           htmlParts.push('<button type="button" class="kniu_sys_comment_submit" type="button">' + commentEscape(submitText) + '</button>');
           htmlParts.push('</div>');
-          htmlParts.push('<div class="kniu_sys_comment_emoji_panel' + (this._showEmoji ? '' : ' kniu_sys_comment_hidden') + '">');
+          htmlParts.push('<div class="kniu_sys_comment_emoji_panel kniu_sys_dropdown_panel' + (this._showEmoji ? '' : ' kniu_sys_comment_hidden') + '">');
           emojis.forEach(function (emoji) {
             htmlParts.push('<button type="button" class="kniu_sys_comment_emoji_item">' + emoji + '</button>');
           });
@@ -7384,7 +7990,24 @@ var KniuUI = (function () {
         if (list.length === 0) {
           htmlParts.push('<div class="kniu_sys_comment_empty">' + commentEscape(emptyText) + '</div>');
         } else {
+          const itemsById = new Map();
           list.forEach(function (item) {
+            itemsById.set(Number(item.id), item);
+          });
+          const rootIdFor = function (item) {
+            let parentId = Number(item.parentId);
+            const seen = new Set([Number(item.id)]);
+            while (parentId > 0) {
+              if (seen.has(parentId)) return 0;
+              seen.add(parentId);
+              const parent = itemsById.get(parentId);
+              if (!parent) return 0;
+              if (Number(parent.parentId) === 0) return parentId;
+              parentId = Number(parent.parentId);
+            }
+            return 0;
+          };
+          const renderItem = function (item) {
             const itemUsername = item.username || t('comment.anonymous');
             // 归属只能使用后端按 role_id 判定的 isOwn；不能按昵称比较，
             // 否则不同账号昵称相同或身份缓存过期时会把他人评论错误放到右侧。
@@ -7400,10 +8023,6 @@ var KniuUI = (function () {
             htmlParts.push('<div class="kniu_sys_comment_body">');
             htmlParts.push('<div class="kniu_sys_comment_meta">');
             htmlParts.push('<span class="kniu_sys_comment_username">' + commentEscape(username) + '</span>');
-            if (Number(item.parentId) > 0 && item.replyTo) {
-              htmlParts.push('<span class="kniu_sys_comment_reply_relation">' + t('comment.replyTo') + '</span>');
-              htmlParts.push('<span class="kniu_sys_comment_reply_target">' + commentEscape(item.replyTo) + '</span>');
-            }
             htmlParts.push('<span class="kniu_sys_comment_time">' + commentEscape(item.time || '') + '</span>');
             if (currentUserId > 0 || !isOwn) {
               htmlParts.push('<div class="kniu_sys_comment_actions">');
@@ -7413,10 +8032,9 @@ var KniuUI = (function () {
               if (currentUserId > 0 && !isOwn) {
                 htmlParts.push('<button type="button" class="kniu_sys_comment_action_reply">' + t('comment.reply') + '</button>');
                 htmlParts.push('<span class="kniu_sys_comment_action_sep">|</span>');
-                htmlParts.push('<button type="button" class="kniu_sys_comment_action_like' + (item.liked ? ' kniu_sys_comment_liked' : '') + '">');
+                htmlParts.push('<button type="button" class="kniu_sys_comment_action_like' + (item.liked ? ' kniu_sys_comment_liked' : '') + (item.likeFeedback ? ' kniu_sys_comment_like_feedback_pending' : '') + '"' + (item.likeFeedback ? ' data-like-feedback="' + commentEscape(item.likeFeedback) + '"' : '') + '>');
                 htmlParts.push('<span class="kniu_sys_comment_like_icon">' + (item.liked ? '❤' : '♡') + '</span>');
                 htmlParts.push('<span>' + (Number(item.likes) || 0) + '</span>');
-                if (item.likeFeedback) htmlParts.push('<span class="kniu_sys_comment_like_feedback" aria-hidden="true">❤</span>');
                 htmlParts.push('</button>');
               }
               if (!isOwn && currentUserId <= 0) {
@@ -7426,15 +8044,63 @@ var KniuUI = (function () {
               htmlParts.push('</div>');
             }
             htmlParts.push('</div>');
-            htmlParts.push('<div class="kniu_sys_comment_content">' + commentEscape(item.content || '') + '</div>');
+            const contentHtml = Number(item.parentId) > 0
+              ? '<span class="kniu_sys_comment_reply_prefix">' + commentEscape(t('comment.replyTo') + (item.replyTo || t('comment.anonymous')) + '：') + '</span>' + commentEscape(item.content || '')
+              : commentEscape(item.content || '');
+            htmlParts.push('<div class="kniu_sys_comment_item"><div class="kniu_sys_comment_content">' + contentHtml + '</div></div>');
+            if (Number(item.parentId) === 0) {
+              list.forEach(function (reply) {
+                if (rootIdFor(reply) === Number(item.id)) renderItem(reply);
+              });
+            }
             htmlParts.push('</div>');
             htmlParts.push('</div>');
+          };
+          list.forEach(function (item) {
+            if (Number(item.parentId) === 0) renderItem(item);
+          });
+          // 父评论被隐藏或历史数据不完整时，回复也不能被静默丢弃。
+          list.forEach(function (item) {
+            if (Number(item.parentId) > 0 && !list.some(function (parent) {
+              return Number(parent.id) === Number(item.parentId);
+            })) renderItem(item);
           });
         }
         htmlParts.push('</div>');
         htmlParts.push('</div>');
         this.shadowRoot.innerHTML = htmlParts.join('');
+        adoptDropdownStyle(this.shadowRoot);
         this._bindEvents();
+        this._playLikeFeedback();
+      }
+      _playLikeFeedback() {
+        const root = this.shadowRoot;
+        if (!root) return;
+        const play = () => {
+          if (!this.isConnected) return;
+          root.querySelectorAll('[data-like-feedback]').forEach((button) => {
+            const item = button.closest('.kniu_sys_comment_item');
+            const commentId = item?.dataset.id || '';
+            const feedbackId = button.getAttribute('data-like-feedback') || '';
+            // 相同评论的同一反馈已播过：本次只是其它评论的状态更新造成的重渲染。
+            if (!commentId || !feedbackId || this._playedLikeFeedback.get(commentId) === feedbackId) return;
+            this._playedLikeFeedback.set(commentId, feedbackId);
+            button.removeAttribute('data-like-feedback');
+            const feedback = document.createElement('span');
+            feedback.className = 'kniu_sys_comment_like_feedback';
+            feedback.textContent = '❤';
+            feedback.setAttribute('aria-hidden', 'true');
+            feedback.addEventListener('animationend', () => feedback.remove(), { once: true });
+            // 先挂载静止首帧，再强制建立布局，最后启动动画，避免浏览器
+            // 将“插入节点 + 动画”合并成同一帧而跳过垂直位移。
+            feedback.style.animation = 'none';
+            button.appendChild(feedback);
+            void feedback.offsetWidth;
+            feedback.style.animation = 'kniu_sys_comment_like_heart .9s ease-out forwards';
+          });
+        };
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(play);
+        else setTimeout(play, 0);
       }
       _bindEvents() {
         const self = this;
@@ -7454,7 +8120,7 @@ var KniuUI = (function () {
           if (characters.length > maxLength) textarea.value = characters.slice(0, maxLength).join('');
           const length = Array.from(textarea.value).length;
           countEl.textContent = length + '/' + maxLength;
-          countEl.classList.toggle('is-limit', length >= maxLength);
+          countEl.classList.toggle('kniu_sys_comment_limit', length >= maxLength);
         };
         textarea?.addEventListener('input', syncCount);
 
@@ -7537,7 +8203,7 @@ var KniuUI = (function () {
         root.querySelectorAll('.kniu_sys_comment_action_reply').forEach(function (btn) {
           btn.addEventListener('click', function () {
             if (btn.disabled) return;
-            const item = btn.closest('.kniu_sys_comment_item');
+            const item = btn.closest('.kniu_sys_comment_item[data-id]');
             if (!item || !textarea) return;
             const id = item.dataset.id;
             const usernameEl = item.querySelector('.kniu_sys_comment_username');
@@ -7549,7 +8215,7 @@ var KniuUI = (function () {
 
         root.querySelectorAll('.kniu_sys_comment_action_like').forEach(function (btn) {
           btn.addEventListener('click', function () {
-            const item = btn.closest('.kniu_sys_comment_item');
+            const item = btn.closest('.kniu_sys_comment_item[data-id]');
             if (!item) return;
             const id = item.dataset.id;
             if (!id) return;
@@ -7560,7 +8226,7 @@ var KniuUI = (function () {
 
         root.querySelectorAll('.kniu_sys_comment_action_delete').forEach(function (btn) {
           btn.addEventListener('click', function () {
-            const item = btn.closest('.kniu_sys_comment_item');
+            const item = btn.closest('.kniu_sys_comment_item[data-id]');
             const id = item?.dataset.id;
             if (id) self._dispatch('delete', { commentId: id });
           });
@@ -7603,35 +8269,45 @@ var KniuUI = (function () {
         const liked = Boolean(options.liked);
         const own = Boolean(options.own);
         const disabled = Boolean(options.disabled || options.loading || own);
+        const feedback = Number(options.feedback) || 0;
+        // 重建 Shadow DOM 会移除上一轮动画节点；必须同步复位播放锁，
+        // 否则取消点赞后再次点赞会一直被误判为动画仍在播放。
+        this._plusPlaying = false;
         this.toggleAttribute('data-own', own);
         // 重新渲染按钮状态时不要搬运旧的 +1 动画节点；详情页连续拉取
         // getDetail/frontProfile/getComments 会触发多次渲染，搬运会让同一
         // 个动画重复播放，表现为飘出两个 +1。
         this.shadowRoot.innerHTML = `
           <style>
-            :host{display:block;width:100%;margin:0;color:#606266;font:16px/1 Arial,"Microsoft YaHei",sans-serif;box-sizing:border-box}
+            :host{display:block;width:100%;margin:0;color:#606266;font:16px/1 var(--kniu-font-family);box-sizing:border-box}
             button{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:44px;padding:11px 18px;border:1px solid #dcdfe6;border-radius:5px;background-color:#fff;color:inherit;font:inherit;cursor:pointer;overflow:visible;transition:color .15s,border-color .15s,background-color .15s;box-sizing:border-box}
             button:hover,button:focus-visible{color:#409eff;border-color:#c6e2ff;background-color:#ecf5ff;outline:0}
             button[aria-pressed="true"]{color:#fff;border-color:#409eff;background-color:#409eff}
             button:disabled{color:#a8abb2;border-color:#e4e7ed;background-color:#f5f7fa;cursor:not-allowed}
             svg{display:block;width:24px;height:24px;fill:currentColor}
-            .count{white-space:nowrap}
-            .like-plus{position:absolute;left:50%;top:2px;z-index:2;color:#409eff;font-size:18px;font-weight:600;line-height:1;white-space:nowrap;pointer-events:none;animation:kniu_sys_like_plus .9s ease-out forwards}
+            .kniu_sys_like_count{white-space:nowrap}
+            .kniu_sys_like_plus{position:absolute;left:50%;top:2px;z-index:2;color:#409eff;font-size:18px;font-weight:600;line-height:1;white-space:nowrap;pointer-events:none;animation:kniu_sys_like_plus .9s ease-out forwards}
             @keyframes kniu_sys_like_plus{0%{opacity:1;transform:translate(-50%,-4px) scale(.85)}30%{opacity:1;transform:translate(-50%,-18px) scale(1)}100%{opacity:0;transform:translate(-50%,-48px) scale(1.08)}}
-            @media(prefers-reduced-motion:reduce){.like-plus{animation-duration:.01ms}}
+            @media(prefers-reduced-motion:reduce){.kniu_sys_like_plus{animation-duration:.01ms}}
           </style>
           <button type="button" aria-label="${liked ? '取消点赞' : '点赞'}" aria-pressed="${liked}" ${disabled ? 'disabled' : ''}>
             <svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M885.6 421.6c-20.8-25.6-52-40-85.6-40H622.4l24-116.8c12.8-62.4-10.4-127.2-60-166.4-20-16-48.8-13.6-66.4 5.6L300.8 349.6c-12 13.6-18.4 30.4-18.4 48v416c0 40 32 72 72 72h373.6c52 0 98.4-36.8 108.8-88l72-280c7.2-33.6-1.6-68-23.2-96zM218.4 381.6H112c-26.4 0-48 21.6-48 48v408c0 26.4 21.6 48 48 48h106.4c26.4 0 48-21.6 48-48v-408c0-26.4-21.6-48-48-48z"/></svg>
-            <span class="count">(${count})</span>
+            <span class="kniu_sys_like_count">(${count})</span>
           </button>`;
         const button = this.shadowRoot.querySelector('button');
         button?.addEventListener('click', this._handleClick);
-         // 等按钮完成本次 DOM 挂载后再启动动画，避免同步 append 后首帧未建立导致动画不可见。
-         if (options.feedback) {
-           const play = () => this._playPlusOne();
-           if (typeof requestAnimationFrame === 'function') requestAnimationFrame(play);
-           else setTimeout(play, 0);
-         }
+        // 等按钮完成本次 DOM 挂载后再启动动画，避免同步 append 后首帧未建立导致动画不可见。
+        if (liked && feedback > 0 && feedback !== this._lastFeedback) {
+          this._lastFeedback = feedback;
+          const play = () => {
+            // 取消请求期间可能仍会触发一次旧状态重渲染，确认当前状态仍是点赞后才播放。
+            if (this._options?.liked && Number(this._options?.feedback) === feedback) {
+              this._playPlusOne();
+            }
+          };
+          if (typeof requestAnimationFrame === 'function') requestAnimationFrame(play);
+          else setTimeout(play, 0);
+        }
       }
       _click() {
         if (this._options?.disabled || this._options?.loading || this._options?.own) return;
@@ -7645,17 +8321,12 @@ var KniuUI = (function () {
         }));
       }
       _playPlusOne() {
-        const now = Date.now();
-        // 详情视图切换/重渲染期间可能短暂存在两个组件实例；全局时间窗
-        // 确保一次用户点击最多产生一个视觉反馈。
-        if (KniuSysLike._lastPlusAt && now - KniuSysLike._lastPlusAt < 800) return;
-        KniuSysLike._lastPlusAt = now;
         if (this._plusPlaying) return;
         this._plusPlaying = true;
         const button = this.shadowRoot.querySelector('button');
         if (!button) { this._plusPlaying = false; return; }
         const plus = (this.ownerDocument || document).createElement('span');
-        plus.className = 'like-plus';
+        plus.className = 'kniu_sys_like_plus';
         plus.textContent = '+1';
         plus.setAttribute('aria-hidden', 'true');
         plus.addEventListener('animationend', function () { plus.remove(); this._plusPlaying = false; }.bind(this), { once: true });
@@ -7679,6 +8350,8 @@ var KniuUI = (function () {
         this._handleIdentityChange = this._render.bind(this);
         this._handleLogout = this._logout.bind(this);
         this._handleDocumentClick = this._onDocumentClick.bind(this);
+        this._menuPositionFrame = 0;
+        this._menuAnchor = null;
       }
       connectedCallback() {
         globalThis.addEventListener?.('kniu-identity-change', this._handleIdentityChange);
@@ -7689,7 +8362,7 @@ var KniuUI = (function () {
       disconnectedCallback() {
         globalThis.removeEventListener?.('kniu-identity-change', this._handleIdentityChange);
         this.ownerDocument?.removeEventListener('click', this._handleDocumentClick);
-        this.shadowRoot.querySelector('.logout')?.removeEventListener('click', this._handleLogout);
+        this.shadowRoot.querySelector('.kniu_sys_user_login_logout')?.removeEventListener('click', this._handleLogout);
         this._cleanupMenuPopover();
       }
       set options(value) {
@@ -7728,81 +8401,128 @@ var KniuUI = (function () {
         this._cleanupMenuPopover();
         this.shadowRoot.innerHTML = `
           <style>
-            :host{display:flex;align-items:center;width:100%;min-height:50px;padding:0 16px;border-bottom:1px solid #e5e7eb;color:#111827;font:14px/1 Arial,"Microsoft YaHei",sans-serif;box-sizing:border-box}
-            a,button{min-height:44px;border:0;background-color:transparent;color:inherit;font:inherit;text-decoration:none;box-sizing:border-box}
-            .user{position:relative;display:inline-flex;align-items:center;width:100%;white-space:nowrap}
-            .user-trigger{display:inline-flex;align-items:center;gap:7px;padding:0;cursor:pointer}
-            .user-trigger:focus-visible{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}
-            .avatar{display:block;width:30px;height:30px;border-radius:50%;overflow:hidden;flex-shrink:0}
-            .avatar kniu-image{display:block;width:100%;height:100%}
-            .arrow{width:5px;height:5px;margin:0 3px 3px 1px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(45deg);transition:transform .2s}
-            .user[data-open="true"] .arrow{margin-bottom:0;transform:rotate(225deg)}
-            .menu{position:fixed;z-index:10030;display:none;min-width:112px;padding:5px 0;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.12)}
-            .menu[data-open="true"]{display:block}
-            .menu a,.menu button{display:flex;align-items:center;width:100%;min-height:34px;padding:0 14px;cursor:pointer;white-space:nowrap}
-            .menu a:hover,.menu a:focus-visible,.menu button:hover,.menu button:focus-visible{color:#409eff;background-color:#ecf5ff;outline:0}
-            .logout:disabled{color:#c0c4cc;cursor:not-allowed}
-            @media(min-width:721px){:host{display:inline-flex;width:auto;min-height:0;padding:0;border-bottom:0}.user{width:auto}}
+            :host{display:flex;align-items:center;width:100%;min-height:50px;padding:0 16px;border-bottom:1px solid #e5e7eb;color:#111827;font-family:var(--kniu-font-family);font-size:var(--kniu-navbar-font-size);box-sizing:border-box}
+            a,button{min-height:44px;border:0;background-color:transparent;color:inherit;font:inherit;font-size:inherit;text-decoration:none;box-sizing:border-box}
+            .kniu_sys_user_login_user{position:relative;display:inline-flex;align-items:center;width:100%;padding:0 16px 0 calc(16px + var(--kniu-navbar-level,1) * 16px);white-space:nowrap}
+            .kniu_sys_user_login_trigger{display:inline-flex;align-items:center;gap:7px;padding:0;cursor:pointer}
+            .kniu_sys_user_login_trigger:focus-visible{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}
+            .kniu_sys_user_login_avatar{display:block;width:30px;height:30px;border-radius:50%;overflow:hidden;flex-shrink:0}
+            .kniu_sys_user_login_avatar kniu-image{display:block;width:100%;height:100%}
+            .kniu_sys_user_login_arrow{width:5px;height:5px;margin:0 3px 3px 1px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(45deg);transition:transform .2s}
+            .kniu_sys_user_login_user[data-open="true"] .kniu_sys_user_login_arrow{margin-bottom:0;transform:rotate(225deg)}
+            .kniu_sys_user_login_menu{position:fixed;z-index:10030;display:none;min-width:112px;padding:5px 0;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+            .kniu_sys_user_login_menu[data-open="true"]{display:block}
+            .kniu_sys_user_login_menu a,.kniu_sys_user_login_menu button{display:flex;align-items:center;width:100%;min-height:32px;padding:0 12px;cursor:pointer;white-space:nowrap}
+            .kniu_sys_user_login_menu a:hover,.kniu_sys_user_login_menu a:focus-visible,.kniu_sys_user_login_menu button:hover,.kniu_sys_user_login_menu button:focus-visible{color:#409eff;background-color:#ecf5ff;outline:0}
+            .kniu_sys_user_login_logout:disabled{color:#c0c4cc;cursor:not-allowed}
+            @media(min-width:calc(1280px - 60px)){:host{display:inline-flex;width:auto;min-height:0;padding:0;border-bottom:0}.kniu_sys_user_login_user{width:auto;padding:0}}
           </style>
-          <div class="user${nickname ? '' : ' user-guest'}" data-open="${this._menuOpen}">
-            <button class="user-trigger" type="button" aria-haspopup="menu" aria-expanded="${this._menuOpen}">
-              <span class="avatar" aria-hidden="true"><kniu-image src="${String(identity.avatar || DEFAULT_USER_AVATAR).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" fit="cover" /></span>
-              <span class="hello"></span><span class="arrow" aria-hidden="true"></span>
+          <div class="kniu_sys_user_login_user${nickname ? '' : ' kniu_sys_user_login_user_guest'}" data-open="${this._menuOpen}">
+            <button class="kniu_sys_user_login_trigger" type="button" aria-haspopup="menu" aria-expanded="${this._menuOpen}">
+              <span class="kniu_sys_user_login_avatar" aria-hidden="true"><kniu-image src="${String(identity.avatar || DEFAULT_USER_AVATAR).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" fit="cover" /></span>
+              <span class="kniu_sys_user_login_hello"></span><span class="kniu_sys_user_login_arrow" aria-hidden="true"></span>
             </button>
-            <div class="menu" role="menu" data-open="${this._menuOpen}">
+            <div class="kniu_sys_user_login_menu kniu_sys_dropdown_panel" role="menu" data-open="${this._menuOpen}">
               ${nickname ? `
-                <a href="#/profile" role="menuitem">${t('userLogin.profile')}</a>
-                <a href="#/login" target="_blank" rel="noopener noreferrer" role="menuitem">${t('userLogin.admin')}</a>
-                <button class="logout" type="button" role="menuitem" ${this._logoutLoading ? 'disabled' : ''}>${t('userLogin.logout')}</button>` : `
-                <a href="#/login" role="menuitem">${t('userLogin.login')}</a>`}
+                <a class="kniu_sys_dropdown_option" href="#/profile" role="menuitem">${t('userLogin.profile')}</a>
+                <a class="kniu_sys_dropdown_option" href="#/login" target="_blank" rel="noopener noreferrer" role="menuitem">${t('userLogin.admin')}</a>
+                <button class="kniu_sys_user_login_logout kniu_sys_dropdown_option" type="button" role="menuitem" ${this._logoutLoading ? 'disabled' : ''}>${t('userLogin.logout')}</button>` : `
+                <a class="kniu_sys_dropdown_option" href="#/login" role="menuitem">${t('userLogin.login')}</a>`}
             </div>
           </div>`;
-        const hello = this.shadowRoot.querySelector('.hello');
+        adoptDropdownStyle(this.shadowRoot);
+        appendRawStyle(this.shadowRoot, '.kniu_sys_user_login_menu{min-width:max(112px,calc(112 / var(--kniu_vw)))}.kniu_sys_user_login_menu a.kniu_sys_dropdown_option,.kniu_sys_user_login_menu button.kniu_sys_dropdown_option{height:max(28px,calc(32 / var(--kniu_vw)));min-height:max(28px,calc(32 / var(--kniu_vw)));padding:0 12px}');
+        const hello = this.shadowRoot.querySelector('.kniu_sys_user_login_hello');
         if (hello) hello.textContent = nickname ? t('userLogin.hello') + accountName : t('userLogin.guest');
-        this.shadowRoot.querySelector('.user-trigger')?.addEventListener('click', () => {
+        this.shadowRoot.querySelector('.kniu_sys_user_login_trigger')?.addEventListener('click', () => {
           this._setMenuOpen(!this._menuOpen);
         });
-        this.shadowRoot.querySelector('.logout')?.addEventListener('click', this._handleLogout);
+        this.shadowRoot.querySelector('.kniu_sys_user_login_logout')?.addEventListener('click', this._handleLogout);
         this._positionMenu();
       }
       _setMenuOpen(open) {
         this._menuOpen = Boolean(open);
-        const user = this.shadowRoot?.querySelector('.user');
-        const trigger = this.shadowRoot?.querySelector('.user-trigger');
-        const menu = this.shadowRoot?.querySelector('.menu');
+        const user = this.shadowRoot?.querySelector('.kniu_sys_user_login_user');
+        const trigger = this.shadowRoot?.querySelector('.kniu_sys_user_login_trigger');
+        const menu = this._menuState?.panel || this.shadowRoot?.querySelector('.kniu_sys_user_login_menu');
         if (user) user.dataset.open = String(this._menuOpen);
         if (trigger) trigger.setAttribute('aria-expanded', String(this._menuOpen));
+        if (menu) menu.dataset.open = String(this._menuOpen);
         if (!this._menuOpen) {
           this._cleanupMenuPopover();
           return;
         }
-        if (menu) menu.dataset.open = 'true';
         this._positionMenu();
       }
       _positionMenu() {
-        const menu = this.shadowRoot?.querySelector('.menu');
+        const menu = this._menuState?.panel || this.shadowRoot?.querySelector('.kniu_sys_user_login_menu');
         if (this._disposeMenuTrack) { this._disposeMenuTrack(); this._disposeMenuTrack = null; }
         if (!this._menuOpen || !menu) return;
         // 打开：把菜单浮层 portal 到 body，fixed 相对视口（同 date-picker），再定位。
-        if (!this._menuState) this._menuState = mountPopoverPortal(menu, this.shadowRoot, { zIndex: 10030, attribute: 'data-kniu-userlogin-popover' });
+        if (!this._menuState || !this._menuState.portal?.isConnected) {
+          if (this._menuState) this._menuState.unmount();
+          this._menuState = mountPopoverPortal(menu, this.shadowRoot, { zIndex: 10030, attribute: 'data-kniu-userlogin-popover' });
+        }
+        if (!this._menuState) return;
+        this._menuAnchor = this.shadowRoot.querySelector('.kniu_sys_user_login_trigger');
+        if (!this._menuAnchor) return;
+        // 每次打开都从干净的 fixed 状态开始，避免复用上一次 portal 的方向、坐标或动画变换。
+        menu.style.position = 'fixed';
+        menu.style.left = '0px';
+        menu.style.top = '0px';
+        menu.style.right = 'auto';
+        menu.style.bottom = 'auto';
+        menu.style.transform = 'none';
+        menu.style.visibility = 'hidden';
         menu.dataset.open = 'true';
-        const anchor = this.shadowRoot.querySelector('.user-trigger');
-        if (!anchor) return;
+        const anchor = this._menuAnchor;
         const apply = (rect) => {
+          if (!this._menuOpen || !menu.isConnected || this._menuState?.panel !== menu) return;
+          if (!rect || !Number.isFinite(rect.left) || !Number.isFinite(rect.top)) return;
           const layout = computePopoverLayout(menu, rect, { offset: 4 });
+          menu.style.right = 'auto';
+          menu.style.bottom = 'auto';
+          menu.style.transform = 'none';
           menu.style.left = layout.left + 'px';
           menu.style.top = layout.top + 'px';
+          menu.style.visibility = 'visible';
         };
-        apply(anchor.getBoundingClientRect());
+        const applyNextFrame = () => {
+          this._menuPositionFrame = 0;
+          if (!this._menuOpen || this._menuState?.panel !== menu || !this._menuAnchor) return;
+          // portal 挂载和移动端导航的 CSS 动画都会在当前同步布局之后改变锚点，
+          // 先在下一帧测量，再交给持续跟随逻辑处理后续动画帧。
+          apply(this._menuAnchor.getBoundingClientRect());
+        };
+        if (this._menuPositionFrame) globalThis.cancelAnimationFrame?.(this._menuPositionFrame);
+        if (typeof globalThis.requestAnimationFrame === 'function') this._menuPositionFrame = globalThis.requestAnimationFrame(applyNextFrame);
+        else applyNextFrame();
         this._disposeMenuTrack = trackPopoverPosition(
-          () => { if (!this.isConnected || !this._menuOpen) return null; return this.shadowRoot?.querySelector('.user-trigger')?.getBoundingClientRect(); },
+          () => { if (!this.isConnected || !this._menuOpen || this._menuState?.panel !== menu) return null; return this._menuAnchor?.getBoundingClientRect(); },
           apply
         );
       }
       _cleanupMenuPopover() {
         // 卸载菜单 body portal 并停止跟随。供 _render 重建前 / 断开时调用。
         if (this._disposeMenuTrack) { this._disposeMenuTrack(); this._disposeMenuTrack = null; }
+        if (this._menuPositionFrame) {
+          globalThis.cancelAnimationFrame?.(this._menuPositionFrame);
+          this._menuPositionFrame = 0;
+        }
+        const menu = this._menuState?.panel || this.shadowRoot?.querySelector('.kniu_sys_user_login_menu');
+        if (menu) menu.dataset.open = 'false';
         if (this._menuState) { this._menuState.unmount(); this._menuState = null; }
+        if (menu) {
+          menu.style.removeProperty('position');
+          menu.style.removeProperty('left');
+          menu.style.removeProperty('top');
+          menu.style.removeProperty('right');
+          menu.style.removeProperty('bottom');
+          menu.style.removeProperty('transform');
+          menu.style.removeProperty('visibility');
+          menu.style.removeProperty('pointer-events');
+        }
+        this._menuAnchor = null;
       }
       _onDocumentClick(event) {
         if (!this._menuOpen || event.composedPath().includes(this)) return;
@@ -7872,18 +8592,18 @@ var KniuUI = (function () {
         };
         this.shadowRoot.innerHTML = `
           <style>
-            :host{display:block;margin:20px 0;color:#4b5563;font:14px/1.7 Arial,"Microsoft YaHei",sans-serif}
-            .tabs{display:flex;flex-direction:column;gap:6px}
+            :host{display:block;margin:20px 0;color:#4b5563;font:14px/1.7 var(--kniu-font-family)}
+            .kniu_sys_article_tab_tabs{display:flex;flex-direction:column;gap:6px}
             button{display:block;width:max-content;max-width:100%;padding:0;border:0;background-color:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
             button:hover,button:focus-visible{color:#409eff;outline:0}
-            .title{overflow-wrap:anywhere}
+            .kniu_sys_article_tab_title{overflow-wrap:anywhere}
           </style>
-          <nav class="tabs" aria-label="文章翻篇">
+          <nav class="kniu_sys_article_tab_tabs" aria-label="文章翻篇">
             ${rows.map(function (row) {
-              const title = row.article.title || '';
-              const id = Number(row.article?.id) || 0;
-              return '<button type="button" data-direction="' + row.direction + '" data-id="' + id + '"><span class="label">' + escape(row.label) + '：</span><span class="title">' + escape(title) + '</span></button>';
-            }).join('')}
+          const title = row.article.title || '';
+          const id = Number(row.article?.id) || 0;
+          return '<button type="button" data-direction="' + row.direction + '" data-id="' + id + '"><span class="kniu_sys_article_tab_label">' + escape(row.label) + '：</span><span class="kniu_sys_article_tab_title">' + escape(title) + '</span></button>';
+        }).join('')}
           </nav>`;
         const component = this;
         this.shadowRoot.querySelectorAll('button').forEach(function (button) {
@@ -8027,6 +8747,61 @@ var KniuUI = (function () {
   registerUserLoginComponent();
   registerArticleTabComponent();
   registerIcons(KNIU_ICON_SET);
+
+  function installMarkdownStyles(root) {
+    var documentTarget = typeof document !== 'undefined' ? document.head : null;
+    var target = root && typeof root.appendChild === 'function' ? root : documentTarget;
+    if (!target || typeof document === 'undefined') return;
+    var style = target.querySelector ? target.querySelector('#kniu-markdown-styles') : null;
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'kniu-markdown-styles';
+      target.appendChild(style);
+    }
+    style.textContent = '.kniu-markdown-content{line-height:1.7}.kniu-markdown-content>p{margin:0 0 18px}.kniu-markdown-content>h1,.kniu-markdown-content>h2,.kniu-markdown-content>h3,.kniu-markdown-content>h4,.kniu-markdown-content>h5,.kniu-markdown-content>h6{margin:28px 0 16px;line-height:1.4}.kniu-markdown-content>h1{margin-top:0;margin-bottom:20px;font-size:24px}.kniu-markdown-content>h2{font-size:21px}.kniu-markdown-content>h3{font-size:18px}.kniu-markdown-content>ul,.kniu-markdown-content>ol{margin:0 0 18px;padding-left:30px;line-height:1.7}.kniu-markdown-content>blockquote{margin:0 0 28px;padding:11px 16px;border-left:4px solid #2563eb;border-radius:0 6px 6px 0;background:#f1f1f1;line-height:1.7;color:#4b5563}.kniu-markdown-content>blockquote p{margin:0}.kniu-markdown-content>blockquote p+p{margin-top:12px}.kniu-markdown-content>hr{width:100%;margin:20px 0 30px;border:0;border-top:3px solid #e5e7eb}.kniu-markdown-content>table{width:100%;margin:10px 0 20px;border-collapse:collapse;table-layout:fixed;font-size:14px}.kniu-markdown-content>table th,.kniu-markdown-content>table td{padding:10px 12px;border:1px solid #d1d5db;text-align:left;vertical-align:middle}.kniu-markdown-content>table th{background:#f3f4f6}.kniu-markdown-content :not(pre)>code{padding:2px 5px;border-radius:3px;background:#f1f5f9;color:#be185d;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.9em}.kniu-markdown-content .article-code{margin:20px 0;max-width:100%;overflow-x:auto;padding:16px;border:1px solid #d9dce1;border-radius:6px;background:#f6f8fa;color:#24292f;text-align:left;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}.kniu-markdown-content .article-code-body{display:block;width:max-content;min-width:100%;white-space:pre}.kniu-markdown-content .code-token-comment{color:#6a737d}.kniu-markdown-content .code-token-keyword,.kniu-markdown-content .code-token-attr{color:#d73a49}.kniu-markdown-content .code-token-string{color:#032f62}.kniu-markdown-content .code-token-number,.kniu-markdown-content .code-token-built-in{color:#005cc5}';
+    style.textContent = style.textContent.replaceAll('kniu-markdown-content', 'kniu_markdown_body');
+    style.textContent += '.kniu_markdown_body>ul li{list-style:disc}.kniu_markdown_body>ol li{list-style:decimal}';
+    style.textContent += '.kniu_markdown_body{--border-color:#e0e0e0}';
+    style.textContent += '.kniu_markdown_body>h1,.kniu_markdown_body>h2,.kniu_markdown_body>h3,.kniu_markdown_body>h4,.kniu_markdown_body>h5,.kniu_markdown_body>h6{margin-top:24px;margin-bottom:12px;font-weight:600;line-height:1.3}.kniu_markdown_body>h2{font-size:1.6em;border-bottom:1px solid var(--border-color);padding-bottom:6px}';
+    style.textContent += '.kniu_markdown_body a{color:#2563eb;text-decoration:none}.kniu_markdown_body a:hover{color:#1d4ed8;text-decoration:underline}';
+    style.textContent += '.kniu_markdown_body>p br{display:block;content:""}';
+    if (target !== documentTarget && documentTarget) {
+      var documentStyle = documentTarget.querySelector('#kniu-markdown-styles');
+      if (!documentStyle) {
+        documentStyle = document.createElement('style');
+        documentStyle.id = 'kniu-markdown-styles';
+        documentTarget.appendChild(documentStyle);
+      }
+      documentStyle.textContent = style.textContent;
+    }
+  }
+  function installRichTextStyles(root) {
+    var documentTarget = typeof document !== 'undefined' ? document.head : null;
+    var target = root && typeof root.appendChild === 'function' ? root : documentTarget;
+    if (!target || typeof document === 'undefined') return;
+    var style = target.querySelector ? target.querySelector('#kniu-rich-text-styles') : null;
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'kniu-rich-text-styles';
+      target.appendChild(style);
+    }
+    style.textContent = [
+      '.kniu_richtext_body{line-height:1.7}',
+      '.kniu_richtext_body>p{margin:0 0 18px}',
+      '.kniu_richtext_body code{padding:2px 5px;border-radius:3px;background-color:#f1f5f9;color:#be185d;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.9em}',
+      '.kniu_richtext_body>pre{margin:20px 0;max-width:100%;overflow-x:auto;padding:16px;border:1px solid #d9dce1;border-radius:6px;background-color:#f6f8fa;color:#24292f;text-align:left;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}',
+      '.kniu_richtext_body>pre>code{display:block;width:max-content;min-width:100%;padding:0;border-radius:0;background-color:transparent;color:inherit;font:inherit;white-space:pre}'
+    ].join('');
+    if (target !== documentTarget && documentTarget) {
+      var documentStyle = documentTarget.querySelector('#kniu-rich-text-styles');
+      if (!documentStyle) {
+        documentStyle = document.createElement('style');
+        documentStyle.id = 'kniu-rich-text-styles';
+        documentTarget.appendChild(documentStyle);
+      }
+      documentStyle.textContent = style.textContent;
+    }
+  }
   [
     'kniu-btn', 'kniu-btn-group', 'kniu-switch', 'kniu-modal', 'kniu-table', 'kniu-table-col', 'kniu-loading', 'kniu-msg',
     'kniu-option', 'kniu-select', 'kniu-radio', 'kniu-radio-group', 'kniu-page', 'kniu-image', 'kniu-input',
@@ -8044,6 +8819,8 @@ var KniuUI = (function () {
     createSearchActions: createSearchActions,
     createRowDeleteHandler: createRowDeleteHandler,
     confirm: confirm
+    , installMarkdownStyles: installMarkdownStyles
+    , installRichTextStyles: installRichTextStyles
   };
 }());
 

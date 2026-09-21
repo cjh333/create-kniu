@@ -16,7 +16,6 @@ CREATE TABLE `tb_role` (
     `issue_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发布时间',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_role_name` (`name`),
-    UNIQUE KEY `uk_role_email` (`email`),
     UNIQUE KEY `uk_role_identity_token` (`identity_token`),
     KEY `idx_role_visible` (`is_show`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '统一账号';

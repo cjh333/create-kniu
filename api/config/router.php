@@ -61,6 +61,7 @@ Router::post('/article_media_upload', 'ArticleController@articleMediaUpload');
 Router::post('/comment_list', 'CommentController@commentList');
 Router::post('/comment_audit', 'CommentController@commentAudit');
 Router::post('/comment_delete', 'CommentController@commentDelete');
+Router::post('/comment_update', 'CommentController@commentUpdate');
 Router::post('/comment_detail', 'CommentController@commentDetail');
 Router::post('/comment_reply_state', 'CommentController@commentReplyState');
 Router::post('/comment_reply_read', 'CommentController@commentReplyRead');

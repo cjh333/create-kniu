@@ -52,6 +52,7 @@ class ArticleController extends Base
       'subtitle' => $this->input('post.subtitle') ?? '',
       'summary' => $this->input('post.summary') ?? '',
       'content' => $this->input('post.content') ?? '',
+      'content_mode' => ($this->input('post.content_mode') ?? 'rich') === 'markdown' ? 'markdown' : 'rich',
       'url' => $this->input('post.url') ?? '',
       'cover' => $coverPath,
       'create_time' => $this->input('post.create_time') ?? date('Y-m-d H:i:s'),
@@ -70,6 +71,11 @@ class ArticleController extends Base
   /** 文章允许同一账号发布多篇，清理旧建表 SQL 遗留的 role_id 唯一索引。 */
   private function ensureArticleSchema(): void
   {
+    $columns = Db::query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_article'");
+    $existing = array_column($columns, 'COLUMN_NAME');
+    if (!in_array('content_mode', $existing, true)) {
+      Db::execute("ALTER TABLE `tb_article` ADD COLUMN `content_mode` varchar(16) NOT NULL DEFAULT 'rich' AFTER `content`");
+    }
     $indexes = Db::query("SELECT INDEX_NAME, NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_article' AND INDEX_NAME = 'uk_role_article_role'");
     if (!empty($indexes)) {
       Db::execute('ALTER TABLE `tb_article` DROP INDEX `uk_role_article_role`');
@@ -98,6 +104,7 @@ class ArticleController extends Base
   // 修改。普通用户仅能修改自己发布的文章；管理员可修改任意文章，批量操作仅管理员。
   public function articleUpdate(): void
   {
+    $this->ensureArticleSchema();
     $isAdmin = $this->isAdmin();
     $type = $this->input('post.type') ?? null;
     $id = $this->input('post.id') ?? null;
@@ -122,6 +129,7 @@ class ArticleController extends Base
       'subtitle' => $this->input('post.subtitle') ?? null,
       'summary' => $this->input('post.summary') ?? null,
       'content' => $this->input('post.content') ?? null,
+      'content_mode' => (($this->input('post.content_mode') ?? 'rich') === 'markdown') ? 'markdown' : 'rich',
       'cover' => $data['cover'],
       'create_time' => $this->input('post.create_time') ?? null,
       'url' => $this->input('post.url') ?? null,
@@ -170,7 +178,7 @@ class ArticleController extends Base
         $articleQuery->where('role_id', '=', $this->currentUserId());
       }
       $articleResult = $articleQuery
-        ->field(['is_select', 'sid', 'title', 'subtitle', 'summary', 'content', 'cover', 'create_time', 'url', 'is_show'])
+        ->field(['is_select', 'sid', 'title', 'subtitle', 'summary', 'content', 'content_mode', 'cover', 'create_time', 'url', 'is_show'])
         ->update($data);
       $result = $selectallResult + $articleResult;
     }
@@ -209,7 +217,8 @@ class ArticleController extends Base
     $result['data'] = $this->decodeFields($result['data'] ?? [], ['title', 'subtitle', 'summary', 'content']);
     foreach ($result['data'] as &$article) {
       $role = Db::name('tb_role')->where('id', '=', (int)($article['role_id'] ?? 0))->find();
-      $article['publisher'] = (string)($role['name'] ?? '');
+      $article['account'] = html_entity_decode((string)($role['name'] ?? ''), ENT_QUOTES);
+      $article['nickname'] = html_entity_decode((string)($role['nickname'] ?? ''), ENT_QUOTES);
     }
     unset($article);
     $result['selectall'] = $selectall;

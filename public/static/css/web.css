@@ -1,0 +1,48 @@
+@charset "UTF-8";
+
+@font-face {
+  font-family: KniuHei_Light;
+  src: url("../font/KniuHei-Light.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: KniuHei_LightExtra;
+  src: url("../font/KniuHei-LightExtra.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: KniuHei_Regular;
+  src: url("../font/KniuHei-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: KniuHei_Medium;
+  src: url("../font/KniuHei-Medium.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: KniuHei_BoldSemi;
+  src: url("../font/KniuHei-BoldSemi.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: KniuHei_Bold;
+  src: url("../font/KniuHei-Bold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: KniuHei_Heavy;
+  src: url("../font/KniuHei-Heavy.woff2") format("woff2");
+}
+
+html,
+body {
+  font-family: KniuHei_Regular;
+}
+
+@media (max-width: calc(1280px - 60px)) {
+  html,
+  body {
+    font-size: max(12px, 14px);
+  }
+}

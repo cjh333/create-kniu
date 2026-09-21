@@ -1,7 +1,7 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import UI from '../../core/kniuui.js';
 import REQUEST from '../../core/kniurequest.mjs';
-import { assignModelFields, buildMultipartFormData, toSingleFileList } from '../../core/kniuutil.mjs';
+import { assignModelFields, buildMultipartFormData, formatLocalDateTime, getLocalDateParts, toSingleFileList } from '../../core/kniuutil.mjs';
 
 const { controller, onMounted, reactive } = MVVM;
 const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = UI;
@@ -9,6 +9,7 @@ const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHa
 const articleController = controller(function () {
   const self = this;
   const canEditContent = true;
+  const today = getLocalDateParts();
   const state = reactive({
     canEditContent,
     list: [],
@@ -27,6 +28,7 @@ const articleController = controller(function () {
       url: '',
       create_time: '',
       content: '',
+      content_mode: 'rich',
       is_show: '1',
       cover: ''
     },
@@ -42,7 +44,8 @@ const articleController = controller(function () {
         'fontName', 'fontSize', 'foreColor', 'hiliteColor', '|',
         'link', 'unlink', 'image', 'media', 'emoticons', '|',
         'removeFormat', 'clear', 'selectAll', '|',
-        'fullscreen'
+        'fullscreen', '|',
+        'markdown'
       ]
     },
     articleTable: {
@@ -66,7 +69,7 @@ const articleController = controller(function () {
     datePickerOptions: {
       type: 'datetime',
       range: false,
-      value: getToday().year + '-' + getToday().month + '-' + getToday().date,
+      value: today.year + '-' + today.month + '-' + today.date,
       format: 'yyyy-mm-dd hh:mm:ss',
       mark: {
         '0-6-1': '儿童',
@@ -121,6 +124,7 @@ const articleController = controller(function () {
     const row = list[index];
     if (!row) return false;
     assignModelFields(state.editform, row);
+    state.editform.content_mode = row.content_mode === 'markdown' ? 'markdown' : 'rich';
     state.files = toSingleFileList(row.cover);
     state.dialogTitle = '修改文章';
     state.showmodal = true;
@@ -133,10 +137,9 @@ const articleController = controller(function () {
       form[field] = '';
     });
     form.is_show = '1';
+    form.content_mode = 'rich';
     form.sid = '0';
-    const now = new Date();
-    form.create_time = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-      .toISOString().slice(0, 19).replace('T', ' ');
+    form.create_time = formatLocalDateTime();
     state.files = [];
     state.dialogTitle = '添加文章';
     state.showmodal = true;
@@ -150,6 +153,8 @@ const articleController = controller(function () {
 
   async function saveEdit() {
     const form = state.editform;
+    const editor = self.$refs.editor;
+    if (editor) form.content_mode = editor.mode === 'markdown' ? 'markdown' : 'rich';
     if (!String(form.title || '').trim()) {
       self.$msg({ content: '请输入标题', type: 'error' });
       return;
@@ -163,7 +168,7 @@ const articleController = controller(function () {
       url: isAdd ? '/article_add' : '/article_update',
       type: 'POST',
       data: data,
-      async success(res) {
+      success(res) {
         if (res.status !== 1) {
           self.$msg({ content: res.msg, type: 'error' });
           return;
@@ -171,7 +176,6 @@ const articleController = controller(function () {
         state.showmodal = false;
         state.files = [];
         self.$msg({ content: res.msg, type: 'success' });
-        await loadList(isAdd ? 1 : state.currentPage);
       },
       fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
     });
@@ -179,23 +183,6 @@ const articleController = controller(function () {
 
   function goBack() {
     self.navigateTo('/admin');
-  }
-
-  // 获取当前日期和时间。
-  function getToday() {
-    var now = new Date();
-    var addZero = function (num) {
-      return num < 10 ? ('0' + num) : num;
-    };
-    return {
-      year: now.getFullYear(),
-      month: addZero(now.getMonth() + 1),
-      date: addZero(now.getDate()),
-      week: now.getDay(),
-      hour: addZero(now.getHours()),
-      minute: addZero(now.getMinutes()),
-      second: addZero(now.getSeconds())
-    };
   }
 
   onMounted(function () { loadList(1); });

@@ -33,7 +33,7 @@
 - [§5 判断渲染 `kniu:if`](#5-判断渲染-kniuif)
   - [§5.1 分支链 `kniu:elseif` / `kniu:else`](#51-分支链-kniuelseif--kniuelse)
 - [§6 属性渲染](#6-属性渲染)
-  - [§6.1 `kniu:form`](#61-kniumodel双向绑定-)
+  - [§6.1 `kniu:form`](#61-kniuform双向绑定-)
   - [§6.1.1 字段对象绑定（kniu-form 专用）](#611-字段对象绑定-kniu-form-专用)
   - [§6.2 `kniu:<attr>`](#62-kniuattr通用标准属性绑定)
   - [§6.3 `kniu:[name]`](#63-kniuname自定义-data-属性)
@@ -52,16 +52,16 @@
 当前项目采用组合式 **MVVM + 纯 View**。页面 HTML 只保留结构、样式和 `kniu:*` 绑定；Controller 在 `setup()` 中声明状态和普通函数：
 
 ```js
-import KniuMvvm from '../core/kniumvvm.mjs';
+import MVVM from '../../core/kniumvvm.mjs';
 
-const { controller, reactive } = KniuMvvm;
+const { controller, reactive } = MVVM;
 
 const exampleController = controller(({ navigateTo }) => {
     const state = reactive({ title: '示例应用' });
-    function handleOpenOrders() {
-      navigateTo('/orders');
+    function handleOpenHome() {
+      navigateTo('/');
     }
-    return { state, handleOpenOrders };
+    return { state, handleOpenHome };
 });
 
 export default exampleController;
@@ -69,10 +69,10 @@ export default exampleController;
 
 > 模块规范：本项目全部使用 `export default`。单能力模块直接默认导出函数或对象；多能力核心模块默认导出 API 对象，消费方默认导入后按需解构。
 
-路由通过 `ROUTER.addRoute(path, controller)` 将页面与控制器装配起来（视图按文件名约定解析为 `kniu-system-<filename>` 自定义元素）：
+路由通过 `ROUTER.add(path, controller)` 将页面与控制器装配起来（视图按文件名约定解析为 `kniu-system-<filename>` 自定义元素）：
 
 ```js
-ROUTER.addRoute('/example', exampleController);
+ROUTER.add('/example', exampleController);
 ```
 
 模板内 `<script>` 仅作为旧模板兼容能力保留，正式页面业务逻辑统一放在 Composition API Controller 中。
@@ -87,7 +87,7 @@ ROUTER.addRoute('/example', exampleController);
 | `on` | `kniueventer.mjs` | 事件绑定助手：`on(target, type, fn, opt)`，等价 `$(target).on(...)`，返回解绑函数 |
 | `templateUrl` | `kniueventer.mjs` | 当前模板经过精确匹配后使用的路径 |
 | `eventTo` | 宿主注入 | 事件总线：`eventTo.emit(type, detail)` / `eventTo.on(type, fn)` |
-| `navigateTo` | 微应用运行时注入 | 路由跳转：`navigateTo('/orders')`；第二参数可传递不显示在地址栏的路由状态 |
+| `navigateTo` | 微应用运行时注入 | 路由跳转：`navigateTo('/')`；第二参数可传递不显示在地址栏的路由状态 |
 | `getRouteData` | 微应用运行时注入 | 读取 `navigateTo(path, data)` 传入的当前路由状态 |
 | `openExternalUrl` | 微应用运行时注入 | 在新标签页打开外部 HTTP/HTTPS 地址：`openExternalUrl('https://www.baidu.com')` |
 | 公共布局 / `useViews` | `kniubase.mjs` | 公共布局按 `区域/名称` 注册并生成包含目录的唯一组件标识，避免前后台同名覆盖 |
@@ -95,23 +95,20 @@ ROUTER.addRoute('/example', exampleController);
 
 > 选用建议：Model 只负责数据与派生规则；Controller 使用 `reactive`、`eventTo`、`navigateTo` 和 `openExternalUrl`；View 不写业务脚本。
 
-公共工作台（侧边栏 + 顶栏 + 内容区 + Toast）在应用入口处按目录注册，由后台公共主外壳承载：
+公共工作台（侧边栏 + 顶栏 + 内容区 + Toast）在应用入口处按目录注册，由后台公共主外壳承载；Controller 由 `useViews()` 按区域名称交给运行时加载，不直接从不存在的根级 `controller/` 路径导入：
 
 ```js
-import createApp from './core/kniubase.mjs';
 import ROUTER from './config/router.js';
-import mainController from './controller/mainController.js';
-import asideController from './controller/asideController.js';
-import headerController from './controller/headerController.js';
+import CREATEAPP from './core/kniubase.mjs';
 
-const app = createApp();
+const app = CREATEAPP();
 app.use(ROUTER);
 app.useViews({
-  'admin/main': mainController,
-  'admin/aside': asideController,
-  'admin/header': headerController,
-  'index/header': indexHeaderController,
-  'index/footer': indexFooterController
+  'admin/main': 'admin/mainController',
+  'admin/aside': 'admin/asideController',
+  'admin/header': 'admin/headerController',
+  'index/header': 'index/headerController',
+  'index/footer': 'index/footerController'
 });
 app.mount('#app');
 ```
@@ -121,7 +118,7 @@ app.mount('#app');
 ```js
 const { navigateTo, openExternalUrl } = kniusystem;
 
-navigateTo('/orders');                         // 进入站内微应用
+navigateTo('/');                               // 进入前台首页
 openExternalUrl('https://www.baidu.com');      // 在新标签页打开外部页面
 ```
 
@@ -352,7 +349,7 @@ const state = reactive({
 
 - `kniu:if` 可与 `kniu:for` 嵌套使用（见 §4.2）。
 - 条件引用的路径会精确订阅，值变化时自动插入 / 移除 DOM。
-- 与原生 `v-if` 不同：为兼容现有结构，条件为真的元素会保留并参与数据绑定。
+- 条件为真的元素会保留并参与数据绑定。
 
 ### 5.1 分支链 `kniu:elseif` / `kniu:else`
 
@@ -388,7 +385,7 @@ const state = reactive({
 
 ### 6.6 `kniu:option` —— 组件统一配置
 
-`kniu-form` / `kniu-switch` / `kniu-page` / `kniu-table` 等组件的**唯一配置入口**：旧 attribute 一律作废，所有配置收进单个 options 对象，`kniu:option="{{stateObj}}"` 整体替换对象即刷新（**原地改子属性不触发**——响应式订阅注册在表达式路径，见 `kniuui.md` 各组件章节）。
+`kniu-form` / `kniu-switch` / `kniu-page` / `kniu-table` 等组件的**唯一配置入口**：旧 attribute 一律作废，所有功能配置收进单个 options 对象，`kniu:option="{{stateObj}}"` 整体替换对象即刷新（**原地改子属性不触发**——响应式订阅注册在表达式路径，见 `kniuui.md` 各组件章节）。
 
 ```html
 <kniu-table kniu:option="{{tableOptions}}"></kniu-table>
@@ -400,14 +397,13 @@ state.tableOptions = { data: state.list, rowKey: 'id', stripe: true };
 state.tableOptions = { ...state.tableOptions, data: state.list };
 ```
 
-**内联对象字面量可省略外层圆括号。** 表达式编译时会先按对象字面量 `return ({expr})` 处理，因此带 `:` 的对象直接写即可，无需 `({...})` 包裹：
+**内联对象字面量直接写在 `{{...}}` 中。** 带 `:` 的对象直接写即可：
 
 ```html
 <kniu-input kniu:form="{{registerModel.email}}" kniu:option="{{name:'email',placeholder:'邮箱，用于找回密码'}}" />
-<!-- 等价于旧写法：kniu:option="{{({name:'email',placeholder:'邮箱，用于找回密码'})}}" -->
 ```
 
-唯一要保留内层括号的场景：引用 state 的键值取值本身需要括号（`src:(captchaImageUrl)`），或某键的值是复合表达式（`disabled:(codeSending || codeCountdown > 0)`），为清晰可加，但并非语法必需。
+- 复杂值可以直接引用 state 或写表达式，例如 `kniu:option="{{editor}}"`、`kniu:option="{{disabled:codeSending || codeCountdown > 0}}"`。
 
 - 已升级的组件走 `options` property；**未升级的自定义元素**（如列模板 `template.content` 内从未插入文档的 `<kniu-switch>`，Chrome 对 disconnected 节点不自动升级、`customElements.upgrade()` 也静默无效）回退写入 `__kniuOptionsValue` expando，消费方（如 kniu-table `_readColumns`）读 property 失败时回退读取。
 - 列模板内节点（`__kniuTableColumn`）**刻意保留 `kniu:option` 属性**：`kniu:if` / `kniu:for` 克隆列时 expando 不随 `cloneNode` 复制，保留属性让克隆列在递归 `applyBindings` 中重新解析并写入 expando（与 `kniu@change` 同策略）。
@@ -431,7 +427,7 @@ state.tableOptions = { ...state.tableOptions, data: state.list };
 
 - `kniu:form="{{path}}"` 实现 state ⇄ 表单双向同步，使用 `input` 事件回写；复选框和单选框使用 `change` 事件回写。
 - 属性值必须包裹在 `{{ }}` 内。
-- `model` 是 JS 关键字，但作为 HTML 属性名（`kniu:form`）完全合法；引擎内部用 `[kniu\:model]` 转义冒号来匹配选择器。
+- `kniu:form` 是双向表单绑定指令；它只能绑定到普通字段或字段对象的 `value`。
 - 可配合 `type="checkbox"`/`radio` 使用（布尔值走 `checked` + `change`）。
 - 模板卸载时自动移除对应的事件监听。
 - 绑定完成后，`kniu:form` 指令属性会从最终 DOM 中移除；响应式订阅与输入事件仍然有效。
@@ -442,7 +438,7 @@ state.tableOptions = { ...state.tableOptions, data: state.list };
 
 ```html
 <kniu-form ref="form" kniu:option="{{loginModel}}">
-  <kniu-input kniu:form="{{loginModel.username}}" kniu:option="{{({ name:'username' })}}"></kniu-input>
+  <kniu-input kniu:form="{{loginModel.username}}" kniu:option="{{name:'username'}}"></kniu-input>
 </kniu-form>
 ```
 
@@ -467,10 +463,13 @@ const loginModel = {
 <img kniu:src="{{ imgSrc }}" kniu:alt="{{ imgAlt }}" />
 <input kniu:value="{{ inputValue }}" />
 <div kniu:class="{{hasError ? 'panel text-danger' : 'panel'}}">class 绑定</div>
-<div kniu:style="{{'color:' + activeColor + ';font-size:' + fontSize + 'px'}}">style 绑定</div>
+<div kniu:style="{{marginTop:'calc(15/var(--kniu_vw))',color:activeColor}}">style 对象绑定</div>
+<a kniu:option="{{articleId:item.id,onClick:toDetail}}" href="javascript:;">原生标签 option</a>
+<input kniu:option="{{onKeydownEnter:searchList,onInput:debouncedSearch}}" />
 ```
 
 - 取值规则：
+  - `kniu:option` 内的事件统一使用 `on` + 事件名 + 大驼峰修饰符，例如 `onClick`、`onKeydownEnter`；禁止事件字段含点。原生标签和 `kniu-*` 组件均绑定到自身宿主事件，修饰符与 `kniu@事件.修饰符` 完全一致，故 `onKeydownEnter:searchList` 等价于 `kniu@keydown.enter="searchList"`；
   - 布尔属性（`checked`/`disabled`/`hidden`/`selected`/`readonly`/`required` 等）→ 真则存在、假/`null`/`false` 则移除；
   - `value` → 走元素 `value` 属性（表单当前值）；
   - 其它 → `setAttribute(属性, String(value))`（`null`/`false` 时移除）。
@@ -479,7 +478,7 @@ const loginModel = {
 - **元素-属性兼容校验**：`kniu:<attr>` 只能写在该元素原生支持该属性的标签上。例如 `<a>` 只能用 `kniu:href`、`<img>` 只能用 `kniu:src`；把 `kniu:src` 写在 `<a>` 上会被**跳过并告警**。自定义 `data-*` 属性（仅原生元素）使用 `kniu:[name]`；组件自身的 property（如 `data`/`src`/`model`/`total`/`nav`）一律用纯属性 `attr="{{x}}"` 写法（见 §6.4），不要再用 `kniu:[name]`。
 - 全局属性（`id`/`class`/`style`/`title`/`lang`/`data-*`/`aria-*` 等）在任何元素上都可用。
 
-### 6.3 `kniu:[name]` —— 自定义 `data-*` 属性 / 组件 property
+### 6.3 `kniu:[name]` —— 自定义 `data-*` 属性
 
 中括号内填写自定义属性名称，渲染时引擎会自动添加 `data-` 前缀：
 
@@ -508,7 +507,7 @@ reactive({
 - 绑定完成后，`kniu:[name]` 指令会从最终 DOM 中移除。
 - 事件中可通过 `e.currentTarget.dataset.msg` 或 `e.currentTarget.dataset.tabIndex` 读取。
 - 多个自定义属性分别声明，例如同时使用 `kniu:[msg]` 和 `kniu:[tab-index]`。
-- 当目标是自定义元素且存在对应的 camelCase property 时，引擎不会生成 `data-*`，而是把表达式原值直接写入 property，因此可传递对象、数组和函数。例如 `kniu:[table-config]="{{tableConfig}}"` 会写入组件的 `tableConfig` property。如今组件自身的 property 推荐直接用纯属性写法（见 §6.4），同样会走 property 透传：`table-config="{{tableConfig}}"` 等价。
+- `kniu:[name]` 用于原生元素的自定义 `data-*` 属性；组件功能配置必须使用 `kniu:option`，组件自己的标准 property 按组件文档使用，不能用自定义 data 属性替代。
 
 ### 6.4 属性内插值 `{{...}}`（任意属性） ⭐
 
@@ -541,7 +540,7 @@ reactive({
   - 若与静态文本混排（如 `hidden="x{{flag}}"`），按普通属性处理。
 - **普通属性 / 混排文本**：把所有 `{{expr}}` 替换为 `String(值)` 后拼接；表达式结果为 `null`/`undefined`/`false` 且整体无其他静态文本时移除该属性，否则 `setAttribute(name, 拼接结果)`。
 
-> 选择建议：组件自身的 property（如 `data`/`src`/`model`/`total`/`nav`/`on-change`）一律用纯属性 `attr="{{x}}"` 写法，引擎对自定义元素会自动 property 透传（支持对象/数组/函数）；原生元素标准属性（如 `href`/`src`/`checked`）可直接用 `href="{{url}}"` 形式的属性插值；仅当给原生元素挂自定义 `data-*` 时才用 `kniu:[name]`。
+> 选择建议：组件功能配置使用 `kniu:option="{{...}}"`；原生元素标准属性（如 `href`/`src`/`checked`）可直接用 `href="{{url}}"` 形式的属性插值；仅当给原生元素挂自定义 `data-*` 时才用 `kniu:[name]`。
 
 ---
 
@@ -595,7 +594,7 @@ reactive({
 <form kniu@submit="handleSubmit">…</form>
 ```
 
-`kniu@click` 默认阻止元素的原生跳转或提交行为，因此普通点击不需要重复添加 `.prevent`；确实需要保留原生点击行为时使用 `.native`。其他事件仍按需使用 `.prevent`。
+`kniu@click` 默认阻止元素的原生跳转或提交行为。除此之外，`mouseenter`、`mouseleave`、`mouseover`、`mouseout`、`mousemove`、对应的 pointer 事件以及动画/过渡结束事件也默认阻止，因为这些事件没有需要保留的浏览器默认动作；确实需要保留默认行为时使用 `.native`。表单提交等有实际默认动作的事件仍应显式添加 `.prevent`，例如 `kniu@submit.prevent`。
 
 事件修饰符采用点语法。例如：
 
@@ -721,7 +720,7 @@ return off; // 模板卸载时解绑
 
 ## 10. 完整示例
 
-下面是一段**合成演示**，集中覆盖文本插值 / `kniu:form` / `kniu:<attr>` / `kniu:[name]` / `kniu@事件` / XSS 防护 / `kniu:for` / `kniu:if` 等全部指令，便于一览写法。实际项目中的精简用法可参考 `views/orders.html`（`kniu:for` + `kniu:key` + `kniu:if` 分支链）与 `views/home.html`（`kniusystem.eventTo` / `kniusystem.navigateTo`）。
+下面是一段**合成演示**，集中覆盖文本插值 / `kniu:form` / `kniu:<attr>` / `kniu:[name]` / `kniu@事件` / XSS 防护 / `kniu:for` / `kniu:if` 等全部指令，便于一览写法。实际项目中的精简用法可参考 `client/views/index/home.html`（`kniu:for` + `kniu:key` + `kniu:if` 分支链）与 `client/views/index/detail.html`（`kniusystem.eventTo` / `kniusystem.navigateTo`）。
 
 ```html
 <div class="demo">
@@ -810,7 +809,7 @@ export default demoController;
 4. `kniu:for` 的数组表达式须最终求值为数组；非数组会被当作空数组处理。
 5. `{{...}}` 与 `kniu:if` 中的表达式通过 `with` + `new Function` 求值，**不要在其中拼接不可信字符串**，避免注入风险。
 6. 循环内的 `kniu:form` 双向写回以根 `state` 为基准；在循环体内修改 `item.xxx` 推荐用 `state.list[idx].xxx = ...` 或借助数组整体重赋值。
-7. **HTML 编解码由后端全责，前端零参与**：接口返回的富文本 / 文本字段由后端 `decodeFields()` 单轮解码后已是「所见即所得」的 HTML 字符串；前端**不再做任何解码**，直接 `{{ }}`（转义）或 `{{@ }}`（已净化，用于受信任富文本）渲染即可。不要把库内数据当作「还需前端再解码一次」的内容。若历史数据出现多层编码乱码，交给后端根目录 `normalise_db.php` 归一，不要在前端补偿。
+7. **HTML 编解码由后端全责，前端零参与**：接口返回的富文本 / 文本字段由后端 `decodeFields()` 单轮解码后已是「所见即所得」的 HTML 字符串；前端**不再做任何解码**，直接 `{{ }}`（转义）或 `{{@ }}`（已净化，用于受信任富文本）渲染即可。不要把库内数据当作「还需前端再解码一次」的内容。当前仓库未提供历史脏数据自动归一脚本，遇到多层编码数据时应先备份，再由部署环境的迁移工具按字段白名单处理，不要在前端补偿。
 8. **惰性代理绝不触发 auto-bind（2026-09-01 修复）**：`reactive()` 代理的 `get` 会惰性包装嵌套对象（`AUTH.getUser()` 这类跨模块对象尤甚）。若首次访问发生在绑定收集同步段（`currentScope` 非 null，即 `execute()`/`mountController` 期间），旧实现会**以该嵌套对象为 base** 对整棵视图树重新 `applyBindings`——解析不到目标时虽挡下了 options 写入，但**无条件移除 `kniu:option` 等绑定属性**，后续正确的 state 绑定无从处理（表现为组件 options 恒为组件默认值）。现以 `lazyProxyDepth` 深度计数：仅用户显式 `reactive()`（setup 的 state）触发 auto-bind，表达式/属性间接访问嵌套对象不会。**排查法**：临时在模板引擎加 `__BINDLOG` 打点（AUTOBIND keys / OPTIONS 解析结果 / removeAttribute），重启 dev server 后由 puppeteer 读取 `globalThis.__BINDLOG`。
 
 ## 12. 简洁 Controller 与响应式 API

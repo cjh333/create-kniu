@@ -47,7 +47,7 @@ const seoController = controller(({ autoSync }) => {
         condition: /^(?=.*\S).+$/,
         message: '请输入版权'
       },
-      record: {
+      icp: {
         value: '',
         condition: /^(?=.*\S).+$/,
         message: '请输入备案号'
@@ -60,8 +60,15 @@ const seoController = controller(({ autoSync }) => {
     }
   });
 
-  async function getSeoList() {
-    await REQUEST({
+  let seoRequest = null;
+  let seoRefreshPending = false;
+
+  async function getSeoList(reason) {
+    if (seoRequest) {
+      if (typeof reason === 'string') seoRefreshPending = true;
+      return seoRequest;
+    }
+    const run = REQUEST({
       url: '/seo_list',
       type: 'POST',
       success(res) {
@@ -74,7 +81,15 @@ const seoController = controller(({ autoSync }) => {
         state.files = toSingleFileList(state.seoModel.logo.value);
       },
       fail(res) { this.$msg({ content: res.msg, type: 'error' }); }
+    }).finally(function () {
+      seoRequest = null;
+      if (seoRefreshPending) {
+        seoRefreshPending = false;
+        queueMicrotask(function () { getSeoList('sse'); });
+      }
     });
+    seoRequest = run;
+    return run;
   }
 
   async function onSubmit() {
@@ -91,9 +106,8 @@ const seoController = controller(({ autoSync }) => {
       url: '/seo_update',
       type: 'POST',
       data: data,
-      async success(res) {
+      success(res) {
         this.$msg({ content: res.msg, type: res.status === 1 ? 'success' : 'error' });
-        if (res.status === 1) await getSeoList();
       },
       fail(res) {
         this.$msg({ content: res.msg, type: 'error' });
@@ -104,9 +118,7 @@ const seoController = controller(({ autoSync }) => {
     });
   }
 
-  onMounted(() => {
-    getSeoList();
-  });
+  onMounted(getSeoList);
   // 多标签/多端同时维护 SEO 时，本页自动跟随最新数据。
   autoSync(getSeoList);
 

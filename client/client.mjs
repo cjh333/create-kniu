@@ -1,8 +1,7 @@
 import ROUTER from './config/router.js';
-import createApp from './core/kniubase.mjs';
-import { initHeadFixed } from './core/kniuheadfix.mjs';
+import CREATEAPP from './core/kniubase.mjs';
 
-const app = createApp();
+const app = CREATEAPP();
 app.use(ROUTER);
 app.useViews({
   'admin/main': 'admin/mainController',
@@ -14,7 +13,4 @@ app.useViews({
 app.mount('#app')
   .catch(function (err) {
     console.error('[kniubase] 应用挂载失败：', err);
-  })
-  .finally(function () {
-    initHeadFixed();
   });

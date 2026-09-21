@@ -12,6 +12,15 @@ class CommentController extends Base
     parent::__construct();
   }
 
+  /** 为已有站点补齐评论排序字段，避免部署时依赖人工执行迁移。 */
+  private function ensureCommentSortField(): void
+  {
+    $columns = Db::query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_comment'");
+    if (!in_array('sid', array_column($columns, 'COLUMN_NAME'), true)) {
+      Db::execute("ALTER TABLE `tb_comment` ADD COLUMN `sid` int NOT NULL DEFAULT 0 COMMENT '排序' AFTER `parent_id`");
+    }
+  }
+
   /** 当前后台账号的统一用户 ID（tb_role.id）。 */
   private function currentFrontUserId(): int
   {
@@ -154,10 +163,12 @@ class CommentController extends Base
   // audit 取 0(待审核) / 1(已通过) / ''(全部)。
   public function commentList(): void
   {
+    $this->ensureCommentSortField();
     $type = $this->input('post.type') ?? 'all';
     $audit = $this->input('post.audit') ?? '';
-    $field = $this->input('post.field') ?? 'id';
-    $sort = $this->input('post.sort') ?? 'asc';
+    $field = $this->input('post.field') ?? 'sid';
+    $field = in_array($field, ['id', 'sid', 'likes', 'create_time'], true) ? $field : 'sid';
+    $sort = strtolower((string)($this->input('post.sort') ?? 'asc')) === 'desc' ? 'desc' : 'asc';
     $pageCurrent = (int)($this->input('post.page_current') ?? 1);
     $pageRow = (int)($this->input('post.page_rows') ?? 10);
     $keyword = trim((string)($this->input('post.keyword') ?? ''));
@@ -260,6 +271,21 @@ class CommentController extends Base
     $result['data'] = $this->decodeFields($result['data'], ['article_title']);
 
     $this->json($result);
+  }
+
+  /** 保存评论或回复的后台排序值。 */
+  public function commentUpdate(): void
+  {
+    if (!$this->requireManagePermission()) return;
+    $this->ensureCommentSortField();
+    $id = (int)$this->input('post.id/d', 0);
+    $sid = max(0, (int)$this->input('post.sid/d', 0));
+    if ($id <= 0) {
+      $this->json([], '参数错误', 0);
+      return;
+    }
+    Db::name('tb_comment')->where('id', '=', $id)->update(['sid' => $sid]);
+    $this->json(['id' => $id, 'sid' => $sid], '排序已保存', 1);
   }
 
   // 审核评论：audit 传 1 审核通过（前台可见），传 0 设为隐藏/撤回。

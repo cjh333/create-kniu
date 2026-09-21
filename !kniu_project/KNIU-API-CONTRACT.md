@@ -14,7 +14,7 @@
 | `api/app/` | 业务应用层 | 按访问边界分组：`admin/` 为需要后台会话的管理业务，`index/` 为公开或前台身份业务；各自内部放路由动作、领域服务和业务 DTO |
 | `api/config/` | 非敏感默认配置 | 路由、认证、角色、数据库配置模板、邮件和上传策略、证书配置放这里；真实密钥只放环境变量或未提交的环境文件 |
 | `api/core/` | 语言/框架无关的基础能力 | 请求解析、统一响应、鉴权、数据库抽象、密码哈希、验证码、邮件、上传、缓存、数据通知等公共能力放这里；不得在此处放页面专属业务 |
-| `api/sql/` | 数据库初始化与迁移基线 | `kniu_create_tb_*.sql` 放建表基线，`kniu_insert_tb_*.sql` 放初始化数据；结构变更同时更新本目录与数据迁移方案 |
+| `!kniu_project/kniusql/` | 数据库初始化与迁移基线 | `kniu_create_tb_*.sql` 放建表基线，`kniu_insert_tb_*.sql` 放初始化数据；结构变更同时更新本目录与数据迁移方案 |
 | `api/assets/` | 后端静态资源 | 验证码字体、服务端模板、固定资源等非用户上传内容放这里 |
 | `api/runtime/` | 可再生的运行时数据 | `cache/`、`session/`、日志、开发邮件和临时文件放这里；恢复代码时不应覆盖生产运行数据 |
 | `api/vendor/` | 第三方依赖安装目录 | 由依赖清单恢复，不手工放项目源码；其他语言使用等价的依赖缓存目录 |
@@ -34,9 +34,9 @@
 
 ### 3.1 账号
 
-`tb_role.id` 是所有业务关系的唯一标识。`name` 是登录名，`nickname` 仅用于展示。不得按昵称或登录名判断资源归属。
+`tb_role.id` 是所有业务关系的唯一标识。`name` 是登录名且必须唯一，`nickname` 仅用于展示。不得按昵称或登录名判断资源归属。
 
-角色：`role=1` 或 `role_auth=1` 为管理员；其他为普通账号。`is_show=0` 的账号无法登录；`comment_ban=1` 的账号能登录和发表文章，但不能发表评论或回复；`comment_audit=1` 的评论和回复初始不可见，需管理员审核。
+角色：`role=1` 或 `role_auth=1` 为管理员；其他为普通账号。`is_show=0` 的账号无法登录；`comment_ban=1` 的账号能登录和发表文章，但不能发表评论或回复；`comment_audit=1` 的评论和回复初始不可见，需管理员审核，`comment_audit=0` 时直接可见。后台开关统一为右侧“是/绿色”、左侧“否/红色”。
 
 ### 3.2 会话与前台身份
 
@@ -49,13 +49,13 @@
 
 | 实体 | 核心字段与规则 |
 | --- | --- |
-| Role | `id,name,nickname,identity_token,password,email,role,role_auth,is_show,comment_audit,comment_ban,create_time,issue_time` |
+| Role | `id,name,nickname,identity_token,password,email,role,role_auth,is_show,comment_audit,comment_ban,create_time,issue_time`；`id` 是稳定账号标识，`name` 全局唯一且仅用于登录，`nickname` 仅用于展示；`email` 允许重复且统一小写存储 |
 | Article | `id,role_id,title,subtitle,summary,content,cover,url,is_show,likes,hits,create_time,issue_time`；`role_id -> Role.id` |
 | Comment | `id,article_id,role_id,parent_id,message,is_show,likes,ip,create_time`；`parent_id=0` 是评论，大于 0 是回复 |
 | About | 每个 `role_id` 仅一条：`avatar,summary,content,create_time,issue_time` |
 | Favorite | `role_id + article_id` 唯一 |
 | History | `role_id + article_id` 唯一，保存 `last_view_time`，只保留一年 |
-| Reply status | `reply_id + recipient_user_id` 复合主键，保存 `is_read,issue_time` |
+| Reply status | `reply_id + recipient_user_id` 复合主键，`recipient_user_id -> Role.id`，保存 `is_read,issue_time` |
 | Email code | `email,scene,code_hash,expire_time,used,ip,create_time`；验证码只存摘要 |
 
 删除 Role 时必须事务性清理其文章、资料、评论和回复、回复状态、收藏、浏览历史，以及其文章对应的收藏与浏览记录。
@@ -66,27 +66,27 @@
 | --- | --- | --- |
 | `/getDaily` | 无 | 当前每日一句列表或当前项，字段含 `id,cn,en,is_show` |
 | `/getArticle` | 可选分页/排序 | 已显示文章列表；每项含文章字段、`publisher`（昵称）和点赞数 |
-| `/getInfo` | 可选 `identity_token` | 首页资料：当前账号头像与简述；无身份时回退默认资料；简介为空时为“这家伙很懒，什么都没留下！” |
+| `/getInfo` | 可选 `identity_token` | 首页资料：当前账号的 `tb_about.avatar` 与 `tb_about.summary`，并返回公开 SEO 的 `title`、`logo`、`copyright`、`icp`；无身份时回退默认资料；简介为空时为“这家伙很懒，什么都没留下！” |
 | `/getAbout` | `identity_token` | 当前账号 `tb_about.content`；不读取 SEO 内容 |
-| `/getDetail` | `id`、可选 `identity_token` | 文章详情、`publisher,isOwn,favorited,previous,next`；记录登录账号浏览历史 |
-| `/getComments` | `article_id`，可选 `identity_token` | 已审核评论和回复，按 `id` 升序；行字段：`id,userId,isOwn,parentId,replyTo,username,avatar,time,content,likes,liked` |
-| `/submitComment` | `article_id,parent_id=0,identity_token,message` | 登录且未禁言才可提交；回复必须属于同一文章；免审立即可见，待审仅返回成功 ID |
+| `/getDetail` | `id`、可选 `identity_token` | 文章详情、`publisher,isOwn,favorited,previous,next,hits,likes`；成功读取时原子增加文章 `hits` 并返回最新值；记录登录账号浏览历史 |
+| `/getComments` | `article_id`，可选 `identity_token` | 只返回 `is_show=1` 的评论和回复，按 `id` 升序；行字段：`id,userId,isOwn,parentId,replyTo,username,avatar,time,content,likes,liked`。`userId` 为兼容字段，值必须是作者的 `tb_role.id`；`username` 为实时昵称，不能用于归属判断 |
+| `/submitComment` | `article_id,parent_id=0,identity_token,message` | 登录且未禁言才可提交；回复必须属于同一文章；免审立即可见并返回成功，待审仅返回成功 ID；昵称从 `tb_role.nickname` 读取，客户端不得提交账号归属字段 |
 | `/deleteComment` | `comment_id,identity_token` | 仅本人可删；删除顶层评论时连同其回复删除 |
-| `/likeComment` | `comment_id,liked,identity_token` | 不可点赞本人。`liked=true` 点赞，`false` 取消；返回 `likes,liked,locked` |
-| `/likeArticle` | `article_id,liked,identity_token` | 登录必需；作者不可点赞自己文章；返回 `likes,liked` |
+| `/likeComment` | `comment_id,liked,identity_token` | 不可点赞本人。按账号、评论和服务器日期保存状态；`liked=true` 点赞，`false` 取消，同一天允许再次点赞；返回 `likes,liked,locked` |
+| `/likeArticle` | `article_id,liked,identity_token` | 登录必需；作者不可点赞自己文章；按账号、文章和服务器日期保存状态；返回 `likes,liked` |
 | `/favoriteArticle` | `article_id,favorited,identity_token` | 登录必需；收藏可反选；返回 `favorited` |
 | `/frontProfile` | `identity_token` | `id,name,nickname,canEditNickname,articleLikeCount,commentLikeCount,commentCount,favorites,history` |
 | `/frontProfileSave` | `identity_token,nickname`；首次创建另需 `gvcode` | 创建或修改资料；昵称一年只能修改一次 |
 | `/frontProfileClear` | `identity_token` | 清理前后台会话，不删除账号 |
-| `/frontSessionSync` | `identity_token` | 依据有效后台会话恢复前台身份，返回 `loggedIn,id,roleId,name,nickname,avatar` |
-| `/frontRegister` | `username,password,confirm,email,email_code,identity_token` | 创建普通账号、绑定前台身份 |
-| `/frontLogin` | `username,password,identity_token` | 前台登录并绑定身份 |
-| `/frontBind` | `username,password,identity_token` | 将已有账号绑定当前前台身份 |
+| `/frontSessionSync` | `identity_token` | 依据有效后台会话和 `tb_role.id` 恢复前台身份，返回 `loggedIn,id,roleId,name,nickname,avatar`；资料表异常时头像为空，不得返回 500 |
+| `/frontRegister` | `username,password,confirm,email,email_code,gvcode,identity_token` | 校验算术验证码和注册邮箱验证码后创建普通账号、绑定前台身份；邮箱统一小写但允许重复，账号名必须全局唯一；失败统一返回 JSON，不输出 HTML 500 |
+| `/frontLogin` | `username,password,gvcode,identity_token` | 校验算术验证码后登录并绑定身份；禁用账号 `is_show=0` 必须拒绝登录 |
+| `/frontBind` | `username,password,identity_token` | 将已有账号绑定当前前台身份；若令牌原已绑定其他账号，先以 SQL `NULL` 解除旧绑定再绑定 |
 | `/email_code` | `email,scene` | `scene` 仅 `register` / `reset`；返回发送状态和开发环境标识 |
 | `/password_reset` | `email,code,password,confirm` | 校验验证码后重置密码 |
 | `/data_revision` | 无 | 返回全局内容数据版本，供前端增量刷新兜底 |
 
-点赞和收藏状态至少按账号与目标资源隔离。评论点赞允许在同一天取消后再次点赞；文章点赞与收藏同理。所有日级状态以服务器日界线重置。
+点赞和收藏状态必须按 `tb_role.id` 与目标资源隔离。评论点赞、文章点赞和收藏都支持反选；点赞状态按服务器当地时间每日 `00:00:00` 重新开始计算。取消点赞或收藏不能播放“+1”反馈，只有成功点赞时前端局部播放一次动画。
 
 ## 6. 后台认证与系统接口
 
@@ -108,7 +108,7 @@
 
 | 资源 | 路径 | 关键请求字段 |
 | --- | --- | --- |
-| SEO | `/seo_list`, `/seo_update` | `id,sid,title,url,logo,description,keywords,author,copyright,record,email`；更新 Logo 使用 multipart 字段 `logo` |
+| SEO | `/seo_list`, `/seo_update` | `id,sid,title,url,logo,description,keywords,author,copyright,icp,email`；更新 Logo 使用 multipart 字段 `logo` |
 | 导航 | `/nav_add`, `/nav_delete`, `/nav_update`, `/nav_list`, `/nav_detail` | `id,is_select,sid,name,url,is_show`；支持 `parent_id,is_open,nav_type` 扩展 |
 | 每日一句 | `/daily_add`, `/daily_delete`, `/daily_update`, `/daily_list`, `/daily_detail` | `id,is_select,sid,cn,en,is_show` |
 

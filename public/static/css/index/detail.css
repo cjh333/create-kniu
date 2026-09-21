@@ -18,7 +18,7 @@
   padding: calc(30 / var(--kniu_vw));
   line-height: 1.6;
   font-size: calc(15 / var(--kniu_vw));
-  background-color: #fff;
+  background-color: rgba(0, 0, 0, .01);
 }
 
 .detail_title_group_1 {
@@ -27,6 +27,7 @@
 
 .detail_title_1 {
   display: inline-block;
+  font-family: KniuHei_Bold;
 }
 
 .detail_content_1 {
@@ -46,20 +47,22 @@
   color: #333;
 }
 
-/* 点赞与收藏：并排、等宽、等大（均 44px，与 kniu-like 规则 #67 对齐） */
 .detail_btn_group {
   display: flex;
   align-items: stretch;
   justify-content: center;
   gap: calc(16 / var(--kniu_vw));
 }
-.detail_content_1 .article-code { margin: 14px 0; padding: 10px 0; overflow:auto; border:1px solid #e5e7eb; border-radius:4px; background:#fafafa; color:#1f2937; text-align:left; font:14px/1.6 Consolas,Monaco,monospace; counter-reset:line; }
-.detail_content_1 .article-code code { display:block; white-space:pre; }
-.detail_content_1 .article-code-line { display:block; padding:0 18px 0 58px; position:relative; min-height:1.6em; }
-.detail_content_1 .article-code-line::before { content:counter(line, decimal-leading-zero) '.'; counter-increment:line; position:absolute; left:0; width:44px; padding-right:10px; border-right:1px solid #e5e7eb; color:#2563a6; text-align:right; }
-.detail_content_1 pre code.hljs{display:block;padding:0;background:#fafafa;color:#24292f}.detail_content_1 .hljs-keyword,.detail_content_1 .hljs-selector-tag{color:#d73a49}.detail_content_1 .hljs-string,.detail_content_1 .hljs-attr{color:#032f62}.detail_content_1 .hljs-comment{color:#6a737d}
 
-.detail_article_info { display:flex; justify-content:center; gap:24px; margin-top:12px; color:#a0a0a0; font-size:13px; text-align:center; }
+.detail_article_info {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 12px;
+  color: #a0a0a0;
+  font-size: 13px;
+  text-align: center;
+}
 
 .detail_btn_group kniu-like,
 .detail_btn_group kniu-btn {
@@ -70,8 +73,6 @@
   margin: 0;
 }
 
-/* block:true 的 kniu-btn 组件内 :host([block]){height:100%} 特异性更高，
-   会压过上面的 height:44px 使收藏按钮回退成 32px；用 !important 锁定 44px 与点赞等大 */
 .detail_btn_group kniu-btn {
   height: 48px !important;
 }
