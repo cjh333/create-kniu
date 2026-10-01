@@ -1,13 +1,12 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 import IDENTITY from '../../core/kniuidentity.mjs';
 import UI from '../../core/kniuui.js';
 import { optionsToValues } from '../../core/kniuutil.mjs';
 
-const { controller, reactive, onMounted, onUnmounted } = MVVM;
+const { controller } = MVVM;
 
-const loginController = controller(({ navigateTo, getRouteData }) => {
+const loginController = controller(({ navigateTo, getRouteData, request, reactive, onMounted, onUnmounted }) => {
   const routeData = getRouteData() || {};
   const routePath = String(globalThis.location?.hash || '').replace(/^#/, '').split('?')[0];
   const state = reactive({
@@ -80,6 +79,11 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
     resetModel: {
       labelPosition: 'top',
       labelWidth: 'auto',
+      username: {
+        value: '',
+        condition: /^[\u4e00-\u9fa5A-Za-z0-9_-]{2,30}$/,
+        message: '请输入注册时的账号'
+      },
       email: {
         value: '',
         condition: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
@@ -129,9 +133,10 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
 
   async function refreshCaptcha() {
     state.isCaptchaLoading = true;
-    await REQUEST({
+    await request({
       url: '/captcha',
       type: 'POST',
+      mutation: false,
       dataType: 'blob',
       success(res) {
         if (res.status !== 1) {
@@ -198,7 +203,7 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
     const email = quickValidateEmail(model);
     if (email === '') return;
     state.codeSending = true;
-    const res = await REQUEST({
+    const res = await request({
       url: '/email_code',
       type: 'POST',
       data: { email: email, scene: scene },
@@ -229,10 +234,11 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
     if (state.isSubmitting) return;
     const form = optionsToValues(state.resetModel);
     state.isSubmitting = true;
-    const res = await REQUEST({
+    const res = await request({
       url: '/password_reset',
       type: 'POST',
       data: {
+        username: form.username,
         email: form.email,
         code: form.code,
         password: form.password,
@@ -246,6 +252,7 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
       return;
     }
     UI.msg({ content: res.msg || '密码重置成功，请使用新密码登录', type: 'success' });
+    state.resetModel.username.value = '';
     state.resetModel.email.value = '';
     state.resetModel.code.value = '';
     state.resetModel.password.value = '';
@@ -279,7 +286,7 @@ const loginController = controller(({ navigateTo, getRouteData }) => {
       data.email_code = form.email_code;
     }
 
-    const res = await REQUEST({
+    const res = await request({
       url: isRegister ? '/frontRegister' : '/logup',
       type: 'POST',
       data: data,

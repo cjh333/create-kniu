@@ -1,44 +1,55 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import IDENTITY from '../../core/kniuidentity.mjs';
-import REQUEST from '../../core/kniurequest.mjs';
-import { debounce } from '../../core/kniuutil.mjs';
+import { debounce, getTransientSearchKeyword, setTransientSearchKeyword } from '../../core/kniuutil.mjs';
 
-const { controller, reactive, onMounted, onUnmounted } = MVVM;
+const { controller } = MVVM;
 
-const headerController = controller(({ navigateTo }) => {
+const headerController = controller(({ eventTo, navigateTo, request, reactive, onMounted }) => {
+  const initialKeyword = getTransientSearchKeyword();
   const state = reactive({
     ready: true,
     logo: '',
     loggedIn: Boolean(IDENTITY.getIdentity().nickname),
-    keyword: ''
+    keyword: initialKeyword
   });
   const sync = () => { state.loggedIn = Boolean(IDENTITY.getIdentity().nickname); };
   async function loadSeoLogo() {
     try {
-      const result = await REQUEST({
+      const result = await request({
         url: '/getInfo',
         type: 'POST',
+        mutation: false,
         data: { identity_token: IDENTITY.getIdentity().token },
         redirectOnUnauthorized: false
       });
       const info = result?.status === 1 && result.data && typeof result.data === 'object' ? result.data : null;
-      state.logo = String(info?.logo || '').trim() || '/public/static/img/logo01.png';
+      state.logo = String(info?.logo || '').trim() || '/public/static/img/logo1.png';
     } catch { }
   }
   function dispatchSearch() {
-    globalThis.dispatchEvent(new CustomEvent('kniu-home-search', {
-      detail: { keyword: String(state.keyword || '') }
-    }));
+    setTransientSearchKeyword(state.keyword);
+    eventTo?.emit('home:search', { keyword: getTransientSearchKeyword() });
   }
   const debouncedSearch = debounce(dispatchSearch, 250);
   function searchList() {
-    navigateTo('/', { keyword: String(state.keyword || '') });
+    setTransientSearchKeyword(state.keyword);
+    navigateTo('/');
   }
   onMounted(() => {
-    globalThis.addEventListener('kniu-identity-change', sync);
+    const stopIdentity = IDENTITY.subscribe(sync);
+    const stopSearch = eventTo?.on('home:search', syncSearch);
     loadSeoLogo();
+    return function () {
+      stopIdentity();
+      stopSearch?.();
+    };
   });
-  onUnmounted(() => globalThis.removeEventListener('kniu-identity-change', sync));
+  // eventTo.emit 派发的是裸载荷对象（{ keyword }），不是 DOM CustomEvent，
+  // 因此这里只能读 payload.keyword；写成 payload.detail.keyword 会得到 undefined，
+  // 被 setTransientSearchKeyword 归一成 '' 回写 state.keyword，输入框随即被清空。
+  const syncSearch = function (payload) {
+    state.keyword = setTransientSearchKeyword(payload?.keyword);
+  };
   return { state, loadSeoLogo, searchList, debouncedSearch };
 });
 

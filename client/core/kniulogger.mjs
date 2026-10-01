@@ -151,4 +151,5 @@ var KniuLogger = (function () {
   return { LoggerService: LoggerService, appLogger: appLogger };
 }());
 
+export const appLogger = KniuLogger.appLogger;
 export default KniuLogger;

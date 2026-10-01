@@ -1,11 +1,11 @@
-import KniuEventer from './kniueventer.mjs';
+import EVENTER from './kniueventer.mjs';
 import UTIL from './kniuui.js';
 import AUTH from './kniuauth.mjs';
-import KniuMvvm from './kniumvvm.mjs';
+import MVVM from './kniumvvm.mjs';
 import SERVER from '../config/server.js';
 
-const { create$, createEventBus, getTimeInZone, loadHtmlTemplate } = KniuEventer;
-const { loadController } = KniuMvvm;
+const { create$, createEventBus, getTimeInZone, loadHtmlTemplate } = EVENTER;
+const { loadController } = MVVM;
 
 var KniuBase = (function () {
   function toComponentTag(path) {
@@ -60,13 +60,6 @@ var KniuBase = (function () {
     return path === '/login' || path === '/register';
   }
 
-  function routeRequiresAuth(hash, routes) {
-    const path = String(hash || '').split('?')[0] || '/';
-    const route = (routes || []).find(function (r) { return r.path === path; });
-    if (!route) return !isLoginRoute(path);
-    return !!route.authRequired;
-  }
-
   function createShadowComponent(templatePath, controller, buildScope) {
     let controllerPromise = null;
 
@@ -84,19 +77,28 @@ var KniuBase = (function () {
         this.attachShadow({ mode: 'open' });
         this._dispose = null;
         this._disposed = false;
-        this._readyPromise = new Promise(function (resolve) {
+        this._abortController = null;
+        this._readyPromise = new Promise(function (resolve, reject) {
           this._readyResolve = resolve;
+          this._readyReject = reject;
         }.bind(this));
       }
       connectedCallback() {
         this._disposed = false;
+        this._abortController?.abort();
+        this._abortController = typeof AbortController === 'function' ? new AbortController() : null;
+        const connectionAbortController = this._abortController;
+        this._readyPromise = new Promise(function (resolve, reject) {
+          this._readyResolve = resolve;
+          this._readyReject = reject;
+        }.bind(this));
         (async function () {
           const kniusystem = buildScope(this.shadowRoot);
           const resolvedController = await resolveController();
           this._dispose = await loadHtmlTemplate(
             templatePath,
             this.shadowRoot,
-            undefined,
+            connectionAbortController?.signal,
             kniusystem,
             resolvedController ? resolvedController.mount?.bind(resolvedController) : undefined,
           );
@@ -108,10 +110,22 @@ var KniuBase = (function () {
             return;
           }
           this._readyResolve?.();
-        }).call(this);
+        }).call(this).catch(function (error) {
+          if (this._disposed) {
+            this._readyResolve?.();
+            return;
+          }
+          this._readyReject?.(error);
+          this.shadowRoot.textContent = '页面加载失败';
+          globalThis.dispatchEvent?.(new CustomEvent('kniu-component-error', {
+            detail: { templatePath: templatePath, error: error }
+          }));
+        }.bind(this));
       }
       disconnectedCallback() {
         this._disposed = true;
+        this._abortController?.abort();
+        this._abortController = null;
         if (typeof this._dispose === 'function') {
           this._dispose();
           this._dispose = null;
@@ -197,6 +211,7 @@ var KniuBase = (function () {
       if (!previous) {
         container.appendChild(page);
         if (page.ready) await page.ready;
+        UTIL.pruneEmptyAttributeTree?.(page);
         return page;
       }
       page.style.cssText = 'position:fixed;inset:0;z-index:-1;visibility:hidden;pointer-events:none;';
@@ -206,7 +221,7 @@ var KniuBase = (function () {
         if (page.ready) await page.ready;
         page.removeAttribute('style');
         page.removeAttribute('aria-hidden');
-        // page 已在容器内，不能再次移动；只清理其它页面节点，保留模块脚本等非页面节点。
+        UTIL.pruneEmptyAttributeTree?.(page);
         [...container.children].forEach(function (node) {
           if (node !== page && node.tagName?.toLowerCase().startsWith('kniu-system-')) node.remove();
         });
@@ -300,7 +315,6 @@ var KniuBase = (function () {
           const route = findRoute(routes, templatePath, isDefault);
           if (route) {
             state.pathToTag.set(route.path, tagName);
-            // 同一 Controller 可以注册多个明确路由，例如 /admin 与 /home 共用后台首页。
             routes.filter(function (item) {
               return item.controllerPath && item.controllerPath === route.controllerPath;
             }).forEach(function (item) { state.pathToTag.set(item.path, tagName); });
@@ -347,9 +361,6 @@ var KniuBase = (function () {
         const handleBrowserNavigation = function () {
           const rawHash = location.hash.replace(/^#/, '') || '/';
           const hash = routePathFromHash(rawHash);
-          // 未命中的 hash 是当前页面的 Markdown 锚点（如 #主要功能），
-          // 不能交给应用路由，否则会回退到默认首页。保留浏览器已经完成的
-          // 锚点定位，并把地址恢复为当前应用路由。
           if (!isRegisteredRouteHash(hash)) {
             const currentRoute = state.currentPath || '/';
             const anchor = rawHash.replace(/^[^#]*#/, '');
@@ -375,26 +386,21 @@ var KniuBase = (function () {
       },
       async _renderRoute(hash) {
         if (!state.host) return;
-        if (!isLoginRoute(hash) && routeRequiresAuth(hash, state.routes) && !AUTH.isLoggedIn()) {
-          if (location.hash !== '#/login') location.hash = '/login';
-          return;
-        }
         if (state._renderLock) {
           state.pendingHash = hash;
           return state._renderLock;
         }
         const pathOnly = (hash.split('?')[0]) || '/';
         const currentRoute = state.routes.find(function (item) { return item.path === pathOnly; });
-        // 前台（index）与管理台（admin）路由切换均显示全局加载遮罩；登录页不显示。
         const useLoading = !isLoginRoute(hash);
         const lock = (async function () {
           const startTs = performance.now();
+          UTIL.reconcileDocumentScrollLock?.();
+          UTIL.pruneEmptyRootAttributes?.();
           if (useLoading) UTIL.setLoading(true);
           try {
             if (isLoginRoute(hash)) {
               const loginTag = state.pathToTag.get(pathOnly) || state.pathToTag.get('/login');
-              // /login 与 /register 共用同一模板标签，但必须按路径重新挂载，
-              // 否则同一标签会被误判为当前页面，导致登录/注册表单无法互相切换。
               if (!loginTag || (state.currentViewTag === loginTag && hash === state.lastRenderedHash && state.routeKey === state.lastRenderedRouteKey)) return;
               await replacePageWhenReady(state.host, loginTag);
               globalThis.dispatchEvent?.(new CustomEvent('kniu-route-rendered', { detail: { path: pathOnly } }));
@@ -405,8 +411,8 @@ var KniuBase = (function () {
               return;
             }
             const route = currentRoute;
-            const isFrontendRoute = route && String(route.controllerPath || '').startsWith('index/');
-            if (route && (!route.authRequired || isFrontendRoute)) {
+            const useAdminShell = !!route && String(route.controllerPath || '').startsWith('admin/');
+            if (!useAdminShell) {
               const tag = state.pathToTag.get(pathOnly) || state.pathToTag.get('/') || state.tags[0]?.tag;
               if (!tag) return;
               const existing = getActivePage(state.host);
@@ -434,13 +440,15 @@ var KniuBase = (function () {
             const tag = state.pathToTag.get(pathOnly) || state.pathToTag.get('/') || state.tags[0]?.tag;
             if (!tag) return;
             const existing = state.contentArea.firstElementChild;
-            // 同一视图但查询参数（如 ?id=）变化时需要重新渲染，以便详情页读取新参数。
             if (existing && existing.tagName.toLowerCase() === tag && state.currentViewTag === tag && hash === state.lastRenderedHash && state.routeKey === state.lastRenderedRouteKey) return;
             await replacePageWhenReady(state.contentArea, tag);
             globalThis.dispatchEvent?.(new CustomEvent('kniu-route-rendered', { detail: { path: pathOnly } }));
             state.currentViewTag = tag;
             state.lastRenderedHash = hash;
             state.lastRenderedRouteKey = state.routeKey;
+          } catch (error) {
+            console.error('[route] render failed:', error);
+            UTIL.msg?.({ content: '页面加载失败，请重试', type: 'error' });
           } finally {
             if (useLoading) {
               const elapsed = performance.now() - startTs;
@@ -449,11 +457,13 @@ var KniuBase = (function () {
                 await new Promise(function (resolve) { setTimeout(resolve, MIN_LOADING - elapsed); });
               }
               UTIL.setLoading(false);
+              UTIL.pruneEmptyRootAttributes?.();
             }
           }
-        })();
+        }());
         lock.finally(function () {
           if (state._renderLock === lock) state._renderLock = null;
+          UTIL.pruneEmptyAttributeTree?.(state.host);
           const pendingHash = state.pendingHash;
           state.pendingHash = null;
           if (pendingHash && (pendingHash !== state.lastRenderedHash || state.routeKey !== state.lastRenderedRouteKey)) {
@@ -465,6 +475,7 @@ var KniuBase = (function () {
       },
       eventBus: eventBus,
       navigateTo: navigateTo,
+      getRouteData: function () { return state.routeData; },
     };
   }
 

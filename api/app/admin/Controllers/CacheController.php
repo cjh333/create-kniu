@@ -3,7 +3,6 @@
 namespace App\Admin\Controllers;
 
 use Core\Base;
-use Core\Db;
 use Core\SystemHelper;
 
 class CacheController extends Base

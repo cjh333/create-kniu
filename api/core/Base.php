@@ -7,20 +7,28 @@ class Base extends Controller
   /**
    * 当前登录账号的 tb_role.id。
    *
-   * 优先读会话中的 id（logup 后写入）；旧会话（无 id 字段）按 name
-   * 查库并回填，避免重复查询。
+   * 实现收敛到 Core\Controller::sessionLoginId()：优先读会话中的 id（logup 后写入）；
+   * 旧会话（无 id 字段）按 name 查库并回填，避免重复查询。
    */
   protected function currentUserId(): int
   {
-    if (isset($_SESSION['admin_token']['id']) && (int)$_SESSION['admin_token']['id'] > 0) {
-      return (int)$_SESSION['admin_token']['id'];
-    }
-    $name = (string)($_SESSION['admin_token']['name'] ?? '');
-    $id = (int)(Db::name('tb_role')->where('name', '=', $name)->value('id') ?? 0);
-    if ($id > 0) {
-      $_SESSION['admin_token']['id'] = $id;
-    }
-    return $id;
+    return $this->sessionLoginId();
+  }
+
+  /**
+   * 后台未登录的拒绝语义：HTTP 401 + 业务码 201（登录态无效）。
+   * 前端请求层据此统一跳转登录页（与前台页面守卫跳登录页的目标一致，仅响应形式按后台约定）。
+   */
+  protected function rejectLogin(string $message, int $code = ErrorCode::UNAUTHORIZED): void
+  {
+    header('Content-Type: application/json; charset=utf-8');
+    http_response_code(401);
+    echo json_encode([
+      'status' => $code,
+      'msg' => $message,
+      'data' => null
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
   }
 
   /** 是否为管理员（role=1）。 */
@@ -35,7 +43,7 @@ class Base extends Controller
     $roleAuth = (int)($_SESSION['admin_token']['role_auth'] ?? 0);
     if ($role === 1 || $roleAuth === 1) return true;
     http_response_code(403);
-    $this->json([], '当前账号仅有查看权限', 0);
+    $this->json([], '当前账号仅有查看权限', ErrorCode::FORBIDDEN);
     return false;
   }
 
@@ -53,14 +61,8 @@ class Base extends Controller
     }
 
     if (!$this->validateToken()) {
-      header('Content-Type: application/json; charset=utf-8');
-      http_response_code(401);
-      echo json_encode([
-        'status' => 0,
-        'msg' => '登录已失效，请重新登录',
-        'data' => null
-      ], JSON_UNESCAPED_UNICODE);
-      exit;
+      // 与后台接口的统一拒绝口径保持一致（401，前端请求层据此跳登录页）。
+      $this->rejectLogin('登录已失效，请重新登录');
     }
     if (!array_key_exists('role_auth', $_SESSION['admin_token'])) {
       $sessionName = (string)($_SESSION['admin_token']['name'] ?? '');
@@ -76,7 +78,7 @@ class Base extends Controller
     $controller = get_class($this);
     if ($role !== 1 && $controller === 'App\\Admin\\Controllers\\CacheController') {
       http_response_code(403);
-      echo json_encode(['status' => 0, 'msg' => '权限不足', 'data' => null], JSON_UNESCAPED_UNICODE);
+      echo json_encode(['status' => ErrorCode::FORBIDDEN, 'msg' => '权限不足', 'data' => null], JSON_UNESCAPED_UNICODE);
       exit;
     }
   }

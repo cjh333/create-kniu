@@ -1,5 +1,8 @@
+import { resetAllStateStores } from './kniustore.mjs';
+
 const STORAGE_KEY = 'kniu_front_identity';
 const LOGOUT_SIGNAL_KEY = 'kniu_auth_logout_at';
+const listeners = new Set();
 
 function normalizeNickname(value) {
   const nickname = String(value == null ? '' : value).trim().replace(/\s+/g, ' ').slice(0, 30);
@@ -30,6 +33,13 @@ function persist(identity) {
   try { globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(identity)); } catch (_) { }
 }
 
+function notifyIdentityChange(identity) {
+  globalThis.dispatchEvent?.(new CustomEvent('kniu-identity-change', { detail: identity }));
+  [...listeners].forEach(function (listener) {
+    try { listener(identity); } catch (error) { console.warn('[KniuIdentity] subscriber failed:', error); }
+  });
+}
+
 function getIdentity() {
   const value = readStored();
   const identity = {
@@ -54,17 +64,21 @@ function setIdentity(value) {
     avatar: String(value?.avatar === undefined ? current.avatar : value.avatar || '').trim(),
     account: value?.account === undefined || value?.account === null ? current.account : (value.account ? 1 : 0)
   };
+  if (identity.token && current.token && identity.token !== current.token) {
+    resetAllStateStores();
+  }
   persist(identity);
-  globalThis.dispatchEvent?.(new CustomEvent('kniu-identity-change', { detail: identity }));
+  notifyIdentityChange(identity);
   return identity;
 }
 
 function clearIdentity() {
   const account = readStored().account ? 1 : 0;
+  resetAllStateStores();
   try { globalThis.localStorage?.removeItem(STORAGE_KEY); } catch (_) { }
   const identity = { token: createToken(), nickname: '', name: '', avatar: '', account: account };
   persist(identity);
-  globalThis.dispatchEvent?.(new CustomEvent('kniu-identity-change', { detail: identity }));
+  notifyIdentityChange(identity);
   return identity;
 }
 
@@ -74,7 +88,7 @@ if (typeof globalThis !== 'undefined' && typeof globalThis.addEventListener === 
   globalThis.addEventListener('storage', function (event) {
     if (event.key === STORAGE_KEY) {
       const identity = getIdentity();
-      globalThis.dispatchEvent(new CustomEvent('kniu-identity-change', { detail: identity }));
+      notifyIdentityChange(identity);
       return;
     }
     if (event.key === LOGOUT_SIGNAL_KEY && event.newValue) clearIdentity();
@@ -86,5 +100,11 @@ function hasAccount() {
   return getIdentity().account === 1;
 }
 
-export { clearIdentity, getIdentity, hasAccount, normalizeNickname, setIdentity };
-export default { clearIdentity, getIdentity, hasAccount, normalizeNickname, setIdentity };
+function subscribe(listener) {
+  if (typeof listener !== 'function') return function unsubscribe() { };
+  listeners.add(listener);
+  return function unsubscribe() { listeners.delete(listener); };
+}
+
+export { clearIdentity, getIdentity, hasAccount, normalizeNickname, setIdentity, subscribe };
+export default { clearIdentity, getIdentity, hasAccount, normalizeNickname, setIdentity, subscribe };

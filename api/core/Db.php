@@ -5,16 +5,20 @@ namespace Core;
 class Db
 {
   protected static ?\mysqli $connection = null;
+  /** @var string 当前操作的数据表名。 */
   protected $name;
+  /** @var array 查询构造选项（field / where / order / limit 等）。 */
   protected $options = [];
+  /** @var array 字段自增自减增量，形如 ['hits' => 1]。 */
   protected $increment = [];
+  /** @var array JOIN 子句片段列表。 */
   protected $joins = [];
 
   /**
    * 连接到数据库。
    *
    * @return \mysqli 数据库连接对象。
-   * @throws Exception 数据库连接失败时抛出异常。
+   * @throws \Exception 数据库连接失败时抛出异常。
    */
   protected function connect()
   {
@@ -69,11 +73,15 @@ class Db
   public static function raw($value)
   {
     return new class($value) {
+      /** @var string 原始 SQL 表达式。 */
       protected $value;
+
+      /** @param string $value 原始 SQL 表达式。 */
       public function __construct($value)
       {
         $this->value = $value;
       }
+      /** @return string 原始 SQL 表达式。 */
       public function getValue()
       {
         return $this->value;
@@ -171,6 +179,21 @@ class Db
   }
 
   /**
+   * 转义 SQL 字符串值，供无法走 where() 链式的原始条件使用。
+   *
+   * 多列 OR 组合等 where() 无法表达的原始条件，必须用本方法转义后再拼接，
+   * 禁止直接嵌入用户输入，与 where()/whereIn() 的转义口径保持一致。
+   *
+   * @param mixed $value 待转义的值。
+   * @return string 已转义、可直接嵌入单引号内的值。
+   */
+  public static function escape($value)
+  {
+    $instance = new self();
+    return \mysqli_real_escape_string($instance->connect(), (string)$value);
+  }
+
+  /**
    * 添加排序条件。
    *
    * @param array|string $field 排序字段，数组或字符串。
@@ -179,8 +202,8 @@ class Db
    */
   public function order($field, $direction = 'asc')
   {
-    $validIdentifier = function ($value) { return is_string($value) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $value); };
-    $validDirection = function ($value) { $value = strtoupper((string)$value); return in_array($value, ['ASC', 'DESC'], true) ? $value : 'ASC'; };
+    $validIdentifier = function (mixed $value) { return is_string($value) && preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $value); };
+    $validDirection = function (mixed $value) { $value = strtoupper((string)$value); return in_array($value, ['ASC', 'DESC'], true) ? $value : 'ASC'; };
     if (is_array($field)) {
       $orders = [];
       foreach ($field as $key => $value) {
@@ -276,7 +299,7 @@ class Db
    * 执行查询操作。
    *
    * @return array 查询结果数组。
-   * @throws Exception SQL 执行失败时抛出异常。
+   * @throws \Exception SQL 执行失败时抛出异常。
    */
   public function select()
   {
@@ -372,7 +395,7 @@ class Db
    * 查询记录总数。
    *
    * @return int 记录总数。
-   * @throws Exception SQL 执行失败时抛出异常。
+   * @throws \Exception SQL 执行失败时抛出异常。
    */
   public function count()
   {
@@ -401,11 +424,11 @@ class Db
    *
    * @param array $data 插入数据。
    * @return int 插入的 ID。
-   * @throws Exception SQL 执行失败时抛出异常。
+   * @throws \Exception SQL 执行失败时抛出异常。
    */
   public function insert($data = [])
   {
-    $data = array_filter($data, function ($value) {
+    $data = array_filter($data, function (mixed $value) {
       return $value !== null;
     });
 
@@ -434,7 +457,6 @@ class Db
     if ($result === false) {
       throw new \Exception(\mysqli_error(($this->connect())));
     }
-    \Core\DataSignal::touch((string)$this->name);
     return \mysqli_insert_id(($this->connect()));
   }
 
@@ -443,7 +465,7 @@ class Db
    *
    * @param array $data 插入数据数组。
    * @return int 受影响的行数。
-   * @throws Exception SQL 执行失败时抛出异常。
+   * @throws \Exception SQL 执行失败时抛出异常。
    */
   public function insertAll($data = [])
   {
@@ -451,7 +473,7 @@ class Db
       return 0;
     }
 
-    $data = array_filter($data, function ($item) {
+    $data = array_filter($data, function (mixed $item) {
       return !empty($item) && is_array($item);
     });
 
@@ -488,7 +510,6 @@ class Db
     if ($result === false) {
       throw new \Exception(\mysqli_error(($this->connect())));
     }
-    \Core\DataSignal::touch((string)$this->name);
     return \mysqli_affected_rows(($this->connect()));
   }
 
@@ -497,7 +518,7 @@ class Db
    *
    * @param array $data 更新数据。
    * @return int 受影响的行数。
-   * @throws Exception SQL 执行失败时抛出异常。
+   * @throws \Exception SQL 执行失败时抛出异常。
    */
   public function update($data = [])
   {
@@ -511,7 +532,7 @@ class Db
       $allowedFields = explode(',', $fieldString);
     }
 
-    $data = array_filter($data, function ($value) {
+    $data = array_filter($data, function (mixed $value) {
       return $value !== null;
     });
 
@@ -551,7 +572,6 @@ class Db
     if ($result === false) {
       throw new \Exception(\mysqli_error(($this->connect())));
     }
-    \Core\DataSignal::touch((string)$this->name);
     return \mysqli_affected_rows(($this->connect()));
   }
 
@@ -560,7 +580,7 @@ class Db
    *
    * @param array $data 更新数据。
    * @return int 受影响的行数。
-   * @throws Exception SQL 执行失败时抛出异常。
+   * @throws \Exception SQL 执行失败时抛出异常。
    */
   private function updateEach($data)
   {
@@ -570,7 +590,7 @@ class Db
       $allowedFields = explode(',', $fieldString);
     }
 
-    $data = array_filter($data, function ($value) {
+    $data = array_filter($data, function (mixed $value) {
       return $value !== null;
     });
 
@@ -608,7 +628,6 @@ class Db
       if ($result === false) {
         throw new \Exception(\mysqli_error($this->connect()));
       }
-      \Core\DataSignal::touch((string)$this->name);
 
       $affected = \mysqli_affected_rows($this->connect());
       if ($affected !== false) {
@@ -627,7 +646,7 @@ class Db
    * 执行删除操作。
    *
    * @return int 受影响的行数。
-   * @throws Exception SQL 执行失败时抛出异常。
+   * @throws \Exception SQL 执行失败时抛出异常。
    */
   public function delete()
   {
@@ -642,7 +661,6 @@ class Db
     if ($result === false) {
       throw new \Exception(\mysqli_error(($this->connect())));
     }
-    \Core\DataSignal::touch((string)$this->name);
     return \mysqli_affected_rows(($this->connect()));
   }
 
@@ -677,7 +695,7 @@ class Db
    *
    * @param string $sql SQL 语句。
    * @return array 查询结果数组。
-   * @throws Exception SQL 执行失败时抛出异常。
+   * @throws \Exception SQL 执行失败时抛出异常。
    */
   public static function query($sql)
   {
@@ -694,7 +712,7 @@ class Db
    *
    * @param string $sql SQL 语句。
    * @return int 受影响的行数。
-   * @throws Exception SQL 执行失败时抛出异常。
+   * @throws \Exception SQL 执行失败时抛出异常。
    */
   public static function execute($sql)
   {
@@ -703,45 +721,7 @@ class Db
     if ($result === false) {
       throw new \Exception(\mysqli_error($instance->connect()));
     }
-    if (self::isWriteSql((string)$sql)) \Core\DataSignal::touch(self::tableOfSql((string)$sql));
     return \mysqli_affected_rows($instance->connect());
-  }
-
-  /**
-   * 判断原生 SQL 是否为写操作（DML 写）。
-   *
-   * @param string $sql 原始 SQL。
-   * @return bool
-   */
-  private static function isWriteSql(string $sql): bool
-  {
-    return (bool)preg_match('/^\s*(INSERT\s+INTO|REPLACE\s+INTO|DELETE\s+FROM|UPDATE)\s/i', $sql);
-  }
-
-  /**
-   * 从原生 SQL 粗略解析写操作的目标表名（仅用于变更信号的静默表判断）。
-   *
-   * 仅供 isWriteSql() 判定为写操作后调用；解析不出来时返回空字符串，
-   * 由 DataSignal 按"来源未知"处理（宁可多刷一次也不能漏刷）。
-   *
-   * @param string $sql 原始 SQL。
-   * @return string 小写表名；解析失败返回 ''。
-   */
-  private static function tableOfSql(string $sql): string
-  {
-    $sql = ltrim($sql);
-    // UPDATE 可能带 LOW_PRIORITY / IGNORE 修饰符，统一跳过再取表名。
-    $stripped = preg_replace('/^(INSERT\s+INTO|REPLACE\s+INTO|DELETE\s+FROM)\s+/i', '', $sql)
-      ?? preg_replace('/^UPDATE\s+(LOW_PRIORITY\s+|IGNORE\s+)*/i', '', $sql)
-      ?? $sql;
-    if ($stripped === $sql) {
-      $stripped = preg_replace('/^UPDATE\s+(LOW_PRIORITY\s+|IGNORE\s+)*/i', '', $sql) ?? $sql;
-    }
-    if (!preg_match('/^`?([a-zA-Z0-9_$.]+)`?/', $stripped, $matches)) return '';
-    $table = strtolower($matches[1]);
-    $dot = strrpos($table, '.');
-    if ($dot !== false) $table = substr($table, $dot + 1);
-    return $table;
   }
 
   /**

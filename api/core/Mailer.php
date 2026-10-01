@@ -117,6 +117,8 @@ class Mailer
    * Windows 版 PHP 常常没配 openssl.cafile，此时 ssl:// 连接会「静默失败」：
    * 返回 false、errno=0、errstr 为空字符串，看上去像网络不通，实际是证书无法校验。
    * 因此这里显式挂上项目自带（或 MAIL_CAFILE 指定）的根证书包。
+   *
+   * @return resource|null SSL 上下文；创建失败时返回 null。
    */
   private static function sslContext(string $host, array $config)
   {
@@ -173,12 +175,19 @@ class Mailer
     return ['status' => true, 'msg' => '开发模式：邮件内容已写入日志 ' . $file, 'dev' => true];
   }
 
+  /**
+   * @param resource $socket
+   */
   private static function write($socket, string $line): void
   {
     fwrite($socket, $line . "\r\n");
   }
 
-  /** 读取 SMTP 响应（支持多行，以 "code<space>" 结尾为结束）。 */
+  /**
+   * 读取 SMTP 响应（支持多行，以 "code<space>" 结尾为结束）。
+   *
+   * @param resource $socket
+   */
   private static function read($socket): string
   {
     $data = '';
@@ -196,6 +205,9 @@ class Mailer
     return (int)substr(trim($reply), 0, 3);
   }
 
+  /**
+   * @param resource|null $socket
+   */
   private static function quit($socket, bool $status, string $msg): array
   {
     if (is_resource($socket)) {

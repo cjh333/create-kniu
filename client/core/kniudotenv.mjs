@@ -31,6 +31,9 @@ function loadEnv() {
 
 export const DOT_ENV = loadEnv();
 export const RUNTIME_ENV = typeof process !== 'undefined' && process.env ? process.env : {};
-export const PROCESS_ENV = globalThis.PROCESS_ENV || RUNTIME_ENV.PROCESS_ENV || RUNTIME_ENV.NODE_ENV || 'development';
+const PROCESS_ENV_ARGUMENT = IS_NODE && Array.isArray(process.argv)
+  ? process.argv.find(function (argument) { return argument.startsWith('--env='); })?.slice('--env='.length)
+  : '';
+export const PROCESS_ENV = globalThis.PROCESS_ENV || PROCESS_ENV_ARGUMENT || RUNTIME_ENV.PROCESS_ENV || RUNTIME_ENV.NODE_ENV || 'development';
 export { loadEnv, parseEnv };
 export default PROCESS_ENV;

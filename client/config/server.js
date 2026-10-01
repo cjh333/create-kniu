@@ -1,61 +1,30 @@
-import PROCESS_ENV, { RUNTIME_ENV } from '../core/kniudotenv.mjs';
+import { RUNTIME_ENV } from '../core/kniudotenv.mjs';
 const SERVER_MAP = {
-  development: {
-    // 时区设置。
-    TIMEZONE: 'Asia/Shanghai',
-    // 域名。
-    HOST: 'localhost',
-    // 端口号。
-    PORT: 6173,
-    // 初始页。
-    HOME: 'index/home',
-    // 视图路径。
-    VIEWS: '/client/views',
-    // 路径别名。
-    ALIAS: {
-      '@': './',
-      '@style': './public/static/css',
-      '@img': './public/static/img',
-      '@upload': './public/upload',
-      '@plugin': './public/static/plugin',
-      '@kniu': './public/static/plugin/kniu'
-    },
-    // API 代理。
-    PROXY: {
-      '/api': {
-        URL: 'http://localhost:9900',
-        CHANGE_ORIGIN: true
-      }
-    }
+  // 时区设置。
+  TIMEZONE: 'Asia/Shanghai',
+  // 域名。
+  HOST: 'localhost',
+  // 端口号。
+  PORT: 6173,
+  // 初始页。
+  HOME: 'index/home',
+  // 视图路径。
+  VIEWS: '/client/views',
+  // 路径别名。
+  ALIAS: {
+    '@': './',
+    '@style': './public/static/css',
+    '@img': './public/static/img',
+    '@upload': './public/upload',
+    '@plugin': './public/static/plugin',
+    '@kniu': './public/static/plugin/kniu'
   },
-  production: {
-    // 时区设置。
-    TIMEZONE: 'Asia/Shanghai',
-    // 域名。
-    HOST: '',
-    // 端口号。
-    PORT: 6173,
-    // 初始页。
-    HOME: 'index/home',
-    // 视图路径。
-    VIEWS: '/client/views',
-    // 路径别名。
-    ALIAS: {
-      '@': './',
-      '@style': './public/static/css',
-      '@img': './public/static/img',
-      '@upload': './public/upload',
-      '@plugin': './public/static/plugin',
-      '@kniu': './public/static/plugin/kniu'
-    },
-    // API 代理。
-    PROXY: {
-      '/api': {
-        URL: '',
-        CHANGE_ORIGIN: true
-      }
+  // API 代理。
+  PROXY: {
+    '/api': {
+      URL: 'http://localhost:9900',
+      CHANGE_ORIGIN: true
     }
   }
 };
-const SERVER = SERVER_MAP[PROCESS_ENV] || SERVER_MAP.development;
-export default { ...SERVER, HOST: RUNTIME_ENV.HOST || SERVER.HOST, PORT: Number(RUNTIME_ENV.PORT) || SERVER.PORT };
+export default { ...SERVER_MAP, HOST: RUNTIME_ENV.HOST || SERVER_MAP.HOST, PORT: Number(RUNTIME_ENV.PORT) || SERVER_MAP.PORT };

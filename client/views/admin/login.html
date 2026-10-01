@@ -209,6 +209,15 @@
     text-decoration: underline
   }
 
+  .kniu_btn_group {
+    display: flex;
+    gap: 12px
+  }
+
+  .kniu_btn_group > * {
+    flex: 1
+  }
+
   @media (min-width: 481px) {
 
     .login_header,
@@ -283,6 +292,9 @@
       <div class="login_pane" kniu:[active]="{{tab === 'reset'}}">
         <kniu-form kniu:option="{{resetModel}}" kniu@submit.prevent="onResetSubmit">
           <kniu-form-cell>
+            <kniu-input kniu:form="{{resetModel.username}}" kniu:option="{{name:'username',placeholder:'注册时的账号',maxlength:'30',clearable:true}}" />
+          </kniu-form-cell>
+          <kniu-form-cell>
             <kniu-input kniu:form="{{resetModel.email}}" kniu:option="{{name:'email',placeholder:'请输入注册时填写的邮箱',maxlength:'190',clearable:true}}" />
           </kniu-form-cell>
           <kniu-form-cell>
@@ -297,6 +309,7 @@
           </kniu-form-cell>
           <div class="kniu_btn_group">
             <kniu-btn kniu:option="{{disabled:(isSubmitting),nativeType:'submit',block:true}}">重置密码</kniu-btn>
+            <kniu-btn kniu:option="{{nativeType:'button',block:true}}" kniu@click="toLogin">返 回</kniu-btn>
           </div>
         </kniu-form>
       </div>

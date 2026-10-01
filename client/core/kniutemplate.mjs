@@ -1,4 +1,5 @@
 import { nextTick, queueJob } from './kniuscheduler.mjs';
+import { isDangerousUrl } from './kniusanitizer.mjs';
 
 var KniuTemplate = (function () {
   const SUBS = Symbol('kniu-subs');
@@ -226,13 +227,6 @@ var KniuTemplate = (function () {
 
   const URL_ATTRS = new Set(['href', 'src', 'xlink:href', 'poster', 'srcset']);
 
-  function isDangerousUrl(v) {
-    const s = String(v == null ? '' : v).trim().toLowerCase();
-    if (/^(javascript|vbscript):/i.test(s)) return true;
-    if (/^data:/i.test(s) && !/^data:image\//i.test(s)) return true;
-    return false;
-  }
-
   const BLOCKED_TAGS = new Set(['script', 'iframe', 'object', 'embed', 'link', 'meta', 'style', 'base', 'form']);
 
   function sanitizeNode(node) {
@@ -265,20 +259,34 @@ var KniuTemplate = (function () {
     return out;
   }
 
+  // sanitizeHtml 结果缓存：同一个富文本内容（如评论、文章正文）在多个文本节点中重复出现时，
+  // 每次都走 createElement('template') + innerHTML + querySelectorAll('*') 是纯浪费。
+  // 用 Map<string, string> 按输入缓存清洗结果，LRU 上限避免内存泄漏。
+  const SANITIZE_CACHE = new Map();
+  const SANITIZE_CACHE_LIMIT = 200;
+
   function sanitizeHtml(html) {
     const D = typeof document !== 'undefined' ? document : null;
     if (D && D.createElement) {
+      const key = String(html);
+      if (SANITIZE_CACHE.has(key)) return SANITIZE_CACHE.get(key);
       try {
         const tpl = D.createElement('template');
         tpl.innerHTML = html;
         sanitizeNode(tpl.content);
-        return tpl.innerHTML;
+        const result = tpl.innerHTML;
+        if (SANITIZE_CACHE.size >= SANITIZE_CACHE_LIMIT) SANITIZE_CACHE.clear();
+        SANITIZE_CACHE.set(key, result);
+        return result;
       } catch {
 
       }
     }
     return sanitizeHtmlRegex(html);
   }
+
+  // 空字符串在语义上有效的属性：即便值为空也保留（与 kniuui.js 的空属性约定一致）。
+  const SEMANTIC_EMPTY_ATTRS = new Set(['alt', 'title', 'placeholder', 'name', 'label']);
 
   function setAttr(node, name, value, isBool) {
     if (isBool) {
@@ -293,7 +301,11 @@ var KniuTemplate = (function () {
       } else if (node.getAttribute('value') !== String(next)) node.setAttribute('value', String(next));
       return;
     }
-    if (value == null || value === false) {
+    // 空值（null / false / 空字符串）一律**不写属性**：浏览器不会回收空属性，
+    // `kniu:class="[[空值]]"` 会留下 `class=""`，切页/重渲染后越积越多（见 kniuui.js 空属性清理）。
+    // 用 trim 判定，`" "` 这类纯空白同样视为空。
+    if (value == null || value === false
+      || (typeof value === 'string' && value.trim() === '' && !SEMANTIC_EMPTY_ATTRS.has(name))) {
       if (node.hasAttribute(name)) node.removeAttribute(name);
       return;
     }
@@ -594,24 +606,24 @@ var KniuTemplate = (function () {
   function ensureLoadingStyle() {
     if (_kniuLoadingStyleInjected) return;
     if (typeof document === 'undefined') return;
-    if (document.getElementById('kniu_loading_directive_style')) {
+    if (document.getElementById('kniu_sys_loading_directive_style')) {
       _kniuLoadingStyleInjected = true;
       return;
     }
     const style = document.createElement('style');
-    style.id = 'kniu_loading_directive_style';
+    style.id = 'kniu_sys_loading_directive_style';
     style.textContent = [
-      '.kniu_loading_mask{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;',
+      '.kniu_sys_loading_mask{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;',
       'align-items:center;justify-content:center;gap:8px;background-color:#fff;',
       'backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;visibility:hidden;pointer-events:none;',
       'transition:opacity .4s ease,visibility .4s ease}',
-      '.kniu_loading_mask[data-active="true"]{opacity:1;visibility:visible;pointer-events:auto;transition:none}',
-      '.kniu_loading_mask--body{position:fixed}',
-      '.kniu_loading_spinner{width:34px;height:34px;box-sizing:border-box;border:3px solid rgba(64,158,255,.25);',
-      'border-top-color:#409eff;border-radius:50%;animation:kniu_loading_directive_spin .7s linear infinite}',
-      '.kniu_loading_text{font-size:13px;color:#606266;max-width:80%;text-align:center}',
-      '@keyframes kniu_loading_directive_spin{to{transform:rotate(360deg)}}',
-      '@media (prefers-reduced-motion:reduce){.kniu_loading_spinner{animation:none}}'
+      '.kniu_sys_loading_mask[data-active="true"]{opacity:1;visibility:visible;pointer-events:auto;transition:none}',
+      '.kniu_sys_loading_mask--body{position:fixed}',
+      '.kniu_sys_loading_spinner{width:34px;height:34px;box-sizing:border-box;border:3px solid rgba(64,158,255,.25);',
+      'border-top-color:#409eff;border-radius:50%;animation:kniu_sys_loading_directive_spin .7s linear infinite}',
+      '.kniu_sys_loading_text{font-size:13px;color:#606266;max-width:80%;text-align:center}',
+      '@keyframes kniu_sys_loading_directive_spin{to{transform:rotate(360deg)}}',
+      '@media (prefers-reduced-motion:reduce){.kniu_sys_loading_spinner{animation:none}}'
     ].join('');
     document.head.appendChild(style);
     _kniuLoadingStyleInjected = true;
@@ -651,13 +663,12 @@ var KniuTemplate = (function () {
       }
     };
 
+    // 控制流祖先判定在热路径上（每个文本节点、每个收集到的绑定节点、每个属性节点各一次），
+    // 旧实现用 JS 循环逐层 parentElement.matches(逗号选择器列表)，层数×节点数的方法调用很可观。
+    // closest() 把「向上遍历 + 选择器匹配」整体交给引擎原生实现，语义完全一致（都不含节点自身）。
     const hasAncestor = function (node, selector) {
-      let p = node.parentElement;
-      while (p) {
-        if (p.matches(selector)) return true;
-        p = p.parentElement;
-      }
-      return false;
+      const parent = node.parentElement;
+      return Boolean(parent && parent.closest(selector));
     };
 
     const applyBindings = function (root, base, extra, bucket, refs) {
@@ -666,20 +677,30 @@ var KniuTemplate = (function () {
         evalExpr(key, base, extra).paths.forEach(function (p) { return subscribePath(base, p, fn, bucket); });
       };
       const write = function (key, value) { return setPath(base, key, value); };
+      // 同一次 applyBindings 内，事件/ref 循环与属性循环各调一次本函数（两处收集点）。两次之间
+      // 只写属性、挂监听，不增删元素（唯一例外是 kniu:loading 遮罩，它没有 {{ }} 属性，属性循环
+      // 本就跳过），故同一 container 的收集结果可复用——省掉一次全树 querySelectorAll('*') +
+      // 模板内容展开。注意 memo 只在这个 applyBindings 调用的作用域内有效，不会跨渲染残留。
+      const bindingNodeCache = new Map();
       const collectBindingNodes = function (container) {
+        const cached = bindingNodeCache.get(container);
+        if (cached) return cached;
         const elements = [...container.querySelectorAll('*')];
         const templateElements = [];
-        elements.filter(function (element) { return element.tagName === 'TEMPLATE'; }).forEach(function (template) {
-          const isControlFlow = template.hasAttribute('kniu:for') || template.hasAttribute('kniu:if')
-            || template.hasAttribute('kniu:elseif') || template.hasAttribute('kniu:else');
-          if (isControlFlow) return;
-          const tableColumn = template.closest('kniu-table-col');
-          [...template.content.querySelectorAll('*')].forEach(function (element) {
-            if (tableColumn) element.__kniuTableColumn = tableColumn;
-            templateElements.push(element);
+        for (let index = 0; index < elements.length; index += 1) {
+          const element = elements[index];
+          if (element.tagName !== 'TEMPLATE') continue;
+          if (element.hasAttribute('kniu:for') || element.hasAttribute('kniu:if')
+            || element.hasAttribute('kniu:elseif') || element.hasAttribute('kniu:else')) continue;
+          const tableColumn = element.closest('kniu-table-col');
+          [...element.content.querySelectorAll('*')].forEach(function (inner) {
+            if (tableColumn) inner.__kniuTableColumn = tableColumn;
+            templateElements.push(inner);
           });
-        });
-        return [container, ...elements, ...templateElements];
+        }
+        const collected = [container, ...elements, ...templateElements];
+        bindingNodeCache.set(container, collected);
+        return collected;
       };
 
       const TEXT_RE = /\{\{\s*([\s\S]*?)\s*\}\}/g;
@@ -832,11 +853,14 @@ var KniuTemplate = (function () {
               // 防止重复/伪绑定（如异步间隙里用数据对象当 state 的 auto-bind）把
               // 已写入的 expando 覆盖成 {}（2026-09-01 修复）。
               if (value && typeof value === 'object') {
+                // UI 默认项由应用在启动期配置；模板中的同名字段始终优先。
+                const componentDefaults = globalThis.__KNIU_UI_DEFAULTS__?.[tag] || {};
+                const mergedValue = tag.includes('-') ? { ...componentDefaults, ...value } : value;
                 // 仅自定义组件使用 options property；原生 <select>.options 等浏览器
                 // 内建字段不能误写成业务配置对象，原生标签统一走下方通用映射。
                 const usesComponentOptions = tag.includes('-') && 'options' in node;
-                if (usesComponentOptions) node.options = value;
-                else if (isUnupgradedComponent) node.__kniuOptionsValue = value;
+                if (usesComponentOptions) node.options = mergedValue;
+                else if (isUnupgradedComponent) node.__kniuOptionsValue = mergedValue;
                 // `on*` 事件字段无论目标是原生标签还是 kniu 组件都绑定到宿主事件；
                 // 组件仍会同时收到完整 options，用于其自身的回调型配置协议。
                 const usesNativeOptionMapping = !usesComponentOptions && !isUnupgradedComponent;
@@ -848,7 +872,7 @@ var KniuTemplate = (function () {
                   node.removeEventListener(eventName, entry.handler, entry.options);
                 });
                 nativeOptionEvents.clear();
-                Object.entries(value).forEach(function ([name, item]) {
+                Object.entries(mergedValue).forEach(function ([name, item]) {
                     const eventDescriptor = typeof item === 'function' ? optionEventDescriptor(name) : null;
                     if (eventDescriptor) {
                       const eventName = eventDescriptor.eventName;
@@ -945,6 +969,9 @@ var KniuTemplate = (function () {
                 node.style.setProperty(name, cssValue);
                 managedProperties.add(name);
               });
+              // 托管声明被全部收回后 style 可能变空，浏览器不会自动移除空属性，
+              // 需显式删掉，避免残留 `style=""`。
+              if (!node.getAttribute('style')) node.removeAttribute('style');
             };
             renderStyle();
             subscribe(expr, renderStyle);
@@ -989,13 +1016,13 @@ var KniuTemplate = (function () {
             } else {
               ensureLoadingStyle();
               const mask = document.createElement('div');
-              mask.className = 'kniu_loading_mask' + (body ? ' kniu_loading_mask--body' : '');
+              mask.className = 'kniu_sys_loading_mask' + (body ? ' kniu_sys_loading_mask--body' : '');
               mask.setAttribute('data-active', 'false');
               const spinner = document.createElement('span');
-              spinner.className = 'kniu_loading_spinner';
+              spinner.className = 'kniu_sys_loading_spinner';
               mask.appendChild(spinner);
               const textEl = document.createElement('span');
-              textEl.className = 'kniu_loading_text';
+              textEl.className = 'kniu_sys_loading_text';
               mask.appendChild(textEl);
 
               let mounted = false;
@@ -1052,7 +1079,8 @@ var KniuTemplate = (function () {
               const { value } = evalExpr(expr, base, extra);
               if (bindsComponentProperty) {
                 if (!Object.is(node[propertyName], value)) node[propertyName] = value;
-              } else if (value == null || value === false) {
+              } else if (value == null || value === false || String(value).trim() === '') {
+                // 空值不写属性（含空字符串），避免残留 `data-xxx=""`。
                 if (node.hasAttribute(dataAttrName)) node.removeAttribute(dataAttrName);
               } else {
                 const next = String(value);

@@ -4,6 +4,7 @@ namespace App\Admin\Controllers;
 
 use Core\Base;
 use Core\Db;
+use Core\ErrorCode;
 
 class DailyController extends Base
 {
@@ -52,11 +53,11 @@ class DailyController extends Base
       'en' => $this->input('post.en') ?? null,
       'is_show' => $this->input('post.is_show') ?? null
     ];
-    $data = array_filter($data, function ($value) {
+    $data = array_filter($data, function (mixed $value) {
       return $value !== null && $value !== '';
     });
     if (empty($data)) {
-      $this->json([], '没有提供任何要更新的数据', 0);
+      $this->json([], '没有提供任何要更新的数据', ErrorCode::PARAM_INVALID);
       return;
     }
     $data = $this->encodeFields($data, ['cn', 'en']);
@@ -79,11 +80,11 @@ class DailyController extends Base
       $result = $selectallResult + $dailyResult;
     }
     if ($result === false) {
-      $this->json([], '更新失败', 0);
+      $this->json([], '更新失败', ErrorCode::SERVER_ERROR);
       return;
     }
     if ($result === 0) {
-      $this->json([], '数据未发生变化', 0);
+      $this->json([], '数据未发生变化', ErrorCode::RULE_REJECTED);
       return;
     }
     $this->json([], '更新成功', 1);
@@ -101,7 +102,7 @@ class DailyController extends Base
     $selectall = Db::name('tb_selectall')->where('name', '=', 'daily')->value('is_select') ?? 0;
     $query = Db::name($table);
     if ($keyword !== '') {
-      $query->where('LOWER(`cn`)', 'LIKE', $this->likeEncodedPattern($keyword));
+      $query->where('`cn`', 'LIKE', $this->likeEncodedPattern($keyword));
     }
     $result = $query
       ->order($field, $sort)

@@ -1,37 +1,62 @@
-import KniuTemplate from './kniutemplate.mjs';
+import TEMPLATE from './kniutemplate.mjs';
 import REQUEST from './kniurequest.mjs';
 import IDENTITY from './kniuidentity.mjs';
-import SYNC from './kniusync.mjs';
 import { getResponseRecords, debounce } from './kniuutil.mjs';
 import { sanitizeRichHtml, sanitizeRichHtmlAsync } from './kniusanitizer.mjs';
+import { KNIU_TABLE_CLASS, KNIU_TABLE_WRAP_CLASS, unwrapTablesIn, wrapTablesIn } from './kniucode.mjs';
+import { KNIU_ICON_NAMES, KNIU_ICON_SVG } from './kniuiconsvg.mjs';
 
-const { reactive, compileExpression } = KniuTemplate;
+const { reactive, compileExpression } = TEMPLATE;
 
 var KniuUI = (function () {
   var state = reactive({
     loading: false
   });
+  var componentDefaults = {};
   var toastTimer = null;
   var toastInstance = null;
-  var scrollLockStyles = null;
+  var SCROLL_LOCK_FLAG = 'kniuScrollLock';
+  var scrollLockOwners = new Set();
+  var scrollLockOriginals = null;
   var shadowTemplateCache = new Map();
   var shadowStyleSheetCache = new Map();
+  var normalizedCssCache = new Map();
+  // 模板缓存上限：与 tableTemplateCache 保持一致，防止动态内容（如文章标题拼进 innerHTML）导致只增不减。
+  var SHADOW_TEMPLATE_CACHE_LIMIT = 200;
+  var tableTemplateCache = new Map();
+  // ShadowRoot.prototype 的 innerHTML descriptor 全局只查一次，所有组件实例复用。
+  var shadowInnerHTMLDescriptor = null;
+  // 批量合并 adoptedStyleSheet：同一同步执行段内多次注入样式只在下一个微任务里赋值一次。
+  var pendingAdoptedSheets = new Map();
+  var adoptedSheetsFlushScheduled = false;
   var KNIU_BASE_CONTAIN_CSS = ':host{contain:layout}';
-  // 组件和页面统一使用项目自带的 KniuHei 字体，不依赖操作系统字体。
   var KNIU_FONT_FAMILY = 'KniuHei_Regular';
   var KNIU_FONT_MONO_FAMILY = 'KniuHei_Regular';
   var KNIU_FONT_SERIF_FAMILY = 'KniuHei_Regular';
   var KNIU_FONT_FACE_CSS = '@font-face{font-family:KniuHei_Bold;src:url("/public/static/font/KniuHei-Bold.woff2") format("woff2");font-style:normal;font-weight:700;font-display:swap}@font-face{font-family:KniuHei_BoldSemi;src:url("/public/static/font/KniuHei-BoldSemi.woff2") format("woff2");font-style:normal;font-weight:600;font-display:swap}@font-face{font-family:KniuHei_Heavy;src:url("/public/static/font/KniuHei-Heavy.woff2") format("woff2");font-style:normal;font-weight:900;font-display:swap}@font-face{font-family:KniuHei_Light;src:url("/public/static/font/KniuHei-Light.woff2") format("woff2");font-style:normal;font-weight:300;font-display:swap}@font-face{font-family:KniuHei_LightExtra;src:url("/public/static/font/KniuHei-LightExtra.woff2") format("woff2");font-style:normal;font-weight:200;font-display:swap}@font-face{font-family:KniuHei_Medium;src:url("/public/static/font/KniuHei-Medium.woff2") format("woff2");font-style:normal;font-weight:500;font-display:swap}@font-face{font-family:KniuHei_Regular;src:url("/public/static/font/KniuHei-Regular.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap}';
   var KNIU_BASE_FONT_CSS = KNIU_FONT_FACE_CSS + ':host{--kniu-font-family:' + KNIU_FONT_FAMILY + ';--kniu-font-mono-family:' + KNIU_FONT_MONO_FAMILY + ';--kniu-font-serif-family:' + KNIU_FONT_SERIF_FAMILY + ';--kniu-navbar-font-size:max(12px,calc(14 / var(--kniu_vw)));font-family:var(--kniu-font-family)}';
-  var KNIU_CONTAIN_EXCLUDE_TAGS = { 'KNIU-TABLE': 1, 'KNIU-NAVBAR': 1, 'KNIU-MODAL': 1, 'KNIU-DATE-PICKER': 1, 'KNIU-SELECT': 1, 'KNIU-USER-LOGIN': 1, 'KNIU-INPUT': 1 };
-  // 粘贴到 contenteditable 的原始标签会被浏览器解析。危险标签必须作为正文文本保留，
-  // 否则未闭合的 <script setup> 会把后续内容吞进 script 节点。
+  var KNIU_CONTAIN_EXCLUDE_TAGS = { 'KNIU-TABLE': 1, 'KNIU-NAVBAR': 1, 'KNIU-MODAL': 1, 'KNIU-DATE-PICKER': 1, 'KNIU-SELECT': 1, 'KNIU-USER-LOGIN': 1, 'KNIU-INPUT': 1, 'KNIU-COMMENT': 1 };
   var RICH_TEXT_LITERAL_TAG_RE = /<(\/?)(script|iframe|object|embed|link|meta|style|base|form)(?=\s|\/?>)/gi;
   function hasRichTextLiteralTag(value) {
     RICH_TEXT_LITERAL_TAG_RE.lastIndex = 0;
     return RICH_TEXT_LITERAL_TAG_RE.test(String(value || ''));
   }
   function shouldContainHost(tag) { return !KNIU_CONTAIN_EXCLUDE_TAGS[String(tag || '').toUpperCase()]; }
+
+  function configure(config = {}) {
+    const components = config.components && typeof config.components === 'object' ? config.components : {};
+    Object.keys(components).forEach(function (name) {
+      const tag = String(name).toLowerCase().startsWith('kniu-') ? String(name).toLowerCase() : 'kniu-' + String(name).toLowerCase();
+      componentDefaults[tag] = { ...(componentDefaults[tag] || {}), ...(components[name] || {}) };
+    });
+    globalThis.__KNIU_UI_DEFAULTS__ = componentDefaults;
+    const theme = config.theme && typeof config.theme === 'object' ? config.theme : {};
+    const root = globalThis.document?.documentElement;
+    Object.keys(theme).forEach(function (name) {
+      if (root && name.startsWith('--kniu-')) root.style.setProperty(name, String(theme[name]));
+    });
+    return Object.freeze({ components: { ...componentDefaults }, theme: { ...theme } });
+  }
 
   var KNIU_I18N = {
     cn: {
@@ -60,7 +85,6 @@ var KniuUI = (function () {
       'common.lockRatio': '锁定宽高比',
       'common.scale': '缩放',
       'common.chooseLocalFile': '请选择需要上传的本地文件',
-
       'editor.undo': '撤销',
       'editor.redo': '重做',
       'editor.preview': '预览',
@@ -105,6 +129,11 @@ var KniuUI = (function () {
       'editor.selectAll': '全选',
       'editor.chooseFont': '选择字体',
       'editor.chooseSize': '选择字号',
+      'editor.heading': '标题',
+      'editor.chooseHeading': '选择标题',
+      'editor.chooseLineHeight': '选择行距',
+      'editor.spacing': '字距',
+      'editor.chooseLetterSpacing': '选择字距',
       'editor.insertTable': '插入表格',
       'editor.tableRows': '行数',
       'editor.tableCols': '列数',
@@ -218,7 +247,6 @@ var KniuUI = (function () {
       'common.lockRatio': 'Lock aspect ratio',
       'common.scale': 'Scale',
       'common.chooseLocalFile': 'Please choose a local file to upload',
-
       'editor.undo': 'Undo',
       'editor.redo': 'Redo',
       'editor.preview': 'Preview',
@@ -263,6 +291,11 @@ var KniuUI = (function () {
       'editor.selectAll': 'Select all',
       'editor.chooseFont': 'Choose font',
       'editor.chooseSize': 'Choose font size',
+      'editor.heading': 'Heading',
+      'editor.chooseHeading': 'Choose heading',
+      'editor.chooseLineHeight': 'Choose line height',
+      'editor.spacing': 'Letter spacing',
+      'editor.chooseLetterSpacing': 'Choose letter spacing',
       'editor.insertTable': 'Insert table',
       'editor.tableRows': 'Rows',
       'editor.tableCols': 'Columns',
@@ -387,14 +420,13 @@ var KniuUI = (function () {
   }
 
   function normalizeComponentCss(cssText) {
-    const source = String(cssText == null ? '' : cssText)
-      .replace(/\.day\b/g, '.kniu_sys_date_picker_day');
-
-    // 组件内部的尺寸统一使用项目的 vw 兼容单位。只处理 CSS 声明值，
-    // 媒体查询中的断点不属于声明值，因而保留原始 px，避免断点被缩放。
-    return source.replace(/(^|[;{}])([^{};]+):([^{};]+)/g, function (full, prefix, property, value) {
-      const name = property.trim().toLowerCase();
+    const source = String(cssText == null ? '' : cssText);
+    let cached = normalizedCssCache.get(source);
+    if (cached !== undefined) return cached;
+    cached = source.replace(/(^|[;{}])([^{};]+):([^{};]+)/g, function (full, prefix, property, value) {
+      const name = property.replace(/\/\*[\s\S]*?\*\//g, '').trim().toLowerCase();
       if (name.startsWith('@')) return full;
+      if (/var\(\s*--kniu_vw\s*\)/.test(value)) return full;
       const isFont = name === 'font' || name === 'font-size';
       const converted = value.replace(/(-?)(\d+(?:\.\d+)?)px\b/g, function (_, sign, number) {
         if (number === '0') return '0';
@@ -405,46 +437,64 @@ var KniuUI = (function () {
       });
       return prefix + property + ':' + converted;
     });
+    normalizedCssCache.set(source, cached);
+    return cached;
   }
 
-  function adoptSharedStyle(root, cssText) {
-    const css = normalizeComponentCss(cssText);
+  // 把本同步段内累积的共享样式表一次性写入各 shadow root，避免每次注入都重建数组。
+  function flushPendingAdoptedSheets() {
+    adoptedSheetsFlushScheduled = false;
+    const map = pendingAdoptedSheets;
+    pendingAdoptedSheets = new Map();
+    map.forEach(function (sheetSet, root) {
+      if (!root || !Array.isArray(root.adoptedStyleSheets)) return;
+      const existing = root.adoptedStyleSheets;
+      let changed = false;
+      const merged = existing.slice();
+      sheetSet.forEach(function (sheet) {
+        if (merged.indexOf(sheet) === -1) { merged.push(sheet); changed = true; }
+      });
+      if (changed) root.adoptedStyleSheets = merged;
+    });
+  }
+
+  function scheduleAdoptedSheetsFlush() {
+    if (adoptedSheetsFlushScheduled) return;
+    adoptedSheetsFlushScheduled = true;
+    if (typeof queueMicrotask === 'function') queueMicrotask(flushPendingAdoptedSheets);
+    else Promise.resolve().then(flushPendingAdoptedSheets);
+  }
+
+  // 向 shadow root 注入一段共享样式。
+  // raw 为 true 时跳过 px 换算（原样写入），用于已经写好 calc/max 的样式。
+  // 返回值仅在降级到 <style> 节点时为该节点，其余情况为 null（保持原有约定）。
+  function adoptSharedStyle(root, cssText, raw) {
+    if (!root || !cssText) return null;
+    const css = raw ? String(cssText) : normalizeComponentCss(cssText);
     if (!css) return null;
     if (supportsAdoptedStyleSheets(root)) {
       const sheet = getSharedStyleSheet(css);
-      if (!root.adoptedStyleSheets.includes(sheet)) {
-        root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
-      }
+      let set = pendingAdoptedSheets.get(root);
+      if (!set) { set = new Set(); pendingAdoptedSheets.set(root, set); }
+      set.add(sheet);
+      scheduleAdoptedSheetsFlush();
       return null;
     }
-    const element = (root.ownerDocument || root.host?.ownerDocument || document).createElement('style');
-    element.textContent = css;
-    root.appendChild(element);
-    return element;
-  }
-
-  function appendRawStyle(root, cssText) {
-    if (!root || !cssText) return null;
-    const css = String(cssText);
-    if (supportsAdoptedStyleSheets(root)) {
-      const sheet = getSharedStyleSheet(css);
-      if (!root.adoptedStyleSheets.includes(sheet)) {
-        root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
-      }
-      return null;
-    }
-    const documentRef = root.ownerDocument || root.host?.ownerDocument || document;
+    const documentRef = root.ownerDocument || (root.host && root.host.ownerDocument) || document;
     const element = documentRef.createElement('style');
     element.textContent = css;
     root.appendChild(element);
     return element;
   }
 
-  // 普通下拉面板的唯一视觉基准。仅用于组件内的下拉/选择面板，
-  // 不用于 kniu-modal 或编辑器的链接、图片、媒体表单弹窗。
+  // appendRawStyle 是 adoptSharedStyle 的原样写入别名，保留接口不变。
+  function appendRawStyle(root, cssText) {
+    return adoptSharedStyle(root, cssText, true);
+  }
+
   var KNIU_DROPDOWN_CSS = [
     '.kniu_sys_dropdown_panel{background-color:#fff;border:1px solid #e4e7ed;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1)}',
-    '.kniu_sys_dropdown_option{display:flex;align-items:center;width:100%;min-height:32px;padding:0 12px;border:0;border-radius:0;background-color:transparent;color:#606266;font:inherit;text-align:left;cursor:pointer;box-sizing:border-box}',
+    '.kniu_sys_dropdown_option{display:flex;align-items:center;width:100%;min-height:32px;padding:0 12px;border:0;border-radius:0;background-color:transparent;color:#606266;font:inherit;font-size:12px;text-align:left;cursor:pointer;box-sizing:border-box}',
     '.kniu_sys_dropdown_option:hover:not([disabled]),.kniu_sys_dropdown_option:focus-visible:not([disabled]){color:#409eff;background-color:#f5f7fa;outline:0}',
     '.kniu_sys_dropdown_option[disabled]{color:#c0c4cc;cursor:not-allowed}'
   ].join('');
@@ -454,28 +504,45 @@ var KniuUI = (function () {
     appendRawStyle(root, '.kniu_sys_dropdown_option{min-height:max(28px,calc(32 / var(--kniu_vw)))}');
   }
 
-  // 所有组件统一通过 Shadow DOM 隔离。模板字符串只在首次出现时解析，
-  // 后续实例直接克隆缓存的 DocumentFragment，一次性挂载到 ShadowRoot。
-  // 其中 <style> 块被抽离为共享样式表（adoptedStyleSheets），不逐实例重复解析。
-  function attachComponentShadow(host) {
-    const root = host.attachShadow({ mode: 'open' });
-    if (typeof ShadowRoot === 'undefined') return root;
-    adoptSharedStyle(root, KNIU_BASE_FONT_CSS);
-    // 渲染隔离：给 :host 加 contain:layout（排除含视口固定后代的组件，见 KNIU_CONTAIN_EXCLUDE_TAGS）。
-    if (shouldContainHost(host.tagName)) adoptSharedStyle(root, KNIU_BASE_CONTAIN_CSS);
+  /**
+   * 内容区表格包裹层（编辑器内容区 / markdown 正文 / 富文本正文共用同一套类名）。
+   * `min-width:768px` 是绝对下限、不随 `--kniu_vw` 设计尺寸换算，故这份 CSS 一律原样写入
+   * （组件侧走 appendRawStyle，文档侧由 installMarkdownStyles / installRichTextStyles 注入）。
+   */
+  var KNIU_CONTENT_TABLE_CSS = '.kniu_sys_article_table_wrap{overflow:hidden;overflow-x:auto;width:100%}.kniu_sys_article_table{min-width:768px}';
+  /**
+   * 文档级内容区（markdown 正文 / 富文本正文）额外一份：**外边距由外壳承担**，表格自身不再带 margin。
+   * 编辑器内容区的表格自带 inline margin（_insertTable 写入），故组件侧只用上面那份基础契约。
+   */
+  var KNIU_CONTENT_TABLE_DOC_CSS = KNIU_CONTENT_TABLE_CSS + '.kniu_sys_article_table_wrap{margin:10px 0 20px}';
+
+  // 全局只解析一次 ShadowRoot 的 innerHTML descriptor，避免每个组件实例都遍历原型链。
+  // shadowInnerHTMLDescriptor：null 表示未计算，false 表示已确认不存在，对象表示已缓存。
+  function getShadowInnerHTMLDescriptor() {
+    if (shadowInnerHTMLDescriptor !== null) return shadowInnerHTMLDescriptor || null;
+    if (typeof ShadowRoot === 'undefined') { shadowInnerHTMLDescriptor = false; return null; }
     let prototype = ShadowRoot.prototype;
     let descriptor = null;
     while (prototype && !descriptor) {
       descriptor = Object.getOwnPropertyDescriptor(prototype, 'innerHTML');
       prototype = Object.getPrototypeOf(prototype);
     }
+    shadowInnerHTMLDescriptor = descriptor || false;
+    return descriptor;
+  }
+
+  function attachComponentShadow(host) {
+    const root = host.attachShadow({ mode: 'open' });
+    if (typeof ShadowRoot === 'undefined') return root;
+    adoptSharedStyle(root, KNIU_BASE_FONT_CSS);
+    if (shouldContainHost(host.tagName)) adoptSharedStyle(root, KNIU_BASE_CONTAIN_CSS);
+    const descriptor = getShadowInnerHTMLDescriptor();
     if (!descriptor || typeof descriptor.get !== 'function') return root;
     Object.defineProperty(root, 'innerHTML', {
       configurable: true,
       get: function () { return descriptor.get.call(root); },
       set: function (markup) {
         const html = String(markup == null ? '' : markup);
-        // 抽离 <style> 内容，剩下的结构部分走模板缓存
         let styleText = '';
         const structure = html.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, function (_, css) {
           styleText += css + '\n';
@@ -483,6 +550,7 @@ var KniuUI = (function () {
         });
         let template = shadowTemplateCache.get(structure);
         if (!template) {
+          if (shadowTemplateCache.size >= SHADOW_TEMPLATE_CACHE_LIMIT) shadowTemplateCache.clear();
           template = (host.ownerDocument || document).createElement('template');
           template.innerHTML = structure;
           shadowTemplateCache.set(structure, template);
@@ -490,17 +558,18 @@ var KniuUI = (function () {
         root.replaceChildren(template.content.cloneNode(true));
         if (styleText) {
           if (supportsAdoptedStyleSheets(root)) {
-            // replaceChildren + 重设 adoptedStyleSheets 会清空基础渲染隔离样式，这里补回流。
-            root.adoptedStyleSheets = (shouldContainHost(host.tagName) ? [getSharedStyleSheet(KNIU_BASE_CONTAIN_CSS)] : []).concat(getSharedStyleSheet(KNIU_BASE_FONT_CSS));
+            // 基础样式（KNIU_BASE_FONT_CSS / KNIU_BASE_CONTAIN_CSS）由 attachComponentShadow
+            // 写入 adoptedStyleSheets，且 replaceChildren 不会清空 adoptedStyleSheets，
+            // 因此这里只需追加内联样式，绝不能重置，否则组件在 innerHTML 之后注入的样式会丢失。
             adoptSharedStyle(root, styleText);
           } else {
-            // 退回逐实例 <style>：replaceChildren 已清空原先的基础 <style>，这里补回再追加组件样式。
+            // 降级路径：replaceChildren 会清掉之前追加的 <style> 节点，需要重新补回基础样式。
             if (shouldContainHost(host.tagName)) {
-              const base = (root.ownerDocument || root.host && root.host.ownerDocument || document).createElement('style');
+              const base = (root.ownerDocument || (root.host && root.host.ownerDocument) || document).createElement('style');
               base.textContent = KNIU_BASE_CONTAIN_CSS;
               root.appendChild(base);
             }
-            const fontBase = (root.ownerDocument || root.host && root.host.ownerDocument || document).createElement('style');
+            const fontBase = (root.ownerDocument || (root.host && root.host.ownerDocument) || document).createElement('style');
             fontBase.textContent = KNIU_BASE_FONT_CSS;
             root.appendChild(fontBase);
             adoptSharedStyle(root, styleText);
@@ -520,20 +589,6 @@ var KniuUI = (function () {
     target.replaceChildren(fragment);
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // 统一下拉/浮层原语（约定：所有会弹出的浮层——select、分页、日期选择器、
-  // 账号登录菜单、密码 tip 等——都走这里）。
-  // 规范：
-  //   1) 一律 position:fixed（脱离 overflow 裁剪，可越过任意定位/裁剪祖先）。
-  //   2) 自动判断显示在上方还是下方，默认下方；仅下方放不下且上方足够时翻到上方。
-  //   3) 水平方向贴近触发元素左缘，超视口右缘自动向左钳制，保证完全可见。
-  //   4) 触发元素滚动/窗口 resize 时自动跟随重定位（rAF 节流）。
-  // 参考基准：kniu-date-picker 的 fixed 面板定位逻辑，抽取为共享实现供各组件复用。
-  // ─────────────────────────────────────────────────────────────
-
-  // 计算浮层 fixed 坐标与方向。panel 需先渲染出可见尺寸(offsetWidth/offsetHeight)。
-  // opts: { offset=6, width(可选兜底), height(可选兜底) }
-  // anchorRect: 触发元素 getBoundingClientRect() 结果。
   function computePopoverLayout(panel, anchorRect, opts) {
     const cfg = opts || {};
     const offset = cfg.offset == null ? 6 : cfg.offset;
@@ -546,14 +601,11 @@ var KniuUI = (function () {
     const panelHeight = (panel && panel.offsetHeight) || cfg.height || 0;
     const spaceBelow = viewportHeight - anchorRect.bottom - 8;
     const spaceAbove = anchorRect.top - 8;
-    // 默认下方；仅下方不足且上方足够时向上。若上下都不足，仍默认向下显示。
     const placement = spaceBelow < panelHeight && spaceAbove >= panelHeight ? 'top' : 'bottom';
     const top = placement === 'top' ? anchorRect.top - panelHeight - offset : anchorRect.bottom + offset;
     return { placement: placement, left: left, top: top, width: width, height: panelHeight };
   }
 
-  // 滚动/resize 时用 rAF 持续把浮层钉在触发元素旁(锚点由 caller 经 anchor() 提供，
-  // 位置由 apply() 应用)。返回 dispose。位置变化仅发生在几何/视口变化时。
   function trackPopoverPosition(anchor, apply, onDone) {
     if (typeof globalThis.requestAnimationFrame !== 'function') return onDone ? onDone() : null;
     let frame = 0;
@@ -578,16 +630,6 @@ var KniuUI = (function () {
     return dispose;
   }
 
-  // 统一浮层渲染宿主。绝大多数组件宿主带 :host{contain:layout} 或处于任何会建立
-  // containing block 的祖先内，导致宿主 shadowRoot 里的 position:fixed 后代相对宿主
-  // 而非视口定位（参照 kniu-date-picker 的实测：fixed 探针渲染在 host.top+N）。
-  // 因此所有视口级浮层必须 portal 到 document.body 之下、用独立 shadowRoot 承载面板，
-  // fixed 才能真正相对视口做自动上下翻转。本函数在面板首次打开前把 panel 从宿主
-  // shadowRoot 移入 portal，收起后由 caller 调 unmount 移回宿主，DOM 节点同一（不克隆，
-  // 保留面板自身事件与 data-*）。用法：
-  //   this._popoverState = mountPopoverPortal(panel, hostShadowRoot, { zIndex, dataKey })
-  //   关闭/断开时：if (this._popoverState) { this._popoverState.unmount(); this._popoverState = null; }
-  // opts: { zIndex=10030, attribute='data-kniu-popover' }
   function mountPopoverPortal(panel, hostRoot, opts) {
     const cfg = opts || {};
     if (typeof document === 'undefined' || !panel || !hostRoot) return null;
@@ -603,7 +645,8 @@ var KniuUI = (function () {
     const zIndex = cfg.zIndex == null ? 10030 : cfg.zIndex;
     portal.style.cssText = 'position:fixed;inset:0;display:block;width:0;height:0;pointer-events:none;z-index:' + zIndex;
     const root = portal.attachShadow({ mode: 'open' });
-    // 继承宿主样式：adoptedStyleSheets 优先，否则克隆宿主 <style>。
+    // 先把宿主 root 待写入的共享样式落到 adoptedStyleSheets，再整体复制给 portal。
+    flushPendingAdoptedSheets();
     if (typeof CSSStyleSheet !== 'undefined' && hostRoot.adoptedStyleSheets?.length && typeof root.adoptedStyleSheets !== 'undefined') {
       root.adoptedStyleSheets = hostRoot.adoptedStyleSheets.slice();
     } else {
@@ -611,7 +654,6 @@ var KniuUI = (function () {
         root.appendChild(style.cloneNode(true));
       });
     }
-    // 面板本身可交互，portal 壳透明不拦截。
     panel.style.pointerEvents = 'auto';
     root.appendChild(panel);
     document.body.appendChild(portal);
@@ -620,8 +662,6 @@ var KniuUI = (function () {
       root: root,
       panel: panel,
       unmount: function () {
-        // 无论 portal 壳是否仍连接，都把面板恢复到打开前的位置；
-        // 防止反复开闭后节点留在 body portal 中，下一次定位找不到稳定的面板。
         if (homeMarker.parentNode) homeMarker.parentNode.insertBefore(panel, homeMarker);
         else if (homeParent && homeParent.isConnected) homeParent.appendChild(panel);
         else hostRoot.appendChild(panel);
@@ -634,53 +674,214 @@ var KniuUI = (function () {
     return state;
   }
 
+  // 行模板编译缓存：列配置里的 options/condition 表达式（如
+  // type:"{{scope.row.role_text == '管理员' ? 'success' : 'primary'}}"）在每一行都会被求值，
+  // 每次都 matchAll + 重建闭包是纯浪费，故缓存「表达式求值器列表」这一编译产物。
+  // 铁律：行数据 (row, rowIndex) 必须由调用参数传入，绝不能把某一行的 row 捕获进缓存内容，
+  // 否则所有行都会渲染成第一行的值（列 options/condition 全部冻结）。
+  var TABLE_TEMPLATE_CACHE_LIMIT = 200;
+  var TABLE_TEMPLATE_RE = /\{\{\s*([\s\S]*?)\s*\}\}/g;
+
+  function compileTableRowTemplate(template) {
+    const matches = [...template.matchAll(TABLE_TEMPLATE_RE)];
+    if (!matches.length) return null;
+    return {
+      evaluators: matches.map(function (match) { return compileExpression(match[1]); }),
+      whole: matches.length === 1 && matches[0][0] === template.trim(),
+    };
+  }
+
   function resolveTableRowTemplate(template, row, rowIndex) {
+    // 函数模板与无插值字符串没有可缓存的开销，直接返回
     if (typeof template === 'function') return template(row, rowIndex);
     if (typeof template !== 'string' || !template.includes('{{')) return template;
-    const matches = [...template.matchAll(/\{\{\s*([\s\S]*?)\s*\}\}/g)];
-    if (!matches.length) return template;
-    const evaluate = function (expression) {
-      const evaluator = compileExpression(expression);
+
+    let compiled = tableTemplateCache.get(template);
+    if (compiled === undefined) {
+      compiled = compileTableRowTemplate(template);
+      // 模板来自列配置，种类有限；上限只是防御性兜底
+      if (tableTemplateCache.size >= TABLE_TEMPLATE_CACHE_LIMIT) tableTemplateCache.clear();
+      tableTemplateCache.set(template, compiled);
+    }
+    // 含 "{{" 但没有完整的 {{...}}（未闭合）→ 保持原样，与旧实现一致
+    if (!compiled) return template;
+
+    const scope = { scope: { row: row, $index: rowIndex } };
+    const evaluate = function (evaluator) {
       if (!evaluator) return '';
-      try { return evaluator({ scope: { row: row, $index: rowIndex } }); } catch { return ''; }
+      try { return evaluator(scope); } catch { return ''; }
     };
-    if (matches.length === 1 && matches[0][0] === template.trim()) return evaluate(matches[0][1]);
-    return template.replace(/\{\{\s*([\s\S]*?)\s*\}\}/g, function (_, expression) {
-      const value = evaluate(expression);
+    if (compiled.whole) return evaluate(compiled.evaluators[0]);
+    let cursor = 0;
+    return template.replace(TABLE_TEMPLATE_RE, function () {
+      const value = evaluate(compiled.evaluators[cursor++]);
       return value == null ? '' : String(value);
     });
   }
 
-  function setScrollLock(locked) {
-    if (typeof document === 'undefined' || !document.documentElement || !document.body) return;
-    const root = document.documentElement;
-    const body = document.body;
-    if (locked) {
-      if (scrollLockStyles) return;
-      scrollLockStyles = {
-        rootOverflow: root.style.overflow,
-        rootOverflowX: root.style.overflowX,
-        rootOverflowY: root.style.overflowY,
-        bodyOverflow: body.style.overflow,
-        bodyOverflowX: body.style.overflowX,
-        bodyOverflowY: body.style.overflowY
-      };
-      root.style.setProperty('overflow', 'hidden');
-      root.style.setProperty('overflow-x', 'hidden');
-      root.style.setProperty('overflow-y', 'hidden');
-      body.style.setProperty('overflow', 'hidden');
-      body.style.setProperty('overflow-x', 'hidden');
-      body.style.setProperty('overflow-y', 'hidden');
-      return;
+  // 根滚动锁（所有者计数，全站唯一入口）。
+  //
+  // 背景：<html> 的滚动来自 kniu.css 的 `html{overflow-x:hidden;overflow-y:auto}`，
+  // 所以「锁页面滚动」= 往 documentElement/body 写行内 overflow:hidden。历史上
+  // 全局加载遮罩、导航移动菜单、弹窗各写各的、各自快照后再回写，于是出现
+  // 「A 持锁时 B 去快照，B 后释放把 hidden 又写回去」的脏快照 —— 页面切换后
+  // <html style="overflow:hidden"> 永久残留，新页面滚不动（移动端最明显）。
+  //
+  // 不变量：
+  //   1) 只有「第一个」持锁者记录原始内联值，只有「最后一个」释放者回写；
+  //   2) 所有者（Set 成员，可以是任意对象/字符串）重复上锁/解锁幂等，计数不会漂移；
+  //   3) 上锁时给 <html> 打 dataset 标记，恢复/兜底清理据此判断「这个值是本模块写的」，
+  //      残留不会被误当成页面原始值保存。
+  function scrollLockNodes() {
+    if (typeof document === 'undefined' || !document.documentElement || !document.body) return null;
+    return { root: document.documentElement, body: document.body };
+  }
+  function readScrollLockOriginals(nodes) {
+    // 标记存在说明上一次锁没走到恢复（异常/旧版本遗留），此时行内值是本模块写的，
+    // 不能当原始值保存，否则会把 hidden 永久固化。
+    var leftOver = nodes.root.dataset[SCROLL_LOCK_FLAG] === '1';
+    var props = ['overflow', 'overflowX', 'overflowY'];
+    var originals = { root: {}, body: {} };
+    props.forEach(function (prop) {
+      originals.root[prop] = leftOver ? '' : (nodes.root.style[prop] || '');
+      originals.body[prop] = leftOver ? '' : (nodes.body.style[prop] || '');
+    });
+    return originals;
+  }
+  function applyScrollLock(nodes) {
+    nodes.root.dataset[SCROLL_LOCK_FLAG] = '1';
+    nodes.root.style.setProperty('overflow', 'hidden');
+    nodes.root.style.setProperty('overflow-x', 'hidden');
+    nodes.root.style.setProperty('overflow-y', 'hidden');
+    nodes.body.style.setProperty('overflow', 'hidden');
+    nodes.body.style.setProperty('overflow-x', 'hidden');
+    nodes.body.style.setProperty('overflow-y', 'hidden');
+  }
+  function writeScrollLockOriginals(nodes, originals) {
+    if (!originals) return;
+    ['overflow', 'overflowX', 'overflowY'].forEach(function (prop) {
+      nodes.root.style[prop] = originals.root[prop] || '';
+      nodes.body.style[prop] = originals.body[prop] || '';
+    });
+    // 声明被清空后 <html>/<body> 会残留 style=""，按空属性约定移除属性本身。
+    pruneEmptyAttributes(nodes.root);
+    pruneEmptyAttributes(nodes.body);
+  }
+  function releaseScrollLock(nodes) {
+    var originals = scrollLockOriginals;
+    var leftOver = !!nodes && nodes.root.dataset[SCROLL_LOCK_FLAG] === '1';
+    scrollLockOriginals = null;
+    scrollLockOwners.clear();
+    if (!nodes) return false;
+    writeScrollLockOriginals(nodes, originals);
+    delete nodes.root.dataset[SCROLL_LOCK_FLAG];
+    return leftOver || !!originals;
+  }
+  // 上锁：owner 任意唯一标识（组件实例/字符串）。返回是否生效。
+  function lockDocumentScroll(owner) {
+    var nodes = scrollLockNodes();
+    if (!nodes) return false;
+    var key = owner || 'anonymous';
+    if (scrollLockOwners.has(key)) { applyScrollLock(nodes); return true; }
+    if (scrollLockOwners.size === 0) scrollLockOriginals = readScrollLockOriginals(nodes);
+    scrollLockOwners.add(key);
+    applyScrollLock(nodes);
+    return true;
+  }
+  // 解锁：非持锁者调用是空操作（不会误恢复别人的锁）。
+  function unlockDocumentScroll(owner) {
+    var key = owner || 'anonymous';
+    if (!scrollLockOwners.has(key)) return false;
+    scrollLockOwners.delete(key);
+    if (scrollLockOwners.size > 0) return true;
+    releaseScrollLock(scrollLockNodes());
+    return true;
+  }
+  // 兜底校正：没有任何持锁者却残留行内锁值（旧版本遗留 / 异常退出）时强制清掉。
+  // 路由切换时调用 —— 这就是「页面互相切换能有效监听并删除 overflow:hidden」的落点。
+  function reconcileDocumentScrollLock() {
+    var nodes = scrollLockNodes();
+    if (!nodes) return false;
+    if (scrollLockOwners.size > 0) return false;
+    var marked = nodes.root.dataset[SCROLL_LOCK_FLAG] === '1';
+    var stuck = nodes.root.style.overflow === 'hidden' || nodes.body.style.overflow === 'hidden';
+    if (!marked && !stuck) return false;
+    scrollLockOriginals = null;
+    writeScrollLockOriginals(nodes, { root: {}, body: {} });
+    delete nodes.root.dataset[SCROLL_LOCK_FLAG];
+    return true;
+  }
+  // ---- 空属性清理 ----------------------------------------------------------
+  // 浏览器**不会**回收「值为空」的属性：`setAttribute('class','')` 得到 `class=""`；
+  // style 声明被逐条清空后同样残留 `style=""`（Blink 实测 `hasAttribute('style')`
+  // 仍为 true，"空 style 会自动移除"的旧经验已不成立）。脏属性会随节点长期驻留，
+  // 切页最直观：`<html style="">`、`<div class="">` 一类残留越积越多。
+  //
+  // 框架约定：凡 JS 写入的**呈现型属性**（style / class / id，以及显式传入的 data-*）
+  // 值为空即删除属性本身。两条豁免：
+  //   ① 布尔属性（disabled / open / checked / ...）的空值**就是**它的存在意义，永不删除；
+  //   ② `value=""`（清空输入）、`alt=""`（装饰图）、`title=""` / `placeholder=""` / `name=""`
+  //      等空串在语义上有效，同样不删。
+  var BOOLEAN_ATTRIBUTES = new Set([
+    'allowfullscreen', 'async', 'autofocus', 'autoplay', 'checked', 'controls', 'default',
+    'defer', 'disabled', 'formnovalidate', 'hidden', 'inert', 'ismap', 'itemscope', 'loop',
+    'multiple', 'muted', 'nomodule', 'novalidate', 'open', 'playsinline', 'readonly',
+    'required', 'reversed', 'selected'
+  ]);
+  var SEMANTIC_EMPTY_ATTRIBUTES = new Set(['value', 'alt', 'title', 'placeholder', 'name', 'label']);
+  // 省略 names 时的默认扫描范围。**刻意不含 data-\***：组件常以 `dataset.value = ''`
+  // 表达「空值选项」，删掉属性会让读取方拿到 undefined 而非 ''，属行为变更。
+  // 需要清理 data-* 时显式传 names，例如 pruneEmptyAttributes(el, ['data-state', 'data-open'])。
+  var PRUNABLE_ATTRIBUTE_NAMES = ['style', 'class', 'id'];
+
+  function isEmptyAttributeValue(value) {
+    return value == null || String(value).trim() === '';
+  }
+  // 删除元素上的单个空属性，返回是否真的删了。布尔属性与语义空串属性一律跳过。
+  function pruneEmptyAttribute(element, name) {
+    if (!element || element.nodeType !== 1 || !name) return false;
+    var attr = String(name).toLowerCase();
+    if (BOOLEAN_ATTRIBUTES.has(attr) || SEMANTIC_EMPTY_ATTRIBUTES.has(attr)) return false;
+    if (!element.hasAttribute(attr)) return false;
+    if (!isEmptyAttributeValue(element.getAttribute(attr))) return false;
+    element.removeAttribute(attr);
+    return true;
+  }
+  // 批量清理：无 names 时按 PRUNABLE_ATTRIBUTE_NAMES 扫。返回删除条数。
+  function pruneEmptyAttributes(element, names) {
+    if (!element || element.nodeType !== 1) return 0;
+    var list = (names && names.length) ? names : PRUNABLE_ATTRIBUTE_NAMES;
+    var removed = 0;
+    for (var i = 0; i < list.length; i++) {
+      if (pruneEmptyAttribute(element, list[i])) removed++;
     }
-    if (!scrollLockStyles) return;
-    root.style.overflow = scrollLockStyles.rootOverflow;
-    root.style.overflowX = scrollLockStyles.rootOverflowX;
-    root.style.overflowY = scrollLockStyles.rootOverflowY;
-    body.style.overflow = scrollLockStyles.bodyOverflow;
-    body.style.overflowX = scrollLockStyles.bodyOverflowX;
-    body.style.overflowY = scrollLockStyles.bodyOverflowY;
-    scrollLockStyles = null;
+    return removed;
+  }
+  // 深度清理一棵子树（**含 shadow tree**）里的空呈现型属性，返回删除条数。
+  // 用途：页面渲染收尾时跑一次，回收渲染过程中产生的空属性。只读属性、不读几何，
+  // 不会触发强制同步布局（见项目 Shadow DOM 性能铁律）。
+  function pruneEmptyAttributeTree(root, names) {
+    if (!root || root.nodeType !== 1) return 0;
+    var removed = 0;
+    var stack = [root];
+    while (stack.length) {
+      var node = stack.pop();
+      removed += pruneEmptyAttributes(node, names);
+      if (node.shadowRoot) {
+        var shadowChildren = node.shadowRoot.children;
+        for (var i = 0; i < shadowChildren.length; i++) stack.push(shadowChildren[i]);
+      }
+      var children = node.children;
+      for (var j = 0; j < children.length; j++) stack.push(children[j]);
+    }
+    return removed;
+  }
+  // 根元素兜底：<html>/<body> 是跨页存活节点，切页后不该留任何空的 style/class/id。
+  function pruneEmptyRootAttributes() {
+    if (typeof document === 'undefined' || !document.documentElement) return 0;
+    var removed = pruneEmptyAttributes(document.documentElement);
+    if (document.body) removed += pruneEmptyAttributes(document.body);
+    return removed;
   }
 
   // 切换路由加载态。
@@ -688,7 +889,8 @@ var KniuUI = (function () {
     const next = !!value;
     if (state.loading === next) return;
     state.loading = next;
-    setScrollLock(next);
+    if (next) lockDocumentScroll('loading');
+    else unlockDocumentScroll('loading');
   }
 
   // 提示框。
@@ -731,10 +933,6 @@ var KniuUI = (function () {
     if (!target || typeof target.replaceChildren !== 'function') {
       throw new TypeError('[KniuUI] createTable() requires a el element');
     }
-    // 列定义过滤：condition 为空或对空行求值为真才保留（条件列）。
-    // 不能 filter 拷贝后固定引用：options.cols 与外部数组是同一引用，调用方可能
-    // 原地 mutate（push/splice）而不重建表格，故 render 每次重新过滤并原地替换，
-    // 让行池签名与实际列结构一致（2026-09-01：曾因 filter 拷贝隔离 mutate 而失效）。
     function readColumns() {
       return Array.isArray(options.cols)
         ? options.cols.filter(function (column) {
@@ -750,8 +948,6 @@ var KniuUI = (function () {
     const maxHeight = Number.parseInt(options.maxHeight, 10) || 0;
     const height = Number.parseInt(options.height, 10) || 0;
     let rows = Array.isArray(options.data) ? options.data : [];
-    // 数据源原始顺序（未排序基准）：升/降/清空三态排序都从它出发，
-    // 第三次点击清空排序时恢复此顺序，避免在已排序结果上叠加。
     let initialRows = rows;
     let sortState = { field: '', order: '' };
     let currentRow = null;
@@ -759,33 +955,24 @@ var KniuUI = (function () {
     let disposed = false;
     let fixedLeftWidth = 0;
     let fixedRightWidth = 0;
+    let lastFixedOffsets = { left: new Map(), right: new Map() };
     let pendingEdit = null;
     let rendering = false;
     let headElement = null;
     let bodyElement = null;
-    // 行节点复用池：render 结束后保存当前 tbody 中的 tr 顺序。
-    // 列配置在 createTable 实例生命周期内固定，故行数不变时可整行复用，只更新单元格内容。
     let rowPool = [];
-    // 复用池对应的列结构签名。options.cols 是外部数组的同一引用，若调用方原地
-    // mutate 列（push/splice）而不重建表格，复用行的单元格数会与 columns 失配
-    // （列变少残留旧格、列变多 cells[index] 为 undefined）。故每次 render 校验签名，
-    // 不一致即整体丢弃重建。开销 O(列数)，可忽略。
     let rowPoolColumnSignature = '';
-    // 实测列宽缓存（固定列阴影用）。避免每次 render 都 getBoundingClientRect 强制回流。
     let measuredColumnWidths = null;
-    // 固定列阴影显隐的 rAF 句柄（把布局读取移出 render 同步路径）
     let shadowVisibilityFrame = 0;
-    // 视口尺寸观察器：容器尺寸变化时刷新列宽缓存与阴影布局指标
     let viewportResizeObserver = null;
 
-    // 表格 CSS 是静态的：目标为 ShadowRoot 时走共享样式表，多个表格实例共用一份解析结果。
     const tableStyleSheetText = `
       :host{display:block;width:100%;min-width:0}
       .kniu_sys_table_group{position:relative;width:100%;overflow:hidden;background-color:#fff;color:#606266;font-size:14px;box-sizing:border-box}
       .kniu_sys_table_viewport{width:100%;max-width:100%;overflow-x:auto;overflow-y:auto;box-sizing:border-box}
       @supports(overflow-y:overlay){.kniu_sys_table_viewport{overflow-y:overlay}}
       .kniu_sys_table{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;background-color:#fff;box-sizing:border-box}
-      .kniu_sys_table th,.kniu_sys_table td{border-bottom:1px solid #ebeef5;padding:5px 10px;height:48px;box-sizing:border-box;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background-color:#fff}
+      .kniu_sys_table th,.kniu_sys_table td{border-bottom:1px solid #ebeef5;padding:5px 10px;height:max(38px,calc(48 / var(--kniu_vw)));box-sizing:border-box;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background-color:#fff}
       .kniu_sys_table th{position:sticky;top:0;z-index:3;color:#909399;font-weight:600;background-color:#f5f7fa}
       .kniu_sys_table_group[data-empty="true"] thead{pointer-events:none;user-select:none}
       .kniu_sys_table_group[data-empty="true"] thead th{cursor:not-allowed!important}
@@ -798,7 +985,8 @@ var KniuUI = (function () {
       .kniu_sys_table_group[data-border="true"] th,.kniu_sys_table_group[data-border="true"] td{border-right:1px solid #ebeef5}
       .kniu_sys_table_group[data-size="large"] th,.kniu_sys_table_group[data-size="large"] td{height:52px;padding:0 12px}
       .kniu_sys_table_group[data-size="small"] th,.kniu_sys_table_group[data-size="small"] td{height:40px;padding:0 8px;font-size:12px}
-      .kniu_sys_table .kniu_sys_table_fixed_left,.kniu_sys_table .kniu_sys_table_fixed_right{position:sticky;z-index:2;background-color:#fff}
+      .kniu_sys_table .kniu_sys_table_fixed_left{position:sticky;z-index:2;background-color:#fff;left:var(--kniu-fixed-left,auto)}
+      .kniu_sys_table .kniu_sys_table_fixed_right{position:sticky;z-index:2;background-color:#fff;right:var(--kniu-fixed-right,auto)}
       .kniu_sys_table th.kniu_sys_table_fixed_left,.kniu_sys_table th.kniu_sys_table_fixed_right{z-index:5;background-color:#f5f7fa}
       .kniu_sys_table_fixed_shadow{position:absolute;top:0;bottom:0;z-index:10;display:none;pointer-events:none;box-shadow:0 0 10px rgba(0,0,0,.12)}
       .kniu_sys_table_fixed_shadow_left{left:0}
@@ -815,8 +1003,8 @@ var KniuUI = (function () {
       .kniu_sys_table_empty td{height:80px;text-align:center;color:#909399}
       .kniu_sys_table_empty:hover td{background-color:#fff!important;cursor:default}
       .kniu_sys_table_empty td slot[name="empty"]{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
-      .kniu_sys_table_sort{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:16px;height:22px;margin-left:5px;vertical-align:middle;color:#c0c4cc;cursor:pointer}.kniu_sys_table_sort_up,.kniu_sys_table_sort_down{display:block;width:14px;height:10px;line-height:0}.kniu_sys_table_sort svg{display:block;width:14px;height:14px;fill:currentColor}.kniu_sys_table_sort_up svg{transform:translateY(1px)}.kniu_sys_table_sort_down svg{transform:translateY(-5px)}.kniu_sys_table_sort[data-order="ascending"] .kniu_sys_table_sort_up,.kniu_sys_table_sort[data-order="descending"] .kniu_sys_table_sort_down{color:#333}
-      .kniu_sys_table_selection{appearance:none;width:14px;height:14px;margin:0;border:1px solid #dcdfe6;border-radius:2px;outline:0;background-color:#fff;background-position:center;background-repeat:no-repeat;background-size:10px 8px;box-sizing:border-box;cursor:pointer;transition:border-color .2s,background-color .2s}.kniu_sys_table_selection:checked{border-color:#409eff;background-color:#409eff;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 10'%3E%3Cpath d='M1 5l3 3 7-7' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}.kniu_sys_table_selection:indeterminate{border-color:#409eff;background-color:#409eff;background-image:linear-gradient(#fff,#fff);background-size:8px 2px}.kniu_sys_table_selection:focus-visible{outline:2px solid rgba(64,158,255,.3);outline-offset:2px}.kniu_sys_table_selection:disabled{border-color:#dcdfe6;background-color:#f5f7fa;cursor:not-allowed;opacity:.65}.kniu_sys_table_selection:disabled:checked,.kniu_sys_table_selection:disabled:indeterminate{border-color:#a0cfff;background-color:#a0cfff}
+      .kniu_sys_table_sort{display:inline-flex;justify-content:center;align-items:center;flex-flow:column;margin-left:5px;vertical-align:middle;color:#c0c4cc;cursor:pointer}.kniu_sys_table_sort_up,.kniu_sys_table_sort_down{display:flex;align-items:center;justify-content:center;height:13px;line-height:0}.kniu_sys_table_sort kniu-icon{display:block;width:max(10px,calc(12 / var(--kniu_vw)));height:max(10px,calc(12 / var(--kniu_vw)));flex:none}.kniu_sys_table_sort[data-order="ascending"] .kniu_sys_table_sort_up,.kniu_sys_table_sort[data-order="descending"] .kniu_sys_table_sort_down{color:#333}
+      .kniu_sys_table_selection{appearance:none;width:max(12px,calc(14 / var(--kniu_vw)));height:max(12px,calc(14 / var(--kniu_vw)));margin:0;border:1px solid #dcdfe6;border-radius:2px;outline:0;background-color:#fff;background-position:center;background-repeat:no-repeat;background-size:10px 8px;box-sizing:border-box;cursor:pointer;transition:border-color .2s,background-color .2s}.kniu_sys_table_selection:checked{border-color:#409eff;background-color:#409eff;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 10'%3E%3Cpath d='M1 5l3 3 7-7' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}.kniu_sys_table_selection:indeterminate{border-color:#409eff;background-color:#409eff;background-image:linear-gradient(#fff,#fff);background-size:8px 2px}.kniu_sys_table_selection:focus-visible{outline:2px solid rgba(64,158,255,.3);outline-offset:2px}.kniu_sys_table_selection:disabled{border-color:#dcdfe6;background-color:#f5f7fa;cursor:not-allowed;opacity:.65}.kniu_sys_table_selection:disabled:checked,.kniu_sys_table_selection:disabled:indeterminate{border-color:#a0cfff;background-color:#a0cfff}
       .kniu_sys_table_cell_tooltip{position:relative}
       .kniu_sys_table_tooltip{position:fixed;z-index:9999;max-width:50vw;padding:8px 12px;border-radius:4px;background-color:rgba(48,49,51,.92);color:#fff;font-size:12px;line-height:1.5;white-space:normal;word-break:break-all;box-shadow:0 2px 12px rgba(0,0,0,.18);pointer-events:none}
       .kniu_sys_table_tooltip::after{content:"";position:absolute;width:0;height:0;border:6px solid transparent;pointer-events:none;left:var(--kniu_tip_arrow_x,50%);transform:translateX(-50%)}
@@ -830,17 +1018,23 @@ var KniuUI = (function () {
       :host([theme="dark"]) .kniu_sys_table_group{--kniu-table-edge-fade:rgba(255,255,255,.1)}
       :host-context([data-theme="dark"]) .kniu_sys_table_group{--kniu-table-edge-fade:rgba(255,255,255,.1)}
       @media (prefers-color-scheme:dark){.kniu_sys_table_group{--kniu-table-edge-fade:rgba(255,255,255,.1)}}
-      .kniu_sys_table .kniu_sys_table_fixed_left,.kniu_sys_table .kniu_sys_table_fixed_right{position:static;z-index:auto}
+      .kniu_sys_table td.kniu_sys_table_fixed_left,.kniu_sys_table td.kniu_sys_table_fixed_right{position:static;z-index:auto}
+      .kniu_sys_table .kniu_sys_table_fixed_left,.kniu_sys_table .kniu_sys_table_fixed_right{left:auto;right:auto}
       .kniu_sys_table_fixed_shadow{display:none}
       @media (min-width:calc(1280px - 60px)){
         .kniu_sys_table_group[data-mobile-overflow-left="true"]::before,.kniu_sys_table_group[data-mobile-overflow-right="true"]::after{display:none}
-        .kniu_sys_table .kniu_sys_table_fixed_left,.kniu_sys_table .kniu_sys_table_fixed_right{position:sticky;z-index:2}
+        .kniu_sys_table td.kniu_sys_table_fixed_left,.kniu_sys_table th.kniu_sys_table_fixed_left{position:sticky;z-index:2;left:var(--kniu-fixed-left,auto)}
+        .kniu_sys_table td.kniu_sys_table_fixed_right,.kniu_sys_table th.kniu_sys_table_fixed_right{position:sticky;z-index:2;right:var(--kniu-fixed-right,auto)}
         .kniu_sys_table th.kniu_sys_table_fixed_left,.kniu_sys_table th.kniu_sys_table_fixed_right{z-index:5}
-        .kniu_sys_table_fixed_shadow{display:block}
+      }
+      @media (min-width: calc(1600px - 60px)) {
+        .kniu_sys_table_sort_up,
+        .kniu_sys_table_sort_down{
+          height:9px;
+        }
       }
       @media (prefers-reduced-motion:reduce){.kniu_sys_table_loading_spinner{animation:none}}
     `;
-    // 目标是 ShadowRoot 时用共享样式表；否则（普通容器）退回 <style> 元素。
     const style = supportsAdoptedStyleSheets(target)
       ? (adoptSharedStyle(target, tableStyleSheetText), null)
       : (function () {
@@ -856,28 +1050,51 @@ var KniuUI = (function () {
     if (height) viewport.style.height = `${Math.max(40, height)}px`;
     const table = documentRef.createElement('table');
     table.className = 'kniu_sys_table';
-    const effectiveWidth = function (column) {
-      const w = Number.parseInt(column.width, 10);
-      if (Number.isFinite(w) && w > 0) return w;
-      const m = Number.parseInt(column.minWidth, 10);
-      if (Number.isFinite(m) && m > 0) return m;
-      // 未声明宽度的业务列也必须计入表格最小宽度。原先返回 0，
-      // 导致移动端固定宽度列占满后，栏目名称/中文/英文/用户名等
-      // 弹性列被 table-layout:fixed 压缩到 0px。与 columnWidth() 的默认值保持一致。
-      return 120;
-    };
-    const minTotalWidth = columns.reduce(function (sum, column) { return sum + effectiveWidth(column); }, 0);
-    if (options.fit !== false) table.style.minWidth = `${minTotalWidth}px`;
-    else table.style.minWidth = '0';
-    // width 始终由 .kniu_sys_table 的 100% 规则控制；列宽总和只作为 min-width，
-    // 超出容器时由 viewport 横向滚动，禁止用内联像素宽度覆盖 width:100%。
+    let deskViewportMql = null;
+    function isDeskViewport() {
+      if (!deskViewportMql && typeof globalThis.matchMedia === 'function') {
+        deskViewportMql = globalThis.matchMedia('(min-width: calc(1280px - 60px))');
+      }
+      return deskViewportMql ? deskViewportMql.matches : true;
+    }
+    let columnPlan = null;
+    function refreshColumnPlan() {
+      const explicitWidths = columns.map(function (column) {
+        const w = Number.parseInt(column.width, 10);
+        if (Number.isFinite(w) && w > 0) return w;
+        const m = Number.parseInt(column.minWidth, 10);
+        return Number.isFinite(m) && m > 0 ? m : 0;
+      });
+      let explicitTotal = 0;
+      let defaultColumnWidth = 0;
+      let autoCount = 0;
+      explicitWidths.forEach(function (w) {
+        if (w > 0) {
+          explicitTotal += w;
+          if (w > defaultColumnWidth) defaultColumnWidth = w;
+        } else {
+          autoCount += 1;
+        }
+      });
+      const isMobile = !isDeskViewport();
+      columnPlan = {
+        explicitWidths: explicitWidths,
+        defaultColumnWidth: defaultColumnWidth,
+        isMobile: isMobile,
+        minTotalWidth: explicitTotal + (isMobile ? autoCount * defaultColumnWidth : 0)
+      };
+      return columnPlan;
+    }
+    function applyTableMinWidth() {
+      const plan = columnPlan || refreshColumnPlan();
+      table.style.minWidth = options.fit !== false ? `${plan.minTotalWidth}px` : '0';
+    }
     const leftFixedShadow = documentRef.createElement('div');
     leftFixedShadow.className = 'kniu_sys_table_fixed_shadow kniu_sys_table_fixed_shadow_left';
     leftFixedShadow.setAttribute('aria-hidden', 'true');
     const rightFixedShadow = documentRef.createElement('div');
     rightFixedShadow.className = 'kniu_sys_table_fixed_shadow kniu_sys_table_fixed_shadow_right';
     rightFixedShadow.setAttribute('aria-hidden', 'true');
-    // 区域加载遮罩：放在 group（position:relative）内、视口与固定阴影之上，覆盖整张表
     const loadingMask = documentRef.createElement('div');
     loadingMask.className = 'kniu_sys_table_loading';
     loadingMask.setAttribute('data-active', String(!!options.loading));
@@ -895,7 +1112,6 @@ var KniuUI = (function () {
     group.dataset.border = String(!!options.border);
     group.dataset.size = ['large', 'small'].includes(options.size) ? options.size : 'default';
     group.dataset.highlightCurrentRow = String(!!options.highlightCurrentRow);
-    // 溢出提示浮层：挂在 shadowRoot 顶层（viewport/group 之外），用 fixed 定位避免被 overflow 裁切。
     const tooltip = documentRef.createElement('div');
     tooltip.className = 'kniu_sys_table_tooltip';
     tooltip.hidden = true;
@@ -937,23 +1153,23 @@ var KniuUI = (function () {
         cell.style.minWidth = `${explicitWidth}px`;
         cell.style.maxWidth = `${explicitWidth}px`;
       } else if (hasMinWidth) {
-        cell.style.width = `${minWidth}px`;
         cell.style.minWidth = `${minWidth}px`;
+      } else if (columnPlan && columnPlan.isMobile && columnPlan.defaultColumnWidth > 0) {
+        cell.style.minWidth = `${columnPlan.defaultColumnWidth}px`;
       }
       cell.style.textAlign = column.align || 'left';
       if (offsets.left.has(index)) {
         cell.classList.add('kniu_sys_table_fixed_left');
-        cell.style.left = `${offsets.left.get(index)}px`;
+        cell.style.setProperty('--kniu-fixed-left', `${offsets.left.get(index)}px`);
       }
       if (offsets.right.has(index)) {
         cell.classList.add('kniu_sys_table_fixed_right');
-        cell.style.right = `${offsets.right.get(index)}px`;
+        cell.style.setProperty('--kniu-fixed-right', `${offsets.right.get(index)}px`);
       }
     }
 
     function showCellTooltip(cell) {
       if (!cell._tooltipText) return;
-      // 仅当内容实际溢出（被 ellipsis 裁切）时才显示，避免每条都弹提示
       if (cell.scrollWidth <= cell.clientWidth + 1) return;
       tooltip.textContent = cell._tooltipText;
       tooltip.hidden = false;
@@ -962,8 +1178,6 @@ var KniuUI = (function () {
       const th = tooltip.offsetHeight;
       const vGap = 6;     // tip 与单元格的垂直间距（正好容纳 6px 高的指向小三角）
       const hMargin = 8;  // tip 与视口边缘的水平留白
-      // 垂直：默认在单元格「上方」居中；上方空间不足则落到「下方」；
-      // 若上下都不够，取空间更大的一侧（满足「上方不够→下方、下方不够→上方」双向避让）。
       let top;
       let placement = 'top'; // tip 在单元格上方 → 三角在 tip 底部朝下指向单元格
       const spaceAbove = rect.top;
@@ -981,10 +1195,6 @@ var KniuUI = (function () {
           placement = 'bottom';
         }
       }
-      // 水平：默认沿单元格水平居中对齐；
-      // 左侧空间不足 → 左对齐（tip 左缘贴近单元格左缘，避免被左边缘裁切）；
-      // 右侧空间不足 → 右对齐（tip 右缘贴近单元格右缘，避免被右边缘裁切）；
-      // 最后夹在视口内兜底，保证永远完整可见。
       let left = rect.left + rect.width / 2 - tw / 2;
       if (left < hMargin) left = rect.left;                                       // 左避让
       if (left + tw > window.innerWidth - hMargin) left = rect.right - tw;        // 右避让
@@ -992,7 +1202,6 @@ var KniuUI = (function () {
       tooltip.style.top = `${top}px`;
       tooltip.style.left = `${left}px`;
       tooltip.dataset.placement = placement;
-      // 指向小三角：水平跟随单元格中心（相对 tip 左缘），夹在 tip 内部避免悬空出界。
       const cellCenterX = rect.left + rect.width / 2 - left;
       const arrowX = Math.max(10, Math.min(cellCenterX, tw - 10));
       tooltip.style.setProperty('--kniu_tip_arrow_x', `${arrowX}px`);
@@ -1008,7 +1217,6 @@ var KniuUI = (function () {
         const checkbox = documentRef.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.className = 'kniu_sys_table_selection';
-        // 行节点会被复用，监听器不能闭包持有 row（换页后即失效），统一按 rowIndex 取回当前行对象
         checkbox.dataset.rowIndex = String(rowIndex);
         checkbox.checked = selectedRows.has(row);
         checkbox.disabled = typeof column.selectable === 'function' && !column.selectable(row, rowIndex);
@@ -1035,12 +1243,10 @@ var KniuUI = (function () {
       }
       if (column.switch) {
         const switchElement = documentRef.createElement('kniu-switch');
-        // 列内开关配置统一来自 kniu:option 快照（旧 attribute 快照已作废）
         if (column.switch.options && typeof column.switch.options === 'object') {
           switchElement.options = column.switch.options;
         }
         switchElement.value = column.field == null ? false : row?.[column.field];
-        // 同上：行节点复用后按 rowIndex 取回行对象，避免闭包里是上一页的 row
         switchElement.dataset.rowIndex = String(rowIndex);
         switchElement._saveQueue = Promise.resolve();
         switchElement._changeVersion = 0;
@@ -1052,9 +1258,6 @@ var KniuUI = (function () {
           const requestedValue = event.detail;
           if (column.field != null) currentRowData[column.field] = requestedValue;
           if (typeof column.switch.onChange !== 'function') return;
-          // 不在请求期间禁用开关：禁用会让连续点击被浏览器吞掉，
-          // 因而看起来像“切换几次后不再发请求”。同一开关的提交按操作顺序
-          // 串行入队，既不丢操作，也避免后发请求先返回导致服务端最终值错乱。
           const changeVersion = ++switchElement._changeVersion;
           const saveTask = switchElement._saveQueue.then(function () {
             return column.switch.onChange(currentIndex, rows, requestedValue);
@@ -1093,7 +1296,6 @@ var KniuUI = (function () {
         const radioGroup = documentRef.createElement('kniu-radio-group');
         radioGroup._saveQueue = Promise.resolve();
         radioGroup._changeVersion = 0;
-        // 按列定义的选项逐行重建单选组；每个行实例自带唯一 name，互不干扰。
         (column.radio.options || []).forEach(function (opt) {
           const radio = documentRef.createElement('kniu-radio');
           if (opt.value !== '' && opt.value != null) radio.setAttribute('value', String(opt.value));
@@ -1110,7 +1312,6 @@ var KniuUI = (function () {
           const requestedValue = event.detail;
           if (column.field != null) currentRowData[column.field] = requestedValue;
           if (typeof column.radio.onChange !== 'function') return;
-          // 串行入队，避免连续点击后发请求先返回覆盖最终值；失败时回滚到原值。
           const changeVersion = ++radioGroup._changeVersion;
           const saveTask = radioGroup._saveQueue.then(function () {
             return column.radio.onChange(currentIndex, rows, requestedValue);
@@ -1149,7 +1350,6 @@ var KniuUI = (function () {
       const value = typeof column.formatter === 'function'
         ? column.formatter(row, column, rawValue, rowIndex)
         : rawValue;
-      // HTML 编解码为后端全责（查→后端解码返回），前端拿到即最终文本，直接渲染。
       const text = value == null ? '' : String(value);
       cell.textContent = text;
       if (column.showOverflowTooltip) {
@@ -1160,13 +1360,6 @@ var KniuUI = (function () {
       }
     }
 
-    // ===== 批量渲染优化：行/单元格复用 =====
-    // 原因：原实现每次 render 都重建 tbody 内全部 tr/td（500 行 × 8 列 = 4000+ 节点，
-    // 其中控件列还要逐个 attachShadow 创建自定义元素），随后又读 getBoundingClientRect
-    // 触发整表强制同步布局。实测单次 setData 约 60ms，其中 80% 耗在强制回流上。
-    // 复用后：节点不重建 → 浏览器只做增量布局；列宽缓存 → 不再每次强制回流。
-
-    // 纯文本列（无控件、无自定义元素）可只改 textContent，零元素创建。
     function isPlainTextColumn(column) {
       return column.type !== 'checkbox'
         && !column.image
@@ -1187,12 +1380,10 @@ var KniuUI = (function () {
       else element.removeAttribute(name);
     }
 
-    // 复用单元格内已有控件，只更新值与状态。返回 false 表示结构不匹配，需重建。
     function updateCellWidget(cell, column, row, rowIndex) {
       const child = cell.firstElementChild;
       if (column.type === 'checkbox') {
         if (!child || child.tagName !== 'INPUT') return false;
-        // rowIndex 必须同步：行节点复用后若不更新，change 会拿旧索引改错行
         child.dataset.rowIndex = String(rowIndex);
         child.checked = selectedRows.has(row);
         child.disabled = typeof column.selectable === 'function' && !column.selectable(row, rowIndex);
@@ -1205,8 +1396,6 @@ var KniuUI = (function () {
       }
       if (column.switch) {
         if (!child || child.tagName !== 'KNIU-SWITCH') return false;
-        // 首次渲染早于 kniu:option 绑定（快照为 null）时，行复用节点也需在列定义
-        // 重读后同步最新配置；整体替换 options 后此处按引用变化更新。
         if (column.switch.options && typeof column.switch.options === 'object'
           && child.options !== column.switch.options) {
           child.options = column.switch.options;
@@ -1217,7 +1406,6 @@ var KniuUI = (function () {
       }
       if (column.radio) {
         if (!child || child.tagName !== 'KNIU-RADIO-GROUP') return false;
-        // 复用行只需同步选中值与行索引，不重建单选组（避免焦点/交互丢失）。
         child.value = column.field == null ? '' : String(row?.[column.field]);
         child.dataset.rowIndex = String(rowIndex);
         return true;
@@ -1237,8 +1425,6 @@ var KniuUI = (function () {
       return false;
     }
 
-    // 操作列：按钮数量会随 condition 变化，用「按需显示/隐藏」代替「删除/重建」，
-    // 避免每次 render 都创建成百上千个 kniu-btn（每个都要挂 ShadowRoot）。
     function updateActionButtons(cell, column, row, rowIndex) {
       const existing = [...cell.children];
       let cursor = 0;
@@ -1283,7 +1469,6 @@ var KniuUI = (function () {
           const value = typeof column.formatter === 'function'
             ? column.formatter(row, column, rawValue, rowIndex)
             : rawValue;
-          // HTML 编解码为后端全责（查→后端解码返回），前端拿到即最终文本，直接渲染。
           text = value == null ? '' : String(value);
         }
         if (cell.textContent !== text) cell.textContent = text;
@@ -1317,8 +1502,6 @@ var KniuUI = (function () {
 
     function buildBodyRow(row, rowIndex, offsets) {
       const pooled = rowPool[rowIndex];
-      // 空态行结构不同（只有 1 个 colspan 单元格），不能与数据行互用；
-      // 单元格数与当前列数不一致时同样不可复用（兜底，正常由列签名拦截）。
       const reused = !!pooled
         && !pooled.classList.contains('kniu_sys_table_empty')
         && pooled.cells.length === columns.length;
@@ -1326,7 +1509,6 @@ var KniuUI = (function () {
       if (options.rowKey && row?.[options.rowKey] != null) tableRow.dataset.rowKey = String(row[options.rowKey]);
       else if (tableRow.dataset.rowKey != null) delete tableRow.dataset.rowKey;
       tableRow.dataset.current = String(row === currentRow);
-      // 行索引写进 dataset：事件委托时据此从 rows 取回行对象，避免监听器闭包持有陈旧的 row
       tableRow.dataset.rowIndex = String(rowIndex);
       const cells = tableRow.cells;
       for (let index = 0; index < columns.length; index += 1) {
@@ -1357,12 +1539,10 @@ var KniuUI = (function () {
       const emptyCell = documentRef.createElement('td');
       emptyCell.colSpan = columns.length;
       if (options.emptySlot) {
-        // <template #empty> 插槽：在空行内投影自定义内容（图标、按钮等）
         const slot = documentRef.createElement('slot');
         slot.name = 'empty';
         emptyCell.append(slot);
       } else if (options.emptyText === '') {
-        // 外部自行提供空状态（如 kniu-empty）时隐藏内置空行，避免重复文案
         emptyCell.textContent = '';
         emptyRow.style.display = 'none';
       } else {
@@ -1372,8 +1552,6 @@ var KniuUI = (function () {
       return emptyRow;
     }
 
-    // 行点击 / 可编辑单元格改为事件委托：整表只挂 2 个监听器，
-    // 取代原本「每行一个 click + 每格一个 pointerdown/click」（500 行表格即数千个监听器）。
     function findEventElement(event, selector) {
       const pathMatch = event.composedPath?.().find(function (node) {
         return node?.matches?.(selector);
@@ -1384,8 +1562,6 @@ var KniuUI = (function () {
     function resolveRowFromEvent(event, selector) {
       if (disposed) return null;
       if (selector && findEventElement(event, selector)) return null;
-      // kniu-btn / kniu-switch 内部是 Shadow DOM，event.target 在委托层会被重定向。
-      // 通过 composedPath 取真实路径，才能稳定找到宿主控件和所属单元格。
       const cell = findEventElement(event, 'td');
       if (!cell || !bodyElement || !bodyElement.contains(cell)) return null;
       const tableRow = cell.parentElement;
@@ -1432,8 +1608,6 @@ var KniuUI = (function () {
       activeInput.blur();
     }
 
-    // 固定列阴影需要的实测列宽：列配置固定，宽度只在容器尺寸变化时改变，
-    // 因此缓存结果，仅在 resize / doLayout 时失效，避免每次 render 强制回流。
     function invalidateColumnWidthCache() {
       measuredColumnWidths = null;
     }
@@ -1441,27 +1615,79 @@ var KniuUI = (function () {
     function measureColumnWidths() {
       if (measuredColumnWidths) return measuredColumnWidths;
       const head = table.querySelector('thead');
+      const row = head?.rows?.[0] || table.querySelector('tbody tr:not(.kniu_sys_table_empty)');
       const measured = [];
       let anyMeasured = false;
+      // 只测固定列：唯一消费者 resyncFixedGeometry 的 widthOf(index) 只对 fixed 列取值，
+      // 全表测量在宽表上是无谓的 rect 读取；且先把全部 rect 读完再返回，调用方之后才写样式，
+      // 保证「读-写」不交错，最多触发一次强制布局。
       for (let index = 0; index < columns.length; index += 1) {
-        const th = head?.rows?.[0]?.cells?.[index];
-        const width = th ? th.getBoundingClientRect().width : 0;
-        if (width > 0) {
-          measured[index] = width;
-          anyMeasured = true;
-        } else {
-          measured[index] = columnWidth(columns[index]);
-        }
+        const fixed = columns[index].fixed;
+        if (fixed !== true && fixed !== 'left' && fixed !== 'right') continue;
+        const cell = row?.cells?.[index];
+        const width = cell ? cell.getBoundingClientRect().width : 0;
+        if (width > 0) anyMeasured = true;
+        // 0 宽是真实的布局几何（桌面横向溢出时 table-layout:fixed 把无 width 的自动列挤压成 0），
+        // 不能回退设计宽——旧版 `|| columnWidth(...)` 让阴影比固定块宽出一截（2026-09-29 报障根因）。
+        measured[index] = width;
       }
-      // 只有拿到真实宽度才缓存，否则首帧尚未布局时会把兜底值固化
-      if (anyMeasured) measuredColumnWidths = measured;
+      if (!anyMeasured) return null;
+      measuredColumnWidths = measured;
       return measured;
     }
 
-    // 阴影显隐依赖 viewport 的 scrollWidth/clientWidth，同步读取会强制布局；
-    // 推迟到下一帧统一处理，视觉无差别，但把强制回流移出了 render 的同步路径。
+    // 桌面端列宽由容器与 table-layout:fixed 共同决定（拉伸自动列 / 溢出挤压成 0 / 全显式列按比例扩展），
+    // 粘性偏移与设计宽累加、阴影与实测宽两套数字必然错位。统一按「实测几何」重算一遍：
+    // 偏移（--kniu-fixed-left/right）与阴影宽度都从同一份实测列宽累加，并在容器 resize 时重新同步。
+    function resyncFixedGeometry() {
+      const offsets = lastFixedOffsets;
+      const measured = measureColumnWidths();
+      function widthOf(index) {
+        return measured ? (measured[index] || 0) : columnWidth(columns[index]);
+      }
+      const nextLeft = new Map();
+      let leftTotal = 0;
+      for (let index = 0; index < columns.length; index += 1) {
+        const column = columns[index];
+        if (column.fixed === true || column.fixed === 'left') {
+          nextLeft.set(index, leftTotal);
+          leftTotal += widthOf(index);
+        }
+      }
+      const nextRight = new Map();
+      let rightTotal = 0;
+      for (let index = columns.length - 1; index >= 0; index -= 1) {
+        if (columns[index].fixed === 'right') {
+          nextRight.set(index, rightTotal);
+          rightTotal += widthOf(index);
+        }
+      }
+      function applySide(nextMap, oldMap, prop) {
+        nextMap.forEach(function (value, index) {
+          if (oldMap.get(index) === value) return;
+          oldMap.set(index, value);
+          const px = `${value}px`;
+          const headCell = headElement?.rows?.[0]?.cells?.[index];
+          if (headCell) headCell.style.setProperty(prop, px);
+          if (bodyElement) {
+            for (let r = 0; r < bodyElement.rows.length; r += 1) {
+              const cell = bodyElement.rows[r].cells[index];
+              if (cell) cell.style.setProperty(prop, px);
+            }
+          }
+        });
+      }
+      applySide(nextLeft, offsets.left, '--kniu-fixed-left');
+      applySide(nextRight, offsets.right, '--kniu-fixed-right');
+      fixedLeftWidth = leftTotal;
+      fixedRightWidth = rightTotal;
+      const leftPx = `${leftTotal}px`;
+      const rightPx = `${rightTotal}px`;
+      if (leftFixedShadow.style.width !== leftPx) leftFixedShadow.style.width = leftPx;
+      if (rightFixedShadow.style.width !== rightPx) rightFixedShadow.style.width = rightPx;
+    }
+
     function scheduleShadowVisibilityUpdate() {
-      // 行数/列宽变化会改变 scrollWidth，先让缓存指标失效再在下一帧重算
       invalidateLayoutMetrics();
       if (shadowVisibilityFrame) return;
       const view = documentRef.defaultView;
@@ -1475,11 +1701,7 @@ var KniuUI = (function () {
       });
     }
 
-    // 滚动时若每次都读 scrollWidth/clientWidth/offsetWidth，会在每个 scroll 事件上强制同步布局。
-    // 这三个值只随「内容尺寸 / 容器尺寸」变化，故缓存起来，滚动路径只读廉价的 scrollLeft。
     let layoutMetrics = null;
-    // matchMedia 结果缓存为单个 MediaQueryList，避免每次滚动都重新解析媒体查询
-    let mobileMediaQuery = null;
 
     function invalidateLayoutMetrics() {
       layoutMetrics = null;
@@ -1487,16 +1709,11 @@ var KniuUI = (function () {
 
     function getLayoutMetrics() {
       if (layoutMetrics) return layoutMetrics;
-      if (!mobileMediaQuery && typeof globalThis.matchMedia === 'function') {
-        mobileMediaQuery = globalThis.matchMedia('(max-width: calc(1280px - 60px))');
-      }
       const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
       layoutMetrics = {
         maxScrollLeft: maxScrollLeft,
         hasHorizontalOverflow: maxScrollLeft > 1,
-        isMobile: !!mobileMediaQuery?.matches,
-        // 右侧固定列阴影宽度保持恒定（仅等于固定列宽度），不随竖向滚动条出现/消失而改变，避免翻页抖动。
-        // 滚动条为 classic 模式时，阴影 right 位置跟随滚动条宽度内缩，防止被滚动条覆盖。
+        isMobile: !isDeskViewport(),
         verticalScrollbarWidth: Math.max(0, viewport.offsetWidth - viewport.clientWidth)
       };
       return layoutMetrics;
@@ -1508,12 +1725,13 @@ var KniuUI = (function () {
       const { maxScrollLeft, hasHorizontalOverflow, isMobile, verticalScrollbarWidth } = metrics;
       group.dataset.mobileOverflowLeft = String(isMobile && hasHorizontalOverflow && scrollLeft > 1);
       group.dataset.mobileOverflowRight = String(isMobile && hasHorizontalOverflow && scrollLeft < maxScrollLeft - 1);
+      const shadowEnabled = !isMobile;
       leftFixedShadow.style.display =
-        fixedLeftWidth > 0 && hasHorizontalOverflow && scrollLeft > 1
+        shadowEnabled && fixedLeftWidth > 0 && hasHorizontalOverflow && scrollLeft > 1
           ? 'block'
           : 'none';
       rightFixedShadow.style.display =
-        fixedRightWidth > 0 && hasHorizontalOverflow && scrollLeft < maxScrollLeft - 1
+        shadowEnabled && fixedRightWidth > 0 && hasHorizontalOverflow && scrollLeft < maxScrollLeft - 1
           ? 'block'
           : 'none';
       rightFixedShadow.style.right = `${verticalScrollbarWidth}px`;
@@ -1580,7 +1798,6 @@ var KniuUI = (function () {
       sortState = { field: field || '', order: order || '' };
       if (column && order) {
         const direction = order === 'descending' ? -1 : 1;
-        // 从初始顺序副本出发排序：升/降/清空三态反复切换也不会在已排序结果上叠加。
         rows = [...initialRows].sort(function (left, right) {
           if (typeof column.sortMethod === 'function') return column.sortMethod(left, right) * direction;
           const a = left?.[field];
@@ -1593,7 +1810,6 @@ var KniuUI = (function () {
             : String(a).localeCompare(String(b), 'zh-CN', { numeric: true })) * direction;
         });
       } else {
-        // 第三次点击（或 clearSort）：清空排序，恢复数据源原始顺序。
         rows = initialRows;
       }
       options.host?.dispatchEvent(new CustomEvent('sort-change', {
@@ -1605,11 +1821,10 @@ var KniuUI = (function () {
 
     function render(renderOptions = {}) {
       if (disposed || rendering) return;
-      // 外部可能原地 mutate options.cols（与外部同一引用）：每次渲染重读列定义并原地替换，
-      // 行池签名（columnSignature）据此检测列结构变化并整体作废重建（2026-09-01 修复
-      // filter 拷贝隔离 mutate 导致列增删后复用行单元格数失配）。
       columns.length = 0;
       columns.push(...readColumns());
+      refreshColumnPlan();
+      applyTableMinWidth();
       rendering = true;
       const syncSortHeader = renderOptions.syncSortHeader !== false;
       const syncSelectionHeader = renderOptions.syncSelectionHeader !== false;
@@ -1617,7 +1832,6 @@ var KniuUI = (function () {
       group.dataset.empty = String(isEmpty);
       const offsets = fixedOffsets();
 
-      // 表头只创建一次：列配置在 table 实例生命周期内固定，避免翻页/排序时反复重建 thead 造成抖动。
       if (!headElement && options.showHeader !== false) {
         headElement = documentRef.createElement('thead');
         const headRow = documentRef.createElement('tr');
@@ -1626,10 +1840,6 @@ var KniuUI = (function () {
           const cell = documentRef.createElement('th');
           cell.scope = 'col';
           cell.style.textAlign = column.headerAlign || column.align || 'left';
-          // 表头 checkbox 列：根据当前列定义实时计算可选行集，
-          // 必须**每次都重新过滤**，因为 headElement 只创建一次，
-          // 首次创建时 rows 可能为空（data 尚未就绪），后续 setData 不会重建表头，
-          // 若把 selectableRows 闭包到 addEventListener 里，就会拿到陈旧的空数组。
           function getSelectableRows(columnObj) {
             return rows.filter(function (row, rowIndex) { return typeof columnObj.selectable !== 'function' || columnObj.selectable(row, rowIndex); });
           }
@@ -1642,7 +1852,6 @@ var KniuUI = (function () {
             checkbox.indeterminate = !checkbox.checked && getSelectableRows(column).some(function (row) { return selectedRows.has(row); });
             checkbox.addEventListener('change', function () {
               if (!rows.length) return;
-              // 不要用陈旧闭包，每次都按当前 rows 重新计算可选行集合
               getSelectableRows(column).forEach(function (row) { checkbox.checked ? selectedRows.add(row) : selectedRows.delete(row); });
               options.host?.dispatchEvent(new CustomEvent('selection-change', { detail: [...selectedRows], bubbles: true, composed: true }));
               render();
@@ -1656,7 +1865,7 @@ var KniuUI = (function () {
             sorter.className = 'kniu_sys_table_sort';
             sorter.dataset.field = column.field;
             sorter.dataset.order = sortState.field === column.field ? sortState.order : '';
-            sorter.innerHTML = '<span class="kniu_sys_table_sort_up">' + buildGlyphSvg(KNIU_ICON_SET['caret-top']) + '</span><span class="kniu_sys_table_sort_down">' + buildGlyphSvg(KNIU_ICON_SET['caret-bottom']) + '</span>';
+            sorter.innerHTML = '<span class="kniu_sys_table_sort_up">' + buildIconElement('triangle_up_fill') + '</span><span class="kniu_sys_table_sort_down">' + buildIconElement('triangle_down_fill') + '</span>';
             cell.append(sorter);
             cell.style.cursor = 'pointer';
             cell.addEventListener('click', function () {
@@ -1677,8 +1886,6 @@ var KniuUI = (function () {
           const order = sortState.field === sorter.dataset.field ? sortState.order : '';
           if (sorter.dataset.order !== order) sorter.dataset.order = order;
         });
-        // head 已存在时同步表头 checkbox 列的 checked/indeterminate：setData、组件 toggleRowSelection、
-        // setCurrentRow 等都会触发 render，但其不重建表头，需在此刷新以反映 selectedRows 的实时变化。
         const headerInputs = syncSelectionHeader
           ? headElement.querySelectorAll('input[type="checkbox"].kniu_sys_table_selection')
           : [];
@@ -1698,7 +1905,6 @@ var KniuUI = (function () {
 
       const signature = columnSignature();
       if (rowPoolColumnSignature !== signature) {
-        // 列结构变化：整池作废，避免复用行单元格数与新列失配
         rowPool = [];
         rowPoolColumnSignature = signature;
       }
@@ -1712,10 +1918,8 @@ var KniuUI = (function () {
         }
       }
       rowPool = rowNodes;
-      // 首次渲染时创建并挂载 tbody（同时挂载缓存的 thead），后续仅原地替换行子节点，结构稳定不抖动。
       if (!bodyElement) {
         bodyElement = documentRef.createElement('tbody');
-        // 行点击与可编辑单元格统一委托到 tbody，整表只挂 2 个监听器
         bodyElement.addEventListener('click', handleBodyClick);
         bodyElement.addEventListener('pointerdown', handleBodyPointerDown);
         if (options.showHeader !== false && headElement && !table.contains(headElement)) {
@@ -1725,20 +1929,8 @@ var KniuUI = (function () {
       }
       replaceChildrenWithFragment(bodyElement, rowNodes);
 
-      // 按实测列宽计算固定列阴影宽度：固定列无显式宽度时取其内容实际宽度（避免强制 120 造成裁切或留白）。
-      // 宽度走缓存，只有首帧或 resize/doLayout 后才真正测量。
-      const measuredWidths = measureColumnWidths();
-      function actualColumnWidth(index) {
-        return measuredWidths[index] || columnWidth(columns[index]);
-      }
-      fixedLeftWidth = [...offsets.left.keys()].reduce(function (width, index) {
-        return width + actualColumnWidth(index);
-      }, 0);
-      fixedRightWidth = [...offsets.right.keys()].reduce(function (width, index) {
-        return width + actualColumnWidth(index);
-      }, 0);
-      leftFixedShadow.style.width = `${fixedLeftWidth}px`;
-      rightFixedShadow.style.width = `${fixedRightWidth}px`;
+      lastFixedOffsets = offsets;
+      resyncFixedGeometry();
 
       scheduleShadowVisibilityUpdate();
       rendering = false;
@@ -1764,12 +1956,9 @@ var KniuUI = (function () {
 
     function setData(data) {
       rows = Array.isArray(data) ? data : [];
-      // 新数据源到来时重置初始顺序基准：清空排序应回到本次 setData 的顺序。
       initialRows = rows;
       [...selectedRows].forEach(function (row) { if (!rows.includes(row)) selectedRows.delete(row); });
       if (currentRow && !rows.includes(currentRow)) currentRow = null;
-      // 分页/刷新数据不会改变排序字段和方向，因此只更新 tbody；
-      // 表头节点和排序箭头保持原样。仅全选列的布尔状态需随新页数据同步。
       render({ syncSortHeader: false, syncSelectionHeader: true });
       return rows;
     }
@@ -1803,10 +1992,23 @@ var KniuUI = (function () {
       return removed;
     }
 
-    // 容器尺寸变化会让实测列宽与阴影布局指标失效，需一起刷新
     function handleContainerResize() {
       invalidateColumnWidthCache();
       invalidateLayoutMetrics();
+      const wasMobile = columnPlan ? columnPlan.isMobile : null;
+      refreshColumnPlan();
+      applyTableMinWidth();
+      // 跨断点（桌面 ⇄ 移动）会换一套列宽计划：桌面 minTotalWidth 不含自动列预算、移动含 defaultColumnWidth，
+      // 且自动列的 inline min-width 只在移动态渲染时写入。不整体重渲染就会残留上一断点的列宽，
+      // 阴影宽随之错位（2026-09-29 报障场景之一）→ 断点翻转时走 render()，
+      // render 内部已完成 resyncFixedGeometry 与显隐刷新，直接返回即可。
+      if (wasMobile !== null && wasMobile !== columnPlan.isMobile) {
+        render();
+        return;
+      }
+      // 容器宽度变化 → table-layout:fixed 重新分配列宽 → 阴影宽与粘性偏移必须按新实测几何同步，
+      // 否则阴影停在旧值（resize 后比固定块宽/窄）。
+      resyncFixedGeometry();
       updateFixedShadowVisibility();
     }
     function handleWindowResize() { handleContainerResize(); }
@@ -1842,7 +2044,6 @@ var KniuUI = (function () {
       viewport.style.overflowY = next > 0 ? 'auto' : '';
       updateFixedShadowVisibility();
     }
-    // 初始文案（options.loadingText）
     if (options.loadingText != null) loadingTextEl.textContent = String(options.loadingText);
 
     const api = {
@@ -1855,7 +2056,6 @@ var KniuUI = (function () {
       setCurrentRow: setCurrentRow,
       sort: applySort,
       clearSort: function () { applySort('', ''); },
-      // 外部主动重排：列宽可能已变，先让缓存失效再渲染
       doLayout: function () { invalidateColumnWidthCache(); render(); },
       render: render,
       setLoading: setLoading,
@@ -1865,8 +2065,6 @@ var KniuUI = (function () {
     table.addEventListener('click', handleAction);
     viewport.addEventListener('scroll', updateFixedShadowVisibility, { passive: true });
     documentRef.defaultView?.addEventListener('resize', handleWindowResize, { passive: true });
-    // 容器自身尺寸变化（侧栏折叠、栅格重排）不会触发 window.resize，
-    // 用 ResizeObserver 覆盖这类场景，避免列宽缓存与阴影宽度停留在旧值。
     if (typeof ResizeObserver === 'function') {
       viewportResizeObserver = new ResizeObserver(function () { handleContainerResize(); });
       viewportResizeObserver.observe(viewport);
@@ -1875,7 +2073,6 @@ var KniuUI = (function () {
     return api;
   }
 
-  // Kniu 通用按钮：外观由属性驱动，内部始终使用原生 button。
   function registerButtonComponent() {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-btn')) return;
@@ -1889,10 +2086,11 @@ var KniuUI = (function () {
         this.shadowRoot.innerHTML = `<style>:host{display:inline-flex;vertical-align:middle;flex-shrink:0}:host([block]){display:flex;width:100%}.kniu_sys_button{--kniu-button-color:#606266;--kniu-button-bg:#fff;--kniu-button-border:#dcdfe6;--kniu-button-hover-color:#409eff;--kniu-button-hover-bg:#ecf5ff;--kniu-button-hover-border:#c6e2ff;--kniu-button-active-bg:#ecf5ff;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;min-height:32px;margin:0;padding:8px 15px;border:1px solid var(--kniu-button-border);border-radius:4px;outline:0;background-color:var(--kniu-button-bg);color:var(--kniu-button-color);font:500 14px/1 var(--kniu-font-family);text-decoration:none;white-space:nowrap;cursor:pointer;user-select:none;transition:.1s}.kniu_sys_button:hover,.kniu_sys_button:focus-visible{border-color:var(--kniu-button-hover-border);background-color:var(--kniu-button-hover-bg);color:var(--kniu-button-hover-color)}.kniu_sys_button:active{background-color:var(--kniu-button-active-bg);filter:brightness(.94)}.kniu_sys_button[data-type="primary"]{--kniu-button-color:#fff;--kniu-button-bg:#409eff;--kniu-button-border:#409eff;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#79bbff;--kniu-button-hover-border:#79bbff}.kniu_sys_button[data-type="success"]{--kniu-button-color:#fff;--kniu-button-bg:#67c23a;--kniu-button-border:#67c23a;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#95d475;--kniu-button-hover-border:#95d475}.kniu_sys_button[data-type="warning"]{--kniu-button-color:#fff;--kniu-button-bg:#e6a23c;--kniu-button-border:#e6a23c;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#eebe77;--kniu-button-hover-border:#eebe77}.kniu_sys_button[data-type="danger"]{--kniu-button-color:#fff;--kniu-button-bg:#f56c6c;--kniu-button-border:#f56c6c;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#f89898;--kniu-button-hover-border:#f89898}.kniu_sys_button[data-type="info"]{--kniu-button-color:#fff;--kniu-button-bg:#909399;--kniu-button-border:#909399;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#b1b3b8;--kniu-button-hover-border:#b1b3b8}.kniu_sys_button[data-plain="true"]{--kniu-button-color:var(--kniu-button-border);--kniu-button-bg:color-mix(in srgb,var(--kniu-button-border) 10%,#fff);--kniu-button-hover-color:#fff;--kniu-button-hover-bg:var(--kniu-button-border);--kniu-button-hover-border:var(--kniu-button-border)}.kniu_sys_button[data-type="default"][data-plain="true"]{--kniu-button-color:#606266;--kniu-button-bg:#fff;--kniu-button-border:#dcdfe6;--kniu-button-hover-color:#409eff;--kniu-button-hover-bg:#ecf5ff;--kniu-button-hover-border:#c6e2ff}.kniu_sys_button[data-text="true"],.kniu_sys_button[data-link="true"]{border-color:transparent;background-color:transparent;color:var(--kniu-button-border)}.kniu_sys_button[data-type="default"][data-text="true"],.kniu_sys_button[data-type="default"][data-link="true"]{color:#606266}.kniu_sys_button[data-text="true"]:hover{border-color:transparent;background-color:#f5f7fa}.kniu_sys_button[data-text="true"][data-bg="true"]{background-color:#f5f7fa}.kniu_sys_button[data-text="true"][data-bg="true"]:hover{background-color:#e9e9eb}.kniu_sys_button[data-unstyled="true"]{border:0;background-color:transparent;padding:0;margin:0;min-height:0;width:100%;justify-content:flex-start;color:inherit;font:inherit;border-radius:0}.kniu_sys_button[data-link="true"]{height:auto;min-height:0;padding:2px}.kniu_sys_button[data-link="true"]:hover,.kniu_sys_button[data-link="true"]:focus-visible{border-color:transparent;background-color:transparent;filter:brightness(.8)}.kniu_sys_button[data-size="large"]{min-height:40px;padding:12px 19px;font-size:14px}.kniu_sys_button[data-size="small"]{min-height:24px;padding:5px 11px;font-size:12px}.kniu_sys_button[data-round="true"]{border-radius:999px}.kniu_sys_button[data-circle="true"]{width:32px;height:32px;padding:0;border-radius:50%}.kniu_sys_button[data-circle="true"][data-size="large"]{width:40px;height:40px}.kniu_sys_button[data-circle="true"][data-size="small"]{width:24px;height:24px}.kniu_sys_button:disabled{border-color:#e4e7ed;background-color:#fff;color:#a8abb2;cursor:not-allowed;filter:none;opacity:.6}.kniu_sys_button[data-block="true"]{width:100%}.kniu_sys_button_icon:empty{display:none}.kniu_sys_button_loading{display:none;width:12px;height:12px;box-sizing:border-box;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:kniu_sys_button_spin .8s linear infinite}.kniu_sys_button_loading[class]:not([class="kniu_sys_button_loading"]){border:0;animation:none}.kniu_sys_button[data-loading="true"] .kniu_sys_button_loading{display:inline-block}.kniu_sys_button_label{display:inline-flex;align-items:center;gap:6px;min-width:0}.kniu_sys_button_label[data-auto-space="true"]{letter-spacing:.25em;margin-right:-.25em}@keyframes kniu_sys_button_spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.kniu_sys_button_loading{animation:none}}</style><button class="kniu_sys_button" type="button"><span class="kniu_sys_button_loading" aria-hidden="true"></span><i class="kniu_sys_button_icon" aria-hidden="true"></i><span class="kniu_sys_button_label"><slot></slot></span></button>`;
         this._button = this.shadowRoot.querySelector('.kniu_sys_button');
         appendRawStyle(this.shadowRoot, '.kniu_sys_button{height:max(28px,calc(40 / var(--kniu_vw)))!important;min-height:max(28px,calc(40 / var(--kniu_vw)))!important;padding:0 15px}.kniu_sys_button[data-size="large"]{height:max(28px,calc(40 / var(--kniu_vw)))!important;min-height:max(28px,calc(40 / var(--kniu_vw)))!important;padding:0 19px}.kniu_sys_button[data-size="small"]{height:max(28px,calc(28 / var(--kniu_vw)))!important;min-height:max(28px,calc(28 / var(--kniu_vw)))!important;padding:0 11px}.kniu_sys_button[data-circle="true"]{width:max(28px,calc(40 / var(--kniu_vw)))!important;height:max(28px,calc(40 / var(--kniu_vw)))!important}.kniu_sys_button[data-circle="true"][data-size="large"]{width:max(28px,calc(40 / var(--kniu_vw)))!important;height:max(28px,calc(40 / var(--kniu_vw)))!important}.kniu_sys_button[data-circle="true"][data-size="small"]{width:max(28px,calc(28 / var(--kniu_vw)))!important;height:max(28px,calc(28 / var(--kniu_vw)))!important}');
+        appendRawStyle(this.shadowRoot, '.kniu_sys_button{border-radius:var(--kniu-radius,4px)}.kniu_sys_button[data-type="primary"]{--kniu-button-bg:var(--kniu-color-primary,#409eff);--kniu-button-border:var(--kniu-color-primary,#409eff)}');
         appendRawStyle(this.shadowRoot, ':host([block]){min-height:28px;vertical-align:top}:host([block]) .kniu_sys_button{height:100%!important;min-height:28px!important;padding-top:0;padding-bottom:0}');
         this._bindButton();
         this.shadowRoot.querySelector('slot').addEventListener('slotchange', () => this._syncAutoSpace());
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_button_icon{display:inline-flex;align-items:center;justify-content:center}.kniu_sys_button_icon svg{display:block;width:1em;height:1em;fill:currentColor;overflow:visible}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_button_icon{display:inline-flex;align-items:center;justify-content:center}.kniu_sys_button_icon kniu-icon{display:block;width:1em;height:1em;overflow:visible}');
         adoptSharedStyle(this.shadowRoot, ':host([block]){height:100%}:host([block]) .kniu_sys_button{width:100%;height:100%}');
         adoptSharedStyle(this.shadowRoot, 'slot::slotted(kniu-icon){font-size:var(--kniu-button-icon-size,1em)}');
         adoptSharedStyle(this.shadowRoot, ':host([append-borderless]) .kniu_sys_button{border:none;border-radius:0}');
@@ -1916,7 +2114,6 @@ var KniuUI = (function () {
       }
       connectedCallback() { this._sync(); }
       attributeChangedCallback() { if (this._button) this._sync(); }
-      // 导航路径：纯属性写法 <kniu-btn nav="{{path}}"> 与 kniu:[nav] 等价，同时镜像到 data-nav 以兼容 dataset.nav 读取
       get nav() { return this._nav || ''; }
       set nav(value) {
         this._nav = value == null ? '' : String(value);
@@ -1959,10 +2156,10 @@ var KniuUI = (function () {
           this._button.toggleAttribute('aria-disabled', this.hasAttribute('disabled') || this.hasAttribute('loading'));
         }
         const icon = (this.getAttribute('icon') || '').trim();
-        const iconName = normalizeIconName(icon);
-        if (iconName && KNIU_ICON_SET[iconName]) {
+        const iconName = resolveIconName(icon);
+        if (iconName) {
           this._icon.className = 'kniu_sys_button_icon kniu_sys_button_icon_glyph';
-          this._icon.innerHTML = buildGlyphSvg(KNIU_ICON_SET[iconName]);
+          this._icon.innerHTML = buildIconElement(iconName);
         } else {
           this._icon.className = `kniu_sys_button_icon${icon ? ` ${icon}` : ''}`;
           this._icon.innerHTML = '';
@@ -1999,15 +2196,10 @@ var KniuUI = (function () {
     customElements.define('kniu-btn-group', KniuSysButtonGroup);
   }
 
-  // Kniu Switch 开关。
   function registerSwitchComponent() {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-switch')) return;
     class KniuSysSwitch extends HTMLElement {
-      // 2026-09-01：所有旧 attribute（disabled / width / active-value / inactive-value /
-      // active-color / inactive-color / active-icon-class / inactive-icon-class /
-      // active-text / inactive-text / name / validate-event）全部作废，只认 kniu:option。
-      // 仅保留属性绑定透传：模板 `disabled="{{expr}}"` 走 property setter 写 _propDisabled。
       static get observedAttributes() {
         return [];
       }
@@ -2019,24 +2211,18 @@ var KniuUI = (function () {
         this._inactiveValue = undefined;
         this._propDisabled = false;
         this._options = null;
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;flex-shrink:0}.kniu_sys_switch_group{display:flex;width:100%;align-items:stretch}.kniu_sys_switch_content{flex:1;min-width:0;display:flex;align-items:center;justify-content:flex-start;padding:0 12px;background-color:#fff;box-sizing:border-box}.kniu_sys_switch_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_switch_group[data-affix="true"] .kniu_sys_switch_content{border:1px solid #dcdfe6}.kniu_sys_switch_group[data-has-prepend="true"] .kniu_sys_switch_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_switch_group[data-has-prepend="true"] .kniu_sys_switch_content{border-radius:0 4px 4px 0}.kniu_sys_switch_group[data-has-append="true"] .kniu_sys_switch_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_switch_group[data-affix="true"]{height:40px}.kniu_sys_switch_group:not([data-affix="true"]) .kniu_sys_switch_content{padding:0;background-color:transparent}.kniu_sys_switch{position:relative;display:inline-flex;align-items:center;gap:8px;color:#303133;font-size:14px;line-height:20px;cursor:pointer;user-select:none}.kniu_sys_switch_input{position:absolute;width:0;height:0;opacity:0}.kniu_sys_switch_core{position:relative;display:inline-block;box-sizing:border-box;height:20px;padding:0;border:1px solid transparent;border-radius:10px;background-color:#c0ccda;outline:0;cursor:pointer;transition:border-color .3s,background-color .3s}.kniu_sys_switch_button{position:absolute;top:1px;left:1px;width:16px;height:16px;border-radius:50%;background-color:#fff;transition:transform .3s}.kniu_sys_switch[data-active="true"] .kniu_sys_switch_button{transform:translateX(var(--kniu-switch-distance))}.kniu_sys_switch_text{white-space:nowrap}.kniu_sys_switch_icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}.kniu_sys_switch_icon:empty{display:none}.kniu_sys_switch[data-disabled="true"]{opacity:.6;cursor:not-allowed}.kniu_sys_switch_input:focus-visible+.kniu_sys_switch_core{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}</style><div class="kniu_sys_switch_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_switch_affix kniu_sys_switch_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_switch_content"><label class="kniu_sys_switch" data-active="false" data-disabled="false"><span class="kniu_sys_switch_text kniu_sys_switch_inactive_text"></span><input class="kniu_sys_switch_input" type="checkbox"><button class="kniu_sys_switch_core" type="button"><span class="kniu_sys_switch_button"></span><i class="kniu_sys_switch_icon"></i></button><span class="kniu_sys_switch_text kniu_sys_switch_active_text"></span></label></div><span class="kniu_sys_switch_affix kniu_sys_switch_append"><slot name="append"></slot></span></div>`;
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;flex-shrink:0}.kniu_sys_switch_group{display:flex;width:100%;align-items:stretch}.kniu_sys_switch_content{flex:1;min-width:0;display:flex;align-items:center;justify-content:flex-start;padding:0 12px;background-color:#fff;box-sizing:border-box}.kniu_sys_switch_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_switch_group[data-affix="true"] .kniu_sys_switch_content{border:1px solid #dcdfe6}.kniu_sys_switch_group[data-has-prepend="true"] .kniu_sys_switch_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_switch_group[data-has-prepend="true"] .kniu_sys_switch_content{border-radius:0 4px 4px 0}.kniu_sys_switch_group[data-has-append="true"] .kniu_sys_switch_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_switch_group[data-affix="true"]{height:40px}.kniu_sys_switch_group:not([data-affix="true"]) .kniu_sys_switch_content{padding:0;background-color:transparent}.kniu_sys_switch{position:relative;display:inline-flex;align-items:center;gap:8px;color:#303133;font-size:14px;line-height:20px;cursor:pointer;user-select:none}.kniu_sys_switch_input{position:absolute;width:0;height:0;opacity:0}.kniu_sys_switch_core{position:relative;display:inline-block;box-sizing:border-box;height:max(18px,calc(20 / var(--kniu_vw)));padding:0;border:0 solid transparent;border-radius:max(16px,calc(10 / var(--kniu_vw)));background-color:#c0ccda;outline:0;cursor:pointer;transition:border-color .3s,background-color .3s}.kniu_sys_switch_button{position:absolute;top:50%;left:2px;margin-top:calc(max(12px,calc(16 / var(--kniu_vw))) / -2);width:max(12px,calc(16 / var(--kniu_vw)));height:max(12px,calc(16 / var(--kniu_vw)));border-radius:50%;background-color:#fff;transition:transform .3s}.kniu_sys_switch[data-active="true"] .kniu_sys_switch_button{transform:translateX(var(--kniu-switch-distance))}.kniu_sys_switch_text{white-space:nowrap}.kniu_sys_switch_icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}.kniu_sys_switch_icon:empty{display:none}.kniu_sys_switch[data-disabled="true"]{opacity:.6;cursor:not-allowed}.kniu_sys_switch_input:focus-visible+.kniu_sys_switch_core{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}</style><div class="kniu_sys_switch_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_switch_affix kniu_sys_switch_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_switch_content"><label class="kniu_sys_switch" data-active="false" data-disabled="false"><span class="kniu_sys_switch_text kniu_sys_switch_inactive_text"></span><input class="kniu_sys_switch_input" type="checkbox"><button class="kniu_sys_switch_core" type="button"><span class="kniu_sys_switch_button"></span><i class="kniu_sys_switch_icon"></i></button><span class="kniu_sys_switch_text kniu_sys_switch_active_text"></span></label></div><span class="kniu_sys_switch_affix kniu_sys_switch_append"><slot name="append"></slot></span></div>`;
         this._root = this.shadowRoot.querySelector('.kniu_sys_switch');
         this._input = this.shadowRoot.querySelector('.kniu_sys_switch_input');
         this._core = this.shadowRoot.querySelector('.kniu_sys_switch_core');
         this._icon = this.shadowRoot.querySelector('.kniu_sys_switch_icon');
         this._core.addEventListener('click', (event) => {
-          // 轨道是 label 内的独立 button，浏览器不会像点击 label 空白处那样
-          // 稳定激活关联的 checkbox。显式转发给 input，让唯一的 change 链路
-          // 负责更新 value、重绘和对外派发事件，避免双次切换。
           event.preventDefault();
           if (!this.disabled) this._input.click();
         });
         this._input.addEventListener('change', () => {
           this._value = this._input.checked ? this.activeValue : this.inactiveValue;
           this._sync();
-          // 同时派 change 和 input（composed 让光层 listener 也能收到）：
-          // - change：保留对历史上用 `kniu@change="..."` 的旧调用方的兼容；
-          // - input：让 `kniu:form` 双向绑定能够把当前值写回路径（双向绑定的监听器是 `input`）。
           const value = this._value;
           this.dispatchEvent(new CustomEvent('change', { detail: value, bubbles: true, composed: true }));
           this.dispatchEvent(new CustomEvent('input', { detail: value, bubbles: true, composed: true }));
@@ -2071,9 +2257,6 @@ var KniuUI = (function () {
       set value(value) { this._value = value; this._sync(); }
       get disabled() { return (this._options && this._options.disabled === true) || this._propDisabled === true; }
       set disabled(value) { this._propDisabled = !!value; this._sync(); }
-      // kniu:option 统一配置入口（2026-09-01）：activeValue / inactiveValue / activeColor /
-      // inactiveColor / disabled / width / activeText / inactiveText / activeIconClass /
-      // inactiveIconClass / name 全部收进 options；旧 attribute 一律作废。
       set options(value) {
         this._options = value && typeof value === 'object' ? value : null;
         this._sync();
@@ -2097,7 +2280,8 @@ var KniuUI = (function () {
         this._input.name = String(this._cfg('name', ''));
         this._core.style.width = `${width}px`;
         this._core.style.backgroundColor = active ? String(this._cfg('activeColor', '#13ce66')) : String(this._cfg('inactiveColor', '#f56c6c'));
-        this._root.style.setProperty('--kniu-switch-distance', `${width - 20}px`);
+        this._root.style.setProperty('--kniu-switch-distance',
+          `calc(${width}px - max(12px, calc(16 / var(--kniu_vw))) - 4 / var(--kniu_vw))`);
         const iconClass = active ? String(this._cfg('activeIconClass', '')) : String(this._cfg('inactiveIconClass', ''));
         this._icon.className = `kniu_sys_switch_icon${iconClass ? ` ${iconClass}` : ''}`;
         this.shadowRoot.querySelector('.kniu_sys_switch_active_text').textContent = iconClass ? '' : String(this._cfg('activeText', ''));
@@ -2142,7 +2326,7 @@ var KniuUI = (function () {
       + '.kniu_sys_modal_header{position:relative;padding:15px 15px 10px;flex:none}'
       + '.kniu_sys_modal_confirm_title{margin:0;padding-right:40px;color:#303133;font-size:18px;font-weight:400;line-height:1}'
       + '.kniu_sys_modal_close{position:absolute;top:0;right:6px;display:flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:0;background-color:transparent;color:#909399;cursor:pointer}'
-      + '.kniu_sys_modal_close svg{display:block;width:26px;height:26px;fill:currentColor}'
+      + '.kniu_sys_modal_close kniu-icon{display:block;width:26px;height:26px}'
       + '.kniu_sys_modal_close:hover{color:#409eff}'
       + '.kniu_sys_modal_body{display:flex;align-items:flex-start;padding:10px 15px 15px;color:#606266;font-size:14px;flex:none}'
       + '.kniu_sys_modal_confirm_icon{flex:none;margin-right:10px;font-size:24px;line-height:24px}'
@@ -2154,7 +2338,7 @@ var KniuUI = (function () {
       + ':host([closing]) .kniu_sys_modal_mask{animation:kniu_sys_modal_mask_out .22s ease both}:host([closing]) .kniu_sys_modal_dialog{animation:kniu_sys_modal_box_out .22s cubic-bezier(.25,.8,.25,1) both}'
       + '@media (prefers-reduced-motion:reduce){.kniu_sys_modal_mask,.kniu_sys_modal_dialog{animation:none}}</style>'
       + '<div class="kniu_sys_modal_mask" part="mask"><div class="kniu_sys_modal_dialog" part="dialog">'
-      + '<div class="kniu_sys_modal_header"><h4 class="kniu_sys_modal_confirm_title"></h4><button class="kniu_sys_modal_close" type="button" aria-label="关闭"><svg viewBox="0 0 1024 1024" aria-hidden="true" focusable="false"><path fill="currentColor" d="M764.3 214.6 512 466.9 259.7 214.6a32 32 0 0 0-45.1 45.1L466.8 512 214.5 764.2a32 32 0 1 0 45.1 45.2L512 557.2l252.3 252.3a32 32 0 0 0 45.1-45.1L557.1 512l252.3-252.4a32 32 0 1 0-45.1-45.2z"/></svg></button></div>'
+      + '<div class="kniu_sys_modal_header"><h4 class="kniu_sys_modal_confirm_title"></h4><button class="kniu_sys_modal_close" type="button" aria-label="关闭"><kniu-icon icon="close"></kniu-icon></button></div>'
       + '<div class="kniu_sys_modal_body"><span class="kniu_sys_modal_confirm_icon"></span><p class="kniu_sys_modal_confirm_message"></p></div>'
       + '<div class="kniu_sys_modal_footer"><kniu-btn class="kniu_sys_modal_cancel">取消</kniu-btn><kniu-btn type="primary" class="kniu_sys_modal_confirm">确定</kniu-btn></div>'
       + '</div></div>';
@@ -2170,7 +2354,7 @@ var KniuUI = (function () {
         this._cancelText = '';
         this._type = '';
         this._closeTimer = null;
-        this._prevBodyOverflow = undefined;
+        this._scrollLocked = false;
         this._handleKeydown = (e) => { if (e.key === 'Escape') this._onEscape(); };
         attachComponentShadow(this);
       }
@@ -2180,6 +2364,8 @@ var KniuUI = (function () {
       }
       disconnectedCallback() {
         document.removeEventListener('keydown', this._handleKeydown);
+        // 弹窗在打开状态下被页面切换带走时，必须释放自己的根滚动锁，否则新页面滚不动。
+        this._unlockScrollbar();
       }
       attributeChangedCallback(name) {
         if (name === 'width') { this._syncWidth(); }
@@ -2189,7 +2375,6 @@ var KniuUI = (function () {
           if (this._confirmMode) this._fillConfirm();
         }
       }
-      // show：true=显示（打开），false=隐藏（关闭）。show 为自定义属性，不会被原生 hidden 的 property 语义干扰。
       get show() { return this.getAttribute('show') === 'true'; }
       set show(val) { if (val) this.open(); else this._requestClose(); }
       get confirm() { return this._confirmMode; }
@@ -2215,8 +2400,6 @@ var KniuUI = (function () {
         this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
         this._requestClose();
       }
-      // 退出动画：先把 host 维持在 display:block 并打 closing 标记播放反向动画，
-      // 动画结束（或 reduced-motion 立即、或超时兜底）后再真正隐藏 host。
       _requestClose() {
         if (this.getAttribute('show') !== 'true') return;
         const finalize = () => {
@@ -2259,8 +2442,6 @@ var KniuUI = (function () {
         }
       }
       _syncWidth() {
-        // 兼容两种写法：width 属性（推荐）或内联 style.width。
-        // 内联 width 会被迁移到 --kniu-modal-width 并清空，避免它把 host 撑成指定宽度、破坏全屏遮罩。
         const attrW = this.getAttribute('width');
         const inlineW = (this.style && this.style.width) || '';
         const w = attrW || inlineW;
@@ -2269,7 +2450,6 @@ var KniuUI = (function () {
           if (!attrW && inlineW) this.style.width = '';
         }
       }
-      // 蒙版：mask 控制是否启用半透明蒙版（默认 true）；mask-alpha 控制蒙版透明度（默认 0.6，范围 0~1）。
       _applyMask() {
         const maskEl = this.shadowRoot && this.shadowRoot.querySelector('.kniu_sys_modal_mask');
         if (!maskEl) return;
@@ -2279,21 +2459,17 @@ var KniuUI = (function () {
         const a = isNaN(alpha) ? 0.6 : Math.min(1, Math.max(0, alpha));
         maskEl.style.backgroundColor = 'rgba(0,0,0,' + a + ')';
       }
-      // 滚动条：scrollbar 控制模态框开启时是否允许浏览器滚动条（默认 true）；false 时锁定 body 滚动。
       _lockScrollbar() {
         if ((this.getAttribute('scrollbar') || 'true') === 'false') {
-          this._prevBodyOverflow = document.body.style.overflow;
-          document.body.style.overflow = 'hidden';
+          // 走统一的根滚动锁：所有者是本弹窗实例，不会和其他锁互相覆盖快照。
+          this._scrollLocked = lockDocumentScroll(this);
         }
       }
       _unlockScrollbar() {
-        if (this._prevBodyOverflow !== undefined) {
-          document.body.style.overflow = this._prevBodyOverflow;
-          this._prevBodyOverflow = undefined;
-        }
+        if (!this._scrollLocked) return;
+        this._scrollLocked = false;
+        unlockDocumentScroll(this);
       }
-      // 点击蒙版关闭：默认【不允许】关闭；仅显式 mask-close="true" 开启；
-      // 旧别名 close-on-click-modal="true" / modal="true" 仍兼容。
       _maskClose() {
         const mc = this.getAttribute('mask-close');
         if (mc !== null) return mc === 'true';
@@ -2324,7 +2500,6 @@ var KniuUI = (function () {
       }
       _confirm() { this.dispatchEvent(new CustomEvent('confirm', { bubbles: true, composed: true })); this.show = false; }
       _cancel() { this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true })); this.show = false; }
-      // options 变化（含 lang）时重填确认框文案，支持运行中动态切换。
       _sync() { if (this._confirmMode && this.shadowRoot) this._fillConfirm(); }
       _onEscape() {
         if (!this.show) return;
@@ -2341,13 +2516,11 @@ var KniuUI = (function () {
     const modal = document.createElement('kniu-modal');
     modal.confirm = true;
     if (options.width) modal.setAttribute('width', options.width);
-    // 未指定宽度时不设置 --kniu-modal-width：dialog 默认 auto 宽度（按内容自适应，最小 320px）
     modal.title = title;
     modal.message = message;
     if (options.confirmButtonText) modal.confirmText = options.confirmButtonText;
     if (options.cancelButtonText) modal.cancelText = options.cancelButtonText;
     if (options.type) modal.type = options.type;
-    // 默认不允许点击蒙版关闭；仅显式 closeOnClickModal===true 时开启
     if (options.closeOnClickModal === true) modal.setAttribute('mask-close', 'true');
     document.body.append(modal);
     modal.show = true;
@@ -2364,7 +2537,6 @@ var KniuUI = (function () {
     });
   }
 
-  // 数据驱动表格组件：通过 config/data property 接收数据，无需业务层查找 DOM。
   function registerTableComponent() {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (!customElements.get('kniu-table-col')) {
@@ -2372,7 +2544,6 @@ var KniuUI = (function () {
         constructor() {
           super();
           attachComponentShadow(this);
-          // 列定义仅作为配置载体被 kniu-table 读取，自身不应在页面中渲染出可见内容。
           this.shadowRoot.innerHTML = '<style>:host{display:none}</style><slot></slot>';
         }
         set onChange(value) { this._onChange = typeof value === 'function' ? value : null; }
@@ -2389,9 +2560,6 @@ var KniuUI = (function () {
     if (customElements.get('kniu-table')) return;
 
     class KniuSysTable extends HTMLElement {
-      // 2026-09-01：kniu-table 自身旧 attribute（height / max-height / stripe / border /
-      // size / fit / show-header / highlight-current-row / row-key / empty-text）全部作废，
-      // 唯一配置入口为 kniu:option；列定义唯一来自 kniu-table 下的 kniu-table-col HTML 标签。
       static get observedAttributes() {
         return [];
       }
@@ -2436,9 +2604,6 @@ var KniuUI = (function () {
         return this.config;
       }
 
-      // kniu:option 统一配置入口（2026-09-01）：data / rowKey / stripe / border / size / fit /
-      // showHeader / highlightCurrentRow / emptyText / height / maxHeight 全部收进 options；
-      // 旧 attribute 一律作废。options 对象整体替换即触发刷新（响应式通知 + 本 setter）。
       set options(value) {
         const opts = value && typeof value === 'object' ? value : {};
         const langChanged = Object.hasOwn(opts, 'lang') && componentLang(opts) !== componentLang(this._config);
@@ -2451,10 +2616,6 @@ var KniuUI = (function () {
         if (langChanged) { this._queueRender(); this._clearColumnDefinitions(); return; }
         if (Array.isArray(opts.data)) {
           if (this._table) {
-            // 列模板 content 内 switch 的 kniu:option 在 applyBindings 同步块内才写入 expando，
-            // 而首次 _readColumns（connectedCallback 的 microtask）早于绑定执行 → 快照为 null。
-            // 整体替换 options 时延迟到 microtask 重读列定义再 setData，让行内开关拿到配置；
-            // 重读走 _columnElements 缓存（列定义可能已被 _clearColumnDefinitions 移除）。
             queueMicrotask(() => {
               this._readColumns();
               if (this._table) this._table.setData(this._config.data || []);
@@ -2479,9 +2640,6 @@ var KniuUI = (function () {
         return this._config?.data || [];
       }
 
-      // 区域加载遮罩开关与文案（由 kniutemplate 的 kniu:loading 指令委托驱动，
-      // 或控制器直接 set）。遮罩在 createTable 内部、shadowRoot 的 group 内渲染，
-      // 不往光层塞节点（光层无 <slot> 不可见）。表重建后状态自动重放。
       set loading(value) {
         this._loading = !!value;
         if (this._table) this._table.setLoading(this._loading, this._loadingText);
@@ -2498,17 +2656,10 @@ var KniuUI = (function () {
       }
 
       _clearColumnDefinitions() {
-        // 还原成 HTML 标签形式后，<kniu-table-col> 是列定义的唯一来源，必须保留——
-        // 任何后续 options / data 更新都通过 _readColumns 重新读取这些元素（含其内联
-        // kniu@change / kniu@click 处理器），移除会导致后续渲染丢失列配置。
-        // 旧 JS 配置页（article / daily / comment 等）不使用 <kniu-table-col> 子节点，
-        // 此函数已无清理对象，故置为空操作。
         return;
       }
 
       _readColumns() {
-        // 列定义可能已被 _clearColumnDefinitions 移除（options/data 后续更新时重读），
-        // 此时回退到首次读取缓存的列元素引用。
         let columnElements = [...this.querySelectorAll(':scope > kniu-table-col')];
         if (!columnElements.length && this._columnElements && this._columnElements.length) {
           columnElements = this._columnElements;
@@ -2579,23 +2730,14 @@ var KniuUI = (function () {
           const switchElement = element.querySelector(':scope > kniu-switch')
             || template?.content.querySelector('kniu-switch');
           if (switchElement) {
-            // 列内 kniu-switch 统一走 kniu:option：模板 content 内节点未被框架以 property 赋值时
-            // （未插入文档 → 自定义元素未升级 → 无 options property），框架会把配置存到
-            // __kniuOptionsValue expando（见 kniutemplate 的 kniu:option 绑定），此处两者都读。
-            // createTable 重建行内开关时整体赋回，旧 attribute 快照机制已作废。
             const switchConfig = (switchElement && typeof switchElement.options === 'object' && switchElement.options)
               || (switchElement && switchElement.__kniuOptionsValue && typeof switchElement.__kniuOptionsValue === 'object' ? switchElement.__kniuOptionsValue : null);
             column.switch = {
               options: switchConfig,
               onChange: (index, rows, value) => {
-                // 处理器来自模板内 kniu-switch 的 kniu@change：框架在列被 kniu:if / kniu:for clone 后
-                // 会把 handler 重新绑定到克隆节点 / 克隆列宿主自身（见 kniutemplate 的 tableScopedControl
-                // 分支，刻意保留 kniu@change 属性以便克隆列重新解析），故此处直接读取克隆后的节点即可。
                 const handler = element.__kniuTableScopedSwitchHandler
                   || switchElement.__kniuTableScopedHandler;
                 if (typeof handler === 'function') return handler(index, rows, value);
-                // 列级 on-change 不依赖 template 内节点的 expando，条件列被
-                // cloneNode() 重建后仍能稳定调用业务提交函数。
                 if (typeof element.onChange === 'function') return element.onChange(index, rows, value);
                 return true;
               }
@@ -2612,8 +2754,6 @@ var KniuUI = (function () {
             });
             column.radio = {
               options: radioOptions,
-              // 同 kniu-switch：优先取模板引擎为内联 <kniu-radio-group kniu@change> 写入的作用域处理器，
-              // 列被 kniu:if / kniu:for clone 后仍能稳定调用业务提交函数；否则回退到列级 onChange property。
               onChange: (...args) => {
                 if (typeof radioGroupElement.__kniuTableScopedHandler === 'function') {
                   return radioGroupElement.__kniuTableScopedHandler(...args);
@@ -2625,8 +2765,6 @@ var KniuUI = (function () {
           }
           if (buttons.length) {
             column.actions = buttons.map(function (button) {
-              // 列模板中的按钮通常尚未升级，kniu:option 会暂存到 expando；
-              // 已升级按钮则直接读取 options。普通属性作为兼容回退。
               const buttonOptions = (button.__kniuOptionsValue && typeof button.__kniuOptionsValue === 'object'
                 ? button.__kniuOptionsValue
                 : (button.options && typeof button.options === 'object' ? button.options : null)) || {};
@@ -2656,8 +2794,6 @@ var KniuUI = (function () {
           }
           return column;
         });
-        // 原地替换数组内容：_renderTable 已把 this._columns 引用传给 createTable，
-        // 重读（options 更新时）必须让既有表格实例看到新列定义，不能替换引用。
         this._columns.length = 0;
         this._columns.push(...columns);
       }
@@ -2773,7 +2909,6 @@ var KniuUI = (function () {
     customElements.define('kniu-msg', KniuSysToast);
   }
 
-  // ===== 分页相关（服务端列表接口对接 + 页码窗口计算，配合 kniu-page 组件使用）=====
   function buildPageList(current, total) {
     const arr = [];
     if (total <= 5) {
@@ -2786,14 +2921,11 @@ var KniuUI = (function () {
     return arr;
   }
 
-  // 服务端分页控制器：对接后端列表接口，返回 loadList/changePage/changePageSize。
-  // options.params 可选：函数（每次请求时求值）或对象，其键值会合并进请求 data，用于携带 keyword 等附加查询参数。
   function usePagination(options) {
-    const { state, self, url, field = 'id', sort = 'asc', params = null, transform = null, tableKey = null, pageKey = null } = options;
+    const { state, self, url, field = 'id', sort = 'asc', params = null, transform = null, tableKey = null, pageKey = null, stateStore = null, storeRecordKey = '' } = options;
     if (!state || !self || !url) {
       throw new Error('usePagination 需要 state、self、url 三个参数');
     }
-    // 分页状态由 usePagination 集中初始化，业务 state 不再混入额外初始化函数。
     const pageOptions = pageKey && state[pageKey] && typeof state[pageKey] === 'object' ? state[pageKey] : {};
     const configuredPageSize = Number(pageOptions.pageSize);
     state.pageRows = Math.max(1, Number.isFinite(configuredPageSize) ? configuredPageSize : 10);
@@ -2806,10 +2938,6 @@ var KniuUI = (function () {
       return extra && typeof extra === 'object' ? extra : {};
     }
 
-    // 加载完成后把分页结果同步进 options 化的 table / page 配置对象
-    // （kniu-table 的 kniu:option、kniu-page 的 kniu:option 直接消费这两个对象）。
-    // 注意：必须整体替换对象引用——kniu:option 的响应式订阅注册在表达式路径
-    // （如 state.userPage）上，原地改 total/data 等子属性不会触发组件刷新。
     function syncOptions() {
       if (tableKey && state[tableKey] && typeof state[tableKey] === 'object') {
         const prev = state[tableKey];
@@ -2821,10 +2949,6 @@ var KniuUI = (function () {
       }
     }
 
-    // 数据变更信号到达时若正在加载（用户刚翻页/搜索），不能直接重放——
-    // 重放用的是尚未更新的 state.currentPage，其 success 会把页码覆盖回旧页。
-    // 故先挂起，等当前请求收尾后再补一次。
-    let pendingReload = false;
     let activeLoadKey = '';
     let activeLoadPromise = null;
 
@@ -2846,8 +2970,6 @@ var KniuUI = (function () {
         ...resolveExtraParams()
       };
       const loadKey = `${url}:${serializeLoadParams(requestData)}`;
-      // 初始化、SSE 自动刷新或重复绑定可能在同一请求尚未结束时同时进入
-      // loadList。请求层会合并网络请求，这里再合并列表的 success 状态处理。
       if (activeLoadPromise && activeLoadKey === loadKey) return activeLoadPromise;
 
       const run = (async function () {
@@ -2856,8 +2978,9 @@ var KniuUI = (function () {
         await REQUEST({
           url,
           type: 'POST',
+          mutation: false,
           data: requestData,
-          success(res) {
+          async success(res) {
             if (res.status !== 1) {
               state.error = res.msg || '加载失败';
               state.loading = false;
@@ -2873,6 +2996,14 @@ var KniuUI = (function () {
             state.total = payload.total || 0;
             state.loading = false;
             syncOptions();
+            if (stateStore && storeRecordKey && typeof stateStore.track === 'function') {
+              await stateStore.track(storeRecordKey, {
+                records: state.list,
+                total: state.total,
+                currentPage: state.currentPage,
+                pageRows: state.pageRows
+              }, 'records-changed');
+            }
           },
           fail(res) {
             state.loading = false;
@@ -2891,10 +3022,6 @@ var KniuUI = (function () {
           activeLoadPromise = null;
           activeLoadKey = '';
         }
-        if (pendingReload) {
-          pendingReload = false;
-          queueMicrotask(function () { loadList(state.currentPage); });
-        }
       }
     }
 
@@ -2912,23 +3039,9 @@ var KniuUI = (function () {
       loadList(1);
     }
 
-    // 服务端数据变更时自动重放当前页：任何一端（后台改数据、他人在前台点赞/评论）
-    // 写库后，在线页面无需刷新即可看到最新数据，业务控制器不必写刷新逻辑。
-    // 调用点仍在控制器 setup() 的同步段内，作用域绑定与自动注销由 kniusync 负责。
-    SYNC.autoSync(function reloadCurrentPage() {
-      if (state.loading) {
-        pendingReload = true;
-        return;
-      }
-      loadList(state.currentPage);
-    });
-
     return { loadList, changePage, changePageSize, syncOptions };
   }
 
-  // 后台列表页通用的“显示”开关 options 工厂：四列 CRUD 控制器（daily/article/comment/users）
-  // 使用完全相同的 is_show 开关外观，仅 disabled 随当前账号的编辑权限变化。
-  // enabled 传 true/false 表示是否可编辑；内部 disabled 取反。
   function makeSwitchOptions(enabled = true) {
     return {
       name: 'is_show',
@@ -2940,23 +3053,13 @@ var KniuUI = (function () {
     };
   }
 
-  // 后台列表页搜索接线工厂：把 loadList 包装成回车/按钮触发的 searchList，并生成 250ms 防抖版本。
-  // 复刻各控制器重复的“searchList(){loadList(1)} + debounce(searchList,250)”三段式样板。
   function createSearchActions(loadList, wait = 250) {
     const searchList = function () { loadList(1); };
     return { searchList: searchList, debouncedSearch: debounce(searchList, wait) };
   }
 
-  // 后台列表页“删除行”交互工厂：确认框 -> 调删除接口 -> 提示。
-  // 复刻 article/daily/comment/users 高度重复的 deleteRow 样板；行为逐字节等价：
-  //  - row 不存在直接 return false；未确认 return false。
-  //  - gate 可选：传函数且返回假值时直接 return false（如 users 的仅管理员删除）。
-  //  - 成功默认提示固定文案“删除成功!”；传 getSuccessMessage(res) 可改用服务端 msg。
-  //  - onSuccess 可选：在不重新请求列表的情况下同步本地状态（例如静默账号表）。
-  //  - 默认不再手动刷新：内容表的删除会由 usePagination 内部的 SYNC.autoSync 刷新，
-  //    避免“删除成功回调 + data-change”同时请求同一列表；静默表可显式传 reloadOnSuccess。
   function createRowDeleteHandler(config) {
-    const { self, state, loadList, url, confirmMessage, gate = null, getSuccessMessage = null, onSuccess = null, reloadOnSuccess = false } = config || {};
+    const { self, state, loadList, url, confirmMessage, gate = null, getSuccessMessage = null, onSuccess = null, reloadOnSuccess = true } = config || {};
     return async function deleteRow(index, list) {
       const row = list[index];
       if (!row) return false;
@@ -2988,6 +3091,26 @@ var KniuUI = (function () {
       });
       return false;
     };
+  }
+
+  // 通用列表组合器：仅编排分页、搜索、删除，不包含任何项目接口或数据表。
+  function useListPage(config) {
+    const options = config || {};
+    const pager = usePagination(options);
+    const search = createSearchActions(pager.loadList, options.searchWait);
+    const deleteRow = options.deleteUrl
+      ? createRowDeleteHandler({
+        self: options.self,
+        state: options.state,
+        loadList: pager.loadList,
+        url: options.deleteUrl,
+        confirmMessage: options.deleteMessage || '此操作将永久删除该条数据, 是否继续?',
+        gate: options.deleteGate || null,
+        onSuccess: options.onDeleteSuccess || null,
+        reloadOnSuccess: options.reloadOnDeleteSuccess !== false
+      })
+      : null;
+    return Object.assign({}, pager, search, { deleteRow: deleteRow });
   }
 
   function registerSelectComponent() {
@@ -3022,7 +3145,7 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this._value = '';
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;min-width:120px}.kniu_sys_select_wrap{position:relative;width:100%}.kniu_sys_select{display:flex;align-items:center;width:100%;height:40px;padding:0 34px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px var(--kniu-font-family);cursor:pointer;box-sizing:border-box;white-space:nowrap}.kniu_sys_select:hover{border-color:#c0c4cc}.kniu_sys_select:focus-visible,.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select{border-color:#409eff}.kniu_sys_select:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_arrow{position:absolute;top:50%;right:12px;width:7px;height:7px;border-right:1px solid #909399;border-bottom:1px solid #909399;transform:translateY(-70%) rotate(45deg);transition:transform .2s;pointer-events:none}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_arrow{transform:translateY(-30%) rotate(225deg)}.kniu_sys_select_dropdown{position:fixed;z-index:10030;max-height:220px;overflow:auto;padding:5px 0;opacity:0;visibility:hidden;transform:translateY(-4px);transition:.16s}.kniu_sys_select_dropdown[data-placement="top"]{transform:translateY(4px)}.kniu_sys_select_dropdown[data-open="true"]{opacity:1;visibility:visible;transform:none}.kniu_sys_select_option{height:32px}.kniu_sys_select_option.kniu_sys_select_selected{color:#409eff;background-color:#f5f7fa}.kniu_sys_select_slot{display:none}</style><div class="kniu_sys_select_wrap" data-open="false" data-placement="bottom"><button type="button" class="kniu_sys_select" aria-haspopup="listbox" aria-expanded="false"></button><span class="kniu_sys_select_arrow" aria-hidden="true"></span><div class="kniu_sys_select_dropdown kniu_sys_dropdown_panel" role="listbox"></div></div><slot class="kniu_sys_select_slot"></slot>`;
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;min-width:120px}.kniu_sys_select_wrap{position:relative;width:100%}.kniu_sys_select{display:flex;align-items:center;width:100%;height:max(28px,calc(var(--kniu-select-h,40) / var(--kniu_vw)));padding:0 34px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px var(--kniu-font-family);cursor:pointer;box-sizing:border-box;white-space:nowrap}.kniu_sys_select:hover{border-color:#c0c4cc}.kniu_sys_select:focus-visible,.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select{border-color:#409eff}.kniu_sys_select:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_arrow{position:absolute;top:50%;right:12px;width:7px;height:7px;border-right:1px solid #909399;border-bottom:1px solid #909399;transform:translateY(-70%) rotate(45deg);transition:transform .2s;pointer-events:none}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_arrow{transform:translateY(-30%) rotate(225deg)}.kniu_sys_select_dropdown{position:fixed;z-index:10030;max-height:220px;overflow:auto;padding:5px 0;opacity:0;visibility:hidden;transform:translateY(-4px);transition:.16s}.kniu_sys_select_dropdown[data-placement="top"]{transform:translateY(4px)}.kniu_sys_select_dropdown[data-open="true"]{opacity:1;visibility:visible;transform:none}.kniu_sys_select_option{height:32px}.kniu_sys_select_option.kniu_sys_select_selected{color:#409eff;background-color:#f5f7fa}.kniu_sys_select_slot{display:none}</style><div class="kniu_sys_select_wrap" data-open="false" data-placement="bottom"><button type="button" class="kniu_sys_select" aria-haspopup="listbox" aria-expanded="false"></button><span class="kniu_sys_select_arrow" aria-hidden="true"></span><div class="kniu_sys_select_dropdown kniu_sys_dropdown_panel" role="listbox"></div></div><slot class="kniu_sys_select_slot"></slot>`;
         adoptDropdownStyle(this.shadowRoot);
         this._wrap = this.shadowRoot.querySelector('.kniu_sys_select_wrap');
         this._select = this.shadowRoot.querySelector('.kniu_sys_select');
@@ -3041,7 +3164,11 @@ var KniuUI = (function () {
           this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
           this.dispatchEvent(new CustomEvent('change', { detail: this._value, bubbles: true, composed: true }));
         });
-        this._outside = (event) => { if (!event.composedPath().includes(this)) this._setOpen(false); };
+        this._outside = (event) => {
+          const path = event.composedPath();
+          if (path.includes(this) || path.includes(this._dropdown)) return;
+          this._setOpen(false);
+        };
         this._observer = new MutationObserver(() => this.syncOptions());
       }
       connectedCallback() {
@@ -3061,7 +3188,6 @@ var KniuUI = (function () {
       set disabled(value) { value ? this.setAttribute('disabled', '') : this.removeAttribute('disabled'); }
       _setOpen(open) {
         const expanded = !!open && !this._select.disabled;
-        // 收起：先停跟随、卸载 body portal，再隐藏，避免隐藏后再触发一次定位。
         if (!expanded) {
           if (this._disposeSelectTrack) { this._disposeSelectTrack(); this._disposeSelectTrack = null; }
           if (this._popoverState) { this._popoverState.unmount(); this._popoverState = null; }
@@ -3070,8 +3196,6 @@ var KniuUI = (function () {
         this._dropdown.dataset.open = String(expanded);
         this._select.setAttribute('aria-expanded', String(expanded));
         if (!expanded) return;
-        // 展开：下拉浮层 portal 到 body 使其 fixed 相对视口（同 date-picker 机制），
-        // 再按 fixed + 自动上下翻转(默认下方)定位；宽度沿用触发按钮。
         if (!this._popoverState) this._popoverState = mountPopoverPortal(this._dropdown, this.shadowRoot, { zIndex: 10030, attribute: 'data-kniu-select-popover' });
         this._dropdown.dataset.open = 'true';
         const trigger = this._select;
@@ -3122,8 +3246,7 @@ var KniuUI = (function () {
         if (this._select.disabled) this._setOpen(false);
         const size = this.getAttribute('size');
         const height = size === 'small' ? 30 : (size === 'large' ? 48 : 40);
-        this._select.style.height = `${height}px`;
-        this._select.style.lineHeight = `${height - 2}px`;
+        this._select.style.setProperty('--kniu-select-h', String(height));
         this.syncOptions();
       }
     }
@@ -3160,7 +3283,7 @@ var KniuUI = (function () {
         attachComponentShadow(this);
         this._value = '';
         this._radioName = `kniu-radio-${Math.random().toString(36).slice(2)}`;
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle}.kniu_sys_radio_group{display:flex;align-items:center;flex-wrap:wrap;gap:18px;min-height:40px}.kniu_sys_radio{display:inline-flex;align-items:center;gap:7px;color:#606266;font:14px/1.5 var(--kniu-font-family);cursor:pointer;user-select:none}.kniu_sys_radio_control{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none}.kniu_sys_radio_input{position:relative;-webkit-appearance:none;appearance:none;width:14px;height:14px;margin:0;border:1px solid #dcdfe6;border-radius:50%;outline:0;background-color:#fff;box-sizing:border-box;cursor:pointer;transition:border-color .2s,background-color .2s}.kniu_sys_radio_dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:5px;height:5px;border-radius:50%;background-color:#fff;display:none;pointer-events:none}.kniu_sys_radio_input:checked{border-color:#409eff;background-color:#409eff}.kniu_sys_radio_input:checked~.kniu_sys_radio_dot{display:block}.kniu_sys_radio_input:focus-visible{outline:2px solid rgba(64,158,255,.3);outline-offset:2px}.kniu_sys_radio:hover{color:#409eff}.kniu_sys_radio:hover .kniu_sys_radio_input{border-color:#409eff}.kniu_sys_radio[data-size="large"] .kniu_sys_radio_input{width:16px;height:16px}.kniu_sys_radio[data-size="large"] .kniu_sys_radio_dot{width:6px;height:6px}.kniu_sys_radio[data-size="small"]{font-size:12px}.kniu_sys_radio[data-size="small"] .kniu_sys_radio_input{width:12px;height:12px}.kniu_sys_radio[data-size="small"] .kniu_sys_radio_dot{width:4px;height:4px}.kniu_sys_radio[data-disabled="true"]{color:#c0c4cc;cursor:not-allowed}.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input{border-color:#dcdfe6;background-color:#f5f7fa;cursor:not-allowed}.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input:checked{border-color:#a0cfff;background-color:#a0cfff}</style><div class="kniu_sys_radio_group" role="radiogroup"></div><slot hidden></slot>`;
+        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle}.kniu_sys_radio_group{display:flex;align-items:center;flex-wrap:wrap;gap:18px;min-height:40px}.kniu_sys_radio{display:inline-flex;align-items:center;gap:7px;color:#606266;font:14px/1.5 var(--kniu-font-family);cursor:pointer;user-select:none}.kniu_sys_radio_control{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none}.kniu_sys_radio_input{position:relative;-webkit-appearance:none;appearance:none;width:max(12px,calc(14 / var(--kniu_vw)));height:max(12px,calc(14 / var(--kniu_vw)));margin:0;border:1px solid #dcdfe6;border-radius:50%;outline:0;background-color:#fff;box-sizing:border-box;cursor:pointer;transition:border-color .2s,background-color .2s}.kniu_sys_radio_dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:max(5px,calc(5 / var(--kniu_vw)));height:max(5px,calc(5 / var(--kniu_vw)));border-radius:50%;background-color:#fff;display:none;pointer-events:none}.kniu_sys_radio_input:checked{border-color:#409eff;background-color:#409eff}.kniu_sys_radio_input:checked~.kniu_sys_radio_dot{display:block}.kniu_sys_radio_input:focus-visible{outline:2px solid rgba(64,158,255,.3);outline-offset:2px}.kniu_sys_radio:hover{color:#409eff}.kniu_sys_radio:hover .kniu_sys_radio_input{border-color:#409eff}.kniu_sys_radio[data-size="large"] .kniu_sys_radio_input{width:max(12px,calc(16 / var(--kniu_vw)));height:max(12px,calc(16 / var(--kniu_vw)))}.kniu_sys_radio[data-size="large"] .kniu_sys_radio_dot{width:max(5px,calc(6 / var(--kniu_vw)));height:max(5px,calc(6 / var(--kniu_vw)))}.kniu_sys_radio[data-size="small"]{font-size:12px}.kniu_sys_radio[data-size="small"] .kniu_sys_radio_input{width:max(12px,calc(12 / var(--kniu_vw)));height:max(12px,calc(12 / var(--kniu_vw)))}.kniu_sys_radio[data-size="small"] .kniu_sys_radio_dot{width:max(5px,calc(5 / var(--kniu_vw)));height:max(5px,calc(5 / var(--kniu_vw)))}.kniu_sys_radio[data-disabled="true"]{color:#c0c4cc;cursor:not-allowed}.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input{border-color:#dcdfe6;background-color:#f5f7fa;cursor:not-allowed}.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input:checked{border-color:#a0cfff;background-color:#a0cfff}</style><div class="kniu_sys_radio_group" role="radiogroup"></div><slot hidden></slot>`;
         this._group = this.shadowRoot.querySelector('.kniu_sys_radio_group');
         this._group.addEventListener('change', (event) => {
           const input = event.target;
@@ -3235,9 +3358,6 @@ var KniuUI = (function () {
     };
 
     class KniuSysPage extends HTMLElement {
-      // 2026-09-01：所有旧 attribute（total / page-size / current-page / layout /
-      // background / first-text / prev-text / next-text / last-text）全部作废，
-      // 只认 kniu:option。
       static get observedAttributes() {
         return [];
       }
@@ -3247,7 +3367,7 @@ var KniuUI = (function () {
         attachComponentShadow(this);
         this._total = 0;
         this._pageSize = 10;
-        this._baseSize = 10;        // 下拉步长基数来自首次 options.pageSize
+        this._baseSize = 10;
         this._baseSizeInitialized = false;
         this._currentPage = 1;
         this._layout = 'total,prev,pager,next,sizes';
@@ -3261,32 +3381,41 @@ var KniuUI = (function () {
         this.shadowRoot.innerHTML = `
           <style>
             :host{display:block}
-            .kniu_sys_page{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:16px;font-size:13px;color:#606266}
+            .kniu_sys_page{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:calc(16 / var(--kniu_vw)) calc(6 / var(--kniu_vw));margin-top:calc(30 / var(--kniu_vw));font-size:13px;color:#606266}
             .kniu_sys_page[hidden]{display:none}
             .kniu_sys_page_pager{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
-            .kniu_sys_page_btn{min-width:30px;height:30px;padding:0 8px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;cursor:pointer;font-size:13px;font-family:inherit;transition:all .2s}
-            .kniu_sys_page_btn:hover:not([disabled]):not(.is-active){color:#409eff;border-color:#c6e2ff}
-            .kniu_sys_page_btn.is-active{color:#fff;background-color:#409eff;border-color:#409eff;cursor:default}
+            .kniu_sys_page_btn{min-width:max(28px,calc(30 / var(--kniu_vw)));height:max(28px,calc(30 / var(--kniu_vw)));padding:0 8px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;cursor:pointer;font-size:13px;font-family:inherit;transition:all .2s}
+            .kniu_sys_page_btn:hover:not([disabled]):not(.kniu_sys_page_btn_active){color:#409eff;border-color:#c6e2ff}
+            .kniu_sys_page_btn.kniu_sys_page_btn_active{color:#fff;background-color:#409eff;border-color:#409eff;cursor:default}
             .kniu_sys_page_btn[disabled]{color:#c0c4cc;cursor:not-allowed;background-color:#fff}
-            .kniu_sys_page_btn[data-background="true"]:not(.is-active):not([disabled]){background-color:#f4f4f5}
+            .kniu_sys_page_btn[data-background="true"]:not(.kniu_sys_page_btn_active):not([disabled]){background-color:#f4f4f5}
             .kniu_sys_page_sizes{width:max-content;min-width:0;font-size:13px}
             .kniu_sys_page_jumper{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
-            .kniu_sys_page_jumper_input{width:46px;height:30px;padding:0 6px;border:1px solid #dcdfe6;border-radius:4px;outline:0;color:#606266;font:inherit;text-align:center;box-sizing:border-box}
+            .kniu_sys_page_jumper_input{width:46px;height:max(28px,calc(30 / var(--kniu_vw)));padding:0 6px;border:1px solid #dcdfe6;border-radius:4px;outline:0;color:#606266;font:inherit;text-align:center;box-sizing:border-box}
             .kniu_sys_page_jumper_input{-moz-appearance:textfield}.kniu_sys_page_jumper_input::-webkit-inner-spin-button,.kniu_sys_page_jumper_input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
             .kniu_sys_page_jumper_input:hover{border-color:#c0c4cc}.kniu_sys_page_jumper_input:focus{border-color:#409eff}
+            .kniu_sys_page_head,.kniu_sys_page_body{display:flex;align-items:center;flex-wrap:wrap;gap:6px;justify-content:center}
+            @media (min-width:calc(1024px - 60px)){.kniu_sys_page{margin-top:calc(16 / var(--kniu_vw));}}
+            @media (min-width:calc(1280px - 60px)){.kniu_sys_page{justify-content:flex-start}.kniu_sys_page_head,.kniu_sys_page_body{justify-content:flex-start}}
           </style>
           <div class="kniu_sys_page" hidden>
-            <span class="kniu_sys_page_total">共 0 条</span>
-            <button class="kniu_sys_page_btn kniu_sys_page_first" type="button">首页</button>
-            <button class="kniu_sys_page_btn kniu_sys_page_prev" type="button">上一页</button>
-            <span class="kniu_sys_page_pager"></span>
-            <button class="kniu_sys_page_btn kniu_sys_page_next" type="button">下一页</button>
-            <button class="kniu_sys_page_btn kniu_sys_page_last" type="button">末页</button>
-            <kniu-select class="kniu_sys_page_sizes" size="small"></kniu-select>
-            <span class="kniu_sys_page_jumper"><span class="kniu_sys_page_jumper_prefix">去</span><input class="kniu_sys_page_jumper_input" type="number" min="1" step="1" aria-label="跳转页码"><span class="kniu_sys_page_jumper_suffix">页</span></span>
+            <div class="kniu_sys_page_head">
+              <button class="kniu_sys_page_btn kniu_sys_page_first" type="button">首页</button>
+              <button class="kniu_sys_page_btn kniu_sys_page_prev" type="button">上一页</button>
+              <span class="kniu_sys_page_pager"></span>
+              <button class="kniu_sys_page_btn kniu_sys_page_next" type="button">下一页</button>
+              <button class="kniu_sys_page_btn kniu_sys_page_last" type="button">末页</button>
+            </div>
+            <div class="kniu_sys_page_body">
+              <span class="kniu_sys_page_total">共 0 条</span>
+              <kniu-select class="kniu_sys_page_sizes" size="small"></kniu-select>
+              <span class="kniu_sys_page_jumper"><span class="kniu_sys_page_jumper_prefix">去</span><input class="kniu_sys_page_jumper_input" type="number" min="1" step="1" aria-label="跳转页码"><span class="kniu_sys_page_jumper_suffix">页</span></span>
+            </div>
           </div>
         `;
         this._root = this.shadowRoot.querySelector('.kniu_sys_page');
+        this._headEl = this.shadowRoot.querySelector('.kniu_sys_page_head');
+        this._bodyEl = this.shadowRoot.querySelector('.kniu_sys_page_body');
         this._totalEl = this.shadowRoot.querySelector('.kniu_sys_page_total');
         this._firstEl = this.shadowRoot.querySelector('.kniu_sys_page_first');
         this._prevEl = this.shadowRoot.querySelector('.kniu_sys_page_prev');
@@ -3331,10 +3460,6 @@ var KniuUI = (function () {
       }
       get currentPage() { return this._currentPage; }
       set currentPage(value) { this._currentPage = Math.max(1, Number(value) || 1); this._render(); }
-
-      // kniu:option 统一配置入口（2026-09-01）：total / currentPage / pageSize / layout /
-      // background / firstText / prevText / nextText / lastText / sizes 全部收进 options；
-      // 旧 attribute 一律作废（整体替换 options 对象即可刷新）。
       set options(value) {
         const o = value && typeof value === 'object' ? value : {};
         this._options = o;
@@ -3378,8 +3503,6 @@ var KniuUI = (function () {
       }
 
       _buildSizes() {
-        // 基数由首次 options.pageSize 确定，下拉严格生成它的 1..6 倍；
-        // 不再追加不属于倍数序列的特殊值。
         const base = this._baseSize;
         const arr = [];
         for (let i = 1; i <= 6; i++) arr.push(base * i);
@@ -3412,8 +3535,6 @@ var KniuUI = (function () {
         const layout = this._parseLayout();
         const english = this._isEnglishLayout();
 
-        // 总数文本先更新再判断隐藏：仅一页（含 0 条数据）时隐藏整个分页组件，
-        // 但 "共 X 条" 必须始终反映真实 total（2026-09-01：曾因提前 return 停留在初始 "共 0 条"）。
         this._totalEl.textContent = english ? `Total ${total}` : `共 ${total} 条`;
         if (pageTotal <= 1) {
           this._root.hidden = true;
@@ -3437,8 +3558,6 @@ var KniuUI = (function () {
         this._prevEl.dataset.background = String(this._background);
         this._nextEl.dataset.background = String(this._background);
         this._lastEl.dataset.background = String(this._background);
-
-        // 下拉选项严格为初始 pageSize 的 1..6 倍
         const sizes = this._buildSizes();
         const sizesFragment = document.createDocumentFragment();
         sizes.forEach((s) => {
@@ -3459,26 +3578,28 @@ var KniuUI = (function () {
           btn.type = 'button';
           btn.dataset.background = String(self._background);
           btn.textContent = String(p);
-          if (p === current) btn.classList.add('is-active');
+          if (p === current) btn.classList.add('kniu_sys_page_btn_active');
           btn.addEventListener('click', function () { self._goto(p); });
           pagerFragment.appendChild(btn);
         });
         this._pagerEl.replaceChildren(pagerFragment);
-
-        // 按 layout 顺序排列子元素
         const orderMap = { total: this._totalEl, first: this._firstEl, prev: this._prevEl, pager: this._pagerEl, next: this._nextEl, last: this._lastEl, sizes: this._sizesEl, jumper: this._jumperEl };
-        const layoutFragment = document.createDocumentFragment();
+        const headFragment = document.createDocumentFragment();
+        const bodyFragment = document.createDocumentFragment();
         layout.forEach(function (key) {
           const el = orderMap[key];
           if (el) {
             el.style.display = '';
-            layoutFragment.appendChild(el);
+            (key === 'first' || key === 'prev' || key === 'pager' || key === 'next' || key === 'last' ? headFragment : bodyFragment).appendChild(el);
           }
         });
         Object.keys(orderMap).forEach(function (key) {
           if (!layout.includes(key)) orderMap[key].style.display = 'none';
         });
-        this._root.replaceChildren(layoutFragment);
+        this._headEl.replaceChildren(headFragment);
+        this._bodyEl.replaceChildren(bodyFragment);
+        this._headEl.hidden = this._headEl.children.length === 0;
+        this._bodyEl.hidden = this._bodyEl.children.length === 0;
       }
     }
 
@@ -3496,7 +3617,6 @@ var KniuUI = (function () {
         this._fit = 'contain';
         this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;overflow:hidden;flex-shrink:0;background-color:#f5f7fa}.kniu_sys_image_group{display:flex;width:100%;height:100%;align-items:stretch}.kniu_sys_image_content{position:relative;flex:1;min-width:0;height:100%;display:flex;align-items:center;justify-content:flex-start;padding:0 12px;background-color:#fff;box-sizing:border-box;overflow:hidden}.kniu_sys_image_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_image_group[data-affix="true"] .kniu_sys_image_content{border:1px solid #dcdfe6}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_content{border-radius:0 4px 4px 0}.kniu_sys_image_group[data-has-append="true"] .kniu_sys_image_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_image_group[data-affix="true"]{height:40px}.kniu_sys_image_group:not([data-affix="true"]) .kniu_sys_image_content{padding:0;background-color:transparent}.kniu_sys_image_wrap{position:relative;width:100%;height:100%;overflow:hidden;background-color:inherit}.kniu_sys_image{display:block;width:100%;height:100%}.kniu_sys_image_status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background-color:inherit;color:#909399;font-size:12px}.kniu_sys_image_status[data-hidden="true"]{display:none}</style><div class="kniu_sys_image_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_image_affix kniu_sys_image_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_image_content"><div class="kniu_sys_image_wrap"><span class="kniu_sys_image_status">加载中…</span></div></div><span class="kniu_sys_image_affix kniu_sys_image_append"><slot name="append"></slot></span></div>`;
         this._image = null;
-        // 允许页面通过宿主 class/style 设置尺寸，并让 Shadow DOM 内部完整继承宿主尺寸。
         adoptSharedStyle(this.shadowRoot, '.kniu_sys_image_group,.kniu_sys_image_wrap,.kniu_sys_image{width:100%;height:100%;box-sizing:border-box}');
         this._status = this.shadowRoot.querySelector('.kniu_sys_image_status');
       }
@@ -3551,6 +3671,7 @@ var KniuUI = (function () {
       }
       _sync() {
         const src = this.getAttribute('src') || '';
+        if (src.indexOf('{{') !== -1) return;
         if (!src) {
           this._removeImage();
           this._status.textContent = componentText(componentLang(this.__kniuOptions), 'image.empty');
@@ -3559,7 +3680,6 @@ var KniuUI = (function () {
         }
         const image = this._createImage();
         image.alt = this.getAttribute('alt') || '';
-        // 读取 fit 属性（支持静态 fit="contain" 写法，避免始终 fill）
         const fitAttr = this.getAttribute('fit');
         if (fitAttr) this.fit = fitAttr;
         image.style.objectFit = this._fit;
@@ -3616,13 +3736,13 @@ var KniuUI = (function () {
           adoptSharedStyle(this.shadowRoot, ':host([data-invalid="true"]) .kniu_sys_input,:host([data-invalid="true"]) .kniu_sys_input_affix{border-color:#f56c6c}');
           adoptSharedStyle(this.shadowRoot, '.kniu_sys_input:read-only:hover,.kniu_sys_input:read-only:focus{z-index:auto;border-color:#dcdfe6;outline:0;box-shadow:none;cursor:default}');
           adoptSharedStyle(this.shadowRoot, '.kniu_sys_input_affix{width:var(--kniu-input-label-width,auto);flex-basis:var(--kniu-input-label-width,auto)}');
-          adoptSharedStyle(this.shadowRoot, '.kniu_sys_input_group[data-upload-append="true"]{height:auto;align-items:flex-start}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_wrap{display:none}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_append{display:block;flex:1;width:auto!important;flex-basis:auto!important;padding:0;border:0;background-color:transparent;line-height:normal;text-align:left}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_prepend{height:40px}');
+          adoptSharedStyle(this.shadowRoot, '.kniu_sys_input_group[data-upload-append="true"]{height:auto;align-items:flex-start}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_wrap{display:none}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_append{display:block;flex:1;width:auto!important;flex-basis:auto!important;padding:0;border:0;background-color:transparent;line-height:normal;text-align:left}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_prepend{height:40px}.kniu_sys_input_group[data-upload-append="true"][data-has-prepend="true"]{display:block}.kniu_sys_input_group[data-upload-append="true"][data-has-prepend="true"] .kniu_sys_input_prepend{display:flex;align-self:flex-start;justify-content:flex-start;width:100%;min-width:100%;box-sizing:border-box;border:1px solid #dcdfe6;border-bottom:none;border-radius:4px 4px 0 0}@media (min-width:calc(1280px - 60px)){.kniu_sys_input_group[data-upload-append="true"][data-has-prepend="true"]{display:flex;align-items:flex-start}.kniu_sys_input_group[data-upload-append="true"][data-has-prepend="true"] .kniu_sys_input_prepend{width:auto;min-width:0;justify-content:center;border:1px solid #dcdfe6;border-right:0;border-radius:4px 0 0 4px}}');
           this._input = this.shadowRoot.querySelector('.kniu_sys_input');
           adoptSharedStyle(this.shadowRoot, '@media (min-width:calc(1280px - 60px)){.kniu_sys_input_group{height:40px}.kniu_sys_input{height:40px;min-height:40px;line-height:40px}.kniu_sys_input_affix{line-height:38px}}');
           appendRawStyle(this.shadowRoot, '.kniu_sys_input_append::slotted(kniu-btn),.kniu_sys_input_prepend::slotted(kniu-btn){align-self:stretch;height:calc(100% + 2px);min-height:28px;margin-top:-1px;margin-bottom:-1px;vertical-align:top;box-sizing:border-box}');
           this._affixObserver = null;
           this._passwordVisible = false;
-          const passwordStyle = `.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input:not(textarea),.kniu_sys_input_wrap[data-clearable="true"] .kniu_sys_input:not(textarea){padding-right:40px}.kniu_sys_input_wrap[data-show-password="true"][data-clearable="true"] .kniu_sys_input:not(textarea){padding-right:72px}.kniu_sys_input_wrap[data-clearable="true"] textarea.kniu_sys_input{padding-right:32px}.kniu_sys_input_password,.kniu_sys_input_clear{position:absolute;z-index:2;top:0;right:0;display:flex;visibility:hidden;align-items:center;justify-content:center;width:36px;height:40px;padding:0;border:0;outline:0;background-color:transparent;color:#c0c4cc;font-size:17px;line-height:40px;text-align:center;cursor:pointer;opacity:0;pointer-events:none}.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input_password,.kniu_sys_input_wrap[data-clear-visible="true"] .kniu_sys_input_clear{visibility:visible;opacity:1;pointer-events:auto}.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input_clear{right:34px}.kniu_sys_input_wrap[data-clear-visible="true"] textarea.kniu_sys_input ~ .kniu_sys_input_clear{top:8px;right:8px;width:auto;height:auto;line-height:1}.kniu_sys_input_password:hover,.kniu_sys_input_password:focus,.kniu_sys_input_clear:hover,.kniu_sys_input_clear:focus{color:#409eff}.kniu_sys_input_password[aria-disabled="true"],.kniu_sys_input_clear[aria-disabled="true"]{cursor:not-allowed;color:#dcdfe6}.kniu_sys_input_password_icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}`;
+          const passwordStyle = `.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input:not(textarea),.kniu_sys_input_wrap[data-clearable="true"] .kniu_sys_input:not(textarea){padding-right:40px}.kniu_sys_input_wrap[data-show-password="true"][data-clearable="true"] .kniu_sys_input:not(textarea){padding-right:72px}.kniu_sys_input_wrap[data-clearable="true"] textarea.kniu_sys_input{padding-right:32px}.kniu_sys_input_password,.kniu_sys_input_clear{position:absolute;z-index:2;top:0;right:0;display:flex;visibility:hidden;align-items:center;justify-content:center;width:36px;height:40px;padding:0;border:0;outline:0;background-color:transparent;color:#c0c4cc;font-size:17px;line-height:40px;text-align:center;cursor:pointer;opacity:0;pointer-events:none}.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input_password,.kniu_sys_input_wrap[data-clear-visible="true"] .kniu_sys_input_clear{visibility:visible;opacity:1;pointer-events:auto}.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input_clear{right:34px}.kniu_sys_input_wrap[data-clear-visible="true"] textarea.kniu_sys_input ~ .kniu_sys_input_clear{top:8px;right:8px;width:auto;height:auto;line-height:1}.kniu_sys_input_password:hover,.kniu_sys_input_password:focus,.kniu_sys_input_clear:hover,.kniu_sys_input_clear:focus{color:#409eff}.kniu_sys_input_password[aria-disabled="true"],.kniu_sys_input_clear[aria-disabled="true"]{cursor:not-allowed;color:#dcdfe6}.kniu_sys_input_password_icon{width:18px;height:18px}`;
           adoptSharedStyle(this.shadowRoot, '@media (min-width:calc(1280px - 60px)){.kniu_sys_input_password,.kniu_sys_input_clear{height:40px;line-height:40px}}');
           const wrap = document.createElement('span');
           wrap.className = 'kniu_sys_input_wrap';
@@ -3669,7 +3789,7 @@ var KniuUI = (function () {
             if (this.shadowRoot.activeElement !== this._input) this._input.focus({ preventScroll: true });
           });
           this._bindControl(this._input);
-          adoptSharedStyle(this.shadowRoot, 'textarea.kniu_sys_input{height:auto;min-height:120px;padding:8px 12px;line-height:1.5;font:14px/1.5 var(--kniu-font-family);resize:vertical;white-space:pre-wrap;overflow:auto}.kniu_sys_input_group[data-is-textarea="true"]{height:auto;align-items:stretch}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{align-self:flex-start;display:flex;align-items:center;padding-top:0;padding-bottom:0;box-sizing:border-box}@media (min-width:calc(1280px - 60px)){.kniu_sys_input_group[data-is-textarea="true"]{min-height:40px}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{height:40px}}');
+          adoptSharedStyle(this.shadowRoot, 'textarea.kniu_sys_input{height:auto;min-height:120px;padding:8px 12px;line-height:1.5;font:14px/1.5 var(--kniu-font-family);resize:vertical;white-space:pre-wrap;overflow:auto}.kniu_sys_input_group[data-is-textarea="true"]{height:auto;align-items:stretch}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"]{display:block}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{align-self:flex-start;display:flex;justify-content:flex-start;width:100%;min-width:100%;padding-top:0;padding-bottom:0;box-sizing:border-box;border:1px solid #dcdfe6;border-bottom:none;border-radius:4px 4px 0 0}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input{border-radius:0 0 4px 4px}@media (min-width:calc(1280px - 60px)){.kniu_sys_input_group[data-is-textarea="true"]{min-height:40px}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"]{display:flex}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{width:auto;min-width:0;justify-content:center;border:1px solid #dcdfe6;border-right:0;border-radius:4px 0 0 4px;height:40px}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input{border-radius:0 4px 4px 0}}');
           appendRawStyle(this.shadowRoot, '.kniu_sys_input_group{height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_input{height:max(28px,calc(40 / var(--kniu_vw)));min-height:28px;line-height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_input_affix{line-height:max(26px,calc(38 / var(--kniu_vw)))}.kniu_sys_input_password,.kniu_sys_input_clear{height:max(28px,calc(40 / var(--kniu_vw)));line-height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_input_group[data-upload-append="true"]{height:auto}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_prepend{height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_input_group[data-is-textarea="true"]{height:auto;min-height:28px}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{height:max(28px,calc(40 / var(--kniu_vw)))})');
         }
         connectedCallback() {
@@ -3808,8 +3928,8 @@ var KniuUI = (function () {
           if (group) group.dataset.isTextarea = String(isTextarea);
           this._wrap.dataset.showPassword = String(canShowPassword);
           this._passwordButton.innerHTML = this._passwordVisible
-            ? '<svg class="kniu_sys_input_password_icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z"></path><circle cx="12" cy="12" r="2.5"></circle></svg>'
-            : '<svg class="kniu_sys_input_password_icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"></path><path d="M10.6 10.7a2 2 0 0 0 2.7 2.7"></path><path d="M9.9 4.2A10.8 10.8 0 0 1 12 4c5.5 0 9 8 9 8a16.8 16.8 0 0 1-2.1 3.2"></path><path d="M6.2 6.2C4.1 7.7 3 12 3 12s3.5 8 9 8a10.2 10.2 0 0 0 4-.8"></path></svg>';
+            ? '<kniu-icon class="kniu_sys_input_password_icon" icon="eye"></kniu-icon>'
+            : '<kniu-icon class="kniu_sys_input_password_icon" icon="uneye"></kniu-icon>';
           this._passwordButton.setAttribute('aria-label', componentText(componentLang(this.__kniuOptions), this._passwordVisible ? 'input.hidePassword' : 'input.showPassword'));
           this._wrap.dataset.clearable = String(this.hasAttribute('clearable'));
           if (this._clearButton) this._clearButton.setAttribute('aria-label', componentText(componentLang(this.__kniuOptions), 'input.clear'));
@@ -3856,7 +3976,6 @@ var KniuUI = (function () {
         }
         _showTip() {
           if (!this._wrap || this.getAttribute('tip') == null || this.getAttribute('tip') === '') return;
-          // 打开：把提示浮层 portal 到 body，fixed 相对视口（同 date-picker），再定位。
           if (!this._tipState) this._tipState = mountPopoverPortal(this._tipPanel, this.shadowRoot, { zIndex: 10030, attribute: 'data-kniu-input-tip-popover' });
           this._tipPanel.dataset.open = 'true';
           this._tipPanel.setAttribute('aria-hidden', 'false');
@@ -3957,8 +4076,6 @@ var KniuUI = (function () {
           }
           if (this.hasAttribute('label-width')) this.style.setProperty('--kniu-label-width', this.getAttribute('label-width'));
         }
-        // 单个使用时不要 margin-bottom；后面紧跟同族组件（kniu-input-group / kniu-form-cell）时才加 20px 组间间距。
-        // CSS :host(:has(~ ...)) 在当前 Chrome 不可用，故在 connectedCallback 中通过 nextElementSibling 检测。
         _syncSiblingMargin() {
           const next = this.nextElementSibling;
           const hasGroupNext = !!(next && (next.tagName === 'KNIU-INPUT-GROUP' || next.tagName === 'KNIU-FORM-CELL'));
@@ -3983,14 +4100,14 @@ var KniuUI = (function () {
         attachComponentShadow(this);
         this.shadowRoot.innerHTML = `<style>
           :host{display:block;width:100%}.kniu_sys_date_picker_group{display:flex;width:100%;height:40px}.kniu_sys_date_picker_input_wrap{position:relative;display:block;flex:1;min-width:0}.kniu_sys_date_picker_input{display:block;width:100%;height:40px;padding:0 38px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px var(--kniu-font-family);cursor:pointer;box-sizing:border-box;transition:border-color .2s}.kniu_sys_date_picker_input:hover{border-color:#c0c4cc}.kniu_sys_date_picker_input:focus,:host([data-open="true"]) .kniu_sys_date_picker_input{position:relative;z-index:1;border-color:#409eff}.kniu_sys_date_picker_input:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_date_picker_calendar_icon{position:absolute;z-index:2;top:0;right:0;display:grid;width:38px;height:40px;place-items:center;color:#909399;pointer-events:none}.kniu_sys_date_picker_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;white-space:nowrap;box-sizing:border-box}.kniu_sys_date_picker_group[data-has-prepend="true"] .kniu_sys_date_picker_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_date_picker_group[data-has-append="true"] .kniu_sys_date_picker_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_date_picker_group[data-has-prepend="true"] .kniu_sys_date_picker_input{border-radius:0 4px 4px 0}.kniu_sys_date_picker_group[data-has-append="true"] .kniu_sys_date_picker_input{border-radius:4px 0 0 4px}.kniu_sys_date_picker_group[data-has-prepend="true"][data-has-append="true"] .kniu_sys_date_picker_input{border-radius:0}
-          .kniu_sys_date_picker_panel{position:fixed;z-index:10020;width:calc(100vw - 16px);border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.kniu_sys_date_picker_panel[hidden]{display:none}.kniu_sys_date_picker_panel[data-placement="bottom"]{transform-origin:center top}.kniu_sys_date_picker_panel[data-placement="top"]{transform-origin:center bottom}.kniu_sys_date_picker_panel[data-state="open"][data-placement="bottom"]{animation:kniu_date_in_bottom .18s ease-out both}.kniu_sys_date_picker_panel[data-state="open"][data-placement="top"]{animation:kniu_date_in_top .18s ease-out both}.kniu_sys_date_picker_panel[data-state="closing"][data-placement="bottom"]{animation:kniu_date_out_bottom .15s ease-in both}.kniu_sys_date_picker_panel[data-state="closing"][data-placement="top"]{animation:kniu_date_out_top .15s ease-in both}@keyframes kniu_date_in_bottom{from{opacity:0;transform:translateY(-8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_in_top{from{opacity:0;transform:translateY(8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_out_bottom{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(-6px) scaleY(.97)}}@keyframes kniu_date_out_top{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(6px) scaleY(.97)}}.kniu_sys_date_picker_head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.kniu_sys_date_picker_head button,.day,.kniu_sys_date_picker_chooser button,.kniu_sys_date_picker_title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.kniu_sys_date_picker_head>button{height:30px;border-radius:4px;font-size:17px}.kniu_sys_date_picker_head button:hover,.day:hover,.kniu_sys_date_picker_chooser button:hover,.kniu_sys_date_picker_title button:hover{color:#409eff}.kniu_sys_date_picker_title{display:flex;align-items:center;justify-content:center;gap:0;color:#303133;font-size:15px;font-weight:500}.kniu_sys_date_picker_title button{padding:6px 4px;border-radius:4px;font:inherit}.kniu_sys_date_picker_week,.kniu_sys_date_picker_days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.kniu_sys_date_picker_week[hidden],.kniu_sys_date_picker_days[hidden],.kniu_sys_date_picker_time[hidden]{display:none}.kniu_sys_date_picker_week{border-bottom:1px solid #ebeef5}.kniu_sys_date_picker_week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.day{justify-self:center;width:30px;height:30px;padding:0;border-radius:50%;font-size:12px}.day.kniu_sys_date_picker_other{color:#c0c4cc}.day.kniu_sys_date_picker_today{color:#409eff;font-weight:600}.day.kniu_sys_date_picker_selected,.kniu_sys_date_picker_chooser button.kniu_sys_date_picker_selected{background-color:#409eff;color:#fff}.kniu_sys_date_picker_chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.kniu_sys_date_picker_chooser[hidden]{display:none}.kniu_sys_date_picker_chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;padding:0;border-radius:4px;font-size:13px;text-align:center}.kniu_sys_date_picker_time{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:10px 12px;border-bottom:1px solid #ebeef5}.kniu_sys_date_picker_time::before{content:'选择时间';margin-right:auto;color:#606266;font-size:13px}.kniu_sys_date_picker_time_field{position:relative}.kniu_sys_date_picker_time_value{width:48px;height:30px;padding:0;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;cursor:pointer}.kniu_sys_date_picker_time_value:hover,.kniu_sys_date_picker_time_value:focus,.kniu_sys_date_picker_time_field[data-open="true"] .kniu_sys_date_picker_time_value{border-color:#409eff;outline:0}.kniu_sys_date_picker_time_options{position:absolute;top:34px;left:0;z-index:4;display:block;width:48px;max-height:168px;padding:4px 0;overflow-y:auto;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.kniu_sys_date_picker_time_options[hidden]{display:none}.kniu_sys_date_picker_time_option{display:block;width:100%;height:28px;padding:0;border:0;background-color:#fff;color:#606266;font-size:12px;text-align:center;cursor:pointer}.kniu_sys_date_picker_time_option:hover{background-color:#f5f7fa}.kniu_sys_date_picker_time_option.kniu_sys_date_picker_selected{background-color:#ecf5ff;color:#409eff;font-weight:600}.kniu_sys_date_picker_footer{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-top:1px solid #ebeef5}.kniu_sys_date_picker_date_preview{min-width:0;overflow:hidden;color:#606266;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.kniu_sys_date_picker_footer div{display:flex;flex:none;gap:3px}.kniu_sys_date_picker_action{height:28px;padding:0 5px;border:0;border-radius:3px;background-color:#fff;color:#409eff;cursor:pointer}.kniu_sys_date_picker_action:hover{background-color:#ecf5ff}.kniu_sys_date_picker_action.primary{border:1px solid #dcdfe6;background-color:#fff;color:#606266}.kniu_sys_date_picker_action.primary:hover{color:#409eff;border-color:#c6e2ff}@media(min-width:361px){.kniu_sys_date_picker_panel{width:322px}}@media(prefers-reduced-motion:reduce){.kniu_sys_date_picker_panel[data-state]{animation:none}}
-        </style><span class="kniu_sys_date_picker_group" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_date_picker_affix kniu_sys_date_picker_prepend"><slot name="prepend"></slot></span><span class="kniu_sys_date_picker_input_wrap"><input class="kniu_sys_date_picker_input" type="text" readonly placeholder="请选择日期时间"><span class="kniu_sys_date_picker_calendar_icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M8 3v4M16 3v4M3 10h18"></path></svg></span></span><span class="kniu_sys_date_picker_affix kniu_sys_date_picker_append"><slot name="append"></slot></span></span><section class="kniu_sys_date_picker_panel" hidden><div class="kniu_sys_date_picker_head"><button type="button" data-action="prev-year">«</button><button type="button" data-action="prev-month">‹</button><div class="kniu_sys_date_picker_title"><button type="button" data-action="choose-year"></button><button type="button" data-action="choose-month"></button></div><button type="button" data-action="next-month">›</button><button type="button" data-action="next-year">»</button></div><div class="kniu_sys_date_picker_week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div class="kniu_sys_date_picker_days"></div><div class="kniu_sys_date_picker_chooser" hidden></div><div class="kniu_sys_date_picker_time"><span class="kniu_sys_date_picker_time_field" data-time-field="hour"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="小时"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span><span data-time-separator="minute">:</span><span class="kniu_sys_date_picker_time_field" data-time-field="minute"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="分钟"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span><span data-time-separator="second">:</span><span class="kniu_sys_date_picker_time_field" data-time-field="second"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="秒"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span></div><div class="kniu_sys_date_picker_footer"><span class="kniu_sys_date_picker_date_preview"></span><div><button class="kniu_sys_date_picker_action" type="button" data-action="reset">重置</button><button class="kniu_sys_date_picker_action" type="button" data-action="today">现在</button><button class="kniu_sys_date_picker_action" type="button" data-action="confirm">确定</button></div></div></section>`;
+          .kniu_sys_date_picker_panel{position:fixed;z-index:10020;width:calc(100vw - 16px);border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.kniu_sys_date_picker_panel[hidden]{display:none}.kniu_sys_date_picker_panel[data-placement="bottom"]{transform-origin:center top}.kniu_sys_date_picker_panel[data-placement="top"]{transform-origin:center bottom}.kniu_sys_date_picker_panel[data-state="open"][data-placement="bottom"]{animation:kniu_date_in_bottom .18s ease-out both}.kniu_sys_date_picker_panel[data-state="open"][data-placement="top"]{animation:kniu_date_in_top .18s ease-out both}.kniu_sys_date_picker_panel[data-state="closing"][data-placement="bottom"]{animation:kniu_date_out_bottom .15s ease-in both}.kniu_sys_date_picker_panel[data-state="closing"][data-placement="top"]{animation:kniu_date_out_top .15s ease-in both}@keyframes kniu_date_in_bottom{from{opacity:0;transform:translateY(-8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_in_top{from{opacity:0;transform:translateY(8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_out_bottom{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(-6px) scaleY(.97)}}@keyframes kniu_date_out_top{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(6px) scaleY(.97)}}.kniu_sys_date_picker_head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.kniu_sys_date_picker_head button,.kniu_sys_date_picker_day,.kniu_sys_date_picker_chooser button,.kniu_sys_date_picker_title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.kniu_sys_date_picker_head>button{height:30px;border-radius:4px;font-size:17px}.kniu_sys_date_picker_head button:hover,.kniu_sys_date_picker_day:hover,.kniu_sys_date_picker_chooser button:hover,.kniu_sys_date_picker_title button:hover{color:#409eff}.kniu_sys_date_picker_title{display:flex;align-items:center;justify-content:center;gap:0;color:#303133;font-size:15px;font-weight:500}.kniu_sys_date_picker_title button{padding:6px 4px;border-radius:4px;font:inherit}.kniu_sys_date_picker_week,.kniu_sys_date_picker_days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.kniu_sys_date_picker_week[hidden],.kniu_sys_date_picker_days[hidden],.kniu_sys_date_picker_time[hidden]{display:none}.kniu_sys_date_picker_week{border-bottom:1px solid #ebeef5}.kniu_sys_date_picker_week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.kniu_sys_date_picker_day{justify-self:center;width:30px;height:30px;padding:0;border-radius:50%;font-size:12px}.kniu_sys_date_picker_day.kniu_sys_date_picker_other{color:#c0c4cc}.kniu_sys_date_picker_day.kniu_sys_date_picker_today{color:#409eff;font-weight:600}.kniu_sys_date_picker_day.kniu_sys_date_picker_selected,.kniu_sys_date_picker_chooser button.kniu_sys_date_picker_selected{background-color:#409eff;color:#fff}.kniu_sys_date_picker_chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.kniu_sys_date_picker_chooser[hidden]{display:none}.kniu_sys_date_picker_chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;padding:0;border-radius:4px;font-size:13px;text-align:center}.kniu_sys_date_picker_time{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:10px 12px;border-bottom:1px solid #ebeef5}.kniu_sys_date_picker_time::before{content:'选择时间';margin-right:auto;color:#606266;font-size:13px}.kniu_sys_date_picker_time_field{position:relative}.kniu_sys_date_picker_time_value{width:48px;height:30px;padding:0;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;cursor:pointer}.kniu_sys_date_picker_time_value:hover,.kniu_sys_date_picker_time_value:focus,.kniu_sys_date_picker_time_field[data-open="true"] .kniu_sys_date_picker_time_value{border-color:#409eff;outline:0}.kniu_sys_date_picker_time_options{position:absolute;top:34px;left:0;z-index:4;display:block;width:48px;max-height:168px;padding:4px 0;overflow-y:auto;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.kniu_sys_date_picker_time_options[hidden]{display:none}.kniu_sys_date_picker_time_option{display:block;width:100%;height:28px;padding:0;border:0;background-color:#fff;color:#606266;font-size:12px;text-align:center;cursor:pointer}.kniu_sys_date_picker_time_option:hover{background-color:#f5f7fa}.kniu_sys_date_picker_time_option.kniu_sys_date_picker_selected{background-color:#ecf5ff;color:#409eff;font-weight:600}.kniu_sys_date_picker_footer{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-top:1px solid #ebeef5}.kniu_sys_date_picker_date_preview{min-width:0;overflow:hidden;color:#606266;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.kniu_sys_date_picker_footer div{display:flex;flex:none;gap:3px}.kniu_sys_date_picker_action{height:28px;padding:0 5px;border:0;border-radius:3px;background-color:#fff;color:#409eff;cursor:pointer}.kniu_sys_date_picker_action:hover{background-color:#ecf5ff}.kniu_sys_date_picker_action.primary{border:1px solid #dcdfe6;background-color:#fff;color:#606266}.kniu_sys_date_picker_action.primary:hover{color:#409eff;border-color:#c6e2ff}@media(min-width:361px){.kniu_sys_date_picker_panel{width:322px}}@media(prefers-reduced-motion:reduce){.kniu_sys_date_picker_panel[data-state]{animation:none}}
+        </style><span class="kniu_sys_date_picker_group" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_date_picker_affix kniu_sys_date_picker_prepend"><slot name="prepend"></slot></span><span class="kniu_sys_date_picker_input_wrap"><input class="kniu_sys_date_picker_input" type="text" readonly placeholder="请选择日期时间"><span class="kniu_sys_date_picker_calendar_icon"><kniu-icon icon="date"></kniu-icon></span></span><span class="kniu_sys_date_picker_affix kniu_sys_date_picker_append"><slot name="append"></slot></span></span><section class="kniu_sys_date_picker_panel" hidden><div class="kniu_sys_date_picker_head"><button type="button" data-action="prev-year">«</button><button type="button" data-action="prev-month">‹</button><div class="kniu_sys_date_picker_title"><button type="button" data-action="choose-year"></button><button type="button" data-action="choose-month"></button></div><button type="button" data-action="next-month">›</button><button type="button" data-action="next-year">»</button></div><div class="kniu_sys_date_picker_week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div class="kniu_sys_date_picker_days"></div><div class="kniu_sys_date_picker_chooser" hidden></div><div class="kniu_sys_date_picker_time"><span class="kniu_sys_date_picker_time_field" data-time-field="hour"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="小时"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span><span data-time-separator="minute">:</span><span class="kniu_sys_date_picker_time_field" data-time-field="minute"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="分钟"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span><span data-time-separator="second">:</span><span class="kniu_sys_date_picker_time_field" data-time-field="second"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="秒"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span></div><div class="kniu_sys_date_picker_footer"><span class="kniu_sys_date_picker_date_preview"></span><div><button class="kniu_sys_date_picker_action" type="button" data-action="reset">重置</button><button class="kniu_sys_date_picker_action" type="button" data-action="today">现在</button><button class="kniu_sys_date_picker_action" type="button" data-action="confirm">确定</button></div></div></section>`;
         const datePanel = this.shadowRoot.querySelector('.kniu_sys_date_picker_panel');
         if (datePanel) datePanel.classList.add('kniu_sys_dropdown_panel');
         adoptDropdownStyle(this.shadowRoot);
         adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_day.kniu_sys_date_picker_disabled{color:#c0c4cc;cursor:not-allowed}.kniu_sys_date_picker_day.kniu_sys_date_picker_disabled:hover{color:#c0c4cc}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_head[hidden]{display:none}.kniu_sys_date_picker_time::before{content:attr(data-label)}.day[data-mark]{position:relative;font-size:11px}.day[data-mark]::after{content:"";position:absolute;top:2px;right:2px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.day.kniu_sys_date_picker_selected[data-mark]::after{background-color:#fff}.kniu_sys_date_picker_panel[data-range="true"]{width:min(650px,calc(100vw - 16px))}.kniu_sys_date_picker_range_calendars{display:grid;grid-template-columns:repeat(2,280px);overflow-x:auto}.kniu_sys_date_picker_range_calendars[hidden]{display:none}.kniu_sys_date_picker_range_pane+ .kniu_sys_date_picker_range_pane{border-left:1px solid #ebeef5}.kniu_sys_date_picker_range_head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.kniu_sys_date_picker_range_head button,.kniu_sys_date_picker_range_day,.kniu_sys_date_picker_range_chooser button,.kniu_sys_date_picker_range_title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.kniu_sys_date_picker_range_head button{height:30px;border-radius:4px;font-size:17px}.kniu_sys_date_picker_range_head button:hover,.kniu_sys_date_picker_range_day:hover,.kniu_sys_date_picker_range_chooser button:hover,.kniu_sys_date_picker_range_title button:hover{color:#409eff}.kniu_sys_date_picker_range_title{display:flex;align-items:center;justify-content:center;color:#303133;font-size:15px;font-weight:500}.kniu_sys_date_picker_range_title button{padding:6px 4px;border-radius:4px;font:inherit}.kniu_sys_date_picker_range_week,.kniu_sys_date_picker_range_days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.kniu_sys_date_picker_range_week[hidden],.kniu_sys_date_picker_range_days[hidden],.kniu_sys_date_picker_range_chooser[hidden]{display:none}.kniu_sys_date_picker_range_week{border-bottom:1px solid #ebeef5}.kniu_sys_date_picker_range_week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.kniu_sys_date_picker_range_day{position:relative;justify-self:stretch;height:30px;padding:0;font-size:12px}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_other{color:#c0c4cc}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_in_range{background-color:#ecf5ff;color:#409eff}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_start,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_end{border-radius:4px;background-color:#409eff;color:#fff}.kniu_sys_date_picker_range_day[data-mark]{font-size:11px}.kniu_sys_date_picker_range_day[data-mark]::after{content:"";position:absolute;top:2px;right:4px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_start[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_end[data-mark]::after{background-color:#fff}.kniu_sys_date_picker_range_chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.kniu_sys_date_picker_range_chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;border-radius:4px;font-size:13px}.kniu_sys_date_picker_range_chooser button.kniu_sys_date_picker_selected{background-color:#409eff;color:#fff}@media(min-width:621px){.kniu_sys_date_picker_range_calendars{grid-template-columns:repeat(2,minmax(280px,1fr))}}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel,.kniu_sys_date_picker_panel[data-range="true"]{width:min(218px,calc(100vw - 16px))}.kniu_sys_date_picker_head,.kniu_sys_date_picker_range_head{grid-template-columns:24px 24px minmax(0,1fr) 24px 24px;padding:6px 6px 2px}.kniu_sys_date_picker_head>button,.kniu_sys_date_picker_range_head button{height:26px;font-size:14px}.kniu_sys_date_picker_title,.kniu_sys_date_picker_range_title{font-size:12px;white-space:nowrap}.kniu_sys_date_picker_title button,.kniu_sys_date_picker_range_title button{padding:4px 2px}.kniu_sys_date_picker_title[data-lang="en"] [data-action="choose-month"],.kniu_sys_date_picker_range_title[data-lang="en"] [data-range-choose="month"]{order:-1}.kniu_sys_date_picker_week,.kniu_sys_date_picker_days,.kniu_sys_date_picker_range_week,.kniu_sys_date_picker_range_days{gap:0;margin:0 6px}.kniu_sys_date_picker_days,.kniu_sys_date_picker_range_days{padding:4px 0}.kniu_sys_date_picker_week span,.kniu_sys_date_picker_range_week span{height:24px;font-size:10px;line-height:24px}.day,.kniu_sys_date_picker_range_day{height:26px;font-size:10px}.day{width:26px}.day[data-mark],.kniu_sys_date_picker_range_day[data-mark]{font-size:8px}.day.kniu_sys_date_picker_selected[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_in_range[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_start[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_end[data-mark]::after{display:none}.kniu_sys_date_picker_chooser,.kniu_sys_date_picker_range_chooser{grid-template-columns:repeat(3,minmax(0,1fr));height:189px;min-height:0;padding:8px;gap:4px;box-sizing:border-box}.kniu_sys_date_picker_chooser[data-mode="year"],.kniu_sys_date_picker_range_chooser[data-mode="year"]{grid-template-rows:repeat(5,minmax(0,1fr))}.kniu_sys_date_picker_chooser[data-mode="month"],.kniu_sys_date_picker_range_chooser[data-mode="month"]{grid-template-rows:repeat(4,minmax(0,1fr))}.kniu_sys_date_picker_chooser button,.kniu_sys_date_picker_range_chooser button{min-height:0;font-size:11px}.kniu_sys_date_picker_time{gap:2px;padding:6px}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time[hidden]{display:flex;visibility:hidden}.kniu_sys_date_picker_time::before{font-size:10px}.kniu_sys_date_picker_time_value{width:38px;height:26px;font-size:11px}.kniu_sys_date_picker_time_options{top:29px;width:38px;max-height:140px}.kniu_sys_date_picker_time_option{height:25px}.kniu_sys_date_picker_footer{padding:5px 6px}.kniu_sys_date_picker_action{width:42px;height:25px;padding:0;font-size:11px}.kniu_sys_date_picker_range_calendars{grid-template-columns:minmax(0,1fr);overflow:visible}.kniu_sys_date_picker_range_pane+ .kniu_sys_date_picker_range_pane{border-top:1px solid #ebeef5;border-left:0}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_head[hidden]{display:none}.kniu_sys_date_picker_time::before{content:attr(data-label)}.kniu_sys_date_picker_day[data-mark]{position:relative;font-size:11px}.kniu_sys_date_picker_day[data-mark]::after{content:"";position:absolute;top:2px;right:2px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.kniu_sys_date_picker_day.kniu_sys_date_picker_selected[data-mark]::after{background-color:#fff}.kniu_sys_date_picker_panel[data-range="true"]{width:min(650px,calc(100vw - 16px))}.kniu_sys_date_picker_range_calendars{display:grid;grid-template-columns:repeat(2,280px);overflow-x:auto}.kniu_sys_date_picker_range_calendars[hidden]{display:none}.kniu_sys_date_picker_range_pane+ .kniu_sys_date_picker_range_pane{border-left:1px solid #ebeef5}.kniu_sys_date_picker_range_head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.kniu_sys_date_picker_range_head button,.kniu_sys_date_picker_range_day,.kniu_sys_date_picker_range_chooser button,.kniu_sys_date_picker_range_title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.kniu_sys_date_picker_range_head button{height:30px;border-radius:4px;font-size:17px}.kniu_sys_date_picker_range_head button:hover,.kniu_sys_date_picker_range_day:hover,.kniu_sys_date_picker_range_chooser button:hover,.kniu_sys_date_picker_range_title button:hover{color:#409eff}.kniu_sys_date_picker_range_title{display:flex;align-items:center;justify-content:center;color:#303133;font-size:15px;font-weight:500}.kniu_sys_date_picker_range_title button{padding:6px 4px;border-radius:4px;font:inherit}.kniu_sys_date_picker_range_week,.kniu_sys_date_picker_range_days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.kniu_sys_date_picker_range_week[hidden],.kniu_sys_date_picker_range_days[hidden],.kniu_sys_date_picker_range_chooser[hidden]{display:none}.kniu_sys_date_picker_range_week{border-bottom:1px solid #ebeef5}.kniu_sys_date_picker_range_week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.kniu_sys_date_picker_range_day{position:relative;justify-self:stretch;height:30px;padding:0;font-size:12px}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_other{color:#c0c4cc}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_in_range{background-color:#ecf5ff;color:#409eff}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_start,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_end{border-radius:4px;background-color:#409eff;color:#fff}.kniu_sys_date_picker_range_day[data-mark]{font-size:11px}.kniu_sys_date_picker_range_day[data-mark]::after{content:"";position:absolute;top:2px;right:4px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_start[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_end[data-mark]::after{background-color:#fff}.kniu_sys_date_picker_range_chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.kniu_sys_date_picker_range_chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;border-radius:4px;font-size:13px}.kniu_sys_date_picker_range_chooser button.kniu_sys_date_picker_selected{background-color:#409eff;color:#fff}@media(min-width:621px){.kniu_sys_date_picker_range_calendars{grid-template-columns:repeat(2,minmax(280px,1fr))}}');
+        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel,.kniu_sys_date_picker_panel[data-range="true"]{width:min(218px,calc(100vw - 16px))}.kniu_sys_date_picker_head,.kniu_sys_date_picker_range_head{grid-template-columns:24px 24px minmax(0,1fr) 24px 24px;padding:6px 6px 2px}.kniu_sys_date_picker_head>button,.kniu_sys_date_picker_range_head button{height:26px;font-size:14px}.kniu_sys_date_picker_title,.kniu_sys_date_picker_range_title{font-size:12px;white-space:nowrap}.kniu_sys_date_picker_title button,.kniu_sys_date_picker_range_title button{padding:4px 2px}.kniu_sys_date_picker_title[data-lang="en"] [data-action="choose-month"],.kniu_sys_date_picker_range_title[data-lang="en"] [data-range-choose="month"]{order:-1}.kniu_sys_date_picker_week,.kniu_sys_date_picker_days,.kniu_sys_date_picker_range_week,.kniu_sys_date_picker_range_days{gap:0;margin:0 6px}.kniu_sys_date_picker_days,.kniu_sys_date_picker_range_days{padding:4px 0}.kniu_sys_date_picker_week span,.kniu_sys_date_picker_range_week span{height:24px;font-size:10px;line-height:24px}.kniu_sys_date_picker_day,.kniu_sys_date_picker_range_day{height:26px;font-size:10px}.kniu_sys_date_picker_day{width:26px}.kniu_sys_date_picker_day[data-mark],.kniu_sys_date_picker_range_day[data-mark]{font-size:8px}.kniu_sys_date_picker_day.kniu_sys_date_picker_selected[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_in_range[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_start[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_end[data-mark]::after{display:none}.kniu_sys_date_picker_chooser,.kniu_sys_date_picker_range_chooser{grid-template-columns:repeat(3,minmax(0,1fr));height:189px;min-height:0;padding:8px;gap:4px;box-sizing:border-box}.kniu_sys_date_picker_chooser[data-mode="year"],.kniu_sys_date_picker_range_chooser[data-mode="year"]{grid-template-rows:repeat(5,minmax(0,1fr))}.kniu_sys_date_picker_chooser[data-mode="month"],.kniu_sys_date_picker_range_chooser[data-mode="month"]{grid-template-rows:repeat(4,minmax(0,1fr))}.kniu_sys_date_picker_chooser button,.kniu_sys_date_picker_range_chooser button{min-height:0;font-size:11px}.kniu_sys_date_picker_time{gap:2px;padding:6px}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time[hidden]{display:flex;visibility:hidden}.kniu_sys_date_picker_time::before{font-size:10px}.kniu_sys_date_picker_time_value{width:38px;height:26px;font-size:11px}.kniu_sys_date_picker_time_options{top:29px;width:38px;max-height:140px}.kniu_sys_date_picker_time_option{height:25px}.kniu_sys_date_picker_footer{padding:5px 6px}.kniu_sys_date_picker_action{width:42px;height:25px;padding:0;font-size:11px}.kniu_sys_date_picker_range_calendars{grid-template-columns:minmax(0,1fr);overflow:visible}.kniu_sys_date_picker_range_pane+ .kniu_sys_date_picker_range_pane{border-top:1px solid #ebeef5;border-left:0}');
         adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"]{display:grid;width:min(350px,calc(100vw - 16px));grid-template-columns:minmax(0,218px) minmax(0,132px)}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_head{grid-column:1;grid-row:1}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_week{grid-column:1;grid-row:2}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_days{grid-column:1;grid-row:3}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_chooser{grid-column:1;grid-row:2 / span 2}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_range_calendars{grid-column:1;grid-row:1 / span 3}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time{display:grid;grid-column:2;grid-row:1 / span 3;align-self:start;width:100%;height:223px;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch;gap:0;padding:0;overflow:hidden;border-bottom:0;border-left:1px solid #ebeef5;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[hidden]{display:grid;visibility:hidden}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time::before,.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time>span:not(.kniu_sys_date_picker_time_field){display:none}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field{display:flex;min-width:0;height:223px;overflow:hidden;flex-direction:column;border-left:1px solid #ebeef5;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field:first-of-type{border-left:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field::before{content:attr(data-label);display:block;flex:none;height:34px;border-bottom:1px solid #ebeef5;color:#606266;font-size:10px;line-height:34px;text-align:center;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_value{display:none}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options[hidden]{position:static;display:block;width:100%;height:189px;max-height:189px;padding:0;overflow-x:hidden;overflow-y:auto;border:0;border-radius:0;background-color:#fff;box-shadow:none;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_option{height:25px}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_footer{grid-column:1 / -1;grid-row:4}.kniu_sys_date_picker_panel[data-type="datetime"][data-range="true"]{width:min(350px,calc(100vw - 16px))}');
         adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"])>.kniu_sys_date_picker_head{grid-column:1 / -1;grid-row:1}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"])>.kniu_sys_date_picker_time{grid-column:2;grid-row:2 / span 2;height:189px}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_field{height:189px}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_field::before{height:25px;line-height:25px}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options[hidden]{height:164px;max-height:164px}');
         adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options{scrollbar-width:none}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options:hover{scrollbar-width:thin;scrollbar-color:#c0c4cc transparent}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options::-webkit-scrollbar{width:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options:hover::-webkit-scrollbar{width:6px}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options::-webkit-scrollbar-thumb{border-radius:6px;background-color:#c0c4cc}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options::-webkit-scrollbar-track{background-color:transparent}');
@@ -4223,6 +4340,7 @@ var KniuUI = (function () {
         this._preferredDay = this._draft.getDate();
         this._viewYear = this._draft.getFullYear();
         this._viewMonth = this._draft.getMonth();
+        this._panelMode = 'day';
         this._render();
         this._panel.hidden = false;
         this.dataset.open = 'true';
@@ -4231,8 +4349,6 @@ var KniuUI = (function () {
         void this._panel.offsetWidth;
         this._panel.dataset.state = 'open';
         this._startPositionTracking();
-        // 用户可能在模态框 250ms 入场动画尚未结束时立即打开日历。
-        // 动画期间 transform 会临时改变 fixed 的坐标系，结束后再以视口坐标强制校正一次。
         if (this._positionTimer) globalThis.clearTimeout(this._positionTimer);
         this._positionTimer = globalThis.setTimeout(() => {
           this._positionTimer = null;
@@ -4275,7 +4391,6 @@ var KniuUI = (function () {
         const panelHeight = this._panel.offsetHeight || 390;
         const spaceBelow = globalThis.innerHeight - rect.bottom - 8;
         const spaceAbove = rect.top - 8;
-        // 默认向下；仅下方不足且上方足够时向上。若上下都不足，仍按默认向下显示。
         const placement = spaceBelow < panelHeight && spaceAbove >= panelHeight ? 'top' : 'bottom';
         const viewportTop = placement === 'top' ? rect.top - panelHeight - 6 : rect.bottom + 6;
         this._panel.dataset.placement = placement;
@@ -4358,8 +4473,6 @@ var KniuUI = (function () {
           if (this._sameDay(date, today)) button.classList.add('kniu_sys_date_picker_today');
           const mark = this._resolveMark(date);
           if (mark) { button.dataset.mark = mark; button.title = mark; button.textContent = mark; }
-          // 月份/年份翻页时保留已选“日号”，只高亮当前视图月份中的同一日，
-          // 避免相邻月份占位格出现重复高亮。
           const selectedDay = Math.min(this._preferredDay, new Date(this._viewYear, this._viewMonth + 1, 0).getDate());
           if (date.getFullYear() === this._viewYear
             && date.getMonth() === this._viewMonth
@@ -4377,7 +4490,7 @@ var KniuUI = (function () {
         const showMinute = /mm|ii/.test(displayFormat);
         const showSeconds = /ss/.test(displayFormat);
         const timeColumns = Math.max(1, [showHour, showMinute, showSeconds].filter(Boolean).length);
-        timePanel.hidden = choosing || !['datetime', 'time'].includes(this._options.type);
+        timePanel.hidden = (choosing && this._options.type !== 'datetime') || !['datetime', 'time'].includes(this._options.type);
         timePanel.dataset.label = isEnglish ? 'Select time' : '选择时间';
         timePanel.dataset.showHour = String(showHour);
         timePanel.dataset.showMinute = String(showMinute);
@@ -4415,7 +4528,7 @@ var KniuUI = (function () {
           button.dataset.value = String(value);
           button.textContent = String(value).padStart(2, '0');
           field.querySelectorAll('.kniu_sys_date_picker_time_option').forEach((option) => option.classList.toggle('kniu_sys_date_picker_selected', Number(option.dataset.value) === value));
-          if (this._options.type === 'datetime' && !choosing) {
+          if (this._options.type === 'datetime' && !timePanel.hidden) {
             queueMicrotask(() => field.querySelector('.kniu_sys_date_picker_time_option.kniu_sys_date_picker_selected')?.scrollIntoView({ block: 'center' }));
           }
         });
@@ -4717,14 +4830,11 @@ var KniuUI = (function () {
   function registerFormComponent() {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-form')) return;
-    // 表单内被视为「字段」的控件：带 name，或 kniu:form 指向 options 的某个字段。
     const FORM_FIELD_SELECTOR = [
       'kniu-input', 'kniu-textarea', 'kniu-select', 'kniu-switch', 'kniu-radio-group',
       'kniu-checkbox-group', 'kniu-date-picker', 'kniu-upload', 'kniu-editor', 'kniu-slider'
     ].join(',');
-    // options 里的表单级保留键：不是字段，不参与取值与验证。
     const FORM_RESERVED_KEYS = ['labelPosition', 'labelWidth'];
-    // 字段对象约定：{ value, condition, message }——有 condition 才验证，value 为默认值/当前值。
     const isFieldObject = function (value) {
       return !!value && typeof value === 'object' && !Array.isArray(value) && 'value' in value;
     };
@@ -4758,9 +4868,6 @@ var KniuUI = (function () {
         });
         return out;
       }
-      // 唯一配置入口：kniu:option="{{xxxOptions}}"。
-      // 除 ref 与事件外，表单元素上不再有任何配置项属性（model / data / rules / formConfig /
-      // label-position / label-width 全部作废）。字段要么写成对象（可验证），要么直接给默认值。
       set options(value) {
         const next = value && typeof value === 'object' ? value : {};
         this._options = next;
@@ -4768,7 +4875,6 @@ var KniuUI = (function () {
         if (this.isConnected) { this._syncLayout(); this._mountForm(); }
       }
       get options() { return this._options; }
-      // 当前表单值：字段对象摊平成值，供控制器直接提交。
       get values() { return this._valuesOf(this._fieldNodes()); }
       _valuesOf(entries) {
         const options = this._options || {};
@@ -4781,7 +4887,6 @@ var KniuUI = (function () {
         });
         return out;
       }
-      // 把所有字段恢复到 options 首次传入时的默认值。
       reset() {
         const defaults = this._defaults;
         const options = this._options;
@@ -4826,10 +4931,6 @@ var KniuUI = (function () {
       _testCondition(condition, value, entry, values) {
         if (condition === true) return value.trim().length > 0;
         if (condition == null) return true;
-        // options 来自响应式代理，正则常被 Proxy 包裹：instanceof 仍为 true，
-        // 但原生 RegExp.prototype.test 以 Proxy 为 this 会抛
-        // "Method RegExp.prototype.exec called on incompatible receiver"。
-        // 因此只要能取到 source 就一律重建真实 RegExp 再 test。
         if (condition && typeof condition.source === 'string') {
           return new RegExp(condition.source, condition.flags || '').test(value);
         }
@@ -4843,7 +4944,6 @@ var KniuUI = (function () {
             options: this._options,
             values: values || {}
           };
-          // 同表单其它字段的当前值一并展开到入参上，condition 可直接写 v.password 之类
           Object.keys(payload.values).forEach(function (key) {
             if (!(key in payload)) payload[key] = payload.values[key];
           });
@@ -4851,7 +4951,6 @@ var KniuUI = (function () {
         }
         return true;
       }
-      // 字段清单 [{ field, node, group, value }]，同名只取首个控件。
       _fieldNodes() {
         const options = this._options || {};
         const seen = new Set();
@@ -4897,7 +4996,6 @@ var KniuUI = (function () {
           ? options.labelPosition
           : 'right';
         const width = options.labelWidth || '80px';
-        // 标签位置落到 data 属性上供外部样式挂钩（label-position 属性已作废）
         this.setAttribute('data-label-position', position);
         this.querySelectorAll('kniu-input-group, kniu-form-cell').forEach(function (group) {
           if (!group.hasAttribute('label-position')) group.setAttribute('label-position', position);
@@ -4919,7 +5017,6 @@ var KniuUI = (function () {
     customElements.define('kniu-form', KniuSysForm);
   }
 
-  // 图片选择与本地照片墙预览。文件只保存在浏览器内存中，提交由所属表单负责。
   function registerUploadComponent() {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-upload')) return;
@@ -4931,7 +5028,7 @@ var KniuUI = (function () {
         this._files = [];
         this._objectUrls = new Map();
         this.shadowRoot.innerHTML = `<style>
-          :host{display:block;width:100%;color:#606266;font:14px/1.5 var(--kniu-font-family)}:host([disabled]){background-color:transparent!important}.kniu_sys_upload_bar{display:flex;align-items:stretch;width:100%;min-height:40px}.kniu_sys_upload_hint{display:flex;flex:1;align-items:center;min-width:0;padding:0 12px;border:1px solid #dcdfe6;border-right:0;background-color:#f5f7fa;color:#c0c4cc;box-sizing:border-box}.kniu_sys_upload_btn{flex:none;padding:0 20px;border:1px solid #409eff;border-radius:0 4px 4px 0;background-color:#409eff;color:#fff;font:inherit;cursor:pointer}.kniu_sys_upload_btn:hover{background-color:#66b1ff;border-color:#66b1ff}.kniu_sys_upload_btn:focus-visible{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}.kniu_sys_upload_btn:disabled{background-color:#a0cfff;border-color:#a0cfff;cursor:not-allowed}.kniu_sys_upload_input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.kniu_sys_upload_wall{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}.kniu_sys_upload_item{position:relative;width:160px;height:160px;overflow:hidden;background-color:#f5f7fa}.kniu_sys_upload_image{display:block;width:100%;height:100%;object-fit:contain}.kniu_sys_upload_remove{position:absolute;top:8px;right:8px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background-color:#aab4c4;color:#fff;font:18px/1 var(--kniu-font-family);cursor:pointer}.kniu_sys_upload_remove:hover{background-color:#f56c6c}.kniu_sys_upload_empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#c0c4cc;font-size:18px;background-image:linear-gradient(135deg,#f7f9fc,#f1f4fa)}.kniu_sys_upload_empty svg{width:38px;height:38px;fill:none;stroke:currentColor;stroke-width:1.8}
+          :host{display:block;width:100%;color:#606266;font:14px/1.5 var(--kniu-font-family)}:host([disabled]){background-color:transparent!important}.kniu_sys_upload_bar{display:flex;align-items:stretch;width:100%;min-height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_upload_hint{display:flex;flex:1;align-items:center;min-width:0;padding:0 12px;border:1px solid #dcdfe6;border-right:0;background-color:#f5f7fa;color:#c0c4cc;box-sizing:border-box}.kniu_sys_upload_btn{flex:none;padding:0 20px;border:1px solid #409eff;border-radius:0 4px 4px 0;background-color:#409eff;color:#fff;font:inherit;cursor:pointer}.kniu_sys_upload_btn:hover{background-color:#66b1ff;border-color:#66b1ff}.kniu_sys_upload_btn:focus-visible{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}.kniu_sys_upload_btn:disabled{background-color:#a0cfff;border-color:#a0cfff;cursor:not-allowed}.kniu_sys_upload_input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.kniu_sys_upload_wall{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}.kniu_sys_upload_item{position:relative;width:160px;height:160px;overflow:hidden;background-color:#f5f7fa}.kniu_sys_upload_image{display:block;width:100%;height:100%;object-fit:contain}.kniu_sys_upload_remove{position:absolute;top:8px;right:8px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background-color:#aab4c4;color:#fff;font:18px/1 var(--kniu-font-family);cursor:pointer}.kniu_sys_upload_remove:hover{background-color:#f56c6c}.kniu_sys_upload_empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#c0c4cc;font-size:18px;background-image:linear-gradient(135deg,#f7f9fc,#f1f4fa)}.kniu_sys_upload_empty kniu-icon{width:38px;height:38px}
         </style><div class="kniu_sys_upload_bar"><span class="kniu_sys_upload_hint"></span><button class="kniu_sys_upload_btn" type="button"><slot>选择图片</slot></button><input class="kniu_sys_upload_input" type="file"></div><div class="kniu_sys_upload_wall" aria-live="polite"></div>`;
         this._input = this.shadowRoot.querySelector('.kniu_sys_upload_input');
         this._button = this.shadowRoot.querySelector('.kniu_sys_upload_btn');
@@ -4988,7 +5085,6 @@ var KniuUI = (function () {
         if (!this.hasAttribute('multiple')) {
           if (valid.length) {
             this._revokeUrls();
-            // 单图字段再次选择时覆盖原图，保证预览数量与数据库回显一致。
             this._files = [valid[valid.length - 1]];
           }
           this._input.value = '';
@@ -5051,7 +5147,7 @@ var KniuUI = (function () {
           empty.className = 'kniu_sys_upload_item kniu_sys_upload_empty';
           const emptyNote = this.__kniuOptions?.note ?? componentText(componentLang(this.__kniuOptions), 'upload.empty');
           empty.setAttribute('aria-label', String(emptyNote));
-          empty.innerHTML = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="6" width="24" height="20" rx="1"></rect><circle cx="21" cy="12" r="2"></circle><path d="m6 23 7-8 5 5 3-3 5 6"></path></svg><span></span>';
+          empty.innerHTML = '<kniu-icon icon="picture" aria-hidden="true"></kniu-icon><span></span>';
           empty.querySelector('span').textContent = String(emptyNote);
           previews.push(empty);
         }
@@ -5070,7 +5166,6 @@ var KniuUI = (function () {
         this._hint.textContent = this._files.length
           ? t('upload.selectedCount', { '1': this._files.length })
           : (this.hasAttribute('multiple') ? t('upload.selectPreview', { '1': limits.count }) : t('upload.selectPreviewSingle'));
-        // 本地化按钮默认 slot 文案（仅当用户未提供自定义按钮内容时生效）
         const btnSlot = this.shadowRoot.querySelector('.kniu_sys_upload_btn > slot');
         if (btnSlot && (!btnSlot.assignedNodes || btnSlot.assignedNodes().length === 0)) btnSlot.textContent = t('upload.select');
       }
@@ -5078,100 +5173,15 @@ var KniuUI = (function () {
     customElements.define('kniu-upload', KniuSysUpload);
   }
 
-  const KNIU_ICON_SET = {
-    "arrow-down": ["M831.9 340.9 512 652.7 192.1 340.9a30.6 30.6 0 0 0-42.7 0 29 29 0 0 0 0 41.6l340.3 331.7a32 32 0 0 0 44.6 0l340.3-331.7a29 29 0 0 0 0-41.7 30.6 30.6 0 0 0-42.7 0z"],
-    "arrow-left": ["M609.4 149.4 277.8 489.6a32 32 0 0 0 0 44.7l331.6 340.3a29 29 0 0 0 41.7 0 30.6 30.6 0 0 0 0-42.7l-311.8-320L651 192.1a30.6 30.6 0 0 0 0-42.7 29 29 0 0 0-41.7 0"],
-    "arrow-right": ["M340.9 149.3a30.6 30.6 0 0 0 0 42.8L652.7 512 341 831.9a30.6 30.6 0 0 0 0 42.7 29 29 0 0 0 41.7 0l331.6-340.3a32 32 0 0 0 0-44.6L382.6 149.4a29 29 0 0 0-41.7 0z"],
-    "arrow-up": ["M488.8 344.3 149 701a32 32 0 0 0 0 44.2l.4.3a29.4 29.4 0 0 0 42.7 0l320-335.8 319.8 335.8a29.4 29.4 0 0 0 42.7 0l.4-.3a32 32 0 0 0 0-44.2L535.2 344.3a32 32 0 0 0-46.4 0"],
-    "check": ["M406.7 707 195.8 496.2a32 32 0 1 0-45.2 45.2l256 256 512-512a32 32 0 0 0-45.3-45.2L406.6 706.9z"],
-    "caret-bottom": ["m192 384 320 384 320-384z"],
-    "caret-top": ["M512 320 192 704h639.936z"],
-    "circle-check": ["M512 896a384 384 0 1 0 0-768 384 384 0 0 0 0 768m0 64a448 448 0 1 1 0-896 448 448 0 0 1 0 896", "M745.3 361.3a32 32 0 0 1 45.4 45.4l-288 288a32 32 0 0 1-45.4 0l-160-160a32 32 0 1 1 45.4-45.4L480 626.8z"],
-    "circle-close": ["m466.8 512-90.5-90.5a32 32 0 0 1 45.2-45.2l90.5 90.5 90.5-90.5a32 32 0 1 1 45.2 45.2L557.2 512l90.5 90.5a32 32 0 1 1-45.2 45.2L512 557.2l-90.5 90.5a32 32 0 0 1-45.2-45.2z", "M512 896a384 384 0 1 0 0-768 384 384 0 0 0 0 768m0 64a448 448 0 1 1 0-896 448 448 0 0 1 0 896"],
-    "close": ["M764.3 214.6 512 466.9 259.7 214.6a32 32 0 0 0-45.1 45.1L466.8 512 214.5 764.2a32 32 0 1 0 45.1 45.2L512 557.2l252.3 252.3a32 32 0 0 0 45.1-45.1L557.1 512l252.3-252.4a32 32 0 1 0-45.1-45.2z"],
-    "delete": ["M160 256H96a32 32 0 0 1 0-64h256V96a32 32 0 0 1 32-32h256a32 32 0 0 1 32 32v96h256a32 32 0 1 1 0 64h-64v672a32 32 0 0 1-32 32H192a32 32 0 0 1-32-32zm448-64v-64H416v64zM224 896h576V256H224zm192-128a32 32 0 0 1-32-32V416a32 32 0 0 1 64 0v320a32 32 0 0 1-32 32m192 0a32 32 0 0 1-32-32V416a32 32 0 0 1 64 0v320a32 32 0 0 1-32 32"],
-    "download": ["M160 832h704a32 32 0 1 1 0 64H160a32 32 0 1 1 0-64m384-253.7L780.3 342l45.2 45.2L508.8 704 192 387.2l45.2-45.2L480 584.7V128h64z"],
-    "edit": ["M832 512a32 32 0 1 1 64 0v352a32 32 0 0 1-32 32H160a32 32 0 0 1-32-32V160a32 32 0 0 1 32-32h352a32 32 0 0 1 0 64H192v640h640z", "m470 554.2 52.8-7.5L847 222.4a32 32 0 1 0-45.2-45.2L477.4 501.4l-7.5 52.8zm422.4-422.4a96 96 0 0 1 0 135.8L560.5 599.5a32 32 0 0 1-18.1 9l-105.6 15.2a32 32 0 0 1-36.2-36.2l15-105.6a32 32 0 0 1 9.1-18.2l332-331.8a96 96 0 0 1 135.7 0z"],
-    "hide": ["M876.8 156.8c0-9.6-3.2-16-9.6-22.4s-12.8-9.6-22.4-9.6-16 3.2-22.4 9.6L736 220.8c-64-32-137.6-51.2-224-60.8-160 16-288 73.6-377.6 176S0 496 0 512s48 73.6 134.4 176c22.4 25.6 44.8 48 73.6 67.2l-86.4 89.6c-6.4 6.4-9.6 12.8-9.6 22.4s3.2 16 9.6 22.4 12.8 9.6 22.4 9.6 16-3.2 22.4-9.6l704-710.4c3.2-6.4 6.4-12.8 6.4-22.4m-646.4 528Q115.2 579.2 76.8 512q43.2-72 153.6-172.8C304 272 400 230.4 512 224c64 3.2 124.8 19.2 176 44.8l-54.4 54.4A218 218 0 0 0 512 288c-64 0-115.2 22.4-160 64s-64 96-64 160c0 48 12.8 89.6 35.2 124.8L256 707.2c-9.6-6.4-19.2-16-25.6-22.4m140.8-96Q352 555.2 352 512c0-44.8 16-83.2 48-112s67.2-48 112-48c28.8 0 54.4 6.4 73.6 19.2zM889.6 336c-12.8-16-28.8-28.8-41.6-41.6l-48 48c73.6 67.2 124.8 124.8 150.4 169.6q-43.2 72-153.6 172.8C723.2 752 624 793.6 512 800a478 478 0 0 1-140.8-28.8l-48 48A680 680 0 0 0 512 864c160-16 288-73.6 377.6-176S1024 528 1024 512s-48-73.6-134.4-176", "M512 672c-12.8 0-25.6-3.2-38.4-6.4l-51.2 51.2A215 215 0 0 0 512 736c64 0 115.2-22.4 160-64 41.6-41.6 64-96 64-160 0-32-6.4-64-19.2-89.6l-51.2 51.2c3.2 12.8 6.4 25.6 6.4 38.4 0 44.8-16 83.2-48 112s-67.2 48-112 48"],
-    "info-filled": ["M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896m67.2 275c33.3 0 60.3-23 60.3-57.3s-27-57.3-60.3-57.3-60.2 23-60.2 57.3 27 57.4 60.2 57.4m11.7 360.1c0-6.8 2.4-24.6 1-34.8L539.3 725c-10.9 11.4-24.5 19.4-30.9 17.3a13 13 0 0 1-8.2-14.7l87.6-277c7.2-35.2-12.5-67.2-54.3-71.3-44 0-109 44.7-148.5 101.5 0 6.8-1.3 23.6 0 33.8l52.6-60.6c11-11.4 23.6-19.4 30-17.2a13 13 0 0 1 7.8 16.1l-87 275.7c-10 32.2 9 63.8 55.1 71 67.9 0 108-43.6 147.5-100.4z"],
-    "menu": ["M160 448a32 32 0 0 1-32-32V160a32 32 0 0 1 32-32h256a32 32 0 0 1 32 32v256a32 32 0 0 1-32 32zm448 0a32 32 0 0 1-32-32V160a32 32 0 0 1 32-32h256a32 32 0 0 1 32 32v256a32 32 0 0 1-32 32zM160 896a32 32 0 0 1-32-32V608a32 32 0 0 1 32-32h256a32 32 0 0 1 32 32v256a32 32 0 0 1-32 32zm448 0a32 32 0 0 1-32-32V608a32 32 0 0 1 32-32h256a32 32 0 0 1 32 32v256a32 32 0 0 1-32 32z"],
-    "minus": ["M128 544h768a32 32 0 1 0 0-64H128a32 32 0 0 0 0 64"],
-    "more": ["M176 416a112 112 0 1 0 0 224 112 112 0 0 0 0-224m0 64a48 48 0 1 1 0 96 48 48 0 0 1 0-96m336-64a112 112 0 1 1 0 224 112 112 0 0 1 0-224m0 64a48 48 0 1 0 0 96 48 48 0 0 0 0-96m336-64a112 112 0 1 1 0 224 112 112 0 0 1 0-224m0 64a48 48 0 1 0 0 96 48 48 0 0 0 0-96"],
-    "plus": ["M480 480V128a32 32 0 0 1 64 0v352h352a32 32 0 1 1 0 64H544v352a32 32 0 1 1-64 0V544H128a32 32 0 0 1 0-64z"],
-    "refresh-left": ["M289 296.7h93a32 32 0 0 1 0 64H233a32 32 0 0 1-32-32v-149a32 32 0 0 1 64 0v50.6a384 384 0 0 1 643.8 282.9 384 384 0 0 1-384 384 384 384 0 0 1-384-384h64a320 320 0 1 0 640 0 320 320 0 0 0-555.6-216.5z"],
-    "refresh": ["M771.8 794.9A384 384 0 0 1 128 512h64a320 320 0 0 0 555.7 216.4h-93a32 32 0 1 1 0-64h149a32 32 0 0 1 32 32v149a32 32 0 1 1-64 0zM276.3 295.6h93a32 32 0 0 1 0 64H220.2a32 32 0 0 1-32-32v-149a32 32 0 0 1 64 0V229a384 384 0 0 1 644 282.9h-64a320 320 0 0 0-555.8-216.4z"],
-    "search": ["m795.9 750.7 125 125a32 32 0 0 1-45.3 45.2l-125-125a416 416 0 1 1 45.3-45.2zM480 832a352 352 0 1 0 0-704 352 352 0 0 0 0 704"],
-    "setting": ["M600.7 64a32 32 0 0 1 30.5 22.2l35.2 109.4a348 348 0 0 1 42.4 24.5l112.4-24.2a32 32 0 0 1 34.4 15.4l88.7 153.5a32 32 0 0 1-4 37.5l-77.1 85.1a357 357 0 0 1 0 49l77 85.3a32 32 0 0 1 4.1 37.5l-88.7 153.6a32 32 0 0 1-34.4 15.3l-112.4-24.2q-20.2 13.6-42.4 24.5l-35.2 109.4a32 32 0 0 1-30.5 22.2H423.3a32 32 0 0 1-30.5-22.2l-35.1-109.3a352 352 0 0 1-42.6-24.7l-112.3 24.3a32 32 0 0 1-34.4-15.4L79.7 659.2a32 32 0 0 1 4-37.5l77.1-85.3a357 357 0 0 1 0-48.8l-77-85.3a32 32 0 0 1-4.1-37.5l88.7-153.6a32 32 0 0 1 34.4-15.3l112.3 24.3a355 355 0 0 1 42.6-24.7l35.2-109.3A32 32 0 0 1 423.2 64zm-23.4 64H446.7l-36.3 113-24.5 12a294 294 0 0 0-34.9 20.2l-22.6 15.3-116.2-25-65.3 113 79.7 88.3-2 27.1a293 293 0 0 0 0 40.2l2 27.1-79.8 88.2L212 760.6l116.2-25 22.7 15.2a294 294 0 0 0 34.8 20.1l24.5 12L446.7 896h130.7L614 782.8l24.4-11.9a288 288 0 0 0 34.8-20l22.6-15.3 116.3 25 65.2-113.2-79.7-88.2 2-27.1a293 293 0 0 0 0-40.3l-2-27.1 79.8-88.1L812 263.4l-116.3 25-22.6-15.2a288 288 0 0 0-34.8-20.1L614 241zM512 320a192 192 0 1 1 0 384 192 192 0 0 1 0-384m0 64a128 128 0 1 0 0 256 128 128 0 0 0 0-256"],
-    "upload": ["M160 832h704a32 32 0 1 1 0 64H160a32 32 0 1 1 0-64m384-578.3V704h-64V247.3L237.2 490 192 444.8 508.8 128l316.8 316.8-45.3 45.2z"],
-    "user": ["M512 512a192 192 0 1 0 0-384 192 192 0 0 0 0 384m0 64a256 256 0 1 1 0-512 256 256 0 0 1 0 512m320 320v-96a96 96 0 0 0-96-96H288a96 96 0 0 0-96 96v96a32 32 0 1 1-64 0v-96a160 160 0 0 1 160-160h448a160 160 0 0 1 160 160v96a32 32 0 1 1-64 0"],
-    "view": ["M512 160c320 0 512 352 512 352S832 864 512 864 0 512 0 512s192-352 512-352m0 64c-225.3 0-384.1 208-436.8 288 52.6 79.9 211.5 288 436.8 288s384.1-208 436.8-288C896.2 432.1 737.3 224 512 224m0 64a224 224 0 1 1 0 448 224 224 0 0 1 0-448m0 64a160 160 0 0 0-160 160c0 88.2 71.7 160 160 160s160-71.8 160-160-71.7-160-160-160"],
-    "warning": ["M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896m0 832a384 384 0 0 0 0-768 384 384 0 0 0 0 768m48-176a48 48 0 1 1-96 0 48 48 0 0 1 96 0m-48-464a32 32 0 0 1 32 32v288a32 32 0 0 1-64 0V288a32 32 0 0 1 32-32"],
-    "house": ["M192 413.952V896h640V413.952L512 147.328zM139.52 374.4l352-293.312a32 32 0 0 1 40.96 0l352 293.312A32 32 0 0 1 896 398.976V928a32 32 0 0 1-32 32H160a32 32 0 0 1-32-32V398.976a32 32 0 0 1 11.52-24.576"],
-    "document": ["M832 384H576V128H192v768h640zm-26.496-64L640 154.496V320zM160 64h480l256 256v608a32 32 0 0 1-32 32H160a32 32 0 0 1-32-32V96a32 32 0 0 1 32-32m160 448h384v64H320zm0-192h160v64H320zm0 384h384v64H320z"],
-    "file": ["M128 384v448h768V384zm-32-64h832a32 32 0 0 1 32 32v512a32 32 0 0 1-32 32H96a32 32 0 0 1-32-32V352a32 32 0 0 1 32-32m64-128h704v64H160zm96-128h512v64H256z"],
-    "folder": ["M128 192v640h768V320H485.76L357.504 192zm-32-64h287.872l128.384 128H928a32 32 0 0 1 32 32v576a32 32 0 0 1-32 32H96a32 32 0 0 1-32-32V160a32 32 0 0 1 32-32"],
-    "bell": ["M512 64a64 64 0 0 1 64 64v64H448v-64a64 64 0 0 1 64-64",
-      "M256 768h512V448a256 256 0 1 0-512 0zm256-640a320 320 0 0 1 320 320v384H192V448a320 320 0 0 1 320-320",
-      "M96 768h832q32 0 32 32t-32 32H96q-32 0-32-32t32-32m352 128h128a64 64 0 0 1-128 0"],
-    "chat-dot-round": ["m174.72 855.68 135.296-45.12 23.68 11.84C388.096 849.536 448.576 864 512 864c211.84 0 384-166.784 384-352S723.84 160 512 160 128 326.784 128 512c0 69.12 24.96 139.264 70.848 199.232l22.08 28.8-46.272 115.584zm-45.248 82.56A32 32 0 0 1 89.6 896l58.368-145.92C94.72 680.32 64 596.864 64 512 64 299.904 256 96 512 96s448 203.904 448 416-192 416-448 416a461.06 461.06 0 0 1-206.912-48.384l-175.616 58.56z",
-      "M512 563.2a51.2 51.2 0 1 1 0-102.4 51.2 51.2 0 0 1 0 102.4m192 0a51.2 51.2 0 1 1 0-102.4 51.2 51.2 0 0 1 0 102.4m-384 0a51.2 51.2 0 1 1 0-102.4 51.2 51.2 0 0 1 0 102.4"],
-    "question": ["M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896m23.744 191.488c-52.096 0-92.928 14.784-123.2 44.352-30.976 29.568-45.76 70.4-45.76 122.496h80.256c0-29.568 5.632-52.8 17.6-68.992 13.376-19.712 35.2-28.864 66.176-28.864 23.936 0 42.944 6.336 56.32 19.712 12.672 13.376 19.712 31.68 19.712 54.912 0 17.6-6.336 34.496-19.008 49.984l-8.448 9.856c-45.76 40.832-73.216 70.4-82.368 89.408-9.856 19.008-14.08 42.24-14.08 68.992v9.856h80.96v-9.856c0-16.896 3.52-31.68 10.56-45.76 6.336-12.672 15.488-24.64 28.16-35.2 33.792-29.568 54.208-48.576 60.544-55.616 16.896-22.528 26.048-51.392 26.048-86.592q0-64.416-42.24-101.376c-28.16-25.344-65.472-37.312-111.232-37.312m-12.672 406.208a54.27 54.27 0 0 0-38.72 14.784 49.4 49.4 0 0 0-15.488 38.016c0 15.488 4.928 28.16 15.488 38.016A54.85 54.85 0 0 0 523.072 768c15.488 0 28.16-4.928 38.72-14.784a51.52 51.52 0 0 0 16.192-38.72 51.97 51.97 0 0 0-15.488-38.016 55.94 55.94 0 0 0-39.424-14.784"],
-    "logout": ["M352 159.872V230.4a352 352 0 1 0 320 0v-70.528A416.128 416.128 0 0 1 512 960a416 416 0 0 1-160-800.128",
-      "M512 64q32 0 32 32v320q0 32-32 32t-32-32V96q0-32 32-32"],
-    "reload": ["M771.776 794.88A384 384 0 0 1 128 512h64a320 320 0 0 0 555.712 216.448H654.72a32 32 0 1 1 0-64h149.056a32 32 0 0 1 32 32v148.928a32 32 0 1 1-64 0v-50.56zM276.288 295.616h92.992a32 32 0 0 1 0 64H220.16a32 32 0 0 1-32-32V178.56a32 32 0 0 1 64 0v50.56A384 384 0 0 1 896.128 512h-64a320 320 0 0 0-555.776-216.384z"],
-    "chart": ["M359.168 768H160a32 32 0 0 1-32-32V192H64a32 32 0 0 1 0-64h896a32 32 0 1 1 0 64h-64v544a32 32 0 0 1-32 32H665.216l110.848 192h-73.856L591.36 768H433.024L322.176 960H248.32zM832 192H192v512h640zM342.656 534.656a32 32 0 1 1-45.312-45.312L444.992 341.76l125.44 94.08L679.04 300.032a32 32 0 1 1 49.92 39.936L581.632 524.224 451.008 426.24 342.656 534.592z"],
-    "loading": ["M512 1024c-17.6 0-32-14.4-32-32V832c0-17.6 14.4-32 32-32s32 14.4 32 32v160c0 17.6-14.4 32-32 32zM512 224c-17.6 0-32-14.4-32-32V32c0-17.6 14.4-32 32-32s32 14.4 32 32v160c0 17.6-14.4 32-32 32zM1014.4 512c0 17.6-14.4 32-32 32H822.4c-17.6 0-32-14.4-32-32s14.4-32 32-32h160c17.6 0 32 14.4 32 32zM234.4 512c0 17.6-14.4 32-32 32H42.4c-17.6 0-32-14.4-32-32s14.4-32 32-32h160c17.6 0 32 14.4 32 32zM822.4 271.2c-12.8 0-25.6-5.6-34.4-15.2L689.6 144.8c-9.6-12.8-7.2-30.4 5.6-40 12.8-9.6 30.4-7.2 40 5.6l98.4 111.2c9.6 12.8 7.2 30.4-5.6 40-7.2 5.6-15.2 8.8-24 8.8zM288.8 805.6c-12.8 0-25.6-5.6-34.4-15.2-9.6-12.8-7.2-30.4 5.6-40l111.2-98.4c12.8-9.6 30.4-7.2 40 5.6 9.6 12.8 7.2 30.4-5.6 40L299.2 798.4c-7.2 6.4-16 9.6-24.8 9.6zM734.4 759.2c-12.8 0-25.6-5.6-34.4-15.2L588.8 644.8c-12.8-9.6-15.2-27.2-5.6-40 9.6-12.8 27.2-15.2 40-5.6l111.2 98.4c12.8 9.6 15.2 27.2 5.6 40-7.2 6.4-16 9.6-24.8 9.6zM269.6 225.6c-12.8 0-25.6-5.6-34.4-15.2L124 99.2c-12.8-9.6-15.2-27.2-5.6-40 9.6-12.8 27.2-15.2 40-5.6l111.2 111.2c12.8 9.6 15.2 27.2 5.6 40-7.2 6.4-16 9.6-24.8 9.6z"],
-  };
-  function normalizeIconName(name) {
-    return String(name || '')
-      .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
-      .toLowerCase();
+  const KNIU_ICON_FONT_NAMES = new Set(KNIU_ICON_NAMES);
+
+  function resolveIconName(name) {
+    const exact = String(name || '').trim();
+    return KNIU_ICON_FONT_NAMES.has(exact) ? exact : '';
   }
 
-  function normalizeIconDef(def) {
-    if (!def) return null;
-    if (Array.isArray(def)) return { viewBox: '0 0 1024 1024', paths: def };
-    if (typeof def === 'object' && Array.isArray(def.paths)) {
-      return { viewBox: def.viewBox || '0 0 1024 1024', paths: def.paths };
-    }
-    return null;
-  }
-
-  function buildGlyphInner(paths) {
-    return (paths || []).map(function (d) {
-      return '<path fill="currentColor" d="' + d + '"/>';
-    }).join('');
-  }
-
-  function buildGlyphSvg(def) {
-    const norm = normalizeIconDef(def);
-    if (!norm) return '';
-    return '<svg viewBox="' + norm.viewBox + '" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true">' + buildGlyphInner(norm.paths) + '</svg>';
-  }
-
-  function registerIconGlyph(name, def) {
-    if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
-    const tag = 'kniu-icon-' + name;
-    if (customElements.get(tag)) return;
-    const norm = normalizeIconDef(def);
-    const inner = norm ? buildGlyphInner(norm.paths) : '';
-    const viewBox = norm ? norm.viewBox : '0 0 1024 1024';
-    class KniuSysIconGlyph extends HTMLElement {
-      static get observedAttributes() { return []; }
-      constructor() {
-        super();
-        attachComponentShadow(this);
-        this.shadowRoot.innerHTML =
-          '<style>' +
-          ':host{display:inline-flex;vertical-align:middle;line-height:0;width:1em;height:1em;font-size:inherit;flex-shrink:0}' +
-          ':host([hidden]){display:none}' +
-          'svg{display:block;width:100%;height:100%;fill:currentColor;overflow:visible}' +
-          '</style>' +
-          '<svg viewBox="' + viewBox + '" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true">' + inner + '</svg>';
-      }
-    }
-    customElements.define(tag, KniuSysIconGlyph);
+  function buildIconElement(name) {
+    return '<kniu-icon icon="' + resolveIconName(name) + '" aria-hidden="true"></kniu-icon>';
   }
 
   function registerIconComponent() {
@@ -5193,12 +5203,12 @@ var KniuUI = (function () {
         attachComponentShadow(this);
         this.shadowRoot.innerHTML =
           '<style>' +
-          ':host{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;line-height:0;font-size:inherit;flex-shrink:0}' +
+          ':host{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;line-height:0;font-size:inherit;flex-shrink:0;width:1em;height:1em}' +
           ':host([hidden]){display:none}' +
-          '.kniu_sys_icon_glyph{display:none;width:1em;height:1em}' +
+          '.kniu_sys_icon_glyph{display:none;width:100%;height:100%;font-size:1em;font-style:normal;font-weight:400;line-height:1;text-align:center}' +
           ':host(.kniu_sys_icon_has_glyph) .kniu_sys_icon_glyph{display:block}' +
           ':host(.kniu_sys_icon_has_glyph) slot{display:none}' +
-          '.kniu_sys_icon_glyph svg{display:block;width:100%;height:100%;fill:currentColor;overflow:visible}' +
+          '.kniu_sys_icon_glyph svg{display:block;width:100%;height:100%;overflow:visible}' +
           ':host([data-spin]) .kniu_sys_icon_glyph{animation:kniu_sys_icon_spin .8s linear infinite}' +
           '@keyframes kniu_sys_icon_spin{to{transform:rotate(360deg)}}' +
           '@media(prefers-reduced-motion:reduce){:host([data-spin]) .kniu_sys_icon_glyph{animation:none}}' +
@@ -5214,16 +5224,16 @@ var KniuUI = (function () {
           const child = this.firstElementChild;
           if (child) name = child.localName;
         }
-        return normalizeIconName(name);
+        return name;
       }
       _render() {
-        const name = this._resolveName();
+        const name = resolveIconName(this._resolveName());
         const glyph = this.shadowRoot.querySelector('.kniu_sys_icon_glyph');
-        const def = name ? KNIU_ICON_SET[name] : null;
-        if (def) {
-          glyph.innerHTML = buildGlyphSvg(def);
+        const svg = name ? KNIU_ICON_SVG[name] : '';
+        if (svg) {
+          glyph.innerHTML = svg;
           this.classList.add('kniu_sys_icon_has_glyph');
-          if (name === 'loading') this.setAttribute('data-spin', 'true');
+          if (name === 'loading' || name === 'loading_1') this.setAttribute('data-spin', 'true');
           else this.removeAttribute('data-spin');
         } else {
           glyph.innerHTML = '';
@@ -5235,7 +5245,6 @@ var KniuUI = (function () {
     customElements.define('kniu-icon', KniuSysIcon);
   }
 
-  // 徽章组件：包裹任意子节点，在右上角显示红点或数字；click 透传（包裹的子节点在 light DOM，点击事件正常冒泡到 host）。
   function registerBadgeComponent() {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-badge')) return;
@@ -5290,7 +5299,6 @@ var KniuUI = (function () {
     customElements.define('kniu-badge', KniuSysBadge);
   }
 
-  // 标签组件：用于状态、角色、权限等短文本标记，可独立使用，也可放入表格默认插槽。
   function registerTagComponent() {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-tag')) return;
@@ -5310,7 +5318,6 @@ var KniuUI = (function () {
     customElements.define('kniu-tag', KniuSysTag);
   }
 
-  // 状态组件：使用彩色圆点表达状态类型，文字保持正文颜色。
   function registerStatusComponent() {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-status')) return;
@@ -5325,15 +5332,9 @@ var KniuUI = (function () {
     customElements.define('kniu-status', KniuSysStatus);
   }
 
-  // 空状态组件：居中展示插画 + 文案（note 属性，默认“暂无数据”），可选投影 slot 放自定义内容。
-  // 与 kniu:if 配合作为列表/表格的空状态占位，替代手写 .detail_empty 这类 div。
   function registerEmptyComponent() {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-empty')) return;
-    // 空状态插画：打开的盒子 + 两片斜开的纸盖 + 中间伸出的白纸。配色统一使用项目既有的中性灰
-    // (#ebeef5 盒身 / #f4f4f5 盒盖 / #ffffff 纸 / #dcdfe6 描边 / #ebeef5 地面投影)。
-    // 各形状使用内联 style="fill:#xxx" 以避开外层 .kniu_sys_empty_img svg{fill:currentColor} 的样式继承，
-    // 保留颜色自定义能力。多色 inline style 优先级高于外层 fill:currentColor。
     var EMPTY_SVG = '<svg viewBox="0 0 64 41" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
       // 盒底地面投影
       '<ellipse cx="32" cy="36.5" rx="22" ry="2.4" style="fill:#ebeef5"/>' +
@@ -5385,85 +5386,92 @@ var KniuUI = (function () {
     var documentRef = typeof document !== 'undefined' ? document : null;
     if (!documentRef) return;
 
-    // 现代表情集（参考 KindEditor emoticons 功能设计，使用 Unicode 表情替代旧版 gif 图标）
     var EMOJIS = ['😀', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😉', '😊', '😍', '😘', '😎', '🤔', '🤨', '😐', '😴', '😭', '😡', '👍', '👎', '👌', '✌️', '🤝', '👏', '💪', '🙏', '👀', '💡', '🔥', '⭐', '✨', '🎉', '❤️', '💔', '💯', '✅', '❌', '⚠️', '❓', '❗', '💬', '📌', '📎', '🔗', '🚀', '📝', '📅', '📈', '📊', '☕', '🍀', '🌟', '🎯', '🏆', '💻', '📱', '🌈', '🍻'];
 
-    // 最大化 / 还原 图标（viewBox 16x16）。必须放在 EDITOR_TOOLBAR_ITEMS 之前，
-    // 否则对象字面量内 + EDITOR_ICON_MAXIMIZE + 拼接时变量未赋值，得到字符串 "undefined"。
-    var EDITOR_ICON_MAXIMIZE = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>';
-    var EDITOR_ICON_RESTORE = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2h4v4M14 2h-4v4M2 14h4v-4M14 14h-4v-4"/></svg>';
+    var EDITOR_ICON_MAXIMIZE = '<kniu-icon icon="fullscreen_open" aria-hidden="true"></kniu-icon>';
+    var EDITOR_ICON_RESTORE = '<kniu-icon icon="fullscreen_exit" aria-hidden="true"></kniu-icon>';
 
-    // 工具栏条目定义：token -> HTML 片段。分组之间由 _buildToolbar 自动插入分隔线。
-    var EDITOR_ICON_CLEAR_FORMAT = '<svg width="20" height="20" viewBox="0 0 1075 1024" fill="currentColor" aria-hidden="true"><path d="M184.576 90.2144a25.6 25.6 0 0 1-25.6-25.6v-36.5568a25.6 25.6 0 0 1 25.6-25.6H835.584a25.6 25.6 0 0 1 25.6 25.6v36.5568a25.6 25.6 0 0 1-25.6 25.6z m434.5856 689.4592l-446.976-446.9248a45.1584 45.1584 0 0 1-3.9936-59.2384l3.9936-4.608 120.1664-120.1152H562.8928l343.6544 343.552a45.1584 45.1584 0 0 1 0 63.8464L683.008 779.6736a45.1584 45.1584 0 0 1-63.8464 0zM411.6992 476.4672l191.5904-191.5904-60.0064-60.0064H312.2176l-76.0832 75.9808L349.184 412.5696l62.464 63.8976z" transform="translate(0,1024) scale(1,-1)"/></svg>';
-    // iconfont.svg 的 remove_link 去掉末尾 X 路径，仅保留断开的链环。
-    var EDITOR_ICON_UNLINK = '<svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M472.615385 175.261538c-11.815385 0-23.630769 1.969231-35.446154 5.907693-11.815385 1.969231-25.6 5.907692-37.415385 9.846154-7.876923 1.969231-15.753846 0-19.692308-3.938462l-7.876923-7.876923c-49.230769-49.230769-129.969231-55.138462-183.138461-9.846154-57.107692 51.2-61.046154 139.815385-5.907692 192.984616l129.96923 129.96923c17.723077 17.723077 37.415385 27.569231 59.076923 33.476923 27.569231 7.876923 57.107692 5.907692 82.707693-5.907692 15.753846-5.907692 31.507692-15.753846 43.323077-29.538461 5.907692-5.907692 11.815385-13.784615 17.723077-23.63077 5.907692-11.815385 21.661538-13.784615 31.507692-3.938461l49.230769 49.230769c7.876923 7.876923 7.876923 17.723077 1.969231 25.6-7.876923 9.846154-15.753846 17.723077-23.630769 27.569231-11.815385 11.815385-27.569231 23.630769-41.353847 33.476923-25.6 15.753846-51.2 25.6-80.738461 31.507692-53.169231 9.846154-110.276923 1.969231-161.476923-25.6-19.692308-9.846154-37.415385-23.630769-53.169231-39.384615l-126.030769-126.030769c-90.584615-90.584615-98.461538-238.276923-9.846154-332.8 92.553846-98.461538 248.123077-102.4 342.646154-5.907693l43.323077 43.323077c9.846154 9.846154 1.969231 29.538462-15.753846 31.507692z m324.923077 277.661539c94.523077 94.523077 92.553846 250.092308-5.907693 342.646154C697.107692 882.215385 549.415385 876.307692 458.830769 785.723077l-39.384615-39.384615c-11.815385-11.815385-3.938462-31.507692 11.815384-33.476924 23.630769-1.969231 49.230769-5.907692 72.861539-13.784615 7.876923-1.969231 15.753846 0 19.692308 3.938462l7.876923 7.876923c49.230769 49.230769 129.969231 55.138462 183.138461 9.846154 57.107692-51.2 61.046154-139.815385 5.907693-192.984616L590.769231 397.784615c-17.723077-17.723077-37.415385-27.569231-59.076923-33.476923-27.569231-7.876923-57.107692-5.907693-82.707693 5.907693-15.753846 5.907692-31.507692 15.753846-43.323077 29.538461-5.907692 5.907692-11.815385 13.784615-15.753846 21.661539-5.907692 11.815385-21.661538 13.784615-31.507692 3.938461l-47.261538-47.261538c-7.876923-7.876923-7.876923-17.723077-1.969231-25.6 7.876923-9.846154 13.784615-17.723077 23.630769-27.569231 13.784615-13.784615 27.569231-23.630769 41.353846-33.476923 25.6-15.753846 51.2-25.6 80.738462-31.507692 53.169231-9.846154 110.276923-1.969231 161.476923 25.6 19.692308 9.846154 37.415385 23.630769 53.169231 39.384615l128 128z" transform="translate(0,1025) scale(1,-1)"/></svg>';
+    var EDITOR_ICON_CLEAR_FORMAT = '<kniu-icon icon="unbrush" aria-hidden="true"></kniu-icon>';
 
     var EDITOR_TOOLBAR_ITEMS = {
-      'markdown': '<button type="button" class="kniu_sys_editor_btn" data-action="markdown" title="Markdown">MD</button>',
-      'undo': '<button type="button" class="kniu_sys_editor_btn" data-cmd="undo" title="撤销"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 7L4 12l5 5"/><path d="M4 12h11a5 5 0 0 1 0 10h-2"/></svg></button>',
-      'redo': '<button type="button" class="kniu_sys_editor_btn" data-cmd="redo" title="重做"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 7l5 5-5 5"/><path d="M20 12H9a5 5 0 0 0 0 10h2"/></svg></button>',
-      'preview': '<button type="button" class="kniu_sys_editor_btn" data-action="preview" title="预览"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></button>',
-      'print': '<button type="button" class="kniu_sys_editor_btn" data-action="print" title="打印"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 9V4h10v5"/><path d="M7 19H5v-7h14v7h-2"/><rect x="7" y="14" width="10" height="6" rx="1"/></svg></button>',
-      'code': '<button type="button" class="kniu_sys_editor_btn" data-action="code" title="代码模式">&lt;/&gt;</button>',
-      'maximize': '<button type="button" class="kniu_sys_editor_btn" data-action="maximize" title="最大化/还原"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg></button>',
-      'bold': '<button type="button" class="kniu_sys_editor_btn" data-cmd="bold" title="加粗"><b>B</b></button>',
-      'italic': '<button type="button" class="kniu_sys_editor_btn" data-cmd="italic" title="斜体"><i>I</i></button>',
-      'underline': '<button type="button" class="kniu_sys_editor_btn" data-cmd="underline" title="下划线"><u>U</u></button>',
-      'strikeThrough': '<button type="button" class="kniu_sys_editor_btn" data-cmd="strikeThrough" title="删除线"><s>S</s></button>',
-      'subscript': '<button type="button" class="kniu_sys_editor_btn" data-cmd="subscript" title="下标">x₂</button>',
-      'superscript': '<button type="button" class="kniu_sys_editor_btn" data-cmd="superscript" title="上标">x²</button>',
-      'justifyLeft': '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyLeft" title="左对齐"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 10h10M4 14h16M4 18h10"/></svg></button>',
-      'justifyCenter': '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyCenter" title="居中"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M7 10h10M4 14h16M7 18h10"/></svg></button>',
-      'justifyRight': '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyRight" title="右对齐"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M10 10h10M4 14h16M10 18h10"/></svg></button>',
-      'justifyFull': '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyFull" title="两端对齐"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg></button>',
-      'indent': '<button type="button" class="kniu_sys_editor_btn" data-cmd="indent" title="增加缩进"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M11 6h9M11 10h9M11 14h9M11 18h9"/><path d="M4 9l4 3-4 3z" fill="currentColor" stroke="none"/></svg></button>',
-      'outdent': '<button type="button" class="kniu_sys_editor_btn" data-cmd="outdent" title="减少缩进"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M11 6h9M11 10h9M11 14h9M11 18h9"/><path d="M8 9l-4 3 4 3z" fill="currentColor" stroke="none"/></svg></button>',
-      'insertOrderedList': '<button type="button" class="kniu_sys_editor_btn" data-cmd="insertOrderedList" title="有序列表"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 6h11M9 10h11M9 14h11M9 18h11"/><text x="3" y="9" font-size="7" fill="currentColor" stroke="none">1.</text><text x="3" y="17" font-size="7" fill="currentColor" stroke="none">2.</text></svg></button>',
-      'insertUnorderedList': '<button type="button" class="kniu_sys_editor_btn" data-cmd="insertUnorderedList" title="无序列表"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 6h11M9 10h11M9 14h11M9 18h11"/><circle cx="4" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="10" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="14" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg></button>',
-      'lineheight': '<select class="kniu_sys_editor_select" data-action="lineheight" title="行距"><option value="1">1.0</option><option value="1.5" selected>1.5</option><option value="1.75">1.75</option><option value="2">2.0</option><option value="2.5">2.5</option><option value="3">3.0</option></select>',
-      'h1': '<button type="button" class="kniu_sys_editor_btn" data-block="h1" title="标题1"><b>H1</b></button>',
-      'h2': '<button type="button" class="kniu_sys_editor_btn" data-block="h2" title="标题2"><b>H2</b></button>',
-      'h3': '<button type="button" class="kniu_sys_editor_btn" data-block="h3" title="标题3"><b>H3</b></button>',
-      'p': '<button type="button" class="kniu_sys_editor_btn" data-block="p" title="段落">&para;</button>',
-      'blockquote': '<button type="button" class="kniu_sys_editor_btn" data-block="blockquote" title="引用">&#10077;</button>',
-      'pre': '<button type="button" class="kniu_sys_editor_btn" data-block="pre" title="代码块">{ }</button>',
-      'inlineCode': '<button type="button" class="kniu_sys_editor_btn" data-action="inlineCode" title="行内代码">&lt;/&gt;</button>',
-      'hr': '<button type="button" class="kniu_sys_editor_btn" data-action="hr" title="分割线"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h18"/><path d="M3 8v8M21 8v8"/></svg></button>',
-      'table': '<button type="button" class="kniu_sys_editor_btn" data-action="table" title="表格"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg></button>',
-      'fontname': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_fontname" data-action="fontname" title="字体" aria-label="选择字体"><span class="kniu_sys_editor_font_icon">F</span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
-      'fontsize': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_fontsize" data-action="fontsize" title="字号" aria-label="选择字号"><span class="kniu_sys_editor_size_icon"><small>T</small>T</span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
-      'forecolor': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="forecolor" title="文字颜色" aria-label="文字颜色"><span class="kniu_sys_editor_color_letter">A</span><span class="kniu_sys_editor_color_mark" style="background-color:#409eff"></span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
-      'hilitecolor': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="hilitecolor" title="文字背景" aria-label="文字背景"><span class="kniu_sys_editor_color_letter kniu_sys_editor_color_letter_bg">A</span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
-      'link': '<button type="button" class="kniu_sys_editor_btn" data-action="link" title="链接"><svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M715.648 625.152 670.4 579.904l90.496-90.56c75.008-74.944 85.12-186.368 22.656-248.896-62.528-62.464-173.952-52.352-248.96 22.656L444.16 353.6l-45.248-45.248 90.496-90.496c100.032-99.968 251.968-110.08 339.456-22.656 87.488 87.488 77.312 239.424-22.656 339.456l-90.496 90.496zm-90.496 90.496-90.496 90.496C434.624 906.112 282.688 916.224 195.2 828.8c-87.488-87.488-77.312-239.424 22.656-339.456l90.496-90.496 45.248 45.248-90.496 90.56c-75.008 74.944-85.12 186.368-22.656 248.896 62.528 62.464 173.952 52.352 248.96-22.656l90.496-90.496zm0-362.048 45.248 45.248L398.848 670.4 353.6 625.152z"/></svg></button>',
-      'image': '<button type="button" class="kniu_sys_editor_btn" data-action="image" title="插入图片" aria-label="插入图片"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m4 18 5-5 3 3 3-4 5 6"/></svg></button>',
-      'media': '<button type="button" class="kniu_sys_editor_btn" data-action="media" title="插入音视频" aria-label="插入音视频"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z" fill="currentColor" stroke="none"/><path d="M6 3v2M18 3v2"/></svg></button>',
-      'unlink': '<button type="button" class="kniu_sys_editor_btn" data-cmd="unlink" title="取消链接"><svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M472.615385 175.261538c-11.815385 0-23.630769 1.969231-35.446154 5.907693-11.815385 1.969231-25.6 5.907692-37.415385 9.846154-7.876923 1.969231-15.753846 0-19.692308-3.938462l-7.876923-7.876923c-49.230769-49.230769-129.969231-55.138462-183.138461-9.846154-57.107692 51.2-61.046154 139.815385-5.907692 192.984616l129.96923 129.96923c17.723077 17.723077 37.415385 27.569231 59.076923 33.476923 27.569231 7.876923 57.107692 5.907692 82.707693-5.907692 15.753846-5.907692 31.507692-15.753846 43.323077-29.538461 5.907692-5.907692 11.815385-13.784615 17.723077-23.63077 5.907692-11.815385 21.661538-13.784615 31.507692-3.938461l49.230769 49.230769c7.876923 7.876923 7.876923 17.723077 1.969231 25.6-7.876923 9.846154-15.753846 17.723077-23.630769 27.569231-11.815385 11.815385-27.569231 23.630769-41.353847 33.476923-25.6 15.753846-51.2 25.6-80.738461 31.507692-53.169231 9.846154-110.276923 1.969231-161.476923-25.6-19.692308-9.846154-37.415385-23.630769-53.169231-39.384615l-126.030769-126.030769c-90.584615-90.584615-98.461538-238.276923-9.846154-332.8 92.553846-98.461538 248.123077-102.4 342.646154-5.907693l43.323077 43.323077c9.846154 9.846154 1.969231 29.538462-15.753846 31.507692z m324.923077 277.661539c94.523077 94.523077 92.553846 250.092308-5.907693 342.646154C697.107692 882.215385 549.415385 876.307692 458.830769 785.723077l-39.384615-39.384615c-11.815385-11.815385-3.938462-31.507692 11.815384-33.476924 23.630769-1.969231 49.230769-5.907692 72.861539-13.784615 7.876923-1.969231 15.753846 0 19.692308 3.938462l7.876923 7.876923c49.230769 49.230769 129.969231 55.138462 183.138461 9.846154 57.107692-51.2 61.046154-139.815385 5.907693-192.984616L590.769231 397.784615c-17.723077-17.723077-37.415385-27.569231-59.076923-33.476923-27.569231-7.876923-57.107692-5.907692-82.707693 5.907693-15.753846 5.907692-31.507692 15.753846-43.323077 29.538461-5.907692 5.907692-11.815385 13.784615-15.753846 21.661539-5.907692 11.815385-21.661538 13.784615-31.507692 3.938461l-47.261538-47.261538c-7.876923-7.876923-7.876923-17.723077-1.969231-25.6 7.876923-9.846154 13.784615-17.723077 23.630769-27.569231 13.784615-13.784615 27.569231-23.630769 41.353846-33.476923 25.6-15.753846 51.2-25.6 80.738462-31.507692 53.169231-9.846154 110.276923-1.969231 161.476923 25.6 19.692308 9.846154 37.415385 23.630769 53.169231 39.384615l128 128zM888.123077 88.615385l90.584615 90.584615c7.876923 7.876923 7.876923 19.692308 0 27.569231l-55.138461 55.138461c-7.876923 7.876923-19.692308 7.876923-27.569231 0L807.384615 169.353846l-84.676923 84.676923c-7.876923 7.876923-19.692308 7.876923-27.56923 0l-55.138462-55.138461c-7.876923-7.876923-7.876923-19.692308 0-27.569231l84.676923-84.676923-82.707692-82.707692c-7.876923-7.876923-7.876923-19.692308 0-27.569231l55.138461-55.138462c7.876923-7.876923 19.692308-7.876923 27.569231 0l82.707692 82.707693 88.615385-88.615385c7.876923-7.876923 19.692308-7.876923 27.569231 0l55.138461 55.138461c7.876923 7.876923 7.876923 19.692308 0 27.569231L888.123077 88.615385z" transform="translate(0,1025) scale(1,-1)"/></svg></button>',
-      'emoticons': '<button type="button" class="kniu_sys_editor_btn" data-action="emoticons" title="表情"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/><path d="M8 15a5 5 0 0 0 8 0"/></svg></button>',
-      'removeFormat': '<button type="button" class="kniu_sys_editor_btn" data-cmd="removeFormat" title="清除格式"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 15l7-7 5 5-4 4H7z"/><path d="M9 20h11"/></svg></button>',
-      'clearhtml': '<button type="button" class="kniu_sys_editor_btn" data-action="clearhtml" title="清理HTML"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M19 4l1 1-8 8-2-2z"/><path d="M11 12L4 19l1 1 7-7"/></svg></button>',
-      'selectAll': '<button type="button" class="kniu_sys_editor_btn" data-cmd="selectAll" title="全选"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M9 9h6v6H9z"/></svg></button>'
+      'markdown': '<button type="button" class="kniu_sys_editor_btn" data-action="markdown" title="Markdown"><kniu-icon icon="markdown" aria-hidden="true"></kniu-icon></button>',
+      'undo': '<button type="button" class="kniu_sys_editor_btn" data-cmd="undo" title="撤销"><kniu-icon icon="back" aria-hidden="true"></kniu-icon></button>',
+      'redo': '<button type="button" class="kniu_sys_editor_btn" data-cmd="redo" title="重做"><kniu-icon icon="front" aria-hidden="true"></kniu-icon></button>',
+      'preview': '<button type="button" class="kniu_sys_editor_btn" data-action="preview" title="预览"><kniu-icon icon="view" aria-hidden="true"></kniu-icon></button>',
+      'print': '<button type="button" class="kniu_sys_editor_btn" data-action="print" title="打印"><kniu-icon icon="print" aria-hidden="true"></kniu-icon></button>',
+      'code': '<button type="button" class="kniu_sys_editor_btn" data-action="code" title="代码模式"><kniu-icon icon="code" aria-hidden="true"></kniu-icon></button>',
+      'maximize': '<button type="button" class="kniu_sys_editor_btn" data-action="maximize" title="最大化/还原"><kniu-icon icon="fullscreen_open" aria-hidden="true"></kniu-icon></button>',
+      'bold': '<button type="button" class="kniu_sys_editor_btn" data-cmd="bold" title="加粗"><kniu-icon icon="font_strong" aria-hidden="true"></kniu-icon></button>',
+      'italic': '<button type="button" class="kniu_sys_editor_btn" data-cmd="italic" title="斜体"><kniu-icon icon="font_i" aria-hidden="true"></kniu-icon></button>',
+      'underline': '<button type="button" class="kniu_sys_editor_btn" data-cmd="underline" title="下划线"><kniu-icon icon="font_u" aria-hidden="true"></kniu-icon></button>',
+      'strikeThrough': '<button type="button" class="kniu_sys_editor_btn" data-cmd="strikeThrough" title="删除线"><kniu-icon icon="font_del" aria-hidden="true"></kniu-icon></button>',
+      'subscript': '<button type="button" class="kniu_sys_editor_btn" data-cmd="subscript" title="下标"><kniu-icon icon="sub" aria-hidden="true"></kniu-icon></button>',
+      'superscript': '<button type="button" class="kniu_sys_editor_btn" data-cmd="superscript" title="上标"><kniu-icon icon="sup" aria-hidden="true"></kniu-icon></button>',
+      'justifyLeft': '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyLeft" title="左对齐"><kniu-icon icon="align_left" aria-hidden="true"></kniu-icon></button>',
+      'justifyCenter': '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyCenter" title="居中"><kniu-icon icon="align_center" aria-hidden="true"></kniu-icon></button>',
+      'justifyRight': '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyRight" title="右对齐"><kniu-icon icon="align_right" aria-hidden="true"></kniu-icon></button>',
+      'justifyFull': '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyFull" title="两端对齐"><kniu-icon icon="align_center" aria-hidden="true"></kniu-icon></button>',
+      'indent': '<button type="button" class="kniu_sys_editor_btn" data-cmd="indent" title="增加缩进"><kniu-icon icon="shrink_left" aria-hidden="true"></kniu-icon></button>',
+      'outdent': '<button type="button" class="kniu_sys_editor_btn" data-cmd="outdent" title="减少缩进"><kniu-icon icon="shrink_right" aria-hidden="true"></kniu-icon></button>',
+      'insertOrderedList': '<button type="button" class="kniu_sys_editor_btn" data-cmd="insertOrderedList" title="有序列表"><kniu-icon icon="list" aria-hidden="true"></kniu-icon></button>',
+      'insertUnorderedList': '<button type="button" class="kniu_sys_editor_btn" data-cmd="insertUnorderedList" title="无序列表"><kniu-icon icon="unlist" aria-hidden="true"></kniu-icon></button>',
+      'lineheight': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_lineheight" data-action="lineheight" title="行距" aria-label="选择行距"><kniu-icon icon="lineheight" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+      'spacing': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_spacing" data-action="spacing" title="字距" aria-label="选择字距"><kniu-icon icon="spacing" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+      'heading': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_heading" data-action="heading" title="标题" aria-label="选择标题"><kniu-icon icon="h1" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+      'h1': '<button type="button" class="kniu_sys_editor_btn" data-block="h1" title="标题1"><kniu-icon icon="h1" aria-hidden="true"></kniu-icon></button>',
+      'h2': '<button type="button" class="kniu_sys_editor_btn" data-block="h2" title="标题2"><kniu-icon icon="h2" aria-hidden="true"></kniu-icon></button>',
+      'h3': '<button type="button" class="kniu_sys_editor_btn" data-block="h3" title="标题3"><kniu-icon icon="h3" aria-hidden="true"></kniu-icon></button>',
+      'h4': '<button type="button" class="kniu_sys_editor_btn" data-block="h4" title="标题4"><kniu-icon icon="h4" aria-hidden="true"></kniu-icon></button>',
+      'h5': '<button type="button" class="kniu_sys_editor_btn" data-block="h5" title="标题5"><kniu-icon icon="h5" aria-hidden="true"></kniu-icon></button>',
+      'h6': '<button type="button" class="kniu_sys_editor_btn" data-block="h6" title="标题6"><kniu-icon icon="h6" aria-hidden="true"></kniu-icon></button>',
+      'p': '<button type="button" class="kniu_sys_editor_btn" data-block="p" title="段落"><kniu-icon icon="p" aria-hidden="true"></kniu-icon></button>',
+      'blockquote': '<button type="button" class="kniu_sys_editor_btn" data-block="blockquote" title="引用"><kniu-icon icon="quotes" aria-hidden="true"></kniu-icon></button>',
+      'pre': '<button type="button" class="kniu_sys_editor_btn" data-block="pre" title="代码块"><kniu-icon icon="pre" aria-hidden="true"></kniu-icon></button>',
+      'inlineCode': '<button type="button" class="kniu_sys_editor_btn" data-action="inlineCode" title="行内代码"><kniu-icon icon="inlinecode" aria-hidden="true"></kniu-icon></button>',
+      'hr': '<button type="button" class="kniu_sys_editor_btn" data-action="hr" title="分割线"><kniu-icon icon="line_x" aria-hidden="true"></kniu-icon></button>',
+      'table': '<button type="button" class="kniu_sys_editor_btn" data-action="table" title="表格"><kniu-icon icon="table" aria-hidden="true"></kniu-icon></button>',
+      'fontname': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_fontname" data-action="fontname" title="字体" aria-label="选择字体"><kniu-icon icon="text" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+      'fontsize': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_fontsize" data-action="fontsize" title="字号" aria-label="选择字号"><kniu-icon icon="textsize" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+      'forecolor': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="forecolor" title="文字颜色" aria-label="文字颜色"><kniu-icon icon="textcolor" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+      'hilitecolor': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="hilitecolor" title="文字背景" aria-label="文字背景"><kniu-icon icon="bgcolor" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+      'link': '<button type="button" class="kniu_sys_editor_btn" data-action="link" title="链接"><kniu-icon icon="link" aria-hidden="true"></kniu-icon></button>',
+      'image': '<button type="button" class="kniu_sys_editor_btn" data-action="image" title="插入图片" aria-label="插入图片"><kniu-icon icon="picture" aria-hidden="true"></kniu-icon></button>',
+      'media': '<button type="button" class="kniu_sys_editor_btn" data-action="media" title="插入音视频" aria-label="插入音视频"><kniu-icon icon="video" aria-hidden="true"></kniu-icon></button>',
+      'unlink': '<button type="button" class="kniu_sys_editor_btn" data-cmd="unlink" title="取消链接"><kniu-icon icon="unlink" aria-hidden="true"></kniu-icon></button>',
+      'emoticons': '<button type="button" class="kniu_sys_editor_btn" data-action="emoticons" title="表情"><kniu-icon icon="smile" aria-hidden="true"></kniu-icon></button>',
+      'removeFormat': '<button type="button" class="kniu_sys_editor_btn" data-cmd="removeFormat" title="清除格式"><kniu-icon icon="unbrush" aria-hidden="true"></kniu-icon></button>',
+      'clearhtml': '<button type="button" class="kniu_sys_editor_btn" data-action="clearhtml" title="清理HTML"><kniu-icon icon="clearhtml" aria-hidden="true"></kniu-icon></button>',
+      'selectAll': '<button type="button" class="kniu_sys_editor_btn" data-cmd="selectAll" title="全选"><kniu-icon icon="alllist" aria-hidden="true"></kniu-icon></button>'
     };
 
-    // 默认工具栏（分组数组，每组之间用分隔线分隔）。未设置 toolbar 属性时使用。
-    // 顺序参考 KindEditor 默认布局：source | undo redo | preview print code | justify* list indent subscript superscript clearhtml selectall | fullscreen / formatblock fontname fontsize | forecolor hilitecolor bold italic underline strikethrough lineheight removeformat | table hr emoticons link unlink
-    // 映射：source→code(源码模式)、code(插入代码)→pre、fullscreen→maximize；image/flash/media/map 等需后端能力项按项目约定跳过。
     var EDITOR_DEFAULT_TOOLBAR = [
       ['code'],
       ['undo', 'redo'],
-      ['preview', 'print', 'pre', 'inlineCode'],
+      ['removeFormat', 'clearhtml'],
+      ['bold', 'italic', 'underline', 'strikeThrough', 'fontname', 'fontsize', 'forecolor', 'hilitecolor', 'lineheight', 'spacing'],
+      ['heading', 'p', 'blockquote', 'subscript', 'superscript'],
       ['justifyLeft', 'justifyCenter', 'justifyRight', 'justifyFull'],
-      ['insertOrderedList', 'insertUnorderedList'],
-      ['indent', 'outdent'],
-      ['subscript', 'superscript'],
-      ['clearhtml', 'selectAll'],
-      ['maximize'],
-      ['h1', 'h2', 'h3', 'p', 'blockquote'],
-      ['fontname', 'fontsize'],
-      ['forecolor', 'hilitecolor'],
-      ['bold', 'italic', 'underline', 'strikeThrough', 'lineheight', 'removeFormat'],
+      ['insertOrderedList', 'insertUnorderedList', 'indent', 'outdent', 'selectAll'],
       ['table', 'hr', 'emoticons'],
-      ['link', 'image', 'media', 'unlink']
+      ['image', 'media', 'link', 'unlink'],
+      ['inlineCode', 'pre'],
+      ['print', 'preview', 'maximize'],
+      ['markdown']
     ];
+
+    /**
+     * 给内容里的表格补一层横向滚动父元素（渲染态装饰）。
+     * 包裹动作会把光标挤到编辑器根节点，因此 `skipNode`（当前选区锚点）落在表内时跳过，
+     * 交由失焦兜底；表内嵌套的表格不包裹（避免撑破单元格）。
+     */
+    function wrapEditorTables(editor, skipNode) {
+      wrapTablesIn(editor, skipNode || null);
+    }
+
+    /** 去掉渲染态包裹层：取值 / 源码模式 / 保存内容都还原为裸 `<table>`。 */
+    function stripEditorTableWraps(root) {
+      unwrapTablesIn(root);
+    }
 
     class KniuSysEditor extends HTMLElement {
       static get observedAttributes() { return ['name', 'placeholder', 'readonly', 'disabled', 'toolbar', 'mode']; }
@@ -5473,19 +5481,19 @@ var KniuUI = (function () {
         this.shadowRoot.innerHTML = [
           '<style>',
           ':host{display:block;width:100%}',
-          '.kniu_sys_editor_group{display:flex;width:100%}',
+          '.kniu_sys_editor_group{width:100%}',
           '.kniu_sys_editor_affix{display:none;align-items:center;justify-content:center;align-self:flex-start;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}',
-          '.kniu_sys_editor_group[data-has-prepend="true"] .kniu_sys_editor_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}',
+          '.kniu_sys_editor_group[data-has-prepend="true"] .kniu_sys_editor_prepend{display:flex;justify-content:flex-start;width:100%;min-width:100%;height:max(28px,calc(40 / var(--kniu_vw)));border:calc(1 / var(--kniu_vw)) solid #dcdfe6;border-bottom:none;border-radius:calc(4 / var(--kniu_vw)) calc(4 / var(--kniu_vw)) 0 0}',
           '.kniu_sys_editor_main{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;overflow:hidden}',
-          '.kniu_sys_editor_group[data-has-prepend="true"] .kniu_sys_editor_main{border-radius:0 4px 4px 4px}',
+          '.kniu_sys_editor_group[data-has-prepend="true"] .kniu_sys_editor_main{border-radius:0 0 calc(4 / var(--kniu_vw)) calc(4 / var(--kniu_vw))}',
           '.kniu_sys_editor_toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:6px 8px;border-bottom:1px solid #ebeef5;background-color:#f5f7fa}',
-          '.kniu_sys_editor_btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:30px;padding:0;border:0;border-radius:4px;background-color:transparent;color:#606266;font-size:14px;font-weight:600;line-height:1;cursor:pointer;transition:background-color .15s,color .15s;flex:none;overflow:hidden}',
-          // 工具栏内统一图标视觉占位：SVG 强制 18×18，文字图标（<b>/<i>/<u>/<s>/裸文本）至少 18×18，flex 居中
-          '.kniu_sys_editor_btn > svg{width:17px;height:17px;display:block;flex:none}',
-          '.kniu_sys_editor_btn[data-cmd="removeFormat"] > svg{width:20px;height:20px}',
+          '.kniu_sys_editor_btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:30px;padding:0;border:0;border-radius:4px;background-color:transparent;color:#333;font-size:14px;font-weight:600;line-height:1;cursor:pointer;transition:background-color .15s,color .15s;flex:none;overflow:hidden}',
+          // 工具栏图标一律同盒：源几何已按「墨迹最长边铺满 viewBox」统一（见 kniuiconsvg.mjs），
+          // 同盒即等大，原先「按字形实测高度逐按钮补偿渲染盒」的 8 条规则已全部删除（勿恢复）。
+          '.kniu_sys_editor_btn > kniu-icon{display:block;width:16px;height:16px;font-size:16px;flex:none}',
           '.kniu_sys_editor_btn > *{font-weight:600}',
           '.kniu_sys_editor_btn > b,.kniu_sys_editor_btn > i,.kniu_sys_editor_btn > u,.kniu_sys_editor_btn > s{display:inline-flex;align-items:center;justify-content:center;height:17px;min-width:17px;min-height:17px;font-size:14px;line-height:1;font-weight:700;text-align:center;letter-spacing:0}',
-          '.kniu_sys_editor_btn > :not(svg):not(b):not(i):not(u):not(s){display:inline-flex;align-items:center;justify-content:center;min-width:17px;min-height:17px;font-size:14px;line-height:1;text-align:center}',
+          '.kniu_sys_editor_btn > :not(svg):not(kniu-icon):not(b):not(i):not(u):not(s){display:inline-flex;align-items:center;justify-content:center;min-width:17px;min-height:17px;font-size:14px;line-height:1;text-align:center}',
           '.kniu_sys_editor_btn:hover{background-color:#ecf5ff;color:#409eff}',
           '.kniu_sys_editor_btn:active{background-color:#d9ecff}',
           '.kniu_sys_editor_btn[aria-pressed="true"]{background-color:#d9ecff;color:#409eff}',
@@ -5498,6 +5506,9 @@ var KniuUI = (function () {
           '.kniu_sys_editor_content h1{font-size:1.6em;margin:.5em 0}',
           '.kniu_sys_editor_content h2{font-size:1.4em;margin:.5em 0}',
           '.kniu_sys_editor_content h3{font-size:1.2em;margin:.5em 0}',
+          '.kniu_sys_editor_content h4{font-size:1.1em;margin:.5em 0}',
+          '.kniu_sys_editor_content h5{font-size:1em;margin:.5em 0}',
+          '.kniu_sys_editor_content h6{font-size:.9em;margin:.5em 0}',
           '.kniu_sys_editor_content p{margin:.3em 0}',
           '.kniu_sys_editor_content ul,.kniu_sys_editor_content ol{padding-left:2em;margin:.3em 0}',
           '.kniu_sys_editor_content blockquote{margin:.5em 0;padding:.5em 1em;border-left:4px solid #dcdfe6;background-color:#f9fafc;color:#606266}',
@@ -5526,14 +5537,11 @@ var KniuUI = (function () {
           '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source{display:block;flex:1}',
           '.kniu_sys_editor_select{height:28px;max-width:120px;padding:0 8px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:12px;cursor:pointer;flex:none;box-sizing:border-box}',
           '.kniu_sys_editor_fontname{position:relative;width:36px;padding-right:8px}',
-          '.kniu_sys_editor_font_icon{font-family:var(--kniu-font-family);font-size:15px!important;font-style:italic;font-weight:700}',
           '.kniu_sys_editor_fontsize{position:relative;width:36px;padding-right:8px}',
-          '.kniu_sys_editor_size_icon{display:inline-flex!important;align-items:flex-end!important;gap:1px;font-family:var(--kniu-font-family);font-size:15px!important;font-weight:600}',
-          '.kniu_sys_editor_size_icon small{font-size:9px;line-height:1.2}',
+          '.kniu_sys_editor_heading{position:relative;width:36px;padding-right:8px}',
+          '.kniu_sys_editor_lineheight{position:relative;width:36px;padding-right:8px}',
+          '.kniu_sys_editor_spacing{position:relative;width:36px;padding-right:8px}',
           '.kniu_sys_editor_color_btn{position:relative;width:36px;padding-right:8px}',
-          '.kniu_sys_editor_color_letter{font-family:var(--kniu-font-family);font-size:15px!important;font-weight:500;color:#409eff}',
-          '.kniu_sys_editor_color_letter_bg{padding:2px 3px;border-radius:2px;background-color:#ffd900;color:#222;font-size:12px!important;font-weight:700}',
-          '.kniu_sys_editor_color_mark{position:absolute;left:8px;right:10px;bottom:3px;height:2px;min-width:0!important;min-height:0!important}',
           '.kniu_sys_editor_font_arrow{position:absolute;right:3px;bottom:3px;min-width:0!important;min-height:0!important;font-size:8px!important;color:#909399}',
           '.kniu_sys_editor_select:focus{outline:0;border-color:#409eff}',
           '.kniu_sys_editor_color{width:30px;height:28px;padding:0;border:1px solid #dcdfe6;border-radius:3px;background-color:#fff;cursor:pointer;flex:none;box-sizing:border-box}',
@@ -5549,7 +5557,7 @@ var KniuUI = (function () {
           '.kniu_sys_editor_content table{border-collapse:collapse;width:100%;margin:.5em 0}',
           '.kniu_sys_editor_content td,.kniu_sys_editor_content th{border:1px solid #dcdfe6;padding:6px 10px;min-width:40px;height:22px}',
           '.kniu_sys_editor_toolbar{position:static}',
-          '.kniu_sys_editor_popover{position:absolute;top:0;left:0;z-index:30;padding:12px;min-width:210px;max-width:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;box-sizing:border-box}',
+          '.kniu_sys_editor_popover{position:absolute;top:0;left:0;z-index:30;padding:12px;max-width:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;box-sizing:border-box}',
           '.kniu_sys_editor_popover[hidden]{display:none}',
           '.kniu_sys_editor_popover_row{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;color:#606266}',
           '.kniu_sys_editor_popover_row[hidden]{display:none}',
@@ -5574,15 +5582,13 @@ var KniuUI = (function () {
           '.kniu_sys_editor_popover_btn{height:30px;padding:0 14px;border:0;border-radius:4px;background-color:#409eff;color:#fff;font-size:13px;cursor:pointer}',
           '.kniu_sys_editor_popover_btn:hover{background-color:#66b1ff}',
           '.kniu_sys_editor_popover_grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;max-height:208px;overflow:auto}',
-          '.kniu_sys_editor_font_list{display:flex;flex-direction:column;width:190px;max-width:100%}',
+          '.kniu_sys_editor_font_list{display:flex;flex-direction:column;max-width:100%}',
           '.kniu_sys_editor_font_item{min-height:32px;color:#303133;font-size:14px}',
           '.kniu_sys_editor_font_item:hover{background-color:#ecf5ff;color:#409eff}',
           '.kniu_sys_editor_font_item[aria-checked="true"]::before{content:"✓";width:20px;color:#409eff;font-family:var(--kniu-font-family)}',
-          '.kniu_sys_editor_font_item[aria-checked="false"]::before{content:"";width:20px}',
-          '.kniu_sys_editor_size_list{display:flex;flex-direction:column;width:130px;max-width:100%}',
+          '.kniu_sys_editor_size_list{display:flex;flex-direction:column;max-width:100%}',
           '.kniu_sys_editor_size_item{min-height:32px;color:#303133;line-height:1.15}',
           '.kniu_sys_editor_size_item:hover{background-color:#ecf5ff;color:#409eff}',
-          '.kniu_sys_editor_palette{width:176px}',
           '.kniu_sys_editor_no_color{display:block;width:100%;height:30px;margin-bottom:8px;border:0;border-radius:4px;background-color:transparent;color:#606266;font-size:13px;cursor:pointer}',
           '.kniu_sys_editor_no_color:hover{background-color:#ecf5ff;color:#409eff}',
           '.kniu_sys_editor_swatch_grid{display:grid;grid-template-columns:repeat(6,22px);gap:6px}',
@@ -5592,84 +5598,76 @@ var KniuUI = (function () {
           '.kniu_sys_editor_emoji:hover{background-color:#ecf5ff}',
           ':host([data-preview="true"]) .kniu_sys_editor_content{background-color:#fafafa;cursor:default}',
           ':host([data-maximized="true"]){position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;width:auto;height:auto;background-color:#fff}',
-          ':host([data-maximized="true"]) .kniu_sys_editor_group{height:100%;flex-direction:column}',
+          ':host([data-maximized="true"]) .kniu_sys_editor_group{display:flex;height:100%;flex-direction:column}',
           ':host([data-maximized="true"]) .kniu_sys_editor_main{flex:1;max-height:none;border-radius:0;display:flex;flex-direction:column}',
           ':host([data-maximized="true"]) .kniu_sys_editor_content_wrap,:host([data-maximized="true"]) .kniu_sys_editor_source_wrap{flex:1;min-height:0;max-height:none}',
           ':host([data-maximized="true"]) .kniu_sys_editor_content,:host([data-maximized="true"]) .kniu_sys_editor_source{min-height:0;max-height:none}',
           ':host([data-maximized="true"]) .kniu_sys_editor_prepend,:host([data-maximized="true"]) .kniu_sys_editor_append{display:none}',
           ':host([data-invalid="true"]) .kniu_sys_editor_main{border-color:#f56c6c}',
+          '@media (min-width:calc(1280px - 60px)){.kniu_sys_editor_group{display:flex}.kniu_sys_editor_group[data-has-prepend="true"] .kniu_sys_editor_prepend{width:auto;min-width:0;justify-content:center;border:1px solid #dcdfe6;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_editor_group[data-has-prepend="true"] .kniu_sys_editor_main{border-radius:0 4px 4px 4px}}',
           '</style>',
           '<div class="kniu_sys_editor_group" data-has-prepend="false" data-code-mode="false">',
           '<span class="kniu_sys_editor_affix kniu_sys_editor_prepend"><slot name="prepend"></slot></span>',
           '<div class="kniu_sys_editor_main">',
           '<div class="kniu_sys_editor_toolbar">',
           // 撤销 / 重做
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="undo" title="撤销"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 7L4 12l5 5"/><path d="M4 12h11a5 5 0 0 1 0 10h-2"/></svg></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="redo" title="重做"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 7l5 5-5 5"/><path d="M20 12H9a5 5 0 0 0 0 10h2"/></svg></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="undo" title="撤销"><kniu-icon icon="back" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="redo" title="重做"><kniu-icon icon="front" aria-hidden="true"></kniu-icon></button>',
           '<span class="kniu_sys_editor_divider"></span>',
           // 视图
-          '<button type="button" class="kniu_sys_editor_btn" data-action="preview" title="预览"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-action="print" title="打印"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 9V4h10v5"/><path d="M7 19H5v-7h14v7h-2"/><rect x="7" y="14" width="10" height="6" rx="1"/></svg></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-action="code" title="代码模式">&lt;/&gt;</button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-action="maximize" title="最大化/还原"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-action="preview" title="预览"><kniu-icon icon="view" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-action="print" title="打印"><kniu-icon icon="print" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-action="code" title="代码模式"><kniu-icon icon="code" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-action="maximize" title="最大化/还原"><kniu-icon icon="fullscreen_open" aria-hidden="true"></kniu-icon></button>',
           '<span class="kniu_sys_editor_divider"></span>',
           // 字体样式
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="bold" title="加粗"><b>B</b></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="italic" title="斜体"><i>I</i></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="underline" title="下划线"><u>U</u></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="strikeThrough" title="删除线"><s>S</s></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="subscript" title="下标">x₂</button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="superscript" title="上标">x²</button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="bold" title="加粗"><kniu-icon icon="font_strong" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="italic" title="斜体"><kniu-icon icon="font_i" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="underline" title="下划线"><kniu-icon icon="font_u" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="strikeThrough" title="删除线"><kniu-icon icon="font_del" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="subscript" title="下标"><kniu-icon icon="sub" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="superscript" title="上标"><kniu-icon icon="sup" aria-hidden="true"></kniu-icon></button>',
           '<span class="kniu_sys_editor_divider"></span>',
           // 对齐
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyLeft" title="左对齐"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 10h10M4 14h16M4 18h10"/></svg></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyCenter" title="居中"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M7 10h10M4 14h16M7 18h10"/></svg></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyRight" title="右对齐"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M10 10h10M4 14h16M10 18h10"/></svg></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyFull" title="两端对齐"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyLeft" title="左对齐"><kniu-icon icon="align_left" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyCenter" title="居中"><kniu-icon icon="align_center" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyRight" title="右对齐"><kniu-icon icon="align_right" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="justifyFull" title="两端对齐"><kniu-icon icon="align_center" aria-hidden="true"></kniu-icon></button>',
           '<span class="kniu_sys_editor_divider"></span>',
           // 缩进 / 列表
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="indent" title="增加缩进"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M11 6h9M11 10h9M11 14h9M11 18h9"/><path d="M4 9l4 3-4 3z" fill="currentColor" stroke="none"/></svg></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="outdent" title="减少缩进"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M11 6h9M11 10h9M11 14h9M11 18h9"/><path d="M8 9l-4 3 4 3z" fill="currentColor" stroke="none"/></svg></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="indent" title="增加缩进"><kniu-icon icon="shrink_left" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="outdent" title="减少缩进"><kniu-icon icon="shrink_right" aria-hidden="true"></kniu-icon></button>',
           '<span class="kniu_sys_editor_divider"></span>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="insertOrderedList" title="有序列表"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 6h11M9 10h11M9 14h11M9 18h11"/><text x="3" y="9" font-size="7" fill="currentColor" stroke="none">1.</text><text x="3" y="17" font-size="7" fill="currentColor" stroke="none">2.</text></svg></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="insertUnorderedList" title="无序列表"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 6h11M9 10h11M9 14h11M9 18h11"/><circle cx="4" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="10" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="14" r="1.4" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="insertOrderedList" title="有序列表"><kniu-icon icon="list" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="insertUnorderedList" title="无序列表"><kniu-icon icon="unlist" aria-hidden="true"></kniu-icon></button>',
           '<span class="kniu_sys_editor_divider"></span>',
-          // 行距
-          '<select class="kniu_sys_editor_select" data-action="lineheight" title="行距">',
-          '<option value="1">1.0</option>',
-          '<option value="1.5" selected>1.5</option>',
-          '<option value="1.75">1.75</option>',
-          '<option value="2">2.0</option>',
-          '<option value="2.5">2.5</option>',
-          '<option value="3">3.0</option>',
-          '</select>',
+          // 行距（下拉按钮，与字体同款交互；由 _buildToolbar 按配置重建）
+          '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_lineheight" data-action="lineheight" title="行距" aria-label="选择行距"><kniu-icon icon="lineheight" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
           '<span class="kniu_sys_editor_divider"></span>',
-          // 块级
-          '<button type="button" class="kniu_sys_editor_btn" data-block="h1" title="标题1"><b>H1</b></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-block="h2" title="标题2"><b>H2</b></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-block="h3" title="标题3"><b>H3</b></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-block="p" title="段落">&para;</button>',
+          // 块级（heading 标题下拉 H2~H6 + 段落；由 _buildToolbar 按配置重建）
+          '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_heading" data-action="heading" title="标题" aria-label="选择标题"><kniu-icon icon="h1" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-block="p" title="段落"><kniu-icon icon="p" aria-hidden="true"></kniu-icon></button>',
           '<span class="kniu_sys_editor_divider"></span>',
-          '<button type="button" class="kniu_sys_editor_btn" data-block="blockquote" title="引用">&#10077;</button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-block="pre" title="代码块">{ }</button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-action="hr" title="分割线"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h18"/><path d="M3 8v8M21 8v8"/></svg></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-action="table" title="表格"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-block="blockquote" title="引用"><kniu-icon icon="quotes" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-block="pre" title="代码块"><kniu-icon icon="pre" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-action="hr" title="分割线"><kniu-icon icon="line_x" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-action="table" title="表格"><kniu-icon icon="table" aria-hidden="true"></kniu-icon></button>',
           '<span class="kniu_sys_editor_divider"></span>',
           // 字体
-          '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_fontname" data-action="fontname" title="字体" aria-label="选择字体"><span class="kniu_sys_editor_font_icon">F</span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
-          '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_fontsize" data-action="fontsize" title="字号" aria-label="选择字号"><span class="kniu_sys_editor_size_icon"><small>T</small>T</span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
-          '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="forecolor" title="文字颜色" aria-label="文字颜色"><span class="kniu_sys_editor_color_letter">A</span><span class="kniu_sys_editor_color_mark" style="background-color:#409eff"></span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
-          '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="hilitecolor" title="文字背景" aria-label="文字背景"><span class="kniu_sys_editor_color_letter kniu_sys_editor_color_letter_bg">A</span><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+          '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_fontname" data-action="fontname" title="字体" aria-label="选择字体"><kniu-icon icon="text" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+          '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_fontsize" data-action="fontsize" title="字号" aria-label="选择字号"><kniu-icon icon="textsize" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+          '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="forecolor" title="文字颜色" aria-label="文字颜色"><kniu-icon icon="textcolor" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+          '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_color_btn" data-action="hilitecolor" title="文字背景" aria-label="文字背景"><kniu-icon icon="bgcolor" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
           '<span class="kniu_sys_editor_divider"></span>',
           // 插入
-          '<button type="button" class="kniu_sys_editor_btn" data-action="link" title="链接"><svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M715.648 625.152 670.4 579.904l90.496-90.56c75.008-74.944 85.12-186.368 22.656-248.896-62.528-62.464-173.952-52.352-248.96 22.656L444.16 353.6l-45.248-45.248 90.496-90.496c100.032-99.968 251.968-110.08 339.456-22.656 87.488 87.488 77.312 239.424-22.656 339.456l-90.496 90.496zm-90.496 90.496-90.496 90.496C434.624 906.112 282.688 916.224 195.2 828.8c-87.488-87.488-77.312-239.424 22.656-339.456l90.496-90.496 45.248 45.248-90.496 90.56c-75.008 74.944-85.12 186.368-22.656 248.896 62.528 62.464 173.952 52.352 248.96-22.656l90.496-90.496zm0-362.048 45.248 45.248L398.848 670.4 353.6 625.152z"/></svg></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="unlink" title="取消链接"><svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M472.615385 175.261538c-11.815385 0-23.630769 1.969231-35.446154 5.907693-11.815385 1.969231-25.6 5.907692-37.415385 9.846154-7.876923 1.969231-15.753846 0-19.692308-3.938462l-7.876923-7.876923c-49.230769-49.230769-129.969231-55.138462-183.138461-9.846154-57.107692 51.2-61.046154 139.815385-5.907692 192.984616l129.96923 129.96923c17.723077 17.723077 37.415385 27.569231 59.076923 33.476923 27.569231 7.876923 57.107692 5.907692 82.707693-5.907692 15.753846-5.907692 31.507692-15.753846 43.323077-29.538461 5.907692-5.907692 11.815385-13.784615 17.723077-23.63077 5.907692-11.815385 21.661538-13.784615 31.507692-3.938461l49.230769 49.230769c7.876923 7.876923 7.876923 17.723077 1.969231 25.6-7.876923 9.846154-15.753846 17.723077-23.630769 27.569231-11.815385 11.815385-27.569231 23.630769-41.353847 33.476923-25.6 15.753846-51.2 25.6-80.738461 31.507692-53.169231 9.846154-110.276923 1.969231-161.476923-25.6-19.692308-9.846154-37.415385-23.630769-53.169231-39.384615l-126.030769-126.030769c-90.584615-90.584615-98.461538-238.276923-9.846154-332.8 92.553846-98.461538 248.123077-102.4 342.646154-5.907693l43.323077 43.323077c9.846154 9.846154 1.969231 29.538462-15.753846 31.507692z m324.923077 277.661539c94.523077 94.523077 92.553846 250.092308-5.907693 342.646154C697.107692 882.215385 549.415385 876.307692 458.830769 785.723077l-39.384615-39.384615c-11.815385-11.815385-3.938462-31.507692 11.815384-33.476924 23.630769-1.969231 49.230769-5.907692 72.861539-13.784615 7.876923-1.969231 15.753846 0 19.692308 3.938462l7.876923 7.876923c49.230769 49.230769 129.969231 55.138462 183.138461 9.846154 57.107692-51.2 61.046154-139.815385 5.907693-192.984616L590.769231 397.784615c-17.723077-17.723077-37.415385-27.569231-59.076923-33.476923-27.569231-7.876923-57.107692-5.907692-82.707693 5.907693-15.753846 5.907692-31.507692 15.753846-43.323077 29.538461-5.907692 5.907692-11.815385 13.784615-15.753846 21.661539-5.907692 11.815385-21.661538 13.784615-31.507692 3.938461l-47.261538-47.261538c-7.876923-7.876923-7.876923-17.723077-1.969231-25.6 7.876923-9.846154 13.784615-17.723077 23.630769-27.569231 13.784615-13.784615 27.569231-23.630769 41.353846-33.476923 25.6-15.753846 51.2-25.6 80.738462-31.507692 53.169231-9.846154 110.276923-1.969231 161.476923 25.6 19.692308 9.846154 37.415385 23.630769 53.169231 39.384615l128 128zM888.123077 88.615385l90.584615 90.584615c7.876923 7.876923 7.876923 19.692308 0 27.569231l-55.138461 55.138461c-7.876923 7.876923-19.692308 7.876923-27.569231 0L807.384615 169.353846l-84.676923 84.676923c-7.876923 7.876923-19.692308 7.876923-27.56923 0l-55.138462-55.138461c-7.876923-7.876923-7.876923-19.692308 0-27.569231l84.676923-84.676923-82.707692-82.707692c-7.876923-7.876923-7.876923-19.692308 0-27.569231l55.138461-55.138462c7.876923-7.876923 19.692308-7.876923 27.569231 0l82.707692 82.707693 88.615385-88.615385c7.876923-7.876923 19.692308-7.876923 27.569231 0l55.138461 55.138461c7.876923 7.876923 7.876923 19.692308 0 27.569231L888.123077 88.615385z" transform="translate(0,1025) scale(1,-1)"/></svg></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-action="emoticons" title="表情"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/><path d="M8 15a5 5 0 0 0 8 0"/></svg></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-action="link" title="链接"><kniu-icon icon="link" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="unlink" title="取消链接"><kniu-icon icon="unlink" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-action="emoticons" title="表情"><kniu-icon icon="smile" aria-hidden="true"></kniu-icon></button>',
           '<span class="kniu_sys_editor_divider"></span>',
           // 清理 / 全选
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="removeFormat" title="清除格式"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 15l7-7 5 5-4 4H7z"/><path d="M9 20h11"/></svg></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-action="clearhtml" title="清理HTML"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M19 4l1 1-8 8-2-2z"/><path d="M11 12L4 19l1 1 7-7"/></svg></button>',
-          '<button type="button" class="kniu_sys_editor_btn" data-cmd="selectAll" title="全选"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M9 9h6v6H9z"/></svg></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="removeFormat" title="清除格式"><kniu-icon icon="unbrush" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-action="clearhtml" title="清理HTML"><kniu-icon icon="clearhtml" aria-hidden="true"></kniu-icon></button>',
+          '<button type="button" class="kniu_sys_editor_btn" data-cmd="selectAll" title="全选"><kniu-icon icon="alllist" aria-hidden="true"></kniu-icon></button>',
           '<div class="kniu_sys_editor_popover kniu_sys_dropdown_panel" hidden></div>',
           '</div>',
           '<div class="kniu_sys_editor_content_wrap"><div class="kniu_sys_editor_line_numbers" aria-hidden="true"><div class="kniu_sys_editor_line_numbers_inner"></div></div><div class="kniu_sys_editor_content" contenteditable="true" data-placeholder=""></div></div>',
@@ -5684,8 +5682,9 @@ var KniuUI = (function () {
         this._sourceLines = this.shadowRoot.querySelector('.kniu_sys_editor_source_lines_inner');
         this._editorLines = this.shadowRoot.querySelector('.kniu_sys_editor_line_numbers_inner');
         adoptDropdownStyle(this.shadowRoot);
-        // 链接/图片/媒体编辑是表单型弹窗，不跟随普通下拉的阴影和圆角。
         adoptSharedStyle(this.shadowRoot, '.kniu_sys_editor_popover_link{border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14)}.kniu_sys_editor_popover_media_edit{box-shadow:0 0 0 9999px rgba(0,0,0,.6),0 8px 24px rgba(0,0,0,.22)}');
+        // 表格渲染态：外层负责横向滚动，表格本身保底 768px（绝对下限，不走设计尺寸换算，故用 appendRawStyle）。
+        appendRawStyle(this.shadowRoot, KNIU_CONTENT_TABLE_CSS);
         this._codeMode = false;
         this._markdownMode = false;
         this._maximized = false;
@@ -5709,10 +5708,10 @@ var KniuUI = (function () {
           self._escapeParsedRichTextNodes();
           self.removeAttribute('data-invalid');
           self._updateLineNumbers();
+          self._syncEditorTables();
           self.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         });
         this._editor.addEventListener('beforeinput', function (e) {
-          // 输入法、语音输入等可能一次提交完整的标签字符串；不要让浏览器建成真实 script 节点。
           if (e.inputType === 'insertText' && (e.data === '<' || hasRichTextLiteralTag(e.data))) {
             e.preventDefault();
             self._insertSafeRichText(e.data);
@@ -5722,13 +5721,13 @@ var KniuUI = (function () {
           var clipboard = e.clipboardData;
           var text = clipboard && clipboard.getData ? clipboard.getData('text/plain') : '';
           if (!hasRichTextLiteralTag(text)) return;
-          // 仅拦截含危险原始标签的粘贴；普通富文本粘贴仍保持浏览器原有行为。
           e.preventDefault();
           self._insertSafeRichText(text);
         });
         this._editor.addEventListener('scroll', function () { self._updateLineNumbers(); });
         this._editor.addEventListener('focus', function () { self._updateLineNumbers(); });
         this._editor.addEventListener('blur', function () {
+          self._normalizeTables();
           self.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
         });
         this._source.addEventListener('input', function () {
@@ -5769,9 +5768,8 @@ var KniuUI = (function () {
           this._lineNumberResizeObserver.observe(this._editor);
           this._lineNumberResizeObserver.observe(this._source);
         }
-        // 兜底：若构造时的硬编码 fallback 模板因某种旧缓存/解析异常导致最大化按钮缺失 SVG，重新填充
         var mb0 = this._toolbar && this._toolbar.querySelector('[data-action="maximize"]');
-        if (mb0 && !mb0.querySelector('svg')) mb0.innerHTML = EDITOR_ICON_MAXIMIZE;
+        if (mb0 && !mb0.querySelector('kniu-icon')) mb0.innerHTML = EDITOR_ICON_MAXIMIZE;
         queueMicrotask(function () { this._mountAffixes(); }.bind(this));
       }
       attributeChangedCallback(name) {
@@ -5805,14 +5803,11 @@ var KniuUI = (function () {
         this.setAttribute('toolbar', str);
       }
 
-      // 解析 toolbar 属性为分组数组：
-      //  - 字符串中 '|' 作为分组分隔符，组内以空白/逗号分隔 token
-      //  - 空或缺失 -> 使用 EDITOR_DEFAULT_TOOLBAR（全部功能）
       _resolveToolbarConfig() {
         var raw = this.__kniuOptions && Object.prototype.hasOwnProperty.call(this.__kniuOptions, 'toolbar')
           ? this.__kniuOptions.toolbar : this.getAttribute('toolbar');
         if (Array.isArray(raw)) {
-          var aliases = { fontName: 'fontname', fontSize: 'fontsize', foreColor: 'forecolor', clear: 'clearhtml', fullscreen: 'maximize' };
+          var aliases = { fontName: 'fontname', fontSize: 'fontsize', foreColor: 'forecolor', hiliteColor: 'hilitecolor', clear: 'clearhtml', fullscreen: 'maximize' };
           var groupsFromArray = [[]];
           raw.forEach(function (item) {
             if (item === '|') { if (groupsFromArray[groupsFromArray.length - 1].length) groupsFromArray.push([]); return; }
@@ -5832,7 +5827,6 @@ var KniuUI = (function () {
         return groups;
       }
 
-      // 依据分组数组重建工具栏，并重新绑定事件（含表格/表情弹层）。
       _buildToolbar(groups) {
         var html = [];
         for (var gi = 0; gi < groups.length; gi++) {
@@ -5845,13 +5839,10 @@ var KniuUI = (function () {
         }
         html.push('<div class="kniu_sys_editor_popover kniu_sys_dropdown_panel" hidden></div>');
         this._toolbar.innerHTML = html.join('');
-        var linkBtn = this._toolbar.querySelector('[data-action="link"]');
-        if (linkBtn) linkBtn.innerHTML = EDITOR_ICON_UNLINK;
         var clearFormatBtn = this._toolbar.querySelector('[data-cmd="removeFormat"]');
         if (clearFormatBtn) clearFormatBtn.innerHTML = EDITOR_ICON_CLEAR_FORMAT;
-        // 兜底：若最大化按钮缺失 SVG（极端情况下变量未定义或缓存了旧产物），补回 MAXIMIZE 图标
         var mb = this._toolbar.querySelector('[data-action="maximize"]');
-        if (mb && !mb.querySelector('svg')) mb.innerHTML = EDITOR_ICON_MAXIMIZE;
+        if (mb && !mb.querySelector('kniu-icon')) mb.innerHTML = EDITOR_ICON_MAXIMIZE;
         if (this._maximized) {
           var maxBtn = this._toolbar.querySelector('[data-action="maximize"]');
           if (maxBtn) {
@@ -5911,11 +5902,17 @@ var KniuUI = (function () {
           if (fontBtn) { self._applyFont(fontBtn.dataset.font || ''); return; }
           var sizeBtn = t.closest ? t.closest('[data-font-size]') : null;
           if (sizeBtn) { self._applyFontSize(sizeBtn.dataset.fontSize); return; }
+          var headingBtn = t.closest ? t.closest('[data-heading]') : null;
+          if (headingBtn) { self._applyHeading(headingBtn.dataset.heading); return; }
+          var lineHeightBtn = t.closest ? t.closest('[data-line-height]') : null;
+          if (lineHeightBtn) { self._applyLineHeight(lineHeightBtn.dataset.lineHeight); return; }
+          var spacingBtn = t.closest ? t.closest('[data-letter-spacing]') : null;
+          if (spacingBtn) { self._applyLetterSpacing(spacingBtn.dataset.letterSpacing); return; }
           var colorBtn = t.closest ? t.closest('[data-editor-color]') : null;
           if (colorBtn) { self._applyEditorColor(colorBtn.dataset.editorColor || ''); return; }
         });
         this._popover.addEventListener('pointerdown', function (e) {
-          var option = e.target.closest ? e.target.closest('[data-font],[data-font-size],[data-editor-color]') : null;
+          var option = e.target.closest ? e.target.closest('[data-font],[data-font-size],[data-editor-color],[data-heading],[data-line-height],[data-letter-spacing]') : null;
           if (option) e.preventDefault();
         });
         this._popover.addEventListener('change', function (e) {
@@ -5947,9 +5944,6 @@ var KniuUI = (function () {
         this._syncToolbarState();
       }
 
-      // 依据组件 lang（默认 cn）本地化工具栏按钮的 title / aria-label。
-      // 通过 data-cmd / data-action / data-block / data-action=lineheight 识别 token，
-      // 无需改写 EDITOR_TOOLBAR_ITEMS 的长 SVG 模板。lang 变化时 _sync() 会重建工具栏。
       _applyToolbarLang() {
         var lang = this._editorLang();
         var t = function (key, params) { return componentText(lang, key, params); };
@@ -5959,9 +5953,11 @@ var KniuUI = (function () {
           if (!token || !KNIU_I18N.cn['editor.' + token]) return;
           btn.setAttribute('title', t('editor.' + token));
           btn.setAttribute('aria-label', t('editor.' + token));
-          // 字体/字号/颜色的 aria-label 语义不同，单独处理
           if (btn.dataset.action === 'fontname') btn.setAttribute('aria-label', t('editor.chooseFont'));
           else if (btn.dataset.action === 'fontsize') btn.setAttribute('aria-label', t('editor.chooseSize'));
+          else if (btn.dataset.action === 'heading') btn.setAttribute('aria-label', t('editor.chooseHeading'));
+          else if (btn.dataset.action === 'lineheight') btn.setAttribute('aria-label', t('editor.chooseLineHeight'));
+          else if (btn.dataset.action === 'spacing') btn.setAttribute('aria-label', t('editor.chooseLetterSpacing'));
           else if (btn.dataset.action === 'forecolor') btn.setAttribute('aria-label', t('editor.forecolor'));
           else if (btn.dataset.action === 'hilitecolor') btn.setAttribute('aria-label', t('editor.hilitecolor'));
           else if (btn.dataset.action === 'image') btn.setAttribute('aria-label', t('editor.image'));
@@ -5978,8 +5974,9 @@ var KniuUI = (function () {
         var clone = this._editor.cloneNode(true);
         clone.querySelectorAll('.kniu_sys_editor_media_selected').forEach(function (media) {
           media.classList.remove('kniu_sys_editor_media_selected');
-          if (!media.getAttribute('class')) media.removeAttribute('class');
+          pruneEmptyAttribute(media, 'class');
         });
+        stripEditorTableWraps(clone);
         return clone.innerHTML;
       }
       set value(v) {
@@ -5992,8 +5989,6 @@ var KniuUI = (function () {
           return;
         }
         var self = this;
-        // 超大内容用异步切分清洗（sanitizeRichHtmlAsync 内部按片让出主线程），
-        // 避免打开大文章时一次同步清空卡顿；普通内容保持同步，产物完全一致。
         var large = raw.length > 200000;
         if (!large) {
           var html = sanitizeRichHtml(raw);
@@ -6004,7 +5999,6 @@ var KniuUI = (function () {
         var token = (this._pendingValueToken || 0) + 1;
         this._pendingValueToken = token;
         sanitizeRichHtmlAsync(raw).then(function (html) {
-          // 期间若又被赋了新值，则丢弃本次迟到结果，避免覆盖更新。
           if (self._pendingValueToken === token) {
             self._applyEditorValue(html);
             self._scheduleSourceLineNumbers();
@@ -6019,13 +6013,27 @@ var KniuUI = (function () {
       _applyEditorValue(html) {
         this._editor.innerHTML = html;
         this._normalizeCodeBlocks();
+        this._normalizeTables();
         if (this._source) {
-          this._source.value = this._editor.innerHTML;
+          this._source.value = this._serializedHtml();
           this._updateLineNumbers();
         }
       }
+      /** 渲染态 DOM → 保存/源码用的 HTML（剥掉表格包裹层等纯装饰节点）。 */
+      _serializedHtml() {
+        var clone = this._editor.cloneNode(true);
+        stripEditorTableWraps(clone);
+        return clone.innerHTML;
+      }
+      /** 按需补表格包裹层；光标已在表内时跳过（包裹会把选区挤到编辑器根，失焦时再兜底）。 */
+      _syncEditorTables() {
+        if (!this._editor) return;
+        if (!this._editor.querySelector('table:not(.' + KNIU_TABLE_CLASS + ')')) return;
+        var selection = documentRef.getSelection ? documentRef.getSelection() : null;
+        var anchor = selection && selection.rangeCount ? selection.getRangeAt(0).startContainer : null;
+        this._normalizeTables(anchor);
+      }
       _insertSafeRichText(text) {
-        // 统一清洗器会将危险标签转成实体；正常的 p、strong 等标签仍可生效。
         var html = sanitizeRichHtml(text);
         var inserted = false;
         this._editor.focus();
@@ -6033,8 +6041,6 @@ var KniuUI = (function () {
           inserted = document.execCommand('insertHTML', false, html);
         }
         if (inserted) return;
-
-        // execCommand 不可用时使用 Range 回退，并补发 input 保持 kniu:form 双向同步。
         var selection = document.getSelection();
         if (!selection || !selection.rangeCount) return;
         var range = selection.getRangeAt(0);
@@ -6052,8 +6058,6 @@ var KniuUI = (function () {
         this._editor.dispatchEvent(new Event('input', { bubbles: true }));
       }
       _escapeParsedRichTextNodes() {
-        // 极少数来源会绕过 paste（例如拖放或浏览器扩展），此时 DOM 已经形成危险节点。
-        // 用 outerHTML 还原为普通文本，保证内容完整进入 kniu:form 的值回写链路。
         var nodes = this._editor.querySelectorAll('script,iframe,object,embed,link,meta,style,base,form');
         if (!nodes.length) return;
         var documentRef = this._editor.ownerDocument || document;
@@ -6085,8 +6089,6 @@ var KniuUI = (function () {
           var availableHeight = Math.max(0, input.clientHeight - paddingTop - paddingBottom);
           lineCount = Math.max(1, Math.floor(availableHeight / lineHeight));
         }
-        // textarea 的自动换行和富文本的视觉折行也必须有行号占位，
-        // 否则长行会让内容继续向下而左栏提前结束。
         var visualRows = Math.ceil(Math.max(0, input.scrollHeight - paddingTop - paddingBottom) / lineHeight);
         lineCount = Math.max(lineCount, visualRows);
         lineCount = Math.max(1, lineCount);
@@ -6115,7 +6117,6 @@ var KniuUI = (function () {
         var block = btn.dataset.block;
         var action = btn.dataset.action;
         if (action === 'maximize') { this._toggleMaximize(); return; }
-        // Markdown 只操作 textarea 中的原始文本；富文本命令即使被意外触发也不能越界修改它。
         if (this._markdownMode && action !== 'markdown') return;
         if (action === 'code') {
           if (this._markdownMode) return;
@@ -6132,7 +6133,7 @@ var KniuUI = (function () {
         if (action === 'markdown') { this.setMode(this._markdownMode ? 'rich' : 'markdown'); return; }
         if (action === 'preview') { this._togglePreview(); return; }
         if (action === 'print') { this._print(); return; }
-        if (action === 'table' || action === 'emoticons' || action === 'link' || action === 'image' || action === 'media' || action === 'fontname' || action === 'fontsize' || action === 'forecolor' || action === 'hilitecolor') { this._togglePopover(action, btn); return; }
+        if (action === 'table' || action === 'emoticons' || action === 'link' || action === 'image' || action === 'media' || action === 'fontname' || action === 'fontsize' || action === 'forecolor' || action === 'hilitecolor' || action === 'heading' || action === 'lineheight' || action === 'spacing') { this._togglePopover(action, btn); return; }
         if (cmd && this._selectedMedia && /^justify(?:Left|Center|Right|Full)$/.test(cmd)) {
           this._alignSelectedMedia(cmd);
           return;
@@ -6189,22 +6190,16 @@ var KniuUI = (function () {
           if (sel.value) {
             documentRef.execCommand('fontName', false, sel.value);
           } else {
-            // "无"：清掉选区内 font[face]/inline style font-family（不动其他格式）
             this._clearFontName();
           }
-          // 收起态让 select 自身用选中字体渲染（chrome 默认会用 OS 字体，需手动同步）
           var opt = sel.options[sel.selectedIndex];
           sel.style.fontFamily = opt ? opt.style.fontFamily : '';
         } else if (action === 'fontsize') {
           documentRef.execCommand('fontSize', false, sel.value);
-        } else if (action === 'lineheight') {
-          documentRef.execCommand('lineHeight', false, sel.value);
         }
         this._syncToolbarState();
       }
 
-      // 清掉编辑器内所有 font[face] 标签 + 节点的 font-family 内联样式。
-      // 用于字体下拉的"无"选项。选区为空时也清整个编辑器内字体（更符合用户预期）。
       _clearFontName() {
         var editor = this._editor;
         var walker = documentRef.createTreeWalker(editor, NodeFilter.SHOW_ELEMENT, {
@@ -6271,7 +6266,7 @@ var KniuUI = (function () {
         this._selectMedia(null);
         this._codeMode = !this._codeMode;
         if (this._codeMode) {
-          this._source.value = this._beautifyHtml(this._editor.innerHTML);
+          this._source.value = this._beautifyHtml(this._serializedHtml());
           this._updateLineNumbers();
           this._scheduleSourceLineNumbers();
           this._group.dataset.codeMode = 'true';
@@ -6279,6 +6274,7 @@ var KniuUI = (function () {
         } else {
           this._editor.innerHTML = sanitizeRichHtml(this._source.value);
           this._normalizeCodeBlocks();
+          this._normalizeTables();
           this._group.dataset.codeMode = 'false';
           this._editor.focus();
         }
@@ -6299,6 +6295,7 @@ var KniuUI = (function () {
         } else {
           this._editor.innerHTML = sanitizeRichHtml(this._source.value);
           this._normalizeCodeBlocks();
+          this._normalizeTables();
           this._codeMode = false;
         }
         this._markdownMode = markdown;
@@ -6314,8 +6311,6 @@ var KniuUI = (function () {
       _beautifyHtml(html) {
         if (!html) return html;
         var source = String(html);
-        // 整篇没有任何标签（纯文本 / Markdown 正文 / 被转义过的正文）：
-        // 只需把 CRLF 统一，绝不能走下面的空白折叠分支，否则整篇会被压成一行。
         if (!/<[a-zA-Z!\/]/.test(source)) {
           return source.replace(/\r\n?/g, '\n');
         }
@@ -6326,9 +6321,7 @@ var KniuUI = (function () {
         var out = [];
         var depth = 0;
         var stack = [];
-        // <br> 的断行延到「后面确实还有内容」时再落下，避免 <p>文字<br></p> 尾部多出空行。
         var brPending = false;
-        // 紧随 <br> 断行之后的文本要丢掉行首缩进，保证美化可重复执行。
         var afterBr = false;
         function pad() {
           var s = '';
@@ -6344,15 +6337,11 @@ var KniuUI = (function () {
           if (t === '') continue;
           if (t.charAt(0) !== '<') {
             if (brPending) { brPending = false; out.push('\n' + pad()); afterBr = true; }
-            // <br> 之后的文本：行首空白是上一步为断行插入的缩进，渲染时行首空白不显示，
-            // 去掉它才能保证「进代码模式 → 切回 → 再进」结果稳定。
             var chunk = afterBr ? t.replace(/^\s+/, '') : t;
             afterBr = false;
             if (chunk === '') continue;
-            // 文本节点：连续空白折叠为单个空格（渲染等价；pre 内容走原样分支）
             var txt = chunk.replace(/\s+/g, ' ');
             if (txt === ' ') {
-              // 纯空白且相邻块级标签 → 丢弃（保证美化往返稳定）
               var prevPart = i > 0 ? parts[i - 1] : '';
               var nextPart = i + 1 < parts.length ? parts[i + 1] : '';
               if (blockRe.test(prevPart) || blockRe.test(nextPart)) continue;
@@ -6367,11 +6356,8 @@ var KniuUI = (function () {
           var isVoid = voidRe.test(t);
           if (brPending) {
             brPending = false;
-            // 紧跟块级闭合标签（如 <p>文字<br></p>）时不落断行，保持与原文一致。
             if (!(isClose && isBlock)) { out.push('\n' + pad()); afterBr = true; }
           }
-          // <br> 是可视换行：源码视图同样在它后面断行。
-          // 正文实际靠 <br> 分行（区块标签很少）时，只按块级标签断行会让整篇挤在一行。
           if (!isClose && name === 'br') {
             out.push(t);
             brPending = true;
@@ -6379,7 +6365,6 @@ var KniuUI = (function () {
           }
           afterBr = false;
           if (!isClose && name === 'pre' && !/\/>$/.test(t)) {
-            // <pre> 内容原样保留，避免破坏代码块缩进
             if (stack.length) stack[stack.length - 1].inline = false;
             out.push('\n' + pad() + t);
             depth++;
@@ -6398,7 +6383,6 @@ var KniuUI = (function () {
             var frame = isBlock && !isVoid ? stack.pop() : null;
             if (isBlock && !isVoid && depth > 0) depth--;
             if (isBlock) {
-              // 仅含行内内容的块：闭合标签紧跟内容同一行；否则独占一行
               if (frame && frame.inline && !lastStartsWithNewline()) out.push(t);
               else out.push('\n' + pad() + t);
             } else {
@@ -6434,7 +6418,7 @@ var KniuUI = (function () {
           w.document.close();
           w.focus();
           w.print();
-        } catch (e) { /* 弹窗被拦截时静默 */ }
+        } catch (e) { }
       }
 
       _isAllSelected() {
@@ -6444,22 +6428,18 @@ var KniuUI = (function () {
         if (range.collapsed) return false;
         var full = documentRef.createRange();
         full.selectNodeContents(this._editor);
-        // 0 = START_TO_START, 2 = END_TO_END：选区边界与编辑器整体边界完全重合
         return range.compareBoundaryPoints(0, full) === 0 && range.compareBoundaryPoints(2, full) === 0;
       }
 
       _toggleSelectAll() {
         var sel = documentRef.getSelection();
         if (this._isAllSelected()) {
-          // 已全选 → 取消全选（收拢光标到末尾）
           sel.removeAllRanges();
           var r = documentRef.createRange();
           r.selectNodeContents(this._editor);
           r.collapse(false);
           sel.addRange(r);
         } else {
-          // execCommand('selectAll') 在 Shadow DOM 下会选中整个 light DOM 文档（body）而非编辑器内容，
-          // 手动构造 Range 圈选编辑器内部全部内容
           sel.removeAllRanges();
           var rAll = documentRef.createRange();
           rAll.selectNodeContents(this._editor);
@@ -6468,8 +6448,6 @@ var KniuUI = (function () {
       }
 
       _currentBlockTag() {
-        // queryCommandValue('formatBlock') 在 Chrome + Shadow DOM 下极不可靠（常返回空串），
-        // 改为从选区锚点向上遍历 DOM，找到最近的块级元素标签名
         try {
           var sel = documentRef.getSelection();
           if (!sel || sel.rangeCount === 0) return '';
@@ -6482,7 +6460,6 @@ var KniuUI = (function () {
             if (blockTags[tag]) return tag;
             node = node.parentNode;
           }
-          // 到达编辑器容器 → 默认 p
           return 'p';
         }
         catch (e) { return ''; }
@@ -6529,7 +6506,6 @@ var KniuUI = (function () {
         if (!block || block !== findRootBlock(range.endContainer)) return false;
 
         var code = documentRef.createElement('code');
-        // 有选区时生成行内 code，保留段落前后内容；仅无选区时才走整段 pre。
         code.appendChild(range.extractContents());
         range.insertNode(code);
 
@@ -6550,7 +6526,7 @@ var KniuUI = (function () {
             if ((node.tagName || '').toLowerCase() === 'pre') return node;
             node = node.parentNode;
           }
-        } catch (e) { /* 忽略失效选区 */ }
+        } catch (e) { }
         return null;
       }
 
@@ -6565,6 +6541,12 @@ var KniuUI = (function () {
         });
       }
 
+      /** 给内容里的表格补渲染态包裹层（`.kniu_sys_article_table_wrap`）。 */
+      _normalizeTables(skipNode) {
+        if (!this._editor) return;
+        wrapEditorTables(this._editor, skipNode || null);
+      }
+
       _unwrapCodeBlock(pre) {
         var code = pre && pre.firstElementChild;
         if (!code || code.tagName.toLowerCase() !== 'code' || code !== pre.lastElementChild) return;
@@ -6572,9 +6554,6 @@ var KniuUI = (function () {
         code.remove();
       }
 
-      // Chrome + Shadow DOM 下 execCommand('formatBlock') 执行后会把文档选区重置到 body
-      // （逃出编辑器），导致再次点击块格式按钮时拿不到正确选区（如代码块无法取消）。
-      // 此封装：命令前记录受影响块位置与选区字符偏移，命令后选区若逃逸则恢复到新块原位置。
       _formatBlockSafe(tag) {
         var sel = documentRef.getSelection();
         var oldBlock = null;
@@ -6598,13 +6577,11 @@ var KniuUI = (function () {
           } catch (e) { startOffset = endOffset = -1; }
         }
         documentRef.execCommand('formatBlock', false, tag);
-        // 选区仍在编辑器内 → 无需恢复
         var anchor = sel && sel.anchorNode;
         while (anchor) {
           if (anchor === this._editor) return;
           anchor = anchor.parentNode;
         }
-        // 选区已逃逸 → 恢复到新块的原位置
         var newBlock = (index >= 0 && this._editor.children[index]) || this._editor.firstElementChild;
         if (!newBlock) return;
         var range = documentRef.createRange();
@@ -6626,7 +6603,6 @@ var KniuUI = (function () {
         sel.addRange(range);
       }
 
-      // 在 scope 内按字符偏移定位 [node, offset]（超出长度时收拢到末尾）
       _locateByCharOffset(scope, charOffset) {
         var walker = documentRef.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
         var remaining = charOffset;
@@ -6655,13 +6631,16 @@ var KniuUI = (function () {
         if (this._popoverAction === action && !this._popover.hidden) { this._closePopover(); return; }
         if (!this._popover.hidden) this._closePopover(true);
         this._popoverAction = action;
-        if (action === 'link' || action === 'image' || action === 'media' || action === 'fontname' || action === 'fontsize' || action === 'forecolor' || action === 'hilitecolor') {
+        if (action === 'link' || action === 'image' || action === 'media' || action === 'fontname' || action === 'fontsize' || action === 'forecolor' || action === 'hilitecolor' || action === 'heading' || action === 'lineheight' || action === 'spacing') {
           var selection = (this.shadowRoot.getSelection && this.shadowRoot.getSelection()) || documentRef.getSelection();
           var savedRange = selection && selection.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
           if (action === 'link') this._linkRange = savedRange;
           else if (action === 'image' || action === 'media') this._resourceRange = savedRange;
           else if (action === 'fontname') this._fontRange = savedRange;
           else if (action === 'fontsize') this._fontSizeRange = savedRange;
+          else if (action === 'heading') this._headingRange = savedRange;
+          else if (action === 'lineheight') this._lineHeightRange = savedRange;
+          else if (action === 'spacing') this._letterSpacingRange = savedRange;
           else { this._colorRange = savedRange; this._colorAction = action; }
         }
         this._popover.innerHTML = action === 'table' ? this._tablePopoverHTML()
@@ -6670,8 +6649,11 @@ var KniuUI = (function () {
               : action === 'media' ? this._mediaPopoverHTML()
                 : action === 'fontname' ? this._fontPopoverHTML()
                   : action === 'fontsize' ? this._fontSizePopoverHTML()
-                    : action === 'forecolor' || action === 'hilitecolor' ? this._colorPopoverHTML()
-                      : this._emojiPopoverHTML();
+                    : action === 'heading' ? this._headingPopoverHTML()
+                      : action === 'lineheight' ? this._lineHeightPopoverHTML()
+                        : action === 'spacing' ? this._letterSpacingPopoverHTML()
+                          : action === 'forecolor' || action === 'hilitecolor' ? this._colorPopoverHTML()
+                            : this._emojiPopoverHTML();
         this._popover.classList.toggle('kniu_sys_editor_popover_link', action === 'link' || action === 'image' || action === 'media');
         this._popover.hidden = false;
         this._positionPopover(btn);
@@ -6714,6 +6696,9 @@ var KniuUI = (function () {
         this._linkRange = null;
         this._fontRange = null;
         this._fontSizeRange = null;
+        this._headingRange = null;
+        this._lineHeightRange = null;
+        this._letterSpacingRange = null;
         this._colorRange = null;
         this._colorAction = null;
         this._resourceRange = null;
@@ -6957,9 +6942,12 @@ var KniuUI = (function () {
         var form = new FormData();
         form.append('file', file);
         try {
-          var response = await fetch('/api/article_media_upload', { method: 'POST', body: form, credentials: 'include' });
-          var result = await response.json();
-          if (!response.ok || Number(result.status) !== 1 || !result.data || !result.data.url) {
+          var result = await REQUEST({
+            url: '/article_media_upload',
+            type: 'POST',
+            data: form
+          });
+          if (Number(result.status) !== 1 || !result.data || !result.data.url) {
             if (error) error.textContent = result.msg || this._editorT()('editor.mediaUploadFail');
             return '';
           }
@@ -7054,7 +7042,6 @@ var KniuUI = (function () {
 
       _fontPopoverHTML() {
         var fonts = [
-          ['', '无', 'inherit'],
           ['KniuHei', 'KniuHei', 'KniuHei']
         ];
         return '<div class="kniu_sys_editor_font_list" role="menu">' + fonts.map(function (font) {
@@ -7091,6 +7078,101 @@ var KniuUI = (function () {
         }
         this._editor.focus();
         documentRef.execCommand('fontSize', false, size || '3');
+        this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        this._syncToolbarState();
+        this._closePopover();
+      }
+
+      _headingPopoverHTML() {
+        var headings = [['h2', 'H2'], ['h3', 'H3'], ['h4', 'H4'], ['h5', 'H5'], ['h6', 'H6']];
+        return '<div class="kniu_sys_editor_font_list" role="menu">' + headings.map(function (h) {
+          return '<button type="button" class="kniu_sys_editor_font_item kniu_sys_dropdown_option" role="menuitemradio" aria-checked="false" data-heading="' + h[0] + '">' + h[1] + '</button>';
+        }).join('') + '</div>';
+      }
+
+      _applyHeading(tag) {
+        var selection = documentRef.getSelection();
+        if (selection && this._headingRange) {
+          selection.removeAllRanges();
+          selection.addRange(this._headingRange);
+        }
+        this._editor.focus();
+        this._formatBlockSafe(tag);
+        this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        this._syncToolbarState();
+        this._closePopover();
+      }
+
+      _lineHeightPopoverHTML() {
+        var values = [['1', '1.0'], ['1.5', '1.5'], ['1.75', '1.75'], ['2', '2.0'], ['2.5', '2.5'], ['3', '3.0']];
+        return '<div class="kniu_sys_editor_font_list" role="menu">' + values.map(function (v) {
+          return '<button type="button" class="kniu_sys_editor_font_item kniu_sys_dropdown_option" role="menuitemradio" aria-checked="false" data-line-height="' + v[0] + '">' + v[1] + '</button>';
+        }).join('') + '</div>';
+      }
+
+      _lineHeightBlocks(range) {
+        var blocks = [];
+        if (!range || !range.intersectsNode) return blocks;
+        var candidates = this._editor.querySelectorAll('p,div,h1,h2,h3,h4,h5,h6,li,blockquote,pre,dd,dt');
+        for (var i = 0; i < candidates.length; i++) {
+          var el = candidates[i];
+          if (range.intersectsNode(el)) blocks.push(el);
+        }
+        return blocks.filter(function (el) {
+          return !blocks.some(function (other) { return other !== el && el.contains(other); });
+        });
+      }
+
+      _applyLineHeight(value) {
+        var selection = (this.shadowRoot.getSelection && this.shadowRoot.getSelection()) || documentRef.getSelection();
+        if (selection && this._lineHeightRange) {
+          selection.removeAllRanges();
+          selection.addRange(this._lineHeightRange);
+        }
+        this._editor.focus();
+        var range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+        var blocks = this._lineHeightBlocks(range);
+        if (blocks.length) {
+          blocks.forEach(function (b) { b.style.lineHeight = value; });
+        } else {
+          this._editor.style.lineHeight = value;
+        }
+        this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+        this._syncToolbarState();
+        this._closePopover();
+      }
+
+      _letterSpacingPopoverHTML() {
+        var values = [['0', '正常'], ['1', '1px'], ['2', '2px'], ['3', '3px'], ['5', '5px'], ['8', '8px']];
+        return '<div class="kniu_sys_editor_font_list" role="menu">' + values.map(function (v) {
+          return '<button type="button" class="kniu_sys_editor_font_item kniu_sys_dropdown_option" role="menuitemradio" aria-checked="false" data-letter-spacing="' + v[0] + '">' + v[1] + '</button>';
+        }).join('') + '</div>';
+      }
+
+      _applyLetterSpacing(value) {
+        var spacingCss = value === '0' ? 'normal' : value + 'px';
+        var selection = (this.shadowRoot.getSelection && this.shadowRoot.getSelection()) || documentRef.getSelection();
+        if (selection && this._letterSpacingRange) {
+          selection.removeAllRanges();
+          selection.addRange(this._letterSpacingRange);
+        }
+        this._editor.focus();
+        var range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+        if (range && !range.collapsed) {
+          var span = documentRef.createElement('span');
+          span.style.letterSpacing = spacingCss;
+          try {
+            var frag = range.extractContents();
+            span.appendChild(frag);
+            range.insertNode(span);
+            selection.removeAllRanges();
+            var wrapRange = documentRef.createRange();
+            wrapRange.selectNodeContents(span);
+            selection.addRange(wrapRange);
+          } catch (e) { }
+        } else {
+          this._editor.style.letterSpacing = spacingCss;
+        }
         this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         this._syncToolbarState();
         this._closePopover();
@@ -7166,12 +7248,12 @@ var KniuUI = (function () {
         function cleanColor(scope) {
           if (scope.nodeType === 1 && scope.style) {
             scope.style.removeProperty(property);
-            if (!scope.getAttribute('style')) scope.removeAttribute('style');
+            pruneEmptyAttribute(scope, 'style');
           }
           var elements = Array.from(scope.querySelectorAll ? scope.querySelectorAll('*') : []);
           elements.forEach(function (element) {
             element.style.removeProperty(property);
-            if (!element.getAttribute('style')) element.removeAttribute('style');
+            pruneEmptyAttribute(element, 'style');
           });
           elements.reverse().forEach(function (element) {
             if (element.tagName === 'SPAN' && element.attributes.length === 0 && element.parentNode) {
@@ -7204,7 +7286,7 @@ var KniuUI = (function () {
           marker.setAttribute('data-kniu-color-clear', '');
           var selectedWrap = startColor.cloneNode(false);
           selectedWrap.style.removeProperty(property);
-          if (!selectedWrap.getAttribute('style')) selectedWrap.removeAttribute('style');
+          pruneEmptyAttribute(selectedWrap, 'style');
           selectedWrap.appendChild(selected);
           if (selectedWrap.tagName === 'SPAN' && selectedWrap.attributes.length === 0) {
             while (selectedWrap.firstChild) marker.appendChild(selectedWrap.firstChild);
@@ -7273,13 +7355,14 @@ var KniuUI = (function () {
       _insertTable(rows, cols) {
         rows = Math.max(1, Math.min(20, parseInt(rows, 10) || 3));
         cols = Math.max(1, Math.min(20, parseInt(cols, 10) || 3));
-        var html = '<table style="border-collapse:collapse;width:100%;margin:.5em 0"><tbody>';
+        // 直接带包裹层插入：插入后再包裹会把光标挤到编辑器根节点。
+        var html = '<div class="' + KNIU_TABLE_WRAP_CLASS + '"><table class="' + KNIU_TABLE_CLASS + '" style="border-collapse:collapse;width:100%;margin:.5em 0"><tbody>';
         for (var r = 0; r < rows; r++) {
           html += '<tr>';
           for (var c = 0; c < cols; c++) html += '<td style="border:1px solid #dcdfe6;padding:6px 10px;min-width:48px;height:22px"></td>';
           html += '</tr>';
         }
-        html += '</tbody></table><p><br></p>';
+        html += '</tbody></table></div><p><br></p>';
         this._editor.focus();
         documentRef.execCommand('insertHTML', false, html);
         this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
@@ -7306,6 +7389,45 @@ var KniuUI = (function () {
         if (allBtn) allBtn.setAttribute('aria-pressed', String(this._isAllSelected()));
         var preBtn = this.shadowRoot.querySelector('[data-block="pre"]');
         if (preBtn) preBtn.setAttribute('aria-pressed', String(this._currentBlockTag() === 'pre'));
+        var headingBtn = this.shadowRoot.querySelector('[data-action="heading"]');
+        if (headingBtn) headingBtn.setAttribute('aria-pressed', String(/^h[1-6]$/.test(this._currentBlockTag())));
+        var lhBtn = this.shadowRoot.querySelector('[data-action="lineheight"]');
+        if (lhBtn) {
+          var lhPressed = false;
+          try {
+            var sel = documentRef.getSelection();
+            if (sel && sel.rangeCount && this._editor.contains(sel.anchorNode)) {
+              var lhNode = sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentNode : sel.anchorNode;
+              while (lhNode && lhNode !== this._editor && lhNode.nodeType !== 1) lhNode = lhNode.parentNode;
+              if (lhNode && lhNode.nodeType === 1) {
+                var lhStyle = getComputedStyle(lhNode);
+                var ratio = parseFloat(lhStyle.lineHeight) / parseFloat(lhStyle.fontSize);
+                lhPressed = ['1', '1.5', '1.75', '2', '2.5', '3'].some(function (v) {
+                  return Math.abs(ratio - parseFloat(v)) < 0.02;
+                });
+              }
+            }
+          } catch (e) { lhPressed = false; }
+          lhBtn.setAttribute('aria-pressed', String(lhPressed));
+        }
+        var spBtn = this.shadowRoot.querySelector('[data-action="spacing"]');
+        if (spBtn) {
+          var spPressed = false;
+          try {
+            var spSel = documentRef.getSelection();
+            if (spSel && spSel.rangeCount && this._editor.contains(spSel.anchorNode)) {
+              var spNode = spSel.anchorNode.nodeType === 3 ? spSel.anchorNode.parentNode : spSel.anchorNode;
+              while (spNode && spNode !== this._editor && spNode.nodeType !== 1) spNode = spNode.parentNode;
+              if (spNode && spNode.nodeType === 1) {
+                var ls = getComputedStyle(spNode).letterSpacing;
+                spPressed = ls !== 'normal' && ['1', '2', '3', '5', '8'].some(function (v) {
+                  return Math.abs(parseFloat(ls) - parseFloat(v)) < 0.3;
+                });
+              }
+            }
+          } catch (e) { spPressed = false; }
+          spBtn.setAttribute('aria-pressed', String(spPressed));
+        }
       }
 
       _mountAffixes() {
@@ -7367,18 +7489,15 @@ var KniuUI = (function () {
         }
       }
 
-      // 读取组件 options.lang（默认 cn）。options-only 协议把 options 存于 __kniuOptions。
       _editorLang() {
         return componentLang(this.__kniuOptions);
       }
 
-      // 本地化翻译函数，绑定当前 lang。
       _editorT() {
         var lang = this._editorLang();
         return function (key, params) { return componentText(lang, key, params); };
       }
 
-      // 媒体标签（图片/音频/视频）按 lang 本地化。
       _editorMediaLabel(tagName) {
         var key = tagName === 'IMG' ? 'editor.image' : tagName === 'AUDIO' ? 'editor.audio' : 'editor.video';
         return componentText(this._editorLang(), key);
@@ -7533,6 +7652,14 @@ var KniuUI = (function () {
           this._defaultSlot = this.shadowRoot.querySelector('slot[name="default"]');
           this._slots = [...this.shadowRoot.querySelectorAll('slot')];
           this._handleHashChange = this._syncActive.bind(this);
+          // 路由切换（hashchange 或 SPA pushState 渲染完成）必须收起移动端菜单：
+          // 菜单展开时锁了 <html> 的 overflow，若切页不关菜单，新页面会带着锁渲染、滚不动。
+          // 旧实现只同步激活态，漏了这一步；navigateTo 走 pushState 不触发 hashchange，
+          // 所以额外监听路由层派发的 kniu-route-rendered。
+          this._handleRouteChange = function () {
+            this._syncActive();
+            if (this.hasAttribute('open') && !this.hasAttribute('closing')) this._closeMenu();
+          }.bind(this);
           this._handleViewportChange = this._syncSlotLayout.bind(this);
           this._desktopMedia = globalThis.matchMedia?.('(min-width:calc(1280px - 60px))') || null;
           this._headResizeObserver = null;
@@ -7564,7 +7691,8 @@ var KniuUI = (function () {
           this._observeHeadSize();
           this._syncFixedLayout();
           this.addEventListener('click', this._handleMenuClick);
-          globalThis.addEventListener?.('hashchange', this._handleHashChange);
+          globalThis.addEventListener?.('hashchange', this._handleRouteChange);
+          globalThis.addEventListener?.('kniu-route-rendered', this._handleRouteChange);
           this._syncSlotLayout();
           this._sync();
         }
@@ -7580,7 +7708,8 @@ var KniuUI = (function () {
           this._placeholderResizeObserver = null;
           this._removePlaceholder();
           globalThis.removeEventListener?.('resize', this._handleWindowResize);
-          globalThis.removeEventListener?.('hashchange', this._handleHashChange);
+          globalThis.removeEventListener?.('hashchange', this._handleRouteChange);
+          globalThis.removeEventListener?.('kniu-route-rendered', this._handleRouteChange);
           this._slots.forEach(function (slot) { slot.removeEventListener('slotchange', this._handleHashChange); }, this);
           this.removeEventListener('click', this._handleMenuClick);
           if (this._closeTimer) globalThis.clearTimeout(this._closeTimer);
@@ -7681,28 +7810,15 @@ var KniuUI = (function () {
           });
         }
         _lockPageScroll() {
-          if (this._pageScrollLocked || typeof document === 'undefined' || !document.documentElement) return;
-          const html = document.documentElement;
-          const count = Number(html.dataset.kniuNavbarScrollLocks || 0);
-          if (count === 0) html.dataset.kniuNavbarPreviousOverflow = html.style.overflow;
-          html.dataset.kniuNavbarScrollLocks = String(count + 1);
-          html.style.overflow = 'hidden';
+          if (this._pageScrollLocked) return;
+          // 所有者用组件实例：同一 navbar 重复上锁幂等，多个 navbar 互不干扰。
+          if (!lockDocumentScroll(this)) return;
           this._pageScrollLocked = true;
         }
         _unlockPageScroll() {
-          if (!this._pageScrollLocked || typeof document === 'undefined' || !document.documentElement) return;
-          const html = document.documentElement;
-          const count = Math.max(0, Number(html.dataset.kniuNavbarScrollLocks || 1) - 1);
-          if (count === 0) {
-            const previous = html.dataset.kniuNavbarPreviousOverflow || '';
-            if (previous) html.style.overflow = previous;
-            else html.style.removeProperty('overflow');
-            delete html.dataset.kniuNavbarScrollLocks;
-            delete html.dataset.kniuNavbarPreviousOverflow;
-          } else {
-            html.dataset.kniuNavbarScrollLocks = String(count);
-          }
+          if (!this._pageScrollLocked) return;
           this._pageScrollLocked = false;
+          unlockDocumentScroll(this);
         }
         _syncToggle() {
           const open = this.hasAttribute('open') && !this.hasAttribute('closing');
@@ -7777,17 +7893,14 @@ var KniuUI = (function () {
           <style>
             :host{display:none;position:fixed;z-index:40;right:16px!important;bottom:16px!important}
             :host([visible]){display:block}
-            button{display:grid;place-items:center;width:40px;height:40px;border:1px solid #e5e7eb;border-radius:50%;background-color:#fff;color:#374151;cursor:pointer;box-shadow:0 8px 24px rgba(15,23,42,.14);transition:transform .2s,box-shadow .2s}
-            button svg{width:18px;height:18px;display:block}
+            /* 尺寸下限 30px：值内保留 var(--kniu_vw)，normalizeComponentCss() 才不会把 30px 也改写掉（否则下限失效） */
+            button{display:grid;place-items:center;width:max(30px,calc(40 / var(--kniu_vw)));height:max(30px,calc(40 / var(--kniu_vw)));border:1px solid #e5e7eb;border-radius:50%;background-color:#fff;color:#374151;cursor:pointer;box-shadow:0 8px 24px rgba(15,23,42,.14);transition:transform .2s,box-shadow .2s}
+            button kniu-icon{width:max(13.5px,calc(18 / var(--kniu_vw)));height:max(13.5px,calc(18 / var(--kniu_vw)));display:block}
             button:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(15,23,42,.18)}
-            @media(min-width:calc(1280px - 60px)){:host{right:min(var(--right,40px),calc(100vw - 56px))!important;bottom:min(var(--bottom,40px),calc(100vh - 56px))!important}button{width:44px;height:44px}button svg{width:20px;height:20px}}
+            @media(min-width:calc(1280px - 60px)){:host{right:min(var(--right,40px),calc(100vw - 56px))!important;bottom:min(var(--bottom,40px),calc(100vh - 56px))!important}button{width:max(30px,calc(44 / var(--kniu_vw)));height:max(30px,calc(44 / var(--kniu_vw)))}button kniu-icon{width:max(13.5px,calc(20 / var(--kniu_vw)));height:max(13.5px,calc(20 / var(--kniu_vw)))}}
             @media(prefers-reduced-motion:reduce){button{transition:none}}
           </style>
-          <button type="button" aria-label="返回顶部">
-            <svg viewBox="0 0 1024 1024" aria-hidden="true">
-              <path fill="currentColor" d="M488.8 344.3 149 701a32 32 0 0 0 0 44.2l.4.3a29.4 29.4 0 0 0 42.7 0l320-335.8 319.8 335.8a29.4 29.4 0 0 0 42.7 0l.4-.3a32 32 0 0 0 0-44.2L535.2 344.3a32 32 0 0 0-46.4 0"/>
-            </svg>
-          </button>`;
+          <button type="button" aria-label="返回顶部"><kniu-icon icon="toup" aria-hidden="true"></kniu-icon></button>`;
         this._handleScroll = this._syncVisible.bind(this);
         this._handleClick = this._scrollTop.bind(this);
       }
@@ -7839,8 +7952,6 @@ var KniuUI = (function () {
           document.body?.scrollTop || 0,
           target?.scrollTop || 0
         );
-        // 仅当页面（或当前 scroll target）实际存在滚动空间时才显示按钮：
-        // 一屏够用时整页 scrollHeight ≤ clientHeight，应完全隐藏。
         const docOverflow = (docEl?.scrollHeight || 0) > (win.innerHeight || 0) + 1;
         const targetOverflow = target && target !== docEl && target !== document.body
           ? (target.scrollHeight - target.clientHeight) > 1
@@ -7867,18 +7978,18 @@ var KniuUI = (function () {
       .kniu_sys_comment{background-color:#fff;border-radius:4px}
       .kniu_sys_comment_input_area{position:relative;margin-bottom:20px}
       .kniu_sys_comment_textarea_wrap{position:relative;line-height:0}
-      .kniu_sys_comment_textarea{display:block;width:100%;min-height:80px;padding:10px 12px 28px;border:1px solid #dcdfe6;border-radius:4px;resize:vertical;font:inherit;line-height:1.5;box-sizing:border-box;outline:0}
+      .kniu_sys_comment_textarea{display:block;width:100%;min-height:max(80px,calc(100 / var(--kniu_vw)));padding:10px 12px 28px;border:1px solid #dcdfe6;border-radius:4px;resize:vertical;font:inherit;line-height:1.5;box-sizing:border-box;outline:0}
       .kniu_sys_comment_textarea:focus{border-color:#409eff}
       .kniu_sys_comment_toolbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:10px}
       .kniu_sys_comment_count{position:absolute;right:20px;bottom:7px;z-index:1;color:#909399;font-size:12px;line-height:1.2;white-space:nowrap;pointer-events:none}.kniu_sys_comment_count.kniu_sys_comment_limit{color:#f56c6c}
-      .kniu_sys_comment_emoji_btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:8px 12px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:14px;line-height:1;cursor:pointer;user-select:none;transition:.1s}
+      .kniu_sys_comment_emoji_btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:max(28px,calc(45 / var(--kniu_vw)));padding:8px 12px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:14px;line-height:1;cursor:pointer;user-select:none;transition:.1s}
       .kniu_sys_comment_emoji_btn:hover,.kniu_sys_comment_emoji_btn:focus-visible{border-color:#c6e2ff;background-color:#ecf5ff;color:#409eff}
       .kniu_sys_comment_emoji_btn:active{filter:brightness(.94)}
-      .kniu_sys_comment_submit{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:8px 15px;border:1px solid #409eff;border-radius:4px;background-color:#409eff;color:#fff;font:500 14px/1 var(--kniu-font-family);cursor:pointer;user-select:none;transition:.1s}
+      .kniu_sys_comment_submit{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:max(28px,calc(45 / var(--kniu_vw)));padding:8px 15px;border:1px solid #409eff;border-radius:4px;background-color:#409eff;color:#fff;font:500 14px/1 var(--kniu-font-family);cursor:pointer;user-select:none;transition:.1s}
       .kniu_sys_comment_submit:hover,.kniu_sys_comment_submit:focus-visible{background-color:#79bbff;border-color:#79bbff}
       .kniu_sys_comment_submit:active{filter:brightness(.94)}
       .kniu_sys_comment_submit:disabled{border-color:#e4e7ed;background-color:#a0cfff;color:#fff;cursor:not-allowed;filter:none;opacity:.6}
-      .kniu_sys_comment_emoji_panel{position:absolute;right:0;top:calc(100% + 6px);width:260px;max-height:220px;overflow-y:auto;overflow-x:hidden;background-color:#fff;border:1px solid #e4e7ed;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1);padding:8px;z-index:10;display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+      .kniu_sys_comment_emoji_panel{position:absolute;right:0;top:calc(100% + 6px);width:320px;max-width:calc(100vw - 16px);max-height:220px;overflow-y:auto;overflow-x:hidden;background-color:#fff;border:1px solid #e4e7ed;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1);padding:8px;z-index:10030;display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
       .kniu_sys_comment_emoji_panel.kniu_sys_comment_above{top:auto;bottom:calc(100% + 6px)}
       .kniu_sys_comment_emoji_panel.kniu_sys_comment_hidden{display:none}
       .kniu_sys_comment_emoji_item{background-color:#fff;border:1px solid transparent;border-radius:4px;padding:4px 2px;cursor:pointer;font-size:20px;text-align:center;line-height:1}
@@ -7934,16 +8045,10 @@ var KniuUI = (function () {
         this._replyId = null;
         this._replyName = '';
         this._closeEmojiHandler = null;
-        // 点赞动画按“评论 ID + 反馈标记”消费一次。组件每次 options 更新都会重建
-        // 评论列表；不能仅因旧的 likeFeedback 仍在 state 中就把其他评论再播一遍。
         this._playedLikeFeedback = new Map();
       }
       connectedCallback() { this._render(); }
       attributeChangedCallback() { }
-      // kniu:option 统一配置入口：必须提供本组件自身的 options accessor，
-      // 否则 installOptionsOnlyProtocol 因无 ownDescriptor.set 会退回属性反射
-      // （reflectOptions），_options 恒空、_render 渲染不出任何内容
-      // （对齐 kniu-switch / kniu-select / kniu-date-picker 的既有模式）。
       set options(value) {
         this._options = value && typeof value === 'object' ? value : {};
         this._render();
@@ -7962,9 +8067,7 @@ var KniuUI = (function () {
         const currentUserId = Math.max(0, Number.parseInt(options.currentUserId, 10) || 0);
         const maxLength = Math.max(0, Number.parseInt(options.maxLength, 10) || 0);
         const canSubmit = options.canSubmit !== false;
-
         const htmlParts = ['<style>' + COMMENT_STYLE + '</style><div class="kniu_sys_comment">'];
-        // 输入区
         if (canSubmit) {
           htmlParts.push('<div class="kniu_sys_comment_input_area">');
           if (this._replyId) {
@@ -7985,7 +8088,6 @@ var KniuUI = (function () {
           htmlParts.push('</div>');
           htmlParts.push('</div>');
         }
-        // 评论列表
         htmlParts.push('<div class="kniu_sys_comment_list">');
         if (list.length === 0) {
           htmlParts.push('<div class="kniu_sys_comment_empty">' + commentEscape(emptyText) + '</div>');
@@ -8009,8 +8111,6 @@ var KniuUI = (function () {
           };
           const renderItem = function (item) {
             const itemUsername = item.username || t('comment.anonymous');
-            // 归属只能使用后端按 role_id 判定的 isOwn；不能按昵称比较，
-            // 否则不同账号昵称相同或身份缓存过期时会把他人评论错误放到右侧。
             const isOwn = Boolean(item.isOwn)
               || (currentUserId > 0 && Number(item.userId) === currentUserId);
             const username = isOwn ? '我' : itemUsername;
@@ -8059,7 +8159,6 @@ var KniuUI = (function () {
           list.forEach(function (item) {
             if (Number(item.parentId) === 0) renderItem(item);
           });
-          // 父评论被隐藏或历史数据不完整时，回复也不能被静默丢弃。
           list.forEach(function (item) {
             if (Number(item.parentId) > 0 && !list.some(function (parent) {
               return Number(parent.id) === Number(item.parentId);
@@ -8082,7 +8181,6 @@ var KniuUI = (function () {
             const item = button.closest('.kniu_sys_comment_item');
             const commentId = item?.dataset.id || '';
             const feedbackId = button.getAttribute('data-like-feedback') || '';
-            // 相同评论的同一反馈已播过：本次只是其它评论的状态更新造成的重渲染。
             if (!commentId || !feedbackId || this._playedLikeFeedback.get(commentId) === feedbackId) return;
             this._playedLikeFeedback.set(commentId, feedbackId);
             button.removeAttribute('data-like-feedback');
@@ -8091,8 +8189,6 @@ var KniuUI = (function () {
             feedback.textContent = '❤';
             feedback.setAttribute('aria-hidden', 'true');
             feedback.addEventListener('animationend', () => feedback.remove(), { once: true });
-            // 先挂载静止首帧，再强制建立布局，最后启动动画，避免浏览器
-            // 将“插入节点 + 动画”合并成同一帧而跳过垂直位移。
             feedback.style.animation = 'none';
             button.appendChild(feedback);
             void feedback.offsetWidth;
@@ -8130,8 +8226,6 @@ var KniuUI = (function () {
             self._showEmoji = !self._showEmoji;
             emojiPanel.classList.toggle('kniu_sys_comment_hidden', !self._showEmoji);
             if (self._showEmoji) {
-              // 弹框位置默认在下方；下方空间不足时翻转到上方。
-              // 仅在用户点击打开时测量一次（非渲染热路径，允许同步布局）。
               emojiPanel.classList.remove('kniu_sys_comment_above');
               const area = emojiPanel.closest('.kniu_sys_comment_input_area');
               const rect = area ? area.getBoundingClientRect() : null;
@@ -8144,7 +8238,6 @@ var KniuUI = (function () {
               }
             }
           });
-          // 全局点击关闭 emoji 面板
           if (this._closeEmojiHandler) documentRefLocal.removeEventListener('click', this._closeEmojiHandler);
           this._closeEmojiHandler = function (e) {
             if (!self.isConnected) return;
@@ -8270,13 +8363,8 @@ var KniuUI = (function () {
         const own = Boolean(options.own);
         const disabled = Boolean(options.disabled || options.loading || own);
         const feedback = Number(options.feedback) || 0;
-        // 重建 Shadow DOM 会移除上一轮动画节点；必须同步复位播放锁，
-        // 否则取消点赞后再次点赞会一直被误判为动画仍在播放。
         this._plusPlaying = false;
         this.toggleAttribute('data-own', own);
-        // 重新渲染按钮状态时不要搬运旧的 +1 动画节点；详情页连续拉取
-        // getDetail/frontProfile/getComments 会触发多次渲染，搬运会让同一
-        // 个动画重复播放，表现为飘出两个 +1。
         this.shadowRoot.innerHTML = `
           <style>
             :host{display:block;width:100%;margin:0;color:#606266;font:16px/1 var(--kniu-font-family);box-sizing:border-box}
@@ -8284,23 +8372,21 @@ var KniuUI = (function () {
             button:hover,button:focus-visible{color:#409eff;border-color:#c6e2ff;background-color:#ecf5ff;outline:0}
             button[aria-pressed="true"]{color:#fff;border-color:#409eff;background-color:#409eff}
             button:disabled{color:#a8abb2;border-color:#e4e7ed;background-color:#f5f7fa;cursor:not-allowed}
-            svg{display:block;width:24px;height:24px;fill:currentColor}
+            kniu-icon{width:24px;height:24px;font-size:24px}
             .kniu_sys_like_count{white-space:nowrap}
             .kniu_sys_like_plus{position:absolute;left:50%;top:2px;z-index:2;color:#409eff;font-size:18px;font-weight:600;line-height:1;white-space:nowrap;pointer-events:none;animation:kniu_sys_like_plus .9s ease-out forwards}
             @keyframes kniu_sys_like_plus{0%{opacity:1;transform:translate(-50%,-4px) scale(.85)}30%{opacity:1;transform:translate(-50%,-18px) scale(1)}100%{opacity:0;transform:translate(-50%,-48px) scale(1.08)}}
             @media(prefers-reduced-motion:reduce){.kniu_sys_like_plus{animation-duration:.01ms}}
           </style>
           <button type="button" aria-label="${liked ? '取消点赞' : '点赞'}" aria-pressed="${liked}" ${disabled ? 'disabled' : ''}>
-            <svg viewBox="0 0 1024 1024" aria-hidden="true"><path d="M885.6 421.6c-20.8-25.6-52-40-85.6-40H622.4l24-116.8c12.8-62.4-10.4-127.2-60-166.4-20-16-48.8-13.6-66.4 5.6L300.8 349.6c-12 13.6-18.4 30.4-18.4 48v416c0 40 32 72 72 72h373.6c52 0 98.4-36.8 108.8-88l72-280c7.2-33.6-1.6-68-23.2-96zM218.4 381.6H112c-26.4 0-48 21.6-48 48v408c0 26.4 21.6 48 48 48h106.4c26.4 0 48-21.6 48-48v-408c0-26.4-21.6-48-48-48z"/></svg>
+            <kniu-icon icon="like" aria-hidden="true"></kniu-icon>
             <span class="kniu_sys_like_count">(${count})</span>
           </button>`;
         const button = this.shadowRoot.querySelector('button');
         button?.addEventListener('click', this._handleClick);
-        // 等按钮完成本次 DOM 挂载后再启动动画，避免同步 append 后首帧未建立导致动画不可见。
         if (liked && feedback > 0 && feedback !== this._lastFeedback) {
           this._lastFeedback = feedback;
           const play = () => {
-            // 取消请求期间可能仍会触发一次旧状态重渲染，确认当前状态仍是点赞后才播放。
             if (this._options?.liked && Number(this._options?.feedback) === feedback) {
               this._playPlusOne();
             }
@@ -8383,7 +8469,6 @@ var KniuUI = (function () {
         this._sessionSyncing = false;
         if (this._logoutLoading) return;
         if (result.status !== 1 || !result.data?.loggedIn || !result.data?.nickname) {
-          // 后台会话已失效时，不能继续保留 localStorage 中的旧前台昵称。
           if (identity.nickname) {
             IDENTITY.clearIdentity();
             try { globalThis.localStorage?.setItem('kniu_auth_logout_at', String(Date.now())); } catch (_) { }
@@ -8402,15 +8487,17 @@ var KniuUI = (function () {
         const nickname = identity.nickname;
         const accountName = identity.name || nickname;
         const t = (key) => componentText(componentLang(this._options), key);
-        // 身份切换（登录/退出）时收起菜单；访客态同样是下拉框，不能一律强制关闭。
         if (this._renderedNickname !== undefined && this._renderedNickname !== nickname) this._menuOpen = false;
         this._renderedNickname = nickname;
         this._cleanupMenuPopover();
         this.shadowRoot.innerHTML = `
           <style>
-            :host{display:flex;align-items:center;width:100%;min-height:50px;padding:0 16px;border-bottom:1px solid #e5e7eb;color:#111827;font-family:var(--kniu-font-family);font-size:var(--kniu-navbar-font-size);box-sizing:border-box}
+            /* 移动端水平内边距必须放内层 .kniu_sys_user_login_user，不能放 :host：
+               视图 CSS 的 *,::before,::after reset（margin:0;padding:0）属于外层树规则，
+               级联上永远压过 shadow 的 :host（无论特异性），放 :host 会被静默清零（#96） */
+            :host{display:flex;align-items:center;width:100%;min-height:50px;padding:0;border-bottom:1px solid #e5e7eb;color:#111827;font-family:var(--kniu-font-family);font-size:var(--kniu-navbar-font-size);box-sizing:border-box}
             a,button{min-height:44px;border:0;background-color:transparent;color:inherit;font:inherit;font-size:inherit;text-decoration:none;box-sizing:border-box}
-            .kniu_sys_user_login_user{position:relative;display:inline-flex;align-items:center;width:100%;padding:0 16px 0 calc(16px + var(--kniu-navbar-level,1) * 16px);white-space:nowrap}
+            .kniu_sys_user_login_user{position:relative;display:inline-flex;align-items:center;width:100%;padding:0 16px 0 calc(16px + var(--kniu-navbar-level,0) * 16px);white-space:nowrap}
             .kniu_sys_user_login_trigger{display:inline-flex;align-items:center;gap:7px;padding:0;cursor:pointer}
             .kniu_sys_user_login_trigger:focus-visible{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}
             .kniu_sys_user_login_avatar{display:block;width:30px;height:30px;border-radius:50%;overflow:hidden;flex-shrink:0}
@@ -8465,7 +8552,6 @@ var KniuUI = (function () {
         const menu = this._menuState?.panel || this.shadowRoot?.querySelector('.kniu_sys_user_login_menu');
         if (this._disposeMenuTrack) { this._disposeMenuTrack(); this._disposeMenuTrack = null; }
         if (!this._menuOpen || !menu) return;
-        // 打开：把菜单浮层 portal 到 body，fixed 相对视口（同 date-picker），再定位。
         if (!this._menuState || !this._menuState.portal?.isConnected) {
           if (this._menuState) this._menuState.unmount();
           this._menuState = mountPopoverPortal(menu, this.shadowRoot, { zIndex: 10030, attribute: 'data-kniu-userlogin-popover' });
@@ -8473,7 +8559,6 @@ var KniuUI = (function () {
         if (!this._menuState) return;
         this._menuAnchor = this.shadowRoot.querySelector('.kniu_sys_user_login_trigger');
         if (!this._menuAnchor) return;
-        // 每次打开都从干净的 fixed 状态开始，避免复用上一次 portal 的方向、坐标或动画变换。
         menu.style.position = 'fixed';
         menu.style.left = '0px';
         menu.style.top = '0px';
@@ -8497,8 +8582,6 @@ var KniuUI = (function () {
         const applyNextFrame = () => {
           this._menuPositionFrame = 0;
           if (!this._menuOpen || this._menuState?.panel !== menu || !this._menuAnchor) return;
-          // portal 挂载和移动端导航的 CSS 动画都会在当前同步布局之后改变锚点，
-          // 先在下一帧测量，再交给持续跟随逻辑处理后续动画帧。
           apply(this._menuAnchor.getBoundingClientRect());
         };
         if (this._menuPositionFrame) globalThis.cancelAnimationFrame?.(this._menuPositionFrame);
@@ -8510,7 +8593,6 @@ var KniuUI = (function () {
         );
       }
       _cleanupMenuPopover() {
-        // 卸载菜单 body portal 并停止跟随。供 _render 重建前 / 断开时调用。
         if (this._disposeMenuTrack) { this._disposeMenuTrack(); this._disposeMenuTrack = null; }
         if (this._menuPositionFrame) {
           globalThis.cancelAnimationFrame?.(this._menuPositionFrame);
@@ -8540,7 +8622,6 @@ var KniuUI = (function () {
         this._setMenuOpen(false);
         this._logoutLoading = true;
         const identity = IDENTITY.getIdentity();
-        // 先更新本地界面，再等待服务端销毁前后台会话，避免网络延迟期间仍显示已登录。
         IDENTITY.clearIdentity();
         try {
           globalThis.sessionStorage?.removeItem('kniu_authed');
@@ -8630,11 +8711,6 @@ var KniuUI = (function () {
     customElements.define('kniu-article-tab', KniuArticleTab);
   }
 
-  function registerIcons(set) {
-    Object.keys(set || {}).forEach(function (name) {
-      registerIconGlyph(name, set[name]);
-    });
-  }
 
   function installOptionsOnlyProtocol(tagName) {
     const Component = customElements.get(tagName);
@@ -8676,13 +8752,8 @@ var KniuUI = (function () {
       element.__kniuOptionAttributes = [];
       Object.entries(options || {}).forEach(function ([key, value]) {
         if (/^on[A-Z]/.test(key) || value == null || typeof value === 'function') return;
-        // 有公开 property 的配置必须走 property setter。部分组件（例如 kniu-loading.show）
-        // 不观察同名 attribute，只在 setter 内更新 Shadow DOM；若一律反射 attribute，
-        // 全局 loading 会永远停留在构造时的 data-show="true"，表现为所有路由白屏。
         if (key !== 'options' && hasWritableProperty(element, key)) {
           const propertyAttribute = key.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
-          // property setter 可能继续反射到 attribute；先登记为 options 内部写入，
-          // 避免 attributeChangedCallback 的旧属性门禁把合法反射拦截并移除。
           element.__kniuOptionAttributes.push(propertyAttribute);
           element[key] = value;
           return;
@@ -8690,7 +8761,9 @@ var KniuUI = (function () {
         if (typeof value === 'object') return;
         const name = key.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
         element.__kniuOptionAttributes.push(name);
-        if (value === false) element.removeAttribute(name);
+        // false 与空字符串都表示「不写这个属性」。空串若照写会留下 class="" / id="" 脏属性
+        // （浏览器不会自动回收空属性，见本文件「空属性清理」一节）。
+        if (value === false || value === '') element.removeAttribute(name);
         else element.setAttribute(name, value === true ? '' : String(value));
       });
     };
@@ -8698,7 +8771,8 @@ var KniuUI = (function () {
       configurable: true,
       get() { return ownDescriptor?.get ? ownDescriptor.get.call(this) : (this.__kniuOptions || {}); },
       set(value) {
-        const options = value && typeof value === 'object' ? value : {};
+        const defaults = componentDefaults[String(tagName || '').toLowerCase()] || {};
+        const options = { ...defaults, ...(value && typeof value === 'object' ? value : {}) };
         this.__kniuOptions = options;
         bindCallbacks(this, options);
         if (ownDescriptor?.set) ownDescriptor.set.call(this, options);
@@ -8753,7 +8827,6 @@ var KniuUI = (function () {
   registerLikeComponent();
   registerUserLoginComponent();
   registerArticleTabComponent();
-  registerIcons(KNIU_ICON_SET);
 
   function installMarkdownStyles(root) {
     var documentTarget = typeof document !== 'undefined' ? document.head : null;
@@ -8765,13 +8838,14 @@ var KniuUI = (function () {
       style.id = 'kniu-markdown-styles';
       target.appendChild(style);
     }
-    style.textContent = '.kniu-markdown-content{line-height:1.7}.kniu-markdown-content>p{margin:0 0 18px}.kniu-markdown-content>h1,.kniu-markdown-content>h2,.kniu-markdown-content>h3,.kniu-markdown-content>h4,.kniu-markdown-content>h5,.kniu-markdown-content>h6{margin:28px 0 16px;line-height:1.4}.kniu-markdown-content>h1{margin-top:0;margin-bottom:20px;font-size:24px}.kniu-markdown-content>h2{font-size:21px}.kniu-markdown-content>h3{font-size:18px}.kniu-markdown-content>ul,.kniu-markdown-content>ol{margin:0 0 18px;padding-left:30px;line-height:1.7}.kniu-markdown-content>blockquote{margin:0 0 28px;padding:11px 16px;border-left:4px solid #2563eb;border-radius:0 6px 6px 0;background:#f1f1f1;line-height:1.7;color:#4b5563}.kniu-markdown-content>blockquote p{margin:0}.kniu-markdown-content>blockquote p+p{margin-top:12px}.kniu-markdown-content>hr{width:100%;margin:20px 0 30px;border:0;border-top:3px solid #e5e7eb}.kniu-markdown-content>table{width:100%;margin:10px 0 20px;border-collapse:collapse;table-layout:fixed;font-size:14px}.kniu-markdown-content>table th,.kniu-markdown-content>table td{padding:10px 12px;border:1px solid #d1d5db;text-align:left;vertical-align:middle}.kniu-markdown-content>table th{background:#f3f4f6}.kniu-markdown-content :not(pre)>code{padding:2px 5px;border-radius:3px;background:#f1f5f9;color:#be185d;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.9em}.kniu-markdown-content .article-code{margin:20px 0;max-width:100%;overflow-x:auto;padding:16px;border:1px solid #d9dce1;border-radius:6px;background:#f6f8fa;color:#24292f;text-align:left;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}.kniu-markdown-content .article-code-body{display:block;width:max-content;min-width:100%;white-space:pre}.kniu-markdown-content .code-token-comment{color:#6a737d}.kniu-markdown-content .code-token-keyword,.kniu-markdown-content .code-token-attr{color:#d73a49}.kniu-markdown-content .code-token-string{color:#032f62}.kniu-markdown-content .code-token-number,.kniu-markdown-content .code-token-built-in{color:#005cc5}';
-    style.textContent = style.textContent.replaceAll('kniu-markdown-content', 'kniu_markdown_body');
-    style.textContent += '.kniu_markdown_body>ul li{list-style:disc}.kniu_markdown_body>ol li{list-style:decimal}';
-    style.textContent += '.kniu_markdown_body{--border-color:#e0e0e0}';
-    style.textContent += '.kniu_markdown_body>h1,.kniu_markdown_body>h2,.kniu_markdown_body>h3,.kniu_markdown_body>h4,.kniu_markdown_body>h5,.kniu_markdown_body>h6{margin-top:24px;margin-bottom:12px;font-weight:600;line-height:1.3}.kniu_markdown_body>h2{font-size:1.6em;border-bottom:1px solid var(--border-color);padding-bottom:6px}';
-    style.textContent += '.kniu_markdown_body a{color:#2563eb;text-decoration:none}.kniu_markdown_body a:hover{color:#1d4ed8;text-decoration:underline}';
-    style.textContent += '.kniu_markdown_body>p br{display:block;content:""}';
+    style.textContent = '.kniu_sys_markdown_body{line-height:1.7;font-size:max(12px,calc(16 / var(--kniu_vw)))}.kniu_sys_markdown_body>p{margin:0 0 18px}.kniu_sys_markdown_body>h1,.kniu_sys_markdown_body>h2,.kniu_sys_markdown_body>h3,.kniu_sys_markdown_body>h4,.kniu_sys_markdown_body>h5,.kniu_sys_markdown_body>h6{margin:28px 0 16px;line-height:1.4}.kniu_sys_markdown_body>h1{margin-top:0;margin-bottom:20px;font-size:24px}.kniu_sys_markdown_body>h2{font-size:21px}.kniu_sys_markdown_body>h3{font-size:18px}.kniu_sys_markdown_body>ul,.kniu_sys_markdown_body>ol{margin:0 0 18px;padding-left:30px;line-height:1.7}.kniu_sys_markdown_body>blockquote{margin:0 0 28px;padding:11px 16px;border-left:4px solid #2563eb;border-radius:0 6px 6px 0;background:#f1f1f1;line-height:1.7;color:#4b5563}.kniu_sys_markdown_body>blockquote p{margin:0}.kniu_sys_markdown_body>blockquote p+p{margin-top:12px}.kniu_sys_markdown_body>hr{width:100%;margin:20px 0 30px;border:0;border-top:3px solid #e5e7eb}.kniu_sys_markdown_body>table,.kniu_sys_markdown_body>.kniu_sys_article_table_wrap>table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:14px}.kniu_sys_markdown_body>table th,.kniu_sys_markdown_body>table td,.kniu_sys_markdown_body>.kniu_sys_article_table_wrap>table th,.kniu_sys_markdown_body>.kniu_sys_article_table_wrap>table td{padding:10px 12px;border:1px solid #d1d5db;text-align:left;vertical-align:middle}.kniu_sys_markdown_body>table th,.kniu_sys_markdown_body>.kniu_sys_article_table_wrap>table th{background:#f3f4f6}.kniu_sys_markdown_body :not(pre)>code{padding:2px 5px;border-radius:3px;background:#f1f5f9;color:#be185d;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.9em}.kniu_sys_markdown_body .kniu_sys_article_code{margin:20px 0;max-width:100%;overflow-x:auto;padding:16px;border:1px solid #d9dce1;border-radius:6px;background:#f6f8fa;color:#24292f;text-align:left;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}.kniu_sys_markdown_body .kniu_sys_article_code_body{display:block;width:max-content;min-width:100%;white-space:pre}.kniu_sys_markdown_body .kniu_sys_code_token_comment{color:#6a737d}.kniu_sys_markdown_body .kniu_sys_code_token_keyword,.kniu_sys_markdown_body .kniu_sys_code_token_attr{color:#d73a49}.kniu_sys_markdown_body .kniu_sys_code_token_string{color:#032f62}.kniu_sys_markdown_body .kniu_sys_code_token_number,.kniu_sys_markdown_body .kniu_sys_code_token_built-in{color:#005cc5}';
+    style.textContent += '.kniu_sys_markdown_body>ul li{list-style:disc}.kniu_sys_markdown_body>ol li{list-style:decimal}';
+    style.textContent += '.kniu_sys_markdown_body{--border-color:#e0e0e0}';
+    style.textContent += '.kniu_sys_markdown_body>h1,.kniu_sys_markdown_body>h2,.kniu_sys_markdown_body>h3,.kniu_sys_markdown_body>h4,.kniu_sys_markdown_body>h5,.kniu_sys_markdown_body>h6{margin-top:24px;margin-bottom:12px;font-weight:600;line-height:1.3}.kniu_sys_markdown_body>h2{font-size:1.6em;border-bottom:1px solid var(--border-color);padding-bottom:6px}';
+    style.textContent += '.kniu_sys_markdown_body a{color:#2563eb;text-decoration:none}.kniu_sys_markdown_body a:hover{color:#1d4ed8;text-decoration:underline}';
+    style.textContent += '.kniu_sys_markdown_body>p br{display:block;content:""}';
+    // 内容区表格包裹层（与编辑器、富文本正文共用同一套契约）。
+    style.textContent += KNIU_CONTENT_TABLE_DOC_CSS;
     if (target !== documentTarget && documentTarget) {
       var documentStyle = documentTarget.querySelector('#kniu-markdown-styles');
       if (!documentStyle) {
@@ -8793,11 +8867,13 @@ var KniuUI = (function () {
       target.appendChild(style);
     }
     style.textContent = [
-      '.kniu_richtext_body{line-height:1.7}',
-      '.kniu_richtext_body>p{margin:0 0 18px}',
-      '.kniu_richtext_body code{padding:2px 5px;border-radius:3px;background-color:#f1f5f9;color:#be185d;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.9em}',
-      '.kniu_richtext_body>pre{margin:20px 0;max-width:100%;overflow-x:auto;padding:16px;border:1px solid #d9dce1;border-radius:6px;background-color:#f6f8fa;color:#24292f;text-align:left;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}',
-      '.kniu_richtext_body>pre>code{display:block;width:max-content;min-width:100%;padding:0;border-radius:0;background-color:transparent;color:inherit;font:inherit;white-space:pre}'
+      '.kniu_sys_richtext_body{line-height:1.7}',
+      '.kniu_sys_richtext_body>p{margin:0 0 18px}',
+      '.kniu_sys_richtext_body code{padding:2px 5px;border-radius:3px;background-color:#f1f5f9;color:#be185d;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.9em}',
+      '.kniu_sys_richtext_body>pre{margin:20px 0;max-width:100%;overflow-x:auto;padding:16px;border:1px solid #d9dce1;border-radius:6px;background-color:#f6f8fa;color:#24292f;text-align:left;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}',
+      '.kniu_sys_richtext_body>pre>code{display:block;width:max-content;min-width:100%;padding:0;border-radius:0;background-color:transparent;color:inherit;font:inherit;white-space:pre}',
+      // 富文本正文的表格同样走内容区表格契约（外层横向滚动 + 表格 768px 下限 + 外边距由外壳承担）。
+      KNIU_CONTENT_TABLE_DOC_CSS
     ].join('');
     if (target !== documentTarget && documentTarget) {
       var documentStyle = documentTarget.querySelector('#kniu-rich-text-styles');
@@ -8819,15 +8895,27 @@ var KniuUI = (function () {
 
   return {
     state: state,
+    configure: configure,
+    // use 是 configure 的别名，用于全局 UI 配置入口。
+    use: configure,
     setLoading: setLoading,
+    lockDocumentScroll: lockDocumentScroll,
+    unlockDocumentScroll: unlockDocumentScroll,
+    reconcileDocumentScrollLock: reconcileDocumentScrollLock,
+    isEmptyAttributeValue: isEmptyAttributeValue,
+    pruneEmptyAttribute: pruneEmptyAttribute,
+    pruneEmptyAttributes: pruneEmptyAttributes,
+    pruneEmptyAttributeTree: pruneEmptyAttributeTree,
+    pruneEmptyRootAttributes: pruneEmptyRootAttributes,
     msg: msg,
     usePagination: usePagination,
     makeSwitchOptions: makeSwitchOptions,
     createSearchActions: createSearchActions,
     createRowDeleteHandler: createRowDeleteHandler,
-    confirm: confirm
-    , installMarkdownStyles: installMarkdownStyles
-    , installRichTextStyles: installRichTextStyles
+    useListPage: useListPage,
+    confirm: confirm,
+    installMarkdownStyles: installMarkdownStyles,
+    installRichTextStyles: installRichTextStyles
   };
 }());
 

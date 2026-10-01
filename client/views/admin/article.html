@@ -19,7 +19,6 @@
 
   .detail_head_actions {
     display: flex;
-    align-items: center;
     gap: 12px;
   }
 
@@ -61,11 +60,11 @@
     <div class="detail_head">
       <span class="detail_title">文章</span>
       <div class="detail_head_actions">
-        <kniu-btn style="height:40px;" kniu:option="{{type:'primary'}}" kniu@click="addRow">添加</kniu-btn>
+        <kniu-btn kniu:option="{{type:'primary'}}" kniu@click="addRow">添加</kniu-btn>
         <kniu-input kniu:form="{{keyword}}" kniu:option="{{name:'keyword',placeholder:'请输入标题'}}" kniu@keydown.enter="searchList" kniu@input="debouncedSearch">
           <template #append label-width="48px">
             <kniu-btn aria-label="搜索" kniu:option="{{text:true}}" kniu@click="searchList">
-              <kniu-icon kniu:option="{{icon:'Search'}}" />
+              <kniu-icon kniu:option="{{icon:'search'}}" />
             </kniu-btn>
           </template>
         </kniu-input>
@@ -115,7 +114,7 @@
   <template #header>
     <span>{{dialogTitle}}</span>
     <kniu-btn kniu:option="{{type:'primary',size:'small',link:true}}" kniu@click="closeDialog">
-      <kniu-icon kniu:option="{{icon:'Close'}}" />
+      <kniu-icon kniu:option="{{icon:'close'}}" />
     </kniu-btn>
   </template>
   <template #default>
@@ -150,7 +149,7 @@
       </kniu-date-picker>
     </kniu-form-cell>
     <kniu-form-cell>
-      <kniu-editor ref="editor" kniu:form="{{editform.content}}" kniu:option="{{...(editor),name:'content',mode:editform.content_mode}}">
+      <kniu-editor ref="editor" kniu:form="{{editform.content}}" kniu:option="{{name:'content',mode:editform.content_mode}}">
         <template #prepend label-width="100px">正文</template>
       </kniu-editor>
     </kniu-form-cell>

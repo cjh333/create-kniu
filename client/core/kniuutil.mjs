@@ -20,6 +20,24 @@ export function getCurrentRoutePath() {
   return hash.split('?')[0].split('#')[0] || '/';
 }
 
+// 页面刷新时 history.state 仍会保留；需要区分刷新与站内路由跳转的页面可使用此判断。
+export function isPageReload(performanceRef = globalThis.performance) {
+  const entry = performanceRef?.getEntriesByType?.('navigation')?.[0];
+  return entry?.type === 'reload' || performanceRef?.navigation?.type === 1;
+}
+
+let transientSearchKeyword = '';
+
+// 前台单页会话内共享搜索词：路由切换不丢失，浏览器刷新会自然回到空值。
+export function getTransientSearchKeyword() {
+  return transientSearchKeyword;
+}
+
+export function setTransientSearchKeyword(value) {
+  transientSearchKeyword = String(value == null ? '' : value);
+  return transientSearchKeyword;
+}
+
 // 返回本地时间的常用组成部分，适合表单默认值和日期组件初始化。
 export function getLocalDateParts(value = new Date()) {
   const date = value instanceof Date ? value : new Date(value);
@@ -120,6 +138,26 @@ export function optionsToValues(options) {
     out[field] = slot && typeof slot === 'object' && 'value' in slot ? slot.value : slot;
   });
   return out;
+}
+
+function field(value, condition, message) {
+  return { value: value == null ? '' : value, condition: condition, message: String(message || '') };
+}
+
+export function required(message = '此项不能为空', value = '') {
+  return field(value, true, message);
+}
+
+export function pattern(expression, message = '格式不正确', value = '') {
+  return field(value, expression instanceof RegExp ? expression : new RegExp(String(expression || '')), message);
+}
+
+export function email(message = '请输入正确邮箱', value = '') {
+  return pattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, message, value);
+}
+
+export function createForm(fields = {}, layout = {}) {
+  return Object.assign({}, layout, fields);
 }
 
 // 将数据库单图 URL 转成上传组件使用的文件列表。

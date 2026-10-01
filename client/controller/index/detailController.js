@@ -1,25 +1,14 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import UI from '../../core/kniuui.js';
-import REQUEST from '../../core/kniurequest.mjs';
+import { STATUS_UNAUTHORIZED } from '../../core/kniurequest.mjs';
 import IDENTITY from '../../core/kniuidentity.mjs';
-import { enhanceCodeBlocks, renderMarkdown } from '../../core/kniucode.mjs';
+import { wrapContentTables, renderMarkdownArticle } from '../../core/kniucode.mjs';
 import { sanitizeRichHtml } from '../../core/kniusanitizer.mjs';
 
-const { controller, onBeforeMount, onMounted, reactive } = MVVM;
+const { controller } = MVVM;
 const PENDING_COMMENT_KEY = 'kniu_pending_comment';
 
-function unwrapEditorCodeFence(value) {
-  return String(value || '')
-    .replace(/((?:^|<\/(?:p|div)>|<br\s*\/?>|\n)\s*)(?:<(?:p|div)[^>]*>\s*)?```[a-z0-9_-]*\s*(?:<\/(?:p|div)>|<br\s*\/?>|\n)+(\s*<pre\b)/gi, '$1$2')
-    .replace(/(<\/pre>\s*)(?:<(?:p|div)[^>]*>\s*)?```\s*(?:<\/(?:p|div)>|<br\s*\/?>)?/gi, '$1');
-}
-
-function renderMarkdownArticle(value) {
-  const source = unwrapEditorCodeFence(value);
-  return enhanceCodeBlocks(renderMarkdown(source));
-}
-
-const detailController = controller(({ navigateTo, getRouteData, onRouteChange, onScopeDispose, root }) => {
+const detailController = controller(({ navigateTo, getRouteData, onRouteChange, onScopeDispose, request, root, reactive, onBeforeMount, onMounted }) => {
   const identity = IDENTITY.getIdentity();
   const state = reactive({
     title: '',
@@ -60,7 +49,7 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
       currentUserId: 0,
       filter: 'B,逼,屌,操',
       placeholder: '说点什么吧...',
-      canSubmit: Boolean(identity.nickname)
+      canSubmit: true
     }
   });
 
@@ -88,15 +77,6 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     } catch (_) {
       return null;
     }
-  }
-
-  function requireSignin(pending) {
-    savePendingComment(pending);
-    navigateTo('/login', {
-      tab: IDENTITY.hasAccount() ? 'login' : 'register',
-      redirect: '/detail',
-      id: getArticleId()
-    });
   }
 
   function updateCommentOptions(patch) {
@@ -136,7 +116,6 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
       : (detail && typeof detail === 'object' ? detail : event?.detail);
     const id = Number(payload?.id);
     if (Number.isInteger(id) && id > 0) {
-      // 地址保持 /detail，文章 id 只放在应用路由状态中，避免污染地址栏。
       navigateTo('/detail', { id: id });
     }
   }
@@ -149,26 +128,17 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
   async function onLikeChange(detail) {
     const id = getArticleId();
     if (!id || state.likeOptions.loading || likeRequestActive) return;
-    const identity = IDENTITY.getIdentity();
-    if (!identity.nickname) {
-      navigateTo('/login', {
-        tab: IDENTITY.hasAccount() ? 'login' : 'register',
-        redirect: '/detail',
-        id: id
-      });
-      return;
-    }
     const liked = Boolean(detail?.liked);
     likeRequestActive = true;
     updateLikeOptions({ loading: true });
     let succeeded = false;
     try {
-      const result = await REQUEST({
+      const result = await request({
         url: '/likeArticle',
         type: 'POST',
-        data: { article_id: id, liked: liked, identity_token: identity.token },
-        redirectOnUnauthorized: false
+        data: { article_id: id, liked: liked, identity_token: IDENTITY.getIdentity().token }
       });
+      if (result.status === STATUS_UNAUTHORIZED) return;
       if (result.status !== 1) {
         UI.msg({ content: result.msg || '点赞失败', type: 'error' });
         return;
@@ -187,26 +157,18 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     }
   }
 
+  // 收藏：同点赞，登录态完全交给服务端判定。
   async function toggleFavorite() {
     if (favoriteRequestActive) return;
-    const identity = IDENTITY.getIdentity();
-    if (!identity.nickname) {
-      navigateTo('/login', {
-        tab: IDENTITY.hasAccount() ? 'login' : 'register',
-        redirect: '/detail',
-        id: getArticleId()
-      });
-      return;
-    }
     const favorited = !state.favorited;
     favoriteRequestActive = true;
     try {
-      const result = await REQUEST({
+      const result = await request({
         url: '/favoriteArticle',
         type: 'POST',
-        data: { article_id: getArticleId(), favorited: favorited, identity_token: identity.token },
-        redirectOnUnauthorized: false
+        data: { article_id: getArticleId(), favorited: favorited, identity_token: IDENTITY.getIdentity().token }
       });
+      if (result.status === STATUS_UNAUTHORIZED) return;
       if (result.status !== 1) {
         UI.msg({ content: result.msg || '收藏操作失败', type: 'error' });
         return;
@@ -224,9 +186,10 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     if (!id) return;
     if (commentsRequest && commentsRequest.id === id) return commentsRequest.promise;
     const promise = (async function () {
-      const result = await REQUEST({
+      const result = await request({
         url: '/getComments',
         type: 'POST',
+        mutation: false,
         data: { article_id: id, identity_token: IDENTITY.getIdentity().token },
         headers: { 'Cache-Control': 'no-cache, no-store', Pragma: 'no-cache' },
         redirectOnUnauthorized: false
@@ -253,9 +216,10 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     const maxLength = Math.max(0, Number(state.commentOptions.maxLength) || 0);
     if (maxLength && Array.from(content).length > maxLength) {
       UI.msg({ content: `评论不能超过 ${maxLength} 个字`, type: 'error' });
+      commentSubmitActive = false;
       return;
     }
-    const result = await REQUEST({
+    const result = await request({
       url: '/submitComment',
       type: 'POST',
       data: {
@@ -263,9 +227,13 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
         parent_id: detail?.parentId || 0,
         identity_token: IDENTITY.getIdentity().token,
         message: content
-      },
-      redirectOnUnauthorized: false
+      }
     });
+    if (result.status === STATUS_UNAUTHORIZED) {
+      savePendingComment({ articleId: id, content: content, parentId: detail?.parentId || 0 });
+      commentSubmitActive = false;
+      return;
+    }
     if (result.status === 1) {
       if (Number(result.data?.is_show) !== 1) {
         UI.msg({ content: '评论已提交，审核通过后将展示', type: 'success' });
@@ -281,28 +249,19 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
   async function onSubmitComment(detail) {
     const content = String(detail?.content || '').trim();
     if (!content) return;
-    if (!IDENTITY.getIdentity().nickname) {
-      requireSignin({ articleId: getArticleId(), content: content, parentId: detail?.parentId || 0 });
-      return;
-    }
     await submitComment(detail);
   }
 
   async function onLikeComment(detail) {
     const commentId = Number(detail?.commentId);
     if (!commentId) return;
-    const identity = IDENTITY.getIdentity();
-    if (!identity.nickname) {
-      navigateTo('/login', { tab: IDENTITY.hasAccount() ? 'login' : 'register', redirect: '/detail', id: getArticleId() });
-      return;
-    }
     const liked = !!detail?.liked;
-    const result = await REQUEST({
+    const result = await request({
       url: '/likeComment',
       type: 'POST',
-      data: { comment_id: commentId, liked: liked, identity_token: identity.token },
-      redirectOnUnauthorized: false
+      data: { comment_id: commentId, liked: liked, identity_token: IDENTITY.getIdentity().token }
     });
+    if (result.status === STATUS_UNAUTHORIZED) return;
     if (result.status !== 1) {
       UI.msg({ content: result.msg || '点赞失败', type: 'error' });
       return;
@@ -329,12 +288,12 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     } catch (_) {
       return;
     }
-    const result = await REQUEST({
+    const result = await request({
       url: '/deleteComment',
       type: 'POST',
-      data: { comment_id: commentId, identity_token: IDENTITY.getIdentity().token },
-      redirectOnUnauthorized: false
+      data: { comment_id: commentId, identity_token: IDENTITY.getIdentity().token }
     });
+    if (result.status === STATUS_UNAUTHORIZED) return;
     if (result.status !== 1) {
       UI.msg({ content: result.msg || '删除失败', type: 'error' });
       return;
@@ -346,12 +305,13 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
   async function loadCurrentIdentity() {
     const currentIdentity = IDENTITY.getIdentity();
     if (!currentIdentity.nickname) {
-      updateCommentOptions({ currentUser: '', currentUserId: 0, canSubmit: false });
+      updateCommentOptions({ currentUser: '', currentUserId: 0 });
       return;
     }
-    const result = await REQUEST({
+    const result = await request({
       url: '/frontProfile',
       type: 'POST',
+      mutation: false,
       data: { identity_token: currentIdentity.token },
       redirectOnUnauthorized: false
     });
@@ -383,7 +343,7 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
         return;
       }
       state.articleId = id;
-      const result = await REQUEST({
+      const result = await request({
         url: '/getDetail',
         type: 'POST',
         data: { id, identity_token: IDENTITY.getIdentity().token },
@@ -403,9 +363,7 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
         state.content = renderMarkdownArticle(result.data.content || '');
       } else {
         UI.installRichTextStyles(root);
-        // 富文本正文也通过统一清洗器：被转义保存的 <script setup> 会恢复为行内 code，
-        // 同时避免服务端历史数据将危险标签再次作为真实 DOM 注入前台。
-        state.content = sanitizeRichHtml(result.data.content || '');
+        state.content = wrapContentTables(sanitizeRichHtml(result.data.content || ''));
       }
       state.publisher = result.data.publisher || '';
       state.create_time = result.data.create_time || '';

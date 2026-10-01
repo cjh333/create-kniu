@@ -4,6 +4,7 @@ namespace App\Admin\Controllers;
 
 use Core\Base;
 use Core\Db;
+use Core\ErrorCode;
 
 class ArticleController extends Base
 {
@@ -16,12 +17,12 @@ class ArticleController extends Base
   public function articleMediaUpload(): void
   {
     if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
-      $this->json([], '请选择需要上传的媒体文件', 0);
+      $this->json([], '请选择需要上传的媒体文件', ErrorCode::PARAM_INVALID);
       return;
     }
     $path = $this->uploadFile($_FILES['file'], 'article');
     if (!$path) {
-      $this->json([], '媒体文件上传失败', 0);
+      $this->json([], '媒体文件上传失败', ErrorCode::UPLOAD_REJECTED);
       return;
     }
     $this->json(['url' => $path], '上传成功', 1);
@@ -30,18 +31,17 @@ class ArticleController extends Base
   // 增加。
   public function articleAdd(): void
   {
-    $this->ensureArticleSchema();
     $roleId = $this->currentUserId();
     if ($roleId <= 0) {
       http_response_code(403);
-      $this->json([], '请先登录', 0);
+      $this->json([], '请先登录', ErrorCode::UNAUTHORIZED);
       return;
     }
     $coverPath = '';
     if (isset($_FILES['cover']) && $_FILES['cover']['error'] === UPLOAD_ERR_OK) {
       $coverPath = $this->uploadFile($_FILES['cover'], 'article');
       if (!$coverPath) {
-        $this->json([], '文件上传失败', 0);
+        $this->json([], '文件上传失败', ErrorCode::UPLOAD_REJECTED);
         return;
       }
     }
@@ -62,24 +62,10 @@ class ArticleController extends Base
     try {
       Db::name('tb_article')->insert($data);
     } catch (\Throwable $e) {
-      $this->json([], '文章添加失败：' . $e->getMessage(), 0);
+      $this->json([], '文章添加失败：' . $e->getMessage(), ErrorCode::SERVER_ERROR);
       return;
     }
     $this->json([], '添加成功', 1);
-  }
-
-  /** 文章允许同一账号发布多篇，清理旧建表 SQL 遗留的 role_id 唯一索引。 */
-  private function ensureArticleSchema(): void
-  {
-    $columns = Db::query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_article'");
-    $existing = array_column($columns, 'COLUMN_NAME');
-    if (!in_array('content_mode', $existing, true)) {
-      Db::execute("ALTER TABLE `tb_article` ADD COLUMN `content_mode` varchar(16) NOT NULL DEFAULT 'rich' AFTER `content`");
-    }
-    $indexes = Db::query("SELECT INDEX_NAME, NON_UNIQUE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_article' AND INDEX_NAME = 'uk_role_article_role'");
-    if (!empty($indexes)) {
-      Db::execute('ALTER TABLE `tb_article` DROP INDEX `uk_role_article_role`');
-    }
   }
 
   // 删除。普通用户仅能删除自己发布的文章；管理员可删除任意文章。
@@ -88,12 +74,14 @@ class ArticleController extends Base
     $id = $this->input('post.id') ?? '';
     if (!$this->isAdmin()) {
       // 普通用户仅能删除自己发布的文章。
+      // 只需判断归属存在，避免拖回正文大字段。
       $exists = Db::name('tb_article')
+        ->field(['id'])
         ->where(['id' => $id, 'role_id' => $this->currentUserId()])
         ->find();
       if (!$exists) {
         http_response_code(403);
-        $this->json([], '只能删除自己发布的文章', 0);
+        $this->json([], '只能删除自己发布的文章', ErrorCode::FORBIDDEN);
         return;
       }
     }
@@ -104,7 +92,6 @@ class ArticleController extends Base
   // 修改。普通用户仅能修改自己发布的文章；管理员可修改任意文章，批量操作仅管理员。
   public function articleUpdate(): void
   {
-    $this->ensureArticleSchema();
     $isAdmin = $this->isAdmin();
     $type = $this->input('post.type') ?? null;
     $id = $this->input('post.id') ?? null;
@@ -113,7 +100,7 @@ class ArticleController extends Base
     if (isset($_FILES['cover']) && $_FILES['cover']['error'] === UPLOAD_ERR_OK) {
       $coverPath = $this->uploadFile($_FILES['cover'], 'article');
       if (!$coverPath) {
-        $this->json([], '文件上传失败', 0);
+        $this->json([], '文件上传失败', ErrorCode::UPLOAD_REJECTED);
         return;
       }
       $data['cover'] = $coverPath;
@@ -135,11 +122,11 @@ class ArticleController extends Base
       'url' => $this->input('post.url') ?? null,
       'is_show' => $this->input('post.is_show') ?? null
     ];
-    $data = array_filter($data, function ($value) {
+    $data = array_filter($data, function (mixed $value) {
       return $value !== null;
     });
     if (empty($data)) {
-      $this->json([], '没有提供任何要更新的数据', 0);
+      $this->json([], '没有提供任何要更新的数据', ErrorCode::PARAM_INVALID);
       return;
     }
     $data = $this->encodeFields($data, ['title', 'subtitle', 'summary', 'content']);
@@ -147,7 +134,7 @@ class ArticleController extends Base
       // 批量操作（含全局勾选）仅管理员可用。
       if (!$isAdmin) {
         http_response_code(403);
-        $this->json([], '权限不足', 0);
+        $this->json([], '权限不足', ErrorCode::FORBIDDEN);
         return;
       }
       $selectallResult = Db::name('tb_selectall')
@@ -161,11 +148,12 @@ class ArticleController extends Base
       if (!$isAdmin) {
         // 普通用户仅能更新自己发布的文章。
         $owned = Db::name('tb_article')
+          ->field(['id'])
           ->where(['id' => $id, 'role_id' => $this->currentUserId()])
           ->find();
         if (!$owned) {
           http_response_code(403);
-          $this->json([], '只能编辑自己发布的文章', 0);
+          $this->json([], '只能编辑自己发布的文章', ErrorCode::FORBIDDEN);
           return;
         }
       }
@@ -183,11 +171,11 @@ class ArticleController extends Base
       $result = $selectallResult + $articleResult;
     }
     if ($result === false) {
-      $this->json([], '更新失败', 0);
+      $this->json([], '更新失败', ErrorCode::SERVER_ERROR);
       return;
     }
     if ($result === 0) {
-      $this->json([], '数据未发生变化', 0);
+      $this->json([], '数据未发生变化', ErrorCode::RULE_REJECTED);
       return;
     }
     $this->json([], '更新成功', 1);
@@ -209,16 +197,29 @@ class ArticleController extends Base
       $query->where('role_id', '=', $this->currentUserId());
     }
     if ($keyword !== '') {
-      $query->where('LOWER(`title`)', 'LIKE', $this->likeEncodedPattern($keyword));
+      $query->where('`title`', 'LIKE', $this->likeEncodedPattern($keyword));
     }
     $result = $query
       ->order($field, $sort)
       ->page($pageCurrent, $pageRow);
     $result['data'] = $this->decodeFields($result['data'] ?? [], ['title', 'subtitle', 'summary', 'content']);
+    // 批量查询账号信息，避免在循环内逐条查询 tb_role 形成 N+1。
+    $roleIds = array_values(array_unique(array_filter(array_map(function (array $row) {
+      return (int)($row['role_id'] ?? 0);
+    }, $result['data']))));
+    $roleAccounts = [];
+    if ($roleIds) {
+      foreach (Db::name('tb_role')->whereIn('id', $roleIds)->field(['id', 'name', 'nickname'])->select() as $role) {
+        $roleAccounts[(int)$role['id']] = [
+          'account' => html_entity_decode((string)($role['name'] ?? ''), ENT_QUOTES),
+          'nickname' => html_entity_decode((string)($role['nickname'] ?? ''), ENT_QUOTES)
+        ];
+      }
+    }
     foreach ($result['data'] as &$article) {
-      $role = Db::name('tb_role')->where('id', '=', (int)($article['role_id'] ?? 0))->find();
-      $article['account'] = html_entity_decode((string)($role['name'] ?? ''), ENT_QUOTES);
-      $article['nickname'] = html_entity_decode((string)($role['nickname'] ?? ''), ENT_QUOTES);
+      $roleAccount = $roleAccounts[(int)($article['role_id'] ?? 0)] ?? ['account' => '', 'nickname' => ''];
+      $article['account'] = $roleAccount['account'];
+      $article['nickname'] = $roleAccount['nickname'];
     }
     unset($article);
     $result['selectall'] = $selectall;
@@ -247,26 +248,26 @@ class ArticleController extends Base
     try {
       $cover = $this->input('post.cover') ?? '';
       if (empty($cover)) {
-        $this->json([], '图片路径不能为空', 0);
+        $this->json([], '图片路径不能为空', ErrorCode::UPLOAD_REJECTED);
         return;
       }
 
       $uploadConfigPath = __DIR__ . '/../../../config/upload.php';
       $uploadConfig = @require $uploadConfigPath;
       if (!$uploadConfig) {
-        $this->json([], '配置文件加载失败', 0);
+        $this->json([], '配置文件加载失败', ErrorCode::SERVER_ERROR);
         return;
       }
 
       if (strpos($cover, $uploadConfig['URL_PREFIX']) !== 0) {
-        $this->json([], '图片路径无效', 0);
+        $this->json([], '图片路径无效', ErrorCode::UPLOAD_REJECTED);
         return;
       }
       $relativePath = ltrim(substr($cover, strlen($uploadConfig['URL_PREFIX'])), '/\\');
       $uploadRoot = realpath($uploadConfig['UPLOAD_PATH']);
       $filePath = realpath($uploadConfig['UPLOAD_PATH'] . $relativePath);
       if (!$uploadRoot || !$filePath || strpos($filePath, $uploadRoot . DIRECTORY_SEPARATOR) !== 0) {
-        $this->json([], '图片路径越界', 0);
+        $this->json([], '图片路径越界', ErrorCode::UPLOAD_REJECTED);
         return;
       }
 
@@ -280,18 +281,18 @@ class ArticleController extends Base
       ];
 
       if (!@file_exists($filePath)) {
-        $this->json($debugInfo, '文件不存在', 0);
+        $this->json($debugInfo, '文件不存在', ErrorCode::NOT_FOUND);
         return;
       }
 
       if (!@unlink($filePath)) {
-        $this->json($debugInfo, '删除文件失败', 0);
+        $this->json($debugInfo, '删除文件失败', ErrorCode::SERVER_ERROR);
         return;
       }
 
       $this->json([], '删除成功', 1);
     } catch (\Exception $e) {
-      $this->json(['error' => $e->getMessage()], '服务器错误', 0);
+      $this->json(['error' => $e->getMessage()], '服务器错误', ErrorCode::SERVER_ERROR);
     }
   }
 }

@@ -4,6 +4,7 @@ namespace App\Admin\Controllers;
 
 use Core\Base;
 use Core\Db;
+use Core\ErrorCode;
 
 class NavController extends Base
 {
@@ -34,18 +35,18 @@ class NavController extends Base
     if (!$this->requireManagePermission()) return;
     $id = $this->input('post.id') ?? '';
     if (empty($id)) {
-      $this->json([], 'ID不能为空', 0);
+      $this->json([], 'ID不能为空', ErrorCode::PARAM_INVALID);
       return;
     }
     $result = Db::name('tb_nav')
       ->where('id', '=', $id)
       ->delete();
     if ($result === false) {
-      $this->json([], '删除失败', 0);
+      $this->json([], '删除失败', ErrorCode::SERVER_ERROR);
       return;
     }
     if ($result === 0) {
-      $this->json([], '导航不存在或已被删除', 0);
+      $this->json([], '导航不存在或已被删除', ErrorCode::NOT_FOUND);
       return;
     }
     $this->json([], '删除成功', 1);
@@ -65,13 +66,13 @@ class NavController extends Base
       'url' => $this->input('post.url') ?? null,
       'is_show' => $this->input('post.is_show') ?? null
     ];
-    $data = array_filter($data, function ($value) {
+    $data = array_filter($data, function (mixed $value) {
       return $value !== null && $value !== '';
     });
     $isSelectall = $data['is_selectall'] ?? null;
     unset($data['is_selectall']);
     if (empty($data)) {
-      $this->json([], '没有提供任何要更新的数据', 0);
+      $this->json([], '没有提供任何要更新的数据', ErrorCode::PARAM_INVALID);
       return;
     }
     $data = $this->encodeFields($data, ['name', 'url']);
@@ -91,11 +92,11 @@ class NavController extends Base
       $result = $dailyResult;
     }
     if ($result === false) {
-      $this->json([], '更新失败', 0);
+      $this->json([], '更新失败', ErrorCode::SERVER_ERROR);
       return;
     }
     if ($result === 0) {
-      $this->json([], '数据未发生变化', 0);
+      $this->json([], '数据未发生变化', ErrorCode::RULE_REJECTED);
       return;
     }
     $this->json([], '更新成功', 1);

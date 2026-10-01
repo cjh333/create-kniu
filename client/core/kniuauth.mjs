@@ -1,8 +1,9 @@
-import KniuTemplate from './kniutemplate.mjs';
+import TEMPLATE from './kniutemplate.mjs';
 import REQUEST from './kniurequest.mjs';
 import IDENTITY from './kniuidentity.mjs';
+import { resetAllStateStores } from './kniustore.mjs';
 
-const { reactive } = KniuTemplate;
+const { reactive } = TEMPLATE;
 
 var KniuAuth = (function () {
   var state = reactive({
@@ -23,6 +24,11 @@ var KniuAuth = (function () {
    * @param {Object} user 用户信息，如 { name, avatar, role }。
    */
   function setUser(user) {
+    var previousRoleId = Number(state.user?.roleId || state.user?.id || 0);
+    var nextRoleId = Number(user?.roleId || user?.id || 0);
+    if (previousRoleId > 0 && nextRoleId > 0 && previousRoleId !== nextRoleId) {
+      resetAllStateStores();
+    }
     state.loggedIn = true;
     state.user = user;
     try {
@@ -59,6 +65,7 @@ var KniuAuth = (function () {
       complete() {
         state.loggedIn = false;
         state.user = null;
+        resetAllStateStores();
         IDENTITY.clearIdentity();
         try {
           sessionStorage.removeItem('kniu_authed');
@@ -76,6 +83,7 @@ var KniuAuth = (function () {
       await REQUEST({
         url: '/session_status',
         type: 'POST',
+        mutation: false,
         redirectOnUnauthorized: false,
         success(res) {
           if (res.status !== 1 || !res.data?.loggedIn) {
@@ -98,12 +106,13 @@ var KniuAuth = (function () {
   }
 
   /**
-   * 会话失效复位：由请求层在收到后端 401 时调用，同步重置前端登录态，
-   * 使路由守卫立即生效（与后端销毁会话保持一致）。
+   * 会话失效复位：由请求层在收到业务码 1001 / HTTP 401 时调用，仅重置前端登录态；
+   * 跳转登录页由请求层统一执行（策略注入见 client/client.mjs）——鉴权只由服务端判定。
    */
   function markLoggedOut() {
     state.loggedIn = false;
     state.user = null;
+    resetAllStateStores();
     try {
       sessionStorage.removeItem('kniu_authed');
       sessionStorage.removeItem('kniu_user');
@@ -116,7 +125,7 @@ var KniuAuth = (function () {
     globalThis.addEventListener('storage', function syncLogoutAcrossTabs(event) {
       if (event.key === 'kniu_auth_logout_at' && event.newValue) {
         markLoggedOut();
-        if (typeof location !== 'undefined' && /^#\/(admin|home|seo|aboutedit|users|dailydetail|articledetail|comment|reply)/.test(location.hash)) {
+        if (typeof location !== 'undefined' && /^#\/(admin|home|seo|aboutedit|user|daily|article|comment|reply)/.test(location.hash)) {
           location.hash = '#/login';
         }
         return;

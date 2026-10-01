@@ -1,13 +1,23 @@
 <?php
 
 use Core\Router;
-
+// 前台内容（游客可见，免登录：首页、详情、评论列表等）。
 Router::post('/getDaily', 'IndexController@getDaily');
 Router::post('/getArticle', 'IndexController@getArticle');
 Router::post('/getInfo', 'IndexController@getInfo');
-Router::post('/getAbout', 'IndexController@getAbout');
 Router::post('/getDetail', 'IndexController@getDetail');
 Router::post('/getComments', 'IndexController@getComments');
+// 前台账号：注册、登录、绑定、退出与会话探测都在未登录态调用，必须免登录。
+Router::post('/frontRegister', 'IndexController@frontRegister');
+Router::post('/frontLogin', 'IndexController@frontLogin');
+Router::post('/frontBind', 'IndexController@frontBind');
+Router::post('/frontProfileClear', 'IndexController@frontProfileClear');
+Router::post('/frontSessionSync', 'IndexController@frontSessionSync');
+// 邮箱验证码与找回密码。
+Router::post('/email_code', 'IndexController@emailCode');
+Router::post('/password_reset', 'IndexController@passwordReset');
+// 需要登录鉴权的前台接口（默认即需要登录，此处列出便于对照）。
+Router::post('/getAbout', 'IndexController@getAbout');
 Router::post('/submitComment', 'IndexController@submitComment');
 Router::post('/likeComment', 'IndexController@likeComment');
 Router::post('/deleteComment', 'IndexController@deleteComment');
@@ -15,17 +25,6 @@ Router::post('/likeArticle', 'IndexController@likeArticle');
 Router::post('/favoriteArticle', 'IndexController@favoriteArticle');
 Router::post('/frontProfile', 'IndexController@frontProfile');
 Router::post('/frontProfileSave', 'IndexController@frontProfileSave');
-Router::post('/frontProfileClear', 'IndexController@frontProfileClear');
-Router::post('/frontSessionSync', 'IndexController@frontSessionSync');
-Router::post('/frontRegister', 'IndexController@frontRegister');
-Router::post('/frontLogin', 'IndexController@frontLogin');
-Router::post('/frontBind', 'IndexController@frontBind');
-// 邮箱验证码与找回密码。
-Router::post('/email_code', 'IndexController@emailCode');
-Router::post('/password_reset', 'IndexController@passwordReset');
-// 数据版本号（公开，供前端 SSE 信号丢失时兜底比对）。
-Router::post('/data_revision', 'IndexController@dataRevision');
-// ------------------------------------------------------------------------------------------------
 // 登录。
 Router::post('/logup', 'AuthController@logup');
 Router::post('/logout', 'AuthController@logout');

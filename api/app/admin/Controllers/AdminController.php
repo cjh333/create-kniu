@@ -37,7 +37,11 @@ class AdminController extends Base
     $this->json($info);
   }
 
-  // 将角色 ID 映射为可读的角色名称。
+  /**
+   * 将角色 ID 映射为可读的角色名称。
+   *
+   * @param int|string $roleId 角色 ID。
+   */
   private function mapRoleName($roleId): string
   {
     static $roleMap = null;

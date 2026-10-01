@@ -1,13 +1,12 @@
-import KniuTemplate from './kniutemplate.mjs';
-import KniuMvvm from './kniumvvm.mjs';
+import TEMPLATE from './kniutemplate.mjs';
+import MVVM from './kniumvvm.mjs';
 import SERVER from '../config/server.js';
 import { resolveAliasReferences } from './kniuutil.mjs';
 
-const { bind, reactive, beginBindingCollection, endBindingCollection } = KniuTemplate;
-const { loadController } = KniuMvvm;
+const { bind, reactive, beginBindingCollection, endBindingCollection } = TEMPLATE;
+const { loadController } = MVVM;
 
 var KniuEventer = (function () {
-  // 简易事件总线，支持 on / off / emit。
   function createEventBus() {
     const listeners = new Map();
     return {
@@ -145,6 +144,7 @@ var KniuEventer = (function () {
             }
             if (name.includes('-')) this.style.setProperty(name, value);
             else this.style[name] = value;
+            if (this.nodeType === 1 && !this.getAttribute('style')) this.removeAttribute('style');
             return this;
           },
         });
@@ -169,6 +169,7 @@ var KniuEventer = (function () {
           configurable: true,
           value() {
             this.style.display = '';
+            if (this.nodeType === 1 && !this.getAttribute('style')) this.removeAttribute('style');
             return this;
           },
         });
@@ -343,11 +344,6 @@ var KniuEventer = (function () {
     }
   }
 
-  // 将 <include src="..."> 替换为对应的自定义元素标签 <kniu-system-xxx></kniu-system-xxx>。
-  // VIEWS 配置目录下的每个 .html 文件都注册为独立的 Shadow DOM 自定义元素，
-  // include 不再在字符串层面内联，而是渲染为嵌套 Shadow DOM 自定义元素。
-  // 各自定义元素在 connectedCallback 中自行加载模板并创建 Shadow Root，
-  // 天然避免循环引用问题，也无需递归展开。
   function resolveTemplateIncludes(source, baseTemplateUrl) {
     const re = /<include\b[^>]*\bsrc="([^"]*)"[^>]*>(?:<\/include>)?/g;
     return source.replace(re, function (full, includePath) {
@@ -360,9 +356,6 @@ var KniuEventer = (function () {
     });
   }
 
-  // 支持 PascalCase / camelCase 自定义标签写法（如 <KniuInputGroup>、<House>）。
-  // HTML 解析器会把它们小写化为无连字符形式（kniuinputgroup），因此需要在解析前转换。
-  // 仅作用于「标签名」位置（< 或 </ 后紧跟大写开头的标识符），不影响属性值中的大写。
   function normalizeTagName(name) {
     return name
       .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
@@ -379,13 +372,6 @@ var KniuEventer = (function () {
     });
   }
 
-  // 把 <template slot="X"> 或 <template #X>（框架约定的 v-slot 简写，等同 slot="X"）平铺为带 slot 属性的真实子节点。
-  // Web Components 的 slot 算法不会展开 <template>（template 是 inert 元素，只在 .content 里存有内容），
-  // 所以 <slot name="X"> 在 light DOM 里只能拿到 <template> 元素本身（render 出来还是空的）。
-  // 这里是框架级兼容：递归走 fragment，把所有带 slot 的 <template> 替换为其 content 子节点的副本，
-  // 并把 slot 属性复制到每个顶层元素子节点（顶层文本节点不必 slot——slot 默认就是 default）。
-  // 处理组件直接子模板：kniu-modal（header / default / footer）、kniu-table（empty）及 kniu-navbar（brand / append / default）。
-  // 组件内部的 #prepend / #append / #default（如 kniu-table-col、kniu-input）由各自组件自行处理，不能在这里平铺。
   function slotNameOfTemplate(template) {
     const byAttr = template.getAttribute('slot');
     if (byAttr) return byAttr;
@@ -420,21 +406,15 @@ var KniuEventer = (function () {
       const frag = document.createDocumentFragment();
       [...template.content.childNodes].forEach(function (node) {
         if (node.nodeType === 1) {
-          // 元素节点：直接补上 slot 属性（已有则保留）。
           if (!node.hasAttribute('slot')) node.setAttribute('slot', slotName);
           frag.appendChild(node);
         } else if (node.nodeType === 3) {
-          // 文本节点无法携带 slot 属性，必须包一层带 slot 的元素，
-          // 否则会落入默认插槽（位置/样式与具名插槽不符）。
-          // 例：<template #brand>KniuSystem</template> 的文本应进入 brand 插槽（左侧），
-          // 而非默认插槽（navbar 的 .menu，右侧）。
           if (node.textContent.trim() === '') return;
           const wrap = document.createElement('span');
           wrap.setAttribute('slot', slotName);
           wrap.textContent = node.textContent;
           frag.appendChild(wrap);
         }
-        // 注释等其它节点忽略
       });
       parent.replaceChild(frag, template);
     });
@@ -457,16 +437,10 @@ var KniuEventer = (function () {
       source = await response.text();
     }
     templateUrl = resolved;
-    let expandedSource = resolveTemplateIncludes(
-      resolveAliasReferences(source, SERVER.ALIAS),
-      templateUrl
+    let expandedSource = expandPascalTags(
+      resolveTemplateIncludes(resolveAliasReferences(source, SERVER.ALIAS), templateUrl)
     ).replace(/<(kniu-[a-z0-9-]+)([^<>]*?)\s*\/>/gi, '<$1$2></$1>');
-    expandedSource = expandPascalTags(expandedSource);
     const fragment = document.createRange().createContextualFragment(expandedSource);
-    // 把 <template slot="X"> 或 <template #X>（简写）平铺为带 slot 属性的真实子节点：
-    //   <template #header><span>标题</span><kniu-btn>...</kniu-btn></template>
-    //   => <span slot="header">标题</span>  <kniu-btn slot="header">...</kniu-btn>
-    // Web Components 的 slot 算法不会展开 <template>（template 是 inert），否则具名插槽拿不到内容。
     flattenSlotTemplates(fragment);
     const scripts = [...fragment.querySelectorAll('script')];
     scripts.forEach(function (script) { return script.remove(); });
@@ -492,6 +466,7 @@ var KniuEventer = (function () {
     const templateKniuSystem = {
       ...kniusystem,
       templateUrl,
+      signal,
       $,
       bind,
       reactive: contextReactive,
@@ -503,11 +478,6 @@ var KniuEventer = (function () {
     const cleanups = [];
     const reactiveDisposers = [];
     const execute = async function (task) {
-      // 绑定收集只在任务「同步段」有效（setup 内 reactive(state) 的 auto-bind 依赖 currentScope）。
-      // 若跨 await 保持 currentScope，异步回调（如 onMounted 里的接口返回后 kniuui.js 内部
-      // reactive(行对象/表格配置)）会触发对整棵视图树的伪绑定——用数据对象当 state 重新解析
-      // 所有 kniu:option / kniu:form，把列模板内 switch 的 expando 覆盖成 {}（2026-09-01 修复）。
-      // 因此：先同步调用 task() 跑完 sync 段，随即清空收集，再 await 异步余段。
       beginBindingCollection(target, reactiveDisposers);
       let cleanup;
       try {
@@ -558,13 +528,11 @@ var KniuEventer = (function () {
     };
   }
 
-  // 创建路由记录，仅包含路径和控制器映射。
-  function createRouteRecord(path, controller, authRequired = false, controllerPath = '') {
+  function createRouteRecord(path, controller, controllerPath = '') {
     return {
       path: path,
       controller: controller,
       controllerPath: controllerPath,
-      authRequired: authRequired,
     };
   }
 
@@ -574,29 +542,16 @@ var KniuEventer = (function () {
     return '/' + value.replace(/^\/+|\/+$/g, '');
   }
 
-  // 路由注册表：底层是数组，提供统一的 add 注册方法。
   class RouterRegistry extends Array {
-    #authLevel = 0;
     add(path, controller) {
-      const authRequired = this.#authLevel > 0;
       const routeController = typeof controller === 'string'
         ? function loadRouteController() { return loadController(controller); }
         : controller;
       super.push(createRouteRecord(
         normalizeRoutePath(path),
         routeController,
-        authRequired,
         typeof controller === 'string' ? controller : ''
       ));
-      return this;
-    }
-    auth(callback) {
-      this.#authLevel++;
-      try {
-        callback(this);
-      } finally {
-        this.#authLevel--;
-      }
       return this;
     }
   }
@@ -614,4 +569,7 @@ var KniuEventer = (function () {
   };
 }());
 
+const { ROUTER } = KniuEventer;
+
+export { ROUTER };
 export default KniuEventer;

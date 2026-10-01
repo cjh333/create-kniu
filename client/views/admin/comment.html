@@ -67,7 +67,7 @@
         <kniu-input kniu:form="{{keyword}}" kniu:option="{{name:'keyword',placeholder:'请输入昵称或内容'}}" kniu@keydown.enter="searchList" kniu@input="debouncedSearch">
           <template #append label-width="48px">
             <kniu-btn aria-label="搜索" kniu:option="{{text:true}}" kniu@click="searchList">
-              <kniu-icon kniu:option="{{icon:'Search'}}" />
+              <kniu-icon kniu:option="{{icon:'search'}}" />
             </kniu-btn>
           </template>
         </kniu-input>

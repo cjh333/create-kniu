@@ -1,10 +1,9 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import IDENTITY from '../../core/kniuidentity.mjs';
-import REQUEST from '../../core/kniurequest.mjs';
 
-const { controller, onMounted, reactive } = MVVM;
+const { controller } = MVVM;
 
-const profileController = controller(({ navigateTo, autoSync }) => {
+const profileController = controller(({ navigateTo, request, reactive, onMounted }) => {
   const identity = IDENTITY.getIdentity();
   const state = reactive({
     nickname: identity.nickname,
@@ -24,6 +23,7 @@ const profileController = controller(({ navigateTo, autoSync }) => {
 
   function toBack() { navigateTo('/'); }
 
+  // 页面内的「去登录」入口：仅在用户主动点击时跳转，不是页面级鉴权判断。
   function toSignin() {
     navigateTo('/login', { tab: IDENTITY.hasAccount() ? 'login' : 'register', redirect: '/profile' });
   }
@@ -34,18 +34,16 @@ const profileController = controller(({ navigateTo, autoSync }) => {
   }
 
   let profileRequest = null;
-  let profileRefreshPending = false;
 
-  async function loadProfile(reason) {
-    if (profileRequest) {
-      if (typeof reason === 'string') profileRefreshPending = true;
-      return profileRequest;
-    }
-    const run = REQUEST({
+  // 不做页面级登录鉴权：/frontProfile 需要登录，未登录时接口返回业务码 1001，
+  // 由请求层统一跳转登录页并携带回跳目标（策略见 client/client.mjs）。
+  async function loadProfile() {
+    if (profileRequest) return profileRequest;
+    const run = request({
       url: '/frontProfile',
       type: 'POST',
-      data: { identity_token: state.identityToken },
-      redirectOnUnauthorized: false
+      mutation: false,
+      data: { identity_token: state.identityToken }
     }).then(function (result) {
     if (result.status !== 1) return;
     state.articleLikeCount = Number(result.data?.articleLikeCount) || 0;
@@ -64,10 +62,6 @@ const profileController = controller(({ navigateTo, autoSync }) => {
     state.profileHint = '登录后即可评论、点赞与收藏文章';
     }).finally(function () {
       profileRequest = null;
-      if (profileRefreshPending) {
-        profileRefreshPending = false;
-        queueMicrotask(function () { loadProfile('sse'); });
-      }
     });
     profileRequest = run;
     return run;
@@ -81,7 +75,7 @@ const profileController = controller(({ navigateTo, autoSync }) => {
     if (!state.canEditNickname) return;
     const nickname = String(state.nicknameDraft || '').trim();
     if (!nickname) return;
-    const result = await REQUEST({ url: '/frontProfileSave', type: 'POST', data: { identity_token: state.identityToken, nickname }, redirectOnUnauthorized: false });
+    const result = await request({ url: '/frontProfileSave', type: 'POST', data: { identity_token: state.identityToken, nickname } });
     if (result.status !== 1) return;
     state.nickname = result.data?.nickname || nickname;
     state.nicknameDraft = state.nickname;
@@ -91,8 +85,6 @@ const profileController = controller(({ navigateTo, autoSync }) => {
   }
 
   onMounted(loadProfile);
-  // 获赞数/评论数/收藏与浏览历史随他人行为变化，信号到达时自动重放。
-  autoSync(loadProfile);
   return { state, toBack, toFavorite, toSignin, editNickname, saveNickname };
 });
 

@@ -1,5 +1,3 @@
-// 静态资源传输层公共逻辑：缓存策略判定 + 按需 gzip。
-// 被 kniuserver.mjs / kniupreview.mjs 复用，避免两处各自维护重复的缓存/gzip 代码。
 import PROCESS_ENV from './kniudotenv.mjs';
 import { gzip } from 'node:zlib';
 import { basename } from 'node:path';

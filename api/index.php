@@ -22,7 +22,13 @@ session_name(SessionName::resolve(getenv('SESSION_NAME') ?: null, $sessionPath))
 $authConfig = require __DIR__ . '/config/auth.php';
 $loginExpireSeconds = max(1, (int)($authConfig['LOGIN_EXPIRE_DAYS'] ?? 7)) * 86400;
 ini_set('session.gc_maxlifetime', (string)$loginExpireSeconds);
-session_set_cookie_params(['lifetime' => $loginExpireSeconds, 'path' => '/', 'secure' => !empty($_SERVER['HTTPS']), 'httponly' => true, 'samesite' => 'Strict']);
+// 反向代理与 TLS 终结使 $_SERVER['HTTPS'] 恒为空，需从代理头判断浏览器真实协议。
+$cfVisitor = json_decode($_SERVER['HTTP_CF_VISITOR'] ?? '', true);
+$forwardedProto = strtolower(trim(explode(',', $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')[0]));
+$isSecureRequest = !empty($_SERVER['HTTPS'])
+  || (is_array($cfVisitor) && ($cfVisitor['scheme'] ?? '') === 'https')
+  || $forwardedProto === 'https';
+session_set_cookie_params(['lifetime' => $loginExpireSeconds, 'path' => '/', 'secure' => $isSecureRequest, 'httponly' => true, 'samesite' => 'Strict']);
 session_start();
 
 // 加载应用配置。
@@ -36,15 +42,19 @@ date_default_timezone_set($appConfig['TIMEZONE']);
 
 // 添加 CORS 头。
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$hostOrigin = (!empty($_SERVER['HTTPS']) ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
-if ($origin === '' || $origin === $hostOrigin) header('Access-Control-Allow-Origin: ' . ($origin ?: $hostOrigin));
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+// 反向代理与 TLS 终结会改变协议，同源校验只比对主机名，忽略 http/https 与端口差异。
+$originHost = ($origin === '') ? '' : strtolower((string) parse_url($origin, PHP_URL_HOST));
+$serverHost = strtolower((string) preg_replace('/:\d+$/', '', $host));
+$isTrustedOrigin = ($origin === '' || ($originHost !== '' && $originHost === $serverHost));
+if ($isTrustedOrigin) header('Access-Control-Allow-Origin: ' . ($origin ?: ('http://' . $host)));
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header("Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'");
-if ($_SERVER['REQUEST_METHOD'] !== 'GET' && $origin !== '' && $origin !== $hostOrigin) {
+if ($_SERVER['REQUEST_METHOD'] !== 'GET' && !$isTrustedOrigin) {
   http_response_code(403);
   echo json_encode(['status' => 0, 'msg' => 'CSRF来源校验失败', 'data' => null], JSON_UNESCAPED_UNICODE);
   exit;
@@ -55,42 +65,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // 日志记录函数。
-function logMessage($level, $message)
+function logMessage(array $config, string $level, string $message): void
 {
-  global $loggerConfig;
-
   // 检查日志是否启用。
-  if (!$loggerConfig['ENABLE']) {
+  if (!$config['ENABLE']) {
     return;
   }
 
   // 检查日志级别。
   $levels = ['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'];
   // 如果当前级别低于配置的级别，不记录。
-  if (array_search($level, $levels) < array_search($loggerConfig['LEVEL'], $levels)) {
+  if (array_search($level, $levels) < array_search($config['LEVEL'], $levels)) {
     return;
   }
 
   // 记录日志。
   $timestamp = date('Y-m-d H:i:s');
   $logEntry = "[$timestamp] $level: $message\n";
-  file_put_contents($loggerConfig['FILE_PATH'], $logEntry, FILE_APPEND);
+  file_put_contents($config['FILE_PATH'], $logEntry, FILE_APPEND);
 }
+
+$uri = '';
 
 try {
   require_once __DIR__ . DIRECTORY_SEPARATOR . 'config/router.php';
 
   $router = new Router();
-  $uri = '';
 
   // 处理 PATH_INFO（兼容阿里云虚拟主机）。
   if (isset($_SERVER['PATH_INFO']) && !empty($_SERVER['PATH_INFO'])) {
     $uri = $_SERVER['PATH_INFO'];
   } else if (isset($_SERVER['ORIG_PATH_INFO']) && !empty($_SERVER['ORIG_PATH_INFO'])) {
-    // 阿里云虚拟主机有时使用 ORIG_PATH_INFO。
     $uri = $_SERVER['ORIG_PATH_INFO'];
   } else if (isset($_SERVER['REQUEST_URI'])) {
-    // 直接使用 REQUEST_URI 并移除查询字符串。
     $requestUri = $_SERVER['REQUEST_URI'];
     if (($pos = strpos($requestUri, '?')) !== false) {
       $requestUri = substr($requestUri, 0, $pos);
@@ -141,7 +148,7 @@ try {
     $logMessage .= ' POST_PARAMS: ' . json_encode($postData, JSON_UNESCAPED_UNICODE) . "\n";
   }
 
-  logMessage('info', $logMessage);
+  logMessage($loggerConfig, 'info', $logMessage);
 
   $router->dispatch($uri);
 
@@ -155,7 +162,7 @@ try {
   $responseLog .= ' Execution Time: ' . $executionTime . ' ms\n';
   $responseLog .= ' Memory Usage: ' . $memoryUsage . ' KB\n';
   $responseLog .= ' HTTP Status: ' . (http_response_code() ?? 200) . "\n";
-  logMessage('info', $responseLog);
+  logMessage($loggerConfig, 'info', $responseLog);
 } catch (Exception $e) {
   // 记录详细错误信息。
   $errorMsg = date('Y-m-d H:i:s') . ' ERROR: ' . $e->getMessage() . "\n";
@@ -177,7 +184,7 @@ try {
     $errorMsg .= ' POST Params: ' . json_encode($postData, JSON_UNESCAPED_UNICODE) . "\n";
   }
 
-  logMessage('error', $errorMsg);
+  logMessage($loggerConfig, 'error', $errorMsg);
 
   http_response_code(500);
   header('Content-Type: application/json; charset=utf-8');

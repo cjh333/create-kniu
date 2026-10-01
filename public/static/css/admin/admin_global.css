@@ -22,7 +22,7 @@
   -moz-user-select: none;
   -ms-user-select: none;
   -o-user-select: none;
-  word-break: break-word
+  word-break: break-word;
 }
 
 html {
@@ -38,21 +38,21 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  overflow: visible
+  overflow: visible;
 }
 
 #app {
   display: flex;
   flex: 1;
   min-height: 100vh;
-  overflow: visible
+  overflow: visible;
 }
 
 kniu-system-admin-common-main {
   display: flex;
   flex: 1;
   height: 100vh;
-  overflow: hidden
+  overflow: hidden;
 }
 
 kniu-system-index-home,
@@ -63,7 +63,7 @@ kniu-system-index-detail {
   min-width: 0;
   min-height: 100vh;
   height: auto;
-  overflow: visible
+  overflow: visible;
 }
 
 .kniu_web_aside_sidebar_group {
@@ -79,7 +79,7 @@ kniu-system-index-detail {
   padding: 24px 16px;
   width: 244px;
   background-color: #111629;
-  color: #eef2ff
+  color: #eef2ff;
 }
 
 .kniu_web_aside_sidebar_brand {
@@ -93,11 +93,11 @@ kniu-system-index-detail {
   gap: 10px;
   padding: 0 8px 30px;
   font-size: 20px;
-  font-weight: 800
+  font-weight: 800;
 }
 
 .kniu_web_aside_sidebar_brandtitle strong {
-  color: #ff6d43
+  color: #ff6d43;
 }
 
 .kniu_web_aside_brand,
@@ -117,28 +117,31 @@ kniu-system-index-detail {
   -webkit-box-shadow: 0 8px 24px #ff5c3540;
   -moz-box-shadow: 0 8px 24px #ff5c3540;
   -ms-box-shadow: 0 8px 24px #ff5c3540;
-  -o-box-shadow: 0 8px 24px #ff5c3540
+  -o-box-shadow: 0 8px 24px #ff5c3540;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .kniu_web_aside_sidebar_label {
   padding: 0 12px 20px;
   font-size: 11px;
   letter-spacing: .14em;
-  color: #737d9e
+  color: #737d9e;
 }
 
 .kniu_web_aside_sidebar_wrap {
   display: grid;
-  gap: 6px
+  gap: 6px;
 }
 
 .kniu_web_aside_sidebar {
-  border: none;
-  border-radius: 11px;
-  -webkit-border-radius: 11px;
-  -moz-border-radius: 11px;
-  -ms-border-radius: 11px;
-  -o-border-radius: 11px;
   display: flex;
   display: -webkit-flex;
   align-items: center;
@@ -147,18 +150,18 @@ kniu-system-index-detail {
   -ms-align-items: center;
   -o-align-items: center;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 0 12px;
   width: 100%;
   text-align: left;
   background-color: transparent;
   color: #9ca5bf;
-  cursor: pointer
+  cursor: pointer;
 }
 
 .kniu_web_aside_sidebar_wrap .kniu_web_aside_sidebar.active,
 .kniu_web_aside_sidebar_wrap .kniu_web_aside_sidebar:hover {
   background-color: #252b42;
-  color: #fff
+  color: #fff;
 }
 
 .app-meta i,
@@ -174,7 +177,7 @@ kniu-system-index-detail {
   height: 30px;
   font-style: normal;
   font-weight: 800;
-  color: #fff
+  color: #fff;
 }
 
 .kniu_web_aside_sidebar_group button em {
@@ -188,17 +191,17 @@ kniu-system-index-detail {
   font-size: 11px;
   font-style: normal;
   background-color: #ff5c35;
-  color: #fff
+  color: #fff;
 }
 
 .sidebar-foot {
   margin-top: auto;
   border-top: 1px solid #293047;
-  padding-top: 12px
+  padding-top: 12px;
 }
 
 .kniu_web_aside_sidebar_group .neutral {
-  background-color: #283047
+  background-color: #283047;
 }
 
 .user {
@@ -210,7 +213,7 @@ kniu-system-index-detail {
   -ms-align-items: center;
   -o-align-items: center;
   gap: 10px;
-  padding: 16px 10px 0
+  padding: 16px 10px 0;
 }
 
 .avatar {
@@ -225,7 +228,7 @@ kniu-system-index-detail {
   height: 36px;
   font-weight: 800;
   background-color: #ffe1d7;
-  color: #c43f19
+  color: #c43f19;
 }
 
 .user div {
@@ -234,12 +237,12 @@ kniu-system-index-detail {
   -webkit-flex: 1;
   -moz-flex: 1;
   -ms-flex: 1;
-  -o-flex: 1
+  -o-flex: 1;
 }
 
 .user small {
-  margin-top: 3px;
-  color: #79839f
+  margin-top: 8px;
+  color: #79839f;
 }
 
 .kniu_web_aside_body {
@@ -249,7 +252,7 @@ kniu-system-index-detail {
   -ms-flex: 1;
   -o-flex: 1;
   margin-left: 0;
-  min-width: 0
+  min-width: 0;
 }
 
 .kniu_web_aside_body header {
@@ -268,16 +271,16 @@ kniu-system-index-detail {
   border-bottom: 1px solid var(--line);
   padding: 0 18px;
   height: 72px;
-  background-color: #fff
+  background-color: #fff;
 }
 
 .kniu_web_aside_crumb_wrap {
-  margin-right: auto
+  margin-right: auto;
 }
 
 .kniu_web_aside_crumb {
   display: none;
-  color: #9aa1b0
+  color: #9aa1b0;
 }
 
 .kniu_web_aside_head_actions {
@@ -288,7 +291,7 @@ kniu-system-index-detail {
   -moz-align-items: center;
   -ms-align-items: center;
   -o-align-items: center;
-  gap: 12px
+  gap: 12px;
 }
 
 .kniu_web_aside_toast {
@@ -313,7 +316,7 @@ kniu-system-index-detail {
   -o-border-radius: 11px;
   width: 40px;
   height: 40px;
-  background-color: #fff
+  background-color: #fff;
 }
 
 .kniu_web_aside_toast span {
@@ -327,11 +330,11 @@ kniu-system-index-detail {
   -o-border-radius: 50%;
   width: 7px;
   height: 7px;
-  background-color: #ff5c35
+  background-color: #ff5c35;
 }
 
 .kniu_web_aside_brand {
-  margin-right: 12px
+  margin-right: 12px;
 }
 
 .app-meta {
@@ -347,7 +350,7 @@ kniu-system-index-detail {
   -moz-align-items: center;
   -ms-align-items: center;
   -o-align-items: center;
-  margin-bottom: 18px
+  margin-bottom: 18px;
 }
 
 .app-meta>span:first-child {
@@ -359,7 +362,7 @@ kniu-system-index-detail {
   -ms-align-items: center;
   -o-align-items: center;
   gap: 10px;
-  font-size: 16px
+  font-size: 16px;
 }
 
 .isolated {
@@ -371,15 +374,15 @@ kniu-system-index-detail {
   padding: 7px 11px;
   font-size: 10px;
   background-color: #e9ebf0;
-  color: #5e6b80
+  color: #5e6b80;
 }
 
 shadow-app-host {
-  display: block
+  display: block;
 }
 
 shadow-app-host[hidden] {
-  display: none
+  display: none;
 }
 
 .kniu_web_aside_mdnav_wrap {
@@ -389,7 +392,7 @@ shadow-app-host[hidden] {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   border-bottom: 1px solid var(--line);
-  background-color: #fff
+  background-color: #fff;
 }
 
 .kniu_web_aside_mdnav {
@@ -399,181 +402,40 @@ shadow-app-host[hidden] {
   padding: 10px 4px;
   font-size: 17px;
   background-color: #fff;
-  color: #7b8395
-}
-
-.kniu_web_aside_mdnav_icon {
-  font-size: 10px
+  color: #7b8395;
 }
 
 .kniu_web_aside_mdnav_wrap .active {
   background-color: #fff6f2;
-  color: #ff5c35
-}
-
-.toast {
-  z-index: 30;
-  position: fixed;
-  right: 28px;
-  bottom: 28px;
-  transform: translateY(12px);
-  -webkit-transform: translateY(12px);
-  -moz-transform: translateY(12px);
-  -ms-transform: translateY(12px);
-  -o-transform: translateY(12px);
-  border-radius: 12px;
-  -webkit-border-radius: 12px;
-  -moz-border-radius: 12px;
-  -ms-border-radius: 12px;
-  -o-border-radius: 12px;
-  padding: 14px 18px;
-  opacity: 0;
-  pointer-events: none;
-  background-color: #17213b;
-  color: #fff;
-  transition: .25s;
-  -webkit-transition: .25s;
-  -moz-transition: .25s;
-  -ms-transition: .25s;
-  -o-transition: .25s;
-  box-shadow: 0 12px 40px #17213b40;
-  -webkit-box-shadow: 0 12px 40px #17213b40;
-  -moz-box-shadow: 0 12px 40px #17213b40;
-  -ms-box-shadow: 0 12px 40px #17213b40;
-  -o-box-shadow: 0 12px 40px #17213b40
-}
-
-.toast.show {
-  transform: none;
-  -webkit-transform: none;
-  -moz-transform: none;
-  -ms-transform: none;
-  -o-transform: none;
-  opacity: 1
-}
-
-.loading_mask {
-  z-index: 50;
-  position: fixed;
-  inset: 0;
-  display: flex;
-  display: -webkit-flex;
-  justify-content: center;
-  -webkit-justify-content: center;
-  -moz-justify-content: center;
-  -ms-justify-content: center;
-  -o-justify-content: center;
-  align-items: center;
-  -webkit-align-items: center;
-  -moz-align-items: center;
-  -ms-align-items: center;
-  -o-align-items: center;
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  -moz-backdrop-filter: blur(2px);
-  -ms-backdrop-filter: blur(2px);
-  -o-backdrop-filter: blur(2px);
-  background-color: rgba(255, 255, 255, .6)
-}
-
-.loading_spinner {
-  border: 3px solid rgba(102, 126, 234, .25);
-  border-top-color: #667eea;
-  border-radius: 50%;
-  -webkit-border-radius: 50%;
-  -moz-border-radius: 50%;
-  -ms-border-radius: 50%;
-  -o-border-radius: 50%;
-  width: 38px;
-  height: 38px;
-  animation: animate_loading_spinner .7s linear infinite;
-  -webkit-animation: animate_loading_spinner .7s linear infinite
-}
-
-@keyframes animate_loading_spinner {
-  100% {
-    transform: rotate(360deg);
-    -webkit-transform: rotate(360deg);
-    -moz-transform: rotate(360deg);
-    -ms-transform: rotate(360deg);
-    -o-transform: rotate(360deg)
-  }
+  color: #ff5c35;
 }
 
 @media (min-width: calc(1280px - 60px)) {
   .kniu_web_aside_crumb {
-    display: inline
+    display: inline;
   }
 
   .isolated {
-    font-size: 12px
+    font-size: 12px;
   }
 }
 
 @media (min-width:calc(1280px - 60px)) {
   .kniu_web_aside_sidebar_group {
     display: flex;
-    display: -webkit-flex
+    display: -webkit-flex;
   }
 
   .kniu_web_aside_body {
-    margin-left: 244px
+    margin-left: 244px;
   }
 
   .kniu_web_aside_body header {
-    padding: 0 32px
+    padding: 0 32px;
   }
 
   .kniu_web_aside_brand,
   .kniu_web_aside_mdnav_wrap {
-    display: none
+    display: none;
   }
-}
-
-input[type="checkbox"] {
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  border: 1px solid #dcdfe6;
-  border-radius: 2px;
-  outline: 0;
-  background-color: #fff;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: 10px 8px;
-  box-sizing: border-box;
-  cursor: pointer;
-  transition: border-color .2s, background-color .2s
-}
-
-input[type="checkbox"]:checked {
-  border-color: #409eff;
-  background-color: #409eff;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 10'%3E%3Cpath d='M1 5l3 3 7-7' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-}
-
-input[type="checkbox"]:indeterminate {
-  border-color: #409eff;
-  background-color: #409eff;
-  background-image: linear-gradient(#fff, #fff);
-  background-size: 8px 2px
-}
-
-input[type="checkbox"]:focus-visible {
-  outline: 2px solid rgba(64, 158, 255, .3);
-  outline-offset: 2px
-}
-
-input[type="checkbox"]:disabled {
-  border-color: #dcdfe6;
-  background-color: #f5f7fa;
-  cursor: not-allowed;
-  opacity: .65
-}
-
-input[type="checkbox"]:disabled:checked,
-input[type="checkbox"]:disabled:indeterminate {
-  border-color: #a0cfff;
-  background-color: #a0cfff
 }

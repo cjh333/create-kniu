@@ -1,11 +1,10 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import UI from '../../core/kniuui.js';
 import IDENTITY from '../../core/kniuidentity.mjs';
-import REQUEST from '../../core/kniurequest.mjs';
 
-const { controller, reactive, onMounted, watch } = MVVM;
+const { controller } = MVVM;
 
-const footerController = controller(() => {
+const footerController = controller(({ request, reactive, onMounted, watch }) => {
   const state = reactive({
     currentYear: new Date().getFullYear(),
     copyright: '',
@@ -14,9 +13,10 @@ const footerController = controller(() => {
   });
   async function loadSeo() {
     try {
-      const result = await REQUEST({
+      const result = await request({
         url: '/getInfo',
         type: 'POST',
+        mutation: false,
         data: { identity_token: IDENTITY.getIdentity().token },
         redirectOnUnauthorized: false
       });

@@ -39,7 +39,7 @@
         <kniu-input kniu:form="{{keyword}}" kniu:option="{{name:'keyword',placeholder:'请输入账号'}}" kniu@keydown.enter="searchList" kniu@input="debouncedSearch">
           <template #append label-width="48px">
             <kniu-btn kniu:option="{{text:true}}" kniu@click="searchList">
-              <kniu-icon kniu:option="{{icon:'Search'}}" />
+              <kniu-icon kniu:option="{{icon:'search'}}" />
             </kniu-btn>
           </template>
         </kniu-input>
@@ -100,7 +100,7 @@
   <template #header>
     <span>{{dialogTitle}}</span>
     <kniu-btn kniu:option="{{type:'primary',size:'small',link:true}}" kniu@click="closeDialog">
-      <kniu-icon kniu:option="{{icon:'Close'}}" />
+      <kniu-icon kniu:option="{{icon:'close'}}" />
     </kniu-btn>
   </template>
   <template #default>

@@ -4,6 +4,7 @@ namespace App\Admin\Controllers;
 
 use Core\Base;
 use Core\Db;
+use Core\ErrorCode;
 
 class RoleController extends Base
 {
@@ -21,10 +22,15 @@ class RoleController extends Base
   private function denyPermission(): void
   {
     http_response_code(403);
-    $this->json([], '权限不足', 0);
+    $this->json([], '权限不足', ErrorCode::FORBIDDEN);
   }
 
-  // 角色权限同步：管理员(role=1)权限为 1，普通用户(role=2)权限为 2。
+  /**
+   * 角色权限同步：管理员(role=1)权限为 1，普通用户(role=2)权限为 2。
+   *
+   * @param mixed $role 角色值。
+   * @return int 角色权限值。
+   */
   private function syncRoleAuth($role): int
   {
     return (int)$role === 1 ? 1 : 2;
@@ -37,7 +43,6 @@ class RoleController extends Base
       $this->denyPermission();
       return;
     }
-    $this->ensureCommentAuditField();
     $data = [
       'sid' => $this->input('post.sid') ?? 0,
       'name' => $this->input('post.name') ?? '',
@@ -64,7 +69,7 @@ class RoleController extends Base
     $id = $this->input('post.id') ?? '';
     $roleId = (int)$id;
     if ($roleId <= 0 || $roleId === $this->currentUserId()) {
-      $this->json([], '不能删除当前登录账号', 0);
+      $this->json([], '不能删除当前登录账号', ErrorCode::FORBIDDEN);
       return;
     }
     Db::beginTrans();
@@ -90,7 +95,7 @@ class RoleController extends Base
       Db::commit();
     } catch (\Throwable $e) {
       Db::rollback();
-      $this->json([], '删除账号失败', 0);
+      $this->json([], '删除账号失败', ErrorCode::SERVER_ERROR);
       return;
     }
     $this->json([], '删除成功', 1);
@@ -99,7 +104,6 @@ class RoleController extends Base
   // 修改。
   public function roleUpdate(): void
   {
-    $this->ensureCommentAuditField();
     $type = $this->input('post.type') ?? null;
     $id = $this->input('post.id') ?? null;
     $data = [
@@ -133,12 +137,12 @@ class RoleController extends Base
       }
       $id = $currentUserId;
       if ($oldPassword === '' || $newPassword === '') {
-        $this->json([], '请输入原密码和新密码', 0);
+        $this->json([], '请输入原密码和新密码', ErrorCode::PARAM_INVALID);
         return;
       }
       $storedPassword = (string)(Db::name('tb_role')->where('id', '=', $currentUserId)->value('password') ?? '');
       if ($storedPassword === '' || !$this->verifyPassword($oldPassword, $storedPassword)) {
-        $this->json([], '旧密码不正确', 0);
+        $this->json([], '旧密码不正确', ErrorCode::CREDENTIAL_INVALID);
         return;
       }
       $type = null;
@@ -147,27 +151,27 @@ class RoleController extends Base
       // 管理员修改任意账号密码时也必须验证该账号的当前密码。
       // 仅修改用户名、角色、排序或启用状态时不要求原密码。
       if ($oldPassword === '') {
-        $this->json([], '修改密码时请输入原密码', 0);
+        $this->json([], '修改密码时请输入原密码', ErrorCode::PARAM_INVALID);
         return;
       }
       $storedPassword = (string)(Db::name('tb_role')->where('id', '=', $id)->value('password') ?? '');
       if ($storedPassword === '' || !$this->verifyPassword($oldPassword, $storedPassword)) {
-        $this->json([], '原密码不正确', 0);
+        $this->json([], '原密码不正确', ErrorCode::CREDENTIAL_INVALID);
         return;
       }
     }
-    $data = array_filter($data, function ($value) {
+    $data = array_filter($data, function (mixed $value) {
       return $value !== null && $value !== '';
     });
     if (array_key_exists('nickname', $data)) {
       $nickname = trim(html_entity_decode((string)$data['nickname'], ENT_QUOTES));
       if ($nickname === '') {
-        $this->json([], '昵称不能为空', 0);
+        $this->json([], '昵称不能为空', ErrorCode::PARAM_INVALID);
         return;
       }
       $oldIssueTime = Db::name('tb_role')->where('id', '=', $id)->value('issue_time');
       if ($oldIssueTime && strtotime((string)$oldIssueTime) > strtotime('-1 year')) {
-        $this->json([], '昵称一年内只能修改一次', 0);
+        $this->json([], '昵称一年内只能修改一次', ErrorCode::RULE_REJECTED);
         return;
       }
       $data['nickname'] = $nickname;
@@ -177,7 +181,7 @@ class RoleController extends Base
       $data['role_auth'] = $this->syncRoleAuth($data['role']);
     }
     if (empty($data)) {
-      $this->json([], '没有提供任何要更新的数据', 0);
+      $this->json([], '没有提供任何要更新的数据', ErrorCode::PARAM_INVALID);
       return;
     }
     $data = $this->encodeFields($data, ['name', 'nickname']);
@@ -211,11 +215,11 @@ class RoleController extends Base
       $result = $selectallResult + $roleResult;
     }
     if ($result === false) {
-      $this->json([], '更新失败', 0);
+      $this->json([], '更新失败', ErrorCode::SERVER_ERROR);
       return;
     }
     if ($result === 0) {
-      $this->json([], '数据未发生变化', 0);
+      $this->json([], '数据未发生变化', ErrorCode::RULE_REJECTED);
       return;
     }
     $this->json([], '更新成功', 1);
@@ -224,7 +228,6 @@ class RoleController extends Base
   // 查询角色列表。
   public function roleList(): void
   {
-    $this->ensureCommentAuditField();
     $table = 'tb_role';
     $field = $this->input('post.field') ?? $this->getDefaultSortField($table);
     $sort = $this->input('post.sort') ?? 'asc';
@@ -238,7 +241,7 @@ class RoleController extends Base
       $query->where('id', '=', $this->currentUserId());
     }
     if ($keyword !== '') {
-      $query->where('LOWER(`name`)', 'LIKE', $this->likeEncodedPattern($keyword));
+      $query->where('`name`', 'LIKE', $this->likeEncodedPattern($keyword));
     }
     $result = $query
       ->field(['id', 'sid', 'name', 'nickname', 'role', 'role_auth', 'comment_audit', 'comment_ban', 'is_show', 'create_time', 'issue_time'])
@@ -252,27 +255,17 @@ class RoleController extends Base
   // 查询某一条。
   public function roleDetail(): void
   {
-    $this->ensureCommentAuditField();
     $id = $this->input('post.id') ?? '';
     if (!$this->hasManagePermission() && (int)$id !== $this->currentUserId()) {
       $this->denyPermission();
       return;
     }
+    // 与 roleList 同列集合：禁止把 password 哈希与 identity_token 返回给前端。
     $result = Db::name('tb_role')
+      ->field(['id', 'sid', 'name', 'nickname', 'role', 'role_auth', 'comment_audit', 'comment_ban', 'is_show', 'create_time', 'issue_time'])
       ->where('id', '=', $id)
       ->find();
     $result = $this->decodeFields($result, ['name', 'nickname']);
     $this->json($result);
-  }
-
-  private function ensureCommentAuditField(): void
-  {
-    $columns = Db::query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_role'");
-    if (!in_array('comment_audit', array_column($columns, 'COLUMN_NAME'), true)) {
-      Db::execute("ALTER TABLE `tb_role` ADD COLUMN `comment_audit` tinyint NOT NULL DEFAULT 1 COMMENT '评论审核(1需要审核,0免审核)'");
-    }
-    if (!in_array('comment_ban', array_column($columns, 'COLUMN_NAME'), true)) {
-      Db::execute("ALTER TABLE `tb_role` ADD COLUMN `comment_ban` tinyint NOT NULL DEFAULT 0 COMMENT '禁言(0正常,1禁言)'");
-    }
   }
 }

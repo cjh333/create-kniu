@@ -17,7 +17,7 @@ class Controller
    * @param int $status 响应状态码，1 表示成功，0 表示失败。
    * @return void
    */
-  protected function json($data, $msg = '', $status = 1)
+  protected function json($data, $msg = '', $status = ErrorCode::SUCCESS)
   {
     if (ob_get_level()) {
       ob_end_clean();
@@ -736,6 +736,107 @@ class Controller
   }
 
   /**
+   * 全局统一登录鉴权（前台、后台、路由分发共用同一入口）。
+   *
+   * 前端页面守卫与后端接口鉴权必须同口径，否则会出现「前端拦住、后端放行」：
+   * 已登录 = 后台会话有效（validateToken）或前台身份令牌已绑定 tb_role 账号。
+   * 默认所有接口都需要登录，由 Core\Router 在调用 action 前统一执行；
+   * 免登录接口在 api/config/router.php 的路由注册处显式传 false。
+   *
+   * @param bool $required 是否强制鉴权。true=未登录直接拦截；false=只识别身份，游客放行（返回 0）。
+   * @param string $message 未登录时返回给前端的提示语。
+   * @return int 当前登录身份对应的 tb_role.id；未登录且 $required=false 时返回 0。
+   */
+  public function requireLogin(bool $required = true, string $message = '请先登录'): int
+  {
+    $roleId = $this->currentLoginId();
+    if ($roleId <= 0 && $required) {
+      $this->rejectLogin($message);
+    }
+    return $roleId;
+  }
+
+  /**
+   * 未登录时的拒绝响应（前台默认 HTTP 200 + 业务码 201「登录态无效」）。
+   * 后台在 Core\Base 中覆盖为 HTTP 401（前端请求层据此跳转登录页）。
+   */
+  protected function rejectLogin(string $message, int $code = ErrorCode::UNAUTHORIZED): void
+  {
+    $this->json([], $message, $code);
+  }
+
+  /**
+   * 当前登录身份（tb_role.id）：后台会话优先，其次前台身份令牌绑定的账号；游客返回 0。
+   *
+   * @param array|null $frontUser 已解析的前台身份，传入可避免重复查库。
+   * @return int tb_role.id，0 表示游客。
+   */
+  protected function currentLoginId($frontUser = null): int
+  {
+    if ($this->validateToken()) {
+      $sessionRoleId = $this->sessionLoginId();
+      if ($sessionRoleId > 0) {
+        return $sessionRoleId;
+      }
+    }
+    if ($frontUser === null) {
+      $token = $this->validIdentityToken();
+      $frontUser = $token !== '' ? $this->roleByIdentityToken($token) : null;
+    }
+    return (int)($frontUser['role_id'] ?? 0);
+  }
+
+  /**
+   * 后台会话中的账号 id（旧会话无 id 字段时按 name 回填）。
+   *
+   * @return int tb_role.id，无会话或解析不到时返回 0。
+   */
+  protected function sessionLoginId(): int
+  {
+    if (isset($_SESSION['admin_token']['id']) && (int)$_SESSION['admin_token']['id'] > 0) {
+      return (int)$_SESSION['admin_token']['id'];
+    }
+    $name = (string)($_SESSION['admin_token']['name'] ?? '');
+    $id = (int)(Db::name('tb_role')->where('name', '=', $name)->value('id') ?? 0);
+    if ($id > 0) {
+      $_SESSION['admin_token']['id'] = $id;
+    }
+    return $id;
+  }
+
+  /**
+   * 前台身份令牌（64 位 hex）格式校验。
+   *
+   * @return string 合法则返回小写令牌，否则返回空串。
+   */
+  protected function validIdentityToken(): string
+  {
+    $token = strtolower(trim((string)$this->input('post.identity_token/s', '')));
+    return preg_match('/^[a-f0-9]{64}$/', $token) ? $token : '';
+  }
+
+  /**
+   * 按前台身份令牌取出绑定账号（统一账号模型：令牌摘要存在 tb_role）。
+   *
+   * @param string $token 64 位 hex 身份令牌。
+   * @return array|null 账号行（含 role_id），未绑定返回 null。
+   */
+  protected function roleByIdentityToken(string $token)
+  {
+    if (!preg_match('/^[a-f0-9]{64}$/', $token)) return null;
+    // 全站身份解析热点：只取业务消费的列，避免把 password 哈希读入内存。
+    $role = Db::name('tb_role')
+      ->field(['id', 'name', 'nickname', 'is_show', 'comment_ban', 'comment_audit', 'issue_time', 'create_time'])
+      ->where('identity_token', '=', hash('sha256', $token))
+      ->find();
+    if (!$role) return null;
+    // 统一返回 tb_role.id、name 与 nickname；昵称不得回退为用户名。
+    $role['role_id'] = (int)$role['id'];
+    $role['nickname'] = $role['nickname'] ?? '';
+    return $role;
+  }
+
+  /**
    * 获取默认排序字段。
    *
    * @param string $table 数据库表名。
@@ -756,16 +857,16 @@ class Controller
   /**
    * 生成关键词模糊搜索的 LIKE 匹配串。
    *
-   * 关键词按入库规则编码（htmlspecialchars ENT_QUOTES）后统一小写，
-   * 配合 SQL 侧 LOWER() 实现不依赖排序规则的字母大小写不敏感模糊搜索。
-   * 各处列表搜索共用同一编码范式，避免重复实现。
+   * 关键词按入库规则编码（htmlspecialchars ENT_QUOTES）后包裹 %。
+   * 搜索列均使用 utf8mb4_unicode_ci 排序规则，本身大小写不敏感，
+   * 无需 LOWER() 包裹，避免函数导致索引失效。各处列表搜索共用本范式。
    *
    * @param string $keyword 原始关键词。
    * @return string 包裹 % 的匹配串，如 "%abc%"。
    */
   protected function likeEncodedPattern(string $keyword): string
   {
-    return '%' . mb_strtolower(htmlspecialchars($keyword, ENT_QUOTES), 'UTF-8') . '%';
+    return '%' . htmlspecialchars($keyword, ENT_QUOTES) . '%';
   }
 
   /**
@@ -795,24 +896,6 @@ class Controller
   {
     if ($roleId <= 0) return 0;
     return (int)(Db::name('tb_role')->where('id', '=', $roleId)->value('id') ?? 0);
-  }
-
-  /**
-   * 触发一次服务端通知广播（供 SSE 通道使用，内网回环，非阻塞）。
-   *
-   * 当发生"别人回复了我/审核通过了一条回复"等会让某个在线账号的红点变化时，
-   * 业务控制器调用本方法向 Node 的 /__notify 发一个极短超时的信号；
-   * Node 据此对 SSE 客户端广播一条"去刷新"空消息，客户端再走带鉴权的
-   * /api 拉真实状态。通知地址由 api/config/app.php 的 NOTIFY_URL 配置。
-   *
-   * 失败静默忽略——SSE 只是加速刷新，即使广播丢失也会被低频心跳轮询兜底。
-   *
-   * 实现统一收敛到 Core\DataSignal::notify()：数据表级的变更由 Core\Db 自动
-   * touch 并在请求结束时广播 data-change，本方法只发不带参数的原 reply 信号。
-   */
-  protected function notifyServer(): void
-  {
-    \Core\DataSignal::notify([]);
   }
 
   /**
@@ -857,7 +940,7 @@ class Controller
     // 验证文件内容（防止文件伪装）。
     $finfo = finfo_open(FILEINFO_MIME_TYPE);
     $realMimeType = finfo_file($finfo, $file['tmp_name']);
-    // finfo_close 已弃用，资源会自动关闭。
+    finfo_close($finfo);
 
     if (!in_array($realMimeType, $allowedTypes)) {
       return '';

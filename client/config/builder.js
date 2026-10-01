@@ -7,10 +7,5 @@ const BUILDER = {
   PUBLIC_PATH: '',
   // 打包成功消息。
   SUCCESS_MESSAGE: 'KniuSystem build created in dist/',
-  // 源目录。
-  SOURCES: [
-    'index.html',
-    'public'
-  ]
 };
 export default BUILDER;

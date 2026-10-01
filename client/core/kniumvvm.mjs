@@ -1,9 +1,9 @@
-import KniuTemplate from './kniutemplate.mjs';
-import KniuUI from './kniuui.js';
+import TEMPLATE from './kniutemplate.mjs';
+import UI from './kniuui.js';
+import REQUEST from './kniurequest.mjs';
 import { nextTick } from './kniuscheduler.mjs';
-import SYNC from './kniusync.mjs';
 
-const { collectReactiveReads, observe, reactive } = KniuTemplate;
+const { collectReactiveReads, observe, reactive } = TEMPLATE;
 
 let activeInstance = null;
 
@@ -72,13 +72,26 @@ function controller(setup) {
     async mount(services, root) {
       const refs = {};
       const viewModel = createViewModel(component, services, root, refs);
-      await viewModel.beforeMount();
-      const binding = services.bind(root, viewModel.state, refs);
-      const disposeViewModel = await viewModel.mount();
-      return function disposeComponent() {
-        disposeViewModel?.();
+      let binding = null;
+      try {
+        await viewModel.beforeMount();
+        if (!viewModel.isActive()) return function disposeInactiveComponent() { };
+        binding = services.bind(root, viewModel.state, refs);
+        const disposeViewModel = await viewModel.mount();
+        if (!viewModel.isActive()) {
+          binding?.dispose?.();
+          return function disposeInactiveComponent() { };
+        }
+        return function disposeComponent() {
+          disposeViewModel?.();
+          binding?.dispose?.();
+        };
+      } catch (error) {
+        // setup 已登记的订阅、计时器和 effect 必须随失败挂载一起释放。
+        viewModel.dispose();
         binding?.dispose?.();
-      };
+        throw error;
+      }
     }
   };
   return Object.freeze(component);
@@ -91,55 +104,87 @@ function createViewModel(component, services = {}, root, refs = {}) {
     unmounted: [],
     cleanups: [],
     timers: new Set(),
+    abortController: typeof AbortController === 'function' ? new AbortController() : null,
+    detachParentAbort: null,
     stopped: false,
     bindings: null
   };
-  const setupContext = createTimerServices({ ...services, root: root || services.root, $refs: refs, refs: refs }, instance.timers);
+  const setupContext = createTimerServices({
+    ...services,
+    root: root || services.root,
+    $refs: refs,
+    refs: refs,
+    signal: instance.abortController?.signal,
+    request(options) {
+      if (Array.isArray(options)) {
+        return REQUEST(options.map(function (option) {
+          return { ...(option || {}), signal: instance.abortController?.signal };
+        }));
+      }
+      return REQUEST({ ...(options || {}), signal: instance.abortController?.signal });
+    }
+  }, instance.timers);
   Object.assign(setupContext, {
-    reactive, ref, computed, watch, watchEffect,
-    onBeforeMount, onMounted, onUnmounted, onScopeDispose, autoSync
+    reactive, ref, computed, watch, watchEffect, nextTick,
+    onBeforeMount, onMounted, onUnmounted, onScopeDispose
   });
-  setupContext.$msg = KniuUI.msg;
-  setupContext.$confirm = KniuUI.confirm;
+  setupContext.$msg = UI.msg;
+  setupContext.$confirm = UI.confirm;
 
   activeInstance = instance;
-  // setup() 期间发布当前作用域：期间调用的 autoSync()（含 usePagination 内部的注册）
-  // 自动绑定到本实例，随 dispose() 一并注销。
-  SYNC.setActiveOwner(instance);
   let bindings;
   try {
     bindings = component.setup.call(setupContext, setupContext) || {};
   } finally {
     activeInstance = null;
-    SYNC.setActiveOwner(null);
   }
 
   const state = bindings.state;
   if (!state || typeof state !== 'object') {
     throw new TypeError(`[MVVM] ${component.name} setup() must return { state, ...actions }`);
   }
-  if (!Object.prototype.hasOwnProperty.call(state, '$msg')) state.$msg = KniuUI.msg;
-  if (!Object.prototype.hasOwnProperty.call(state, '$confirm')) state.$confirm = KniuUI.confirm;
+  if (!Object.prototype.hasOwnProperty.call(state, '$msg')) state.$msg = UI.msg;
+  if (!Object.prototype.hasOwnProperty.call(state, '$confirm')) state.$confirm = UI.confirm;
   if (!Object.prototype.hasOwnProperty.call(state, '$refs')) state.$refs = refs;
   exposeBindings(state, bindings);
 
+  const parentSignal = services.signal;
+  if (parentSignal?.addEventListener) {
+    const abortFromParent = function () { dispose(); };
+    parentSignal.addEventListener('abort', abortFromParent, { once: true });
+    instance.detachParentAbort = function () {
+      parentSignal.removeEventListener?.('abort', abortFromParent);
+    };
+    if (parentSignal.aborted) abortFromParent();
+  }
+
   async function mount() {
     for (const hook of instance.mounted) {
+      if (instance.stopped) break;
       const cleanup = await hook();
+      if (instance.stopped) {
+        if (typeof cleanup === 'function') cleanup();
+        break;
+      }
       if (typeof cleanup === 'function') instance.cleanups.push(cleanup);
     }
     return dispose;
   }
 
   async function beforeMount() {
-    for (const hook of instance.beforeMounted) await hook();
+    for (const hook of instance.beforeMounted) {
+      if (instance.stopped) break;
+      await hook();
+      if (instance.stopped) break;
+    }
   }
 
   function dispose() {
     if (instance.stopped) return;
     instance.stopped = true;
-    // 先摘掉本作用域注册的数据源，避免卸载过程中又被服务端变更信号触发重放。
-    SYNC.disposeOwner(instance);
+    instance.detachParentAbort?.();
+    instance.detachParentAbort = null;
+    instance.abortController?.abort();
     instance.unmounted.forEach(function (hook) {
       try { hook(); } catch (error) { console.warn('[MVVM] onUnmounted hook failed:', error); }
     });
@@ -153,7 +198,7 @@ function createViewModel(component, services = {}, root, refs = {}) {
     instance.timers.clear();
   }
 
-  return { state, beforeMount, mount, dispose };
+  return { state, beforeMount, mount, dispose, isActive: function () { return !instance.stopped; } };
 }
 
 function onBeforeMount(hook) {
@@ -171,19 +216,6 @@ function onUnmounted(hook) {
 function onScopeDispose(cleanup) {
   if (typeof cleanup !== 'function') throw new TypeError('[MVVM] cleanup must be a function');
   requireActiveInstance('onScopeDispose').cleanups.push(cleanup);
-}
-
-/**
- * 注册一个数据源，服务端数据变更时自动重放（页面不刷新、业务不写刷新代码）。
- *
- * 必须在 setup() 内同步调用——内部依赖当前控制器作用域做自动注销；
- * 在 usePagination() 等工厂内部调用同样有效（仍处于同一个 setup 同步段）。
- *
- * @param {Function} reload 重新拉数据并写回响应式 state 的函数。
- * @return {Function} 手动注销函数（通常无需调用）。
- */
-function autoSync(reload) {
-  return SYNC.autoSync(reload);
 }
 
 function ref(value) {
@@ -216,13 +248,16 @@ function createReactiveEffect(getter, notify) {
     stopDependencies();
   }
 
-  return { run, stop };
+  return { run, stop, isActive: function () { return !stopped; } };
 }
 
 function computed(getter) {
   if (typeof getter !== 'function') throw new TypeError('[MVVM] computed() expects a getter');
   const result = reactive({ value: undefined });
-  const effect = createReactiveEffect(getter, function (run) { result.value = run(); });
+  let effect;
+  effect = createReactiveEffect(getter, function (run) {
+    if (effect.isActive()) result.value = run();
+  });
   result.value = effect.run();
   if (activeInstance) activeInstance.cleanups.push(effect.stop);
   return result;
@@ -235,26 +270,51 @@ function traverse(value, seen = new Set()) {
   return value;
 }
 
+function snapshotWatchValue(value, seen = new WeakMap()) {
+  if (!value || typeof value !== 'object') return value;
+  if (seen.has(value)) return seen.get(value);
+  if (value instanceof Date) return new Date(value.getTime());
+  const copy = Array.isArray(value) ? [] : {};
+  seen.set(value, copy);
+  Object.keys(value).forEach(function (key) {
+    copy[key] = snapshotWatchValue(value[key], seen);
+  });
+  return copy;
+}
+
 function watch(source, callback, options = {}) {
+  const isRefSource = function (value) {
+    return Boolean(value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'value'));
+  };
+  const isReactiveSource = function (value) {
+    return Boolean(value && typeof value === 'object' && !isRefSource(value));
+  };
+  const directReactiveSource = !Array.isArray(source) && isReactiveSource(source);
+  const arrayHasReactiveSource = Array.isArray(source) && source.some(isReactiveSource);
+  const shouldDeep = options.deep === true || directReactiveSource || arrayHasReactiveSource;
+  const readValue = function (item) {
+    const value = typeof item === 'function' ? item() : (isRefSource(item) ? item.value : item);
+    return shouldDeep ? traverse(value) : value;
+  };
   const getter = Array.isArray(source)
-    ? function () { return source.map(function (item) { return typeof item === 'function' ? item() : item.value; }); }
-    : (typeof source === 'function'
-      ? source
-      : (source && Object.prototype.hasOwnProperty.call(source, 'value')
-        ? function () { return source.value; }
-        : function () { return traverse(source); }));
+    ? function () { return source.map(readValue); }
+    : (typeof source === 'function' || isRefSource(source)
+      ? function () { return readValue(source); }
+      : function () { return traverse(source); });
   if (typeof callback !== 'function') throw new TypeError('[MVVM] watch() expects a callback');
   let oldValue;
   const effect = createReactiveEffect(getter, function (run) {
+    if (!effect.isActive()) return;
     const value = run();
-    if (options.deep || !Object.is(value, oldValue)) {
+    if (shouldDeep || !Object.is(value, oldValue)) {
       const previous = oldValue;
-      oldValue = value;
+      oldValue = shouldDeep ? snapshotWatchValue(value) : value;
       callback(value, previous);
     }
   });
-  oldValue = effect.run();
-  if (options.immediate) callback(oldValue, undefined);
+  const initialValue = effect.run();
+  oldValue = shouldDeep ? snapshotWatchValue(initialValue) : initialValue;
+  if (options.immediate) callback(initialValue, undefined);
   if (activeInstance) activeInstance.cleanups.push(effect.stop);
   return effect.stop;
 }
@@ -292,7 +352,6 @@ export default {
   onMounted,
   onUnmounted,
   onScopeDispose,
-  autoSync,
   watch,
   watchEffect,
   ref,

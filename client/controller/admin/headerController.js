@@ -1,29 +1,27 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import { getCurrentRoutePath } from '../../core/kniuutil.mjs';
 import AUTH from '../../core/kniuauth.mjs';
-import REQUEST from '../../core/kniurequest.mjs';
-import NOTIFY from '../../core/kniunotify.mjs';
 
-const { controller, onMounted, reactive } = MVVM;
+const { controller } = MVVM;
 
 let replyNotificationRequest = null;
 let replyNotificationCompletedAt = 0;
 const REPLY_NOTIFICATION_DEDUPE_MS = 3000;
 
-function requestReplyNotificationState() {
+function requestReplyNotificationState(request) {
   const now = Date.now();
   if (replyNotificationRequest) return replyNotificationRequest;
   if (now - replyNotificationCompletedAt < REPLY_NOTIFICATION_DEDUPE_MS) {
     return Promise.resolve(null);
   }
-  replyNotificationRequest = REQUEST({
+  replyNotificationRequest = request({
     url: '/comment_reply_state',
     type: 'POST',
+    mutation: false,
     data: {},
     redirectOnUnauthorized: false
   }).finally(function () {
     replyNotificationRequest = null;
-    // 从请求完成后开始计时，慢请求不能让去重窗口提前失效。
     replyNotificationCompletedAt = Date.now();
   });
   return replyNotificationRequest;
@@ -32,15 +30,15 @@ function requestReplyNotificationState() {
 function getAdminPageName(path) {
   if (path === '/seo') return '网站信息';
   if (path === '/aboutedit') return '关于我';
-  if (path === '/dailydetail') return '每日一句';
-  if (path === '/articledetail') return '文章管理';
-  if (path === '/users') return '用户管理';
+  if (path === '/daily') return '每日一句';
+  if (path === '/article') return '文章管理';
+  if (path === '/user') return '用户管理';
   if (path === '/comment') return '评论管理';
   if (path === '/reply') return '回复管理';
   return '控制台';
 }
 
-const headerController = controller(({ navigateTo, onRouteChange }) => {
+const headerController = controller(({ eventTo, navigateTo, onRouteChange, request, reactive, onMounted }) => {
   const initialPath = getCurrentRoutePath();
   const state = reactive({
     brandMark: 'K',
@@ -85,7 +83,7 @@ const headerController = controller(({ navigateTo, onRouteChange }) => {
   }
 
   async function loadReplyNotification() {
-    const result = await requestReplyNotificationState();
+    const result = await requestReplyNotificationState(request);
     if (!result) return;
     if (result.status !== 1) return;
     syncNotificationBadge(result.data?.has_unread, result.data?.unread_count);
@@ -93,7 +91,7 @@ const headerController = controller(({ navigateTo, onRouteChange }) => {
 
   async function handleNotificationRequest() {
     if (state.hasUnreadReply) {
-      const result = await REQUEST({
+      const result = await request({
         url: '/comment_reply_read',
         type: 'POST',
         data: {}
@@ -108,20 +106,21 @@ const headerController = controller(({ navigateTo, onRouteChange }) => {
     location.reload();
   }
 
+  function toFrontHome() {
+    window.open('/', '_blank', 'noopener,noreferrer');
+  }
+
   onMounted(function () {
     updateUserNavigation(AUTH.getUser());
     loadReplyNotification();
-    // 仅由真实回复刷新信号更新红点，不使用可见性或定时轮询产生无条件请求。
-    const stopNotify = NOTIFY.subscribeReplyRefresh(loadReplyNotification);
-    globalThis.addEventListener('kniu:reply-notification-change', loadReplyNotification);
+    const stopReplyNotification = eventTo?.on('reply:notification-change', loadReplyNotification);
     const stopRoute = onRouteChange(updateCurrentApplication);
     const stopAuth = AUTH.subscribe(function (authState) {
       updateUserNavigation(authState.user);
       if (!authState.authenticated) syncNotificationBadge(false, 0);
     });
     return function () {
-      stopNotify();
-      globalThis.removeEventListener('kniu:reply-notification-change', loadReplyNotification);
+      stopReplyNotification?.();
       stopRoute();
       stopAuth();
     };
@@ -132,7 +131,8 @@ const headerController = controller(({ navigateTo, onRouteChange }) => {
     handleNavigation,
     handleHomeNavigation,
     handleNotificationRequest,
-    handleRefresh
+    handleRefresh,
+    toFrontHome
   };
 });
 export default headerController;

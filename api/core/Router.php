@@ -4,9 +4,19 @@ namespace Core;
 
 class Router
 {
+  /** @var array 路由表，形如 [HTTP 方法][路径] => 'Controller@action'。 */
   private static $routes = [];
+  /**
+   * 免登录接口清单缓存（来自 api/config/auth.php 的 NO_AUTH）。
+   * null 表示尚未加载；元素为「路径去掉前导斜杠」的接口名，如 'getDaily'。
+   */
+  private static ?array $noAuthList = null;
+  /** @var array 控制器解析缓存，形如 [控制器类名 => 文件路径]。 */
   private static $controllerCache = [];
+  /** @var string 当前请求的查询串（不含前导 ?）。 */
   private $params = '';
+  /** @var bool 当前请求的路由是否需要登录鉴权（默认 true）。 */
+  private $authRequired = true;
 
   /**
    * 添加 GET 请求路由。
@@ -17,6 +27,7 @@ class Router
    */
   public static function get($route, $params = [])
   {
+    self::guardAuthParam(func_num_args(), __METHOD__);
     self::add($route, $params, 'GET');
   }
 
@@ -29,6 +40,7 @@ class Router
    */
   public static function post($route, $params = [])
   {
+    self::guardAuthParam(func_num_args(), __METHOD__);
     self::add($route, $params, 'POST');
   }
 
@@ -41,6 +53,7 @@ class Router
    */
   public static function put($route, $params = [])
   {
+    self::guardAuthParam(func_num_args(), __METHOD__);
     self::add($route, $params, 'PUT');
   }
 
@@ -53,30 +66,84 @@ class Router
    */
   public static function delete($route, $params = [])
   {
+    self::guardAuthParam(func_num_args(), __METHOD__);
     self::add($route, $params, 'DELETE');
+  }
+
+  /**
+   * 拒绝「路由注册第三个参数」这种旧写法。
+   *
+   * 免登录清单已统一收敛到 api/config/auth.php 的 NO_AUTH，注册处再传第三个参数会被 PHP
+   * 静默忽略，造成「以为放行了其实没有」的假象，因此直接抛异常在注册期暴露。
+   *
+   * @param int $argCount 实际传入的参数个数。
+   * @param string $method 调用方方法名。
+   * @return void
+   * @throws \InvalidArgumentException 传入第三个参数时抛出。
+   */
+  private static function guardAuthParam($argCount, $method)
+  {
+    if ($argCount > 2) {
+      throw new \InvalidArgumentException(
+        $method . '() 不再接受第三个参数；免登录接口请登记到 api/config/auth.php 的 NO_AUTH'
+      );
+    }
   }
 
   /**
    * 添加路由。
    *
+   * 所有接口默认需要登录鉴权，免登录接口只能在 api/config/auth.php 的 NO_AUTH 中登记，
+   * 由 dispatch() 统一走 Core\Controller::requireLogin() 闸门。
+   *
    * @param string $route 路由路径。
    * @param array|string $params 路由参数，格式为 "Controller@action"。
    * @param string $method HTTP方法，默认为 'GET'。
    * @return void
-   * @throws InvalidArgumentException 路由参数格式无效时抛出异常。
+   * @throws \InvalidArgumentException 路由参数格式无效时抛出异常。
    */
   private static function add($route, $params = [], $method = 'GET')
   {
+    $method = strtoupper($method);
     // 确保参数始终是字符串格式。
     if (is_array($params)) {
       if (isset($params[0]) && is_string($params[0])) {
-        self::$routes[strtoupper($method)][$route] = $params[0];
+        self::$routes[$method][$route] = $params[0];
       } else {
         throw new \InvalidArgumentException('Route parameters must contain a valid controller@action string');
       }
     } else {
-      self::$routes[strtoupper($method)][$route] = (string)$params;
+      self::$routes[$method][$route] = (string)$params;
     }
+  }
+
+  /**
+   * 免登录接口清单（api/config/auth.php 的 NO_AUTH，全局唯一来源）。
+   *
+   * @return array 形如 ['getDaily', 'logup', ...] 的接口名列表。
+   */
+  private static function noAuthList()
+  {
+    if (self::$noAuthList === null) {
+      $authConfig = require __DIR__ . '/../config/auth.php';
+      $list = $authConfig['NO_AUTH'] ?? [];
+      self::$noAuthList = array_map(function (mixed $name) {
+        return ltrim((string)$name, '/');
+      }, is_array($list) ? $list : []);
+    }
+    return self::$noAuthList;
+  }
+
+  /**
+   * 请求路径是否在免登录清单内。
+   *
+   * @param string $url 已去除 /api 前缀的请求路径，可带查询串。
+   * @return bool 是否免登录。
+   */
+  private function isNoAuthRoute($url)
+  {
+    $path = explode('?', (string)$url, 2)[0];
+    return in_array(ltrim($path, '/'), self::noAuthList(), true);
   }
 
   /**
@@ -96,6 +163,8 @@ class Router
     }
 
     $this->params = self::$routes[strtoupper($method)][$url];
+    // 免登录清单来自 api/config/auth.php 的 NO_AUTH；不在清单内的一律需要登录。
+    $this->authRequired = !$this->isNoAuthRoute($url);
 
     if (!$this->validateRouteParams()) {
       return;
@@ -319,6 +388,9 @@ class Router
   /**
    * 执行控制器动作。
    *
+   * 正常路径只做 class/method 判定；只有确实要回 404 时才递归扫描目录，
+   * 用于在错误日志里附带控制器文件定位信息，避免每个请求都扫描 app 目录树。
+   *
    * @param string $controller 控制器类名。
    * @param string $action 动作方法名。
    * @param string $url 请求 URL。
@@ -326,13 +398,11 @@ class Router
    */
   private function executeControllerAction($controller, $action, $url)
   {
-    $controllerFile = $this->getControllerFilePath($controller);
-    $fileExists = file_exists($controllerFile);
-
     if ($this->isValidControllerAction($controller, $action)) {
       $this->invokeControllerAction($controller, $action);
     } else {
-      $this->sendControllerNotFoundError($controller, $action, $fileExists, $controllerFile);
+      $controllerFile = $this->getControllerFilePath($controller);
+      $this->sendControllerNotFoundError($controller, $action, file_exists($controllerFile), $controllerFile);
     }
   }
 
@@ -373,6 +443,10 @@ class Router
   /**
    * 调用控制器动作。
    *
+   * 调用前统一过登录鉴权闸门：默认所有接口都需要登录，只有登记在
+   * api/config/auth.php 的 NO_AUTH 中的接口才放行游客
+   * （Core\Controller::requireLogin 为唯一入口）。
+   *
    * @param string $controller 控制器类名。
    * @param string $action 动作方法名。
    * @return void
@@ -381,6 +455,7 @@ class Router
   {
     try {
       $instance = new $controller();
+      $instance->requireLogin($this->authRequired);
       $instance->$action();
     } catch (\Throwable $e) {
       $this->sendErrorResponse(500, '服务器处理失败', [
@@ -465,12 +540,19 @@ class Router
     }
     http_response_code($statusCode);
     header('Content-Type: application/json; charset=utf-8');
+    // 路由层错误按 HTTP 语义映射业务码：404 资源不存在、500 服务器内部错误，其余归入通用失败。
+    $businessCode = ErrorCode::FAIL;
+    if ($statusCode === 404) {
+      $businessCode = ErrorCode::NOT_FOUND;
+    } elseif ($statusCode === 500) {
+      $businessCode = ErrorCode::SERVER_ERROR;
+    }
     // 调试信息仅记入日志，不随响应回传，保持响应体统一。
     if (!empty($debugData)) {
       error_log('[Router] ' . $message . ' :: ' . json_encode($debugData, JSON_UNESCAPED_UNICODE));
     }
     echo json_encode([
-      'status' => 0,
+      'status' => $businessCode,
       'msg' => $message,
       'data' => null
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);

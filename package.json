@@ -5,14 +5,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "cross-env PROCESS_ENV=production node client/core/kniubuilder.mjs",
-    "dev": "cross-env PROCESS_ENV=development node client/core/kniuserver.mjs",
-    "kill": "cross-env PROCESS_ENV=development taskkill /F /IM node.exe",
-    "preview": "cross-env PROCESS_ENV=development node client/core/kniupreview.mjs"
+    "build": "node client/core/kniubuilder.mjs --env=production",
+    "dev": "node client/core/kniuserver.mjs --env=development",
+    "kill": "taskkill /F /IM node.exe",
+    "preview": "node client/core/kniupreview.mjs --env=development",
+    "test": "node test/core-state-sync.mjs && php test/check_no_auth_list.php"
   },
-  "devDependencies": {
-    "cross-env": "^10.1.0",
-    "esbuild": "^0.28.1"
-  },
+  "devDependencies": {},
   "dependencies": {}
 }

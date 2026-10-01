@@ -4,6 +4,7 @@ namespace App\Admin\Controllers;
 
 use Core\Controller;
 use Core\Db;
+use Core\ErrorCode;
 
 class AuthController extends Controller
 {
@@ -69,12 +70,12 @@ class AuthController extends Controller
     $password = $this->input('post.password') ?? '';
 
     if (!$this->verifyArithmeticCaptcha()) {
-      $this->json([], '验证码错误', 0);
+      $this->json([], '验证码错误', ErrorCode::CAPTCHA_INVALID);
       return;
     }
 
     if (empty($username) || empty($password)) {
-      $this->json([], '用户名和密码不能为空', 0);
+      $this->json([], '用户名和密码不能为空', ErrorCode::PARAM_INVALID);
       return;
     }
 
@@ -84,14 +85,14 @@ class AuthController extends Controller
       ->select();
 
     if (empty($result)) {
-      $this->json([], '用户不存在', 0);
+      $this->json([], '用户不存在', ErrorCode::NOT_FOUND);
       return;
     }
 
     $userData = $result[0];
 
     if (isset($userData['is_show']) && $userData['is_show'] == 0) {
-      $this->json([], '该账号已被禁用，请联系管理员', 0);
+      $this->json([], '该账号已被禁用，请联系管理员', ErrorCode::ACCOUNT_DISABLED);
       return;
     }
 
@@ -129,7 +130,7 @@ class AuthController extends Controller
       ], '登录成功', 1);
       return;
     }
-    $this->json([], '用户名或密码错误', 0);
+    $this->json([], '用户名或密码错误', ErrorCode::CREDENTIAL_INVALID);
   }
 
   // 退出登录。

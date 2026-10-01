@@ -1,7 +1,3 @@
-// 富文本安全白名单清理：危险标签按可见文本保留 + 事件/危险属性剔除。
-// 提供同步 sanitizeRichHtml 与异步切分 sanitizeRichHtmlAsync 两种形态，
-// 语义（白名单/产物）完全一致；异步版本仅用于超大内容，避免主线程一次卡顿。
-
 /** 单次异步切分处理的节点上限；超过则跨多帧分片执行。 */
 const SLICE_SIZE = 800;
 
@@ -22,14 +18,25 @@ function escapeBannedTags(html) {
     });
 }
 
-/** 可能承载 URL 的属性名，用于拦截 javascript:/vbscript: 伪协议。 */
+/** 可能承载 URL 的属性名，用于拦截 javascript:/vbscript:/data: 伪协议。 */
 const URL_ATTRIBUTES = ['href', 'src', 'poster', 'xlink:href'];
+
+/** 编辑器粘贴图片会产生 data:image 内联图，仅放行常见位图格式（svg 可携带脚本，禁止）。 */
+const SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|gif|webp|bmp)([;,]|$)/i;
+
+/** 判断 URL 值是否携带危险协议，先剔除空白与控制字符再匹配，防 `javas&#9;cript:` 类拆分绕过。 */
+export function isDangerousUrl(value) {
+  const stripped = String(value).replace(/[\s\x00-\x1f]+/g, '');
+  if (/^(javascript|vbscript):/i.test(stripped)) return true;
+  if (/^data:/i.test(stripped)) return !SAFE_DATA_IMAGE_RE.test(stripped);
+  return false;
+}
 
 function isDangerousAttribute(node, attr) {
   const name = attr.name.toLowerCase();
   const value = attr.value.trim();
   if (name.startsWith('on') || name === 'srcdoc' || name === 'formaction') return true;
-  if (URL_ATTRIBUTES.indexOf(name) >= 0 && /^(javascript|vbscript):/i.test(value)) return true;
+  if (URL_ATTRIBUTES.indexOf(name) >= 0 && isDangerousUrl(value)) return true;
   return false;
 }
 

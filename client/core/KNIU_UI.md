@@ -5,10 +5,10 @@
 ## 约定
 
 - 系统 UI 自定义元素使用 `kniu-` 前缀。
-- 组件内部 DOM 类名使用 `kniu_sys_` 前缀。
+- 组件内部 DOM 类名使用 `kniu_sys_` 前缀；页面与设计系统仍用 `kniu_*` 工具类族（`kniu_container`、`kniu_web_*`、`kniu_md_*` 等）。组件源码内的类名由 `node test/audit_component_classes.mjs` 守护，退出码非 0 即存在不合规类名。
 - 所有 `kniu-*` 组件的功能配置统一通过 `kniu:option` 对象接收；旧的组件配置 attribute 不再读取或兼容。
 - 组件使用 Shadow DOM 隔离内部结构与样式。
-- 所有 `kniu-*` 组件和项目页面统一只使用 `public/static/font/` 内现有的 `KniuHei` 字体文件，并按 ExtraLight(200)、Light(300)、Regular(400)、Normal(450)、Medium(500)、Bold(700)、Heavy(900) 映射实际 `font-weight`；正文和代码区域均使用 `KniuHei`，斜体使用浏览器合成样式；禁止引入 Noto/思源、微软雅黑、宋体、黑体、Arial、Georgia、Consolas、Robot 或其他系统字体作为默认字体，图标仍使用独立的 `kniu_iconfont`。
+- 所有 `kniu-*` 组件和项目页面统一只使用 `public/static/font/` 内现有的 `KniuHei` 字体文件，并按 ExtraLight(200)、Light(300)、Regular(400)、Normal(450)、Medium(500)、Bold(700)、Heavy(900) 映射实际 `font-weight`；正文和代码区域均使用 `KniuHei`，斜体使用浏览器合成样式；禁止引入 Noto/思源、微软雅黑、宋体、黑体、Arial、Georgia、Consolas、Robot 或其他系统字体作为默认字体，图标使用内置 SVG，不使用图标字体。
 - `kniu-editor` 的字体菜单只提供项目 `KniuHei` 和“无”两项；清除字体时恢复继承，不再提供旧字体或通用字体族选项。
 - 视口级下拉浮层关闭时必须恢复原始节点位置，并清除 `data-open`、`position`、`left`、`top`、`right`、`bottom`、`transform`、`visibility` 等临时定位状态；重复开闭不得复用上一次的显示或坐标状态。移动端用户菜单每次打开先清空旧坐标，在下一帧重新测量触发按钮，并在导航展开动画期间持续跟随锚点。
 
@@ -25,6 +25,19 @@
 两个及以上按钮统一使用 `<kniu-btn-group>` 包裹，组件内置 `display:inline-flex; align-items:center; gap:10px`，页面不得再用零散 margin 拼按钮间距。
 
 表格的数据、loading 和表格级回调放在 `tableOptions` 中；列只允许使用 `<kniu-table-col>` HTML 子标签，列属性和列模板直接写在标签上。options 数据变化时必须整体替换对象引用。以后新增组件也必须先实现本协议。
+
+### 全局默认项与主题
+
+应用入口可用 `UI.configure()` 配置组件默认项和主题变量。默认项仅减少重复书写，页面的 `kniu:option` 同名字段优先；核心库不包含任何项目业务默认项。
+
+```js
+UI.configure({
+  components: { btn: { size: 'small' }, page: { layout: 'total,prev,pager,next' } },
+  theme: { '--kniu-color-primary': '#409eff', '--kniu-radius': '4px' }
+});
+```
+
+主题变量从应用根继承至 Shadow DOM。组件样式新增颜色、边框、圆角和控件高度时，应优先使用 `--kniu-color-primary`、`--kniu-border-color`、`--kniu-radius`、`--kniu-control-height`，避免在业务页面重复传视觉配置。
 
 ### 双语配置（lang，强制约定）
 
@@ -65,14 +78,16 @@ state.commentOptions = Object.assign({}, state.commentOptions, { lang: 'en' }); 
 
 ## 消息提示
 
-组件方法和请求回调中可以直接调用：
+Controller 中从 setup 上下文解构 `$msg`、`$confirm` 后直接调用：
 
 ```js
-this.$msg('这是一条消息提示');
+const exampleController = controller(({ $msg }) => {
+  $msg('这是一条消息提示');
 
-this.$msg({
-  content: '保存成功',
-  type: 'success'
+  $msg({
+    content: '保存成功',
+    type: 'success'
+  });
 });
 ```
 
@@ -150,7 +165,8 @@ this.$msg({
 ## 确认框
 
 ```js
-this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
+const exampleController = controller(({ $confirm }) => {
+  $confirm('此操作将永久删除该文件, 是否继续?', '提示', {
   confirmButtonText: '确定',
   cancelButtonText: '取消',
   type: 'warning',
@@ -159,6 +175,7 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
   // 用户确认
 }).catch(function () {
   // 用户取消、关闭或按 Esc
+});
 });
 ```
 
@@ -254,11 +271,46 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 - `round` 使用胶囊圆角，`closable` 显示关闭按钮并触发 `close` 事件，`disabled` 禁止关闭交互。
 - 表格默认插槽中的 `kniu-tag` 会保留标签属性，并以当前列 `field` 对应的行数据作为标签内容；标签属性支持 `{{scope.row...}}` 行级表达式，例如按角色动态设置 `type`。
 
+## Icon
+
+项目图标统一使用 `<kniu-icon>`，SVG 内容来自 `D:/D07Depot/kniu-iconfont-preview.html`。组件将完整 SVG 图标表内置于核心模块，不加载 `kniu.css` 或图标字体；颜色继承 `currentColor`，尺寸继承当前 `font-size`。
+
+```html
+<kniu-icon kniu:option="{{icon:'search'}}" />
+<kniu-icon kniu:option="{{icon:'loading'}}" style="font-size:20px;color:#409eff;" />
+```
+
+- 通过 `kniu:option.icon` 传入图标名；图标清单以 `D:/D07Depot/kniu-iconfont-preview.html` 的 `data-name` 为准，例如 `home`、`search`、`document`、`user`、`loading`、`close`、`edit`、`delete`、`table`、`link`。
+- 当前图标集共 177 个。`client/core/kniuiconsvg.mjs` 是**生成产物**：用 `node test/gen_kniuiconsvg.mjs` 从预览页重新生成（剥 `data:image/svg+xml,` 前缀 → `decodeURIComponent` → `#000` 换成 `currentColor`），不要手工增删条目或添加别名；同步后用 `node test/icon_sync_check.mjs` 校验（要求预览页与 mjs 图标数一致、且项目内所有引用都能解析）。预览页版本升级后每枚图标都被统一包一层 `<g transform='translate(...) scale(...)'>` 并配对应的浮点 `stroke-width`（用于跨图标视觉线宽归一），这是预期产物，不要手工还原成裸 `<path>`。
+- 预览页的 `data-name` 是唯一命名来源。新增图标后若要用于工具栏按钮，必须同步 `EDITOR_TOOLBAR_ITEMS` 与构造函数内置工具栏两处。
+- `loading` 自动旋转，用户偏好减少动态效果时停止动画；其它图标不附带动画。
+- 名称必须与预览页 `data-name` 完全一致，区分大小写；组件不提供 PascalCase、连字符名称或其它别名转换，例如只能写 `home_fill`、`triangle_down_fill`、`info_fill_circle`。
+- 图标按钮应只放置 `<kniu-icon>` 并提供 `title` 或 `aria-label`；禁止在业务页面直接书写 `<svg>`、图标字体伪元素或 Unicode 图标字符。
+
+## Badge
+
+`<kniu-badge>` 包裹任意 light DOM 内容，在右上角显示数字或红点；被包裹节点的点击事件会正常冒泡到组件宿主。
+
+```html
+<kniu-badge kniu:option="{{value:8,max:99}}">
+  <kniu-icon kniu:option="{{icon:'service'}}" />
+</kniu-badge>
+<kniu-badge kniu:option="{{isDot:true}}">通知</kniu-badge>
+```
+
+| 配置 | 说明 | 默认值 |
+| --- | --- | --- |
+| `value` | 徽章数值；超过 `max` 时显示 `${max}+` | 空 |
+| `max` | 数值显示上限 | `99` |
+| `isDot` | 显示无文字红点 | `false` |
+| `hidden` | 隐藏徽章但保留内容 | `false` |
+| `unstyled` | 仅保留结构，不注入默认视觉样式 | `false` |
+
 ## Status
 
 ```html
-<kniu-status kniu:option="{{ type:'success' }}">编辑</kniu-status>
-<kniu-status kniu:option="{{ type:'primary' }}">查看</kniu-status>
+<kniu-status kniu:option="{{type:'success'}}">编辑</kniu-status>
+<kniu-status kniu:option="{{type:'primary'}}">查看</kniu-status>
 ```
 
 - 显示形式为“彩色圆点 + 文本”，`type` 只改变圆点颜色，文字保持正文色。
@@ -270,8 +322,8 @@ this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
 
 ```html
 <kniu-form ref="form" kniu:option="{{loginModel}}" kniu@submit.prevent="onSubmit">
-  <kniu-form-cell kniu:option="{{ label:'用户名' }}">
-    <kniu-input kniu:form="{{loginModel.username}}" kniu:option="{{ name:'username' }}"></kniu-input>
+  <kniu-form-cell kniu:option="{{label:'用户名'}}">
+    <kniu-input kniu:form="{{loginModel.username}}" kniu:option="{{name:'username'}}"></kniu-input>
   </kniu-form-cell>
 </kniu-form>
 ```
@@ -389,7 +441,7 @@ state.switchOptions = {
 ```
 
 - `kniu:form` 双向绑定到表单字段（同 kniu-input），`name` 供表单识别，`#prepend` 插槽渲染前置标签（`#append` 同理预留）。
-- 前台文章正文必须按编辑模式分别使用根类：Markdown 使用 `.kniu_markdown_body` 并调用 `UI.installMarkdownStyles(root)`；富文本使用 `.kniu_richtext_body` 并调用 `UI.installRichTextStyles(root)`。两套样式不得写入 `detail.css` 或互相覆盖。危险标签源码的尖括号必须保留 HTML 实体，避免浏览器将其解析为真实元素；外层只保留一层 `<code>`。
+- 前台文章正文必须按编辑模式分别使用根类：Markdown 使用 `.kniu_sys_markdown_body` 并调用 `UI.installMarkdownStyles(root)`；富文本使用 `.kniu_sys_richtext_body` 并调用 `UI.installRichTextStyles(root)`。两套样式不得写入 `detail.css` 或互相覆盖。危险标签源码的尖括号必须保留 HTML 实体，避免浏览器将其解析为真实元素；外层只保留一层 `<code>`。
 - 内容变更派发 `input` 事件，失焦派发 `change` 事件。
 - 仅富文本模式会对 `script`、`style`、`iframe` 等危险原始标签做可见文本转义：无论来自粘贴、输入、值回写或源码切换，都不会被浏览器解析为真实节点或删除其后续内容；普通 `<p>`、`<strong>` 等富文本标签仍按原行为解析。Markdown 模式不经过该富文本清洗链路。
 - 仅富文本模式的“代码块”按钮始终生成块级 `<pre><code>`；“行内代码”按钮将选中的内容包裹为 `<code>`，再次点击可取消包裹。Markdown 模式只编辑原始文本，所有富文本工具栏命令均不会执行。
@@ -416,7 +468,7 @@ state.switchOptions = {
   | 字体样式 | `bold` `italic` `underline` `strikeThrough` |
   | 对齐 | `justifyLeft` `justifyCenter` `justifyRight` `justifyFull` |
   | 列表 | `insertOrderedList` `insertUnorderedList` |
-  | 块级 | `h1` `h2` `h3` `p` `blockquote` `pre` `inlineCode` `hr` `table` |
+  | 块级 | `h1` `h2` `h3` `h4` `h5` `h6` `p` `blockquote` `pre` `inlineCode` `hr` `table` |
   | 字体/颜色 | `fontName` `fontSize` `foreColor` `hiliteColor` |
   | 插入 | `link` `unlink` `image` `media` `emoticons` |
   | 清理 | `removeFormat` `clear` `selectAll` |
@@ -705,7 +757,7 @@ const state = reactive({ pageOptions: { pageSize: 15 } });
 import UI from '../../core/kniuui.js';
 const { usePagination } = UI;
 
-const myController = controller(function () {
+const myController = controller(({ $msg }) => {
     const state = reactive({
       list: [],
       loading: false,
@@ -713,7 +765,7 @@ const myController = controller(function () {
       pageOptions: { pageSize: 15 }
     });
 
-    const pager = usePagination({ state, self: this, url: '/api/daily', pageKey: 'pageOptions' });
+    const pager = usePagination({ state, self: { $msg }, url: '/api/daily', pageKey: 'pageOptions' });
 
     function changePage(event) { pager.changePage(event); }      // 由 pageOptions.onCurrentChange 调用
     function changePageSize(event) { pager.changePageSize(event); } // 由 pageOptions.onSizeChange 调用
@@ -728,13 +780,12 @@ const myController = controller(function () {
 - `usePagination` 请求体固定携带 `page_current`、`page_rows`(= `state.pageRows`)、`field`、`sort`；成功回写 `list / currentPage / pageTotal / total`，页码窗口由 `kniu-page` 自行计算；失败回写 `error` 并调用 `self.$msg(...)` 弹错误浮层。
 - `state.pageRows` 是每页条数的**唯一数据源**，`kniu:option` 里的 `pageSize` 必须绑定它；`size-change` 由组件回写 `state.pageRows` 后自动重新拉取。
 - 切换每页大小时组件会把 `currentPage` 重置为 1，再从第 1 页加载。
-- `usePagination` 内部已通过 `SYNC.autoSync` 监听服务端数据变更并刷新当前页；新增、修改或审核成功后的控制器回调不得再次手动调用同一页的 `loadList`，否则会造成列表接口重复请求。搜索、翻页和切换每页大小等用户主动操作仍正常调用 `loadList`。
-- `createRowDeleteHandler` 默认同样不在删除成功回调中调用 `loadList`；文章、每日一句、评论等内容表由 `SYNC.autoSync` 统一刷新。静默表（例如账号表 `tb_role`）应使用 `onSuccess` 局部同步状态，只有确实无法局部同步时才显式开启 `reloadOnSuccess`。
-- 同时使用 `onMounted(load)` 与 `autoSync(load)` 的非分页页面，`load` 必须复用当前进行中的 Promise；加载期间收到的数据变更只登记一次待刷新，当前请求结束后最多补刷一次，避免初始请求与 SSE 在请求边界重复调用接口。
+- `usePagination` 不内置接口、表名或业务映射。搜索、翻页、每页条数切换以及保存、删除、审核成功后的显式刷新都通过 `loadList` 完成。
+- `createRowDeleteHandler` 默认在成功后刷新当前列表；能够可靠局部更新状态的页面可显式设置 `reloadOnSuccess: false` 并在 `onSuccess` 中处理。
 
 ## 导航栏 Navbar
 
-所有 `kniu-*` 组件的 Shadow DOM 样式都经过统一兼容处理：组件内部的固定尺寸会转换为 `calc(数值 / var(--kniu_vw))`，例如 `220 / var(--kniu_vw)` 的写法；字体尺寸转换后使用 `max(12px,calc(数值 / var(--kniu_vw)))`，移动端最终字号不得小于 `12px`；移动端到桌面端的统一断点为 `calc(1280px - 60px)`，1024px 仍按移动端布局处理；媒体查询断点保留原始 `px`，避免改变响应式断点。项目普通页面通过 `web.min.css` 将移动端 `html/body` 的正文基准设为 `14px`，不再使用 `1em` 把字号锁回浏览器默认的 `16px`，也不再用通配符覆盖页面内部已有的字号层级。日期选择器的普通日历和范围日历分别使用各自渲染方法中的 `weekLabels` 局部变量。
+所有 `kniu-*` 组件的 Shadow DOM 样式都经过统一兼容处理：组件内部的固定尺寸会转换为 `calc(数值 / var(--kniu_vw))`，例如 `220 / var(--kniu_vw)` 的写法；字体尺寸转换后使用 `max(12px,calc(数值 / var(--kniu_vw)))`，移动端最终字号不得小于 `12px`；移动端到桌面端的统一断点为 `calc(1280px - 60px)`，1024px 仍按移动端布局处理；媒体查询断点保留原始 `px`，避免改变响应式断点。需要表达「尺寸不得低于某个绝对像素」时写成 `max(28px,calc(40 / var(--kniu_vw)))`：声明值里只要出现 `var(--kniu_vw)` 就视为作者已自行使用项目单位，转换器不再二次改写，其中的 `28px` 下限才能稳定生效（例如 `.kniu_sys_upload_bar` 的 `min-height` 在窄屏下钳在 `28px`）；经 `appendRawStyle()` 注入的样式本就不做转换，可直接写 `max(28px,…)`。项目普通页面通过 `web.min.css` 将移动端 `html/body` 的正文基准设为 `14px`，不再使用 `1em` 把字号锁回浏览器默认的 `16px`，也不再用通配符覆盖页面内部已有的字号层级。日期选择器的普通日历和范围日历分别使用各自渲染方法中的 `weekLabels` 局部变量。
 
 `<kniu-navbar>` 自带桌面横向导航与移动端菜单，不需要分别维护两套头部结构。组件自身的 `:host` 内置 `display:flex;justify-content:space-between;align-items:center;width:100%;height:inherit`，并通过 `--kniu-navbar-font-size` 提供统一导航字号；菜单、`kniu-navbar-cells`、`kniu-navbar-cell`、`kniu-sub-navbar` 与 `kniu-user-login` 的普通文案均继承该字号，品牌文字仍可单独放大，避免导航出现大大小小的字体。页面模板不再重复声明 `kniu-navbar` 布局；组件生成的 `.kniu_sys_head_placeholder` 由组件统一注入 `z-index:-999;position:relative;display:block;width:100%;height:100%` 样式，页面只使用组件生成的占位元素，不再维护外部占位样式。内部 `.kniu_sys_navbar_bar` 删除原有 `padding` 和 `margin:0 auto`，基础样式使用 `margin-right:auto;margin-left:auto;width:calc(100vw - 30 / var(--kniu_vw) * 2);height:inherit`；在 `@media (min-width:calc(1280px - 60px))` 下使用 `width:calc(100vw - 220 / var(--kniu_vw) * 2)` 和 `min-height:72px`。`fixed:'top'` / `fixed:'bottom'` 使导航悬浮在对应位置，存在 `fixed` 时默认启用 `placeholder`；`placeholder:true` 会在组件后生成 `.kniu_sys_head_placeholder`，并按导航实际高度占位。桌面端 `slot[name="default"]` 位于 `.menu` 外并排在 `.menu` 前面，`slot[name="append"]` 位于右侧 `.menu` 内；移动端页面头部始终保留在原位，展开按钮的三横线通过旋转动画变为 `X`，关闭时再同步还原；只有头部下方的菜单面板从左侧滑入并覆盖剩余视口，菜单 `top` 使用外层 `.kniu_web_head` 的实际高度，头部尺寸变化时自动同步，导航项从菜单顶部开始排列，`#default`、`#append` 和未命名兼容内容均投影在 `.menu` 内。active/side 状态使用原生 `toggleAttribute` 同步，避免调用不存在的自定义方法。菜单打开期间组件会将根元素 `html` 设置为 `overflow:hidden`，关闭或卸载后恢复原值。菜单内容仍完全来自现有插槽，不自动虚构搜索、语言或退出等业务入口。`kniu-navbar-cell` 使用 `route` 配置匹配当前路由，使用 `href` 配置导航地址。
 

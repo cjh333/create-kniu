@@ -1,3 +1,5 @@
+import { isDangerousUrl } from './kniusanitizer.mjs';
+
 const LANGUAGE_ALIASES = {
   html: 'markup',
   xml: 'markup',
@@ -7,6 +9,60 @@ const LANGUAGE_ALIASES = {
   sh: 'bash',
   shell: 'bash'
 };
+
+export const KNIU_TABLE_WRAP_CLASS = 'kniu_sys_article_table_wrap';
+export const KNIU_TABLE_CLASS = 'kniu_sys_article_table';
+
+/**
+ * 给 DOM 里的表格补包裹层（原地修改）。
+ * @param {ParentNode} root 容器（元素 / DocumentFragment / template.content）。
+ * @param {Node} [skipNode] 当前光标锚点：落在表内时跳过该表（包裹会把选区挤到容器根）。
+ */
+export function wrapTablesIn(root, skipNode) {
+  if (!root || typeof root.querySelectorAll !== 'function') return;
+  const tables = Array.prototype.slice.call(root.querySelectorAll('table'));
+  for (let i = 0; i < tables.length; i++) {
+    const table = tables[i];
+    const parent = table.parentNode;
+    if (!parent) continue;
+    if (parent.closest && parent.closest('table')) continue;
+    if (skipNode && typeof table.contains === 'function' && table.contains(skipNode)) continue;
+    if (parent.classList && parent.classList.contains(KNIU_TABLE_WRAP_CLASS)) {
+      table.classList.add(KNIU_TABLE_CLASS);
+      continue;
+    }
+    const wrap = (root.ownerDocument || globalThis.document).createElement('div');
+    wrap.className = KNIU_TABLE_WRAP_CLASS;
+    parent.insertBefore(wrap, table);
+    wrap.appendChild(table);
+    table.classList.add(KNIU_TABLE_CLASS);
+  }
+}
+
+/** 剥掉包裹层（取值 / 源码模式 / 保存内容还原为裸 `<table>`）。 */
+export function unwrapTablesIn(root) {
+  if (!root || typeof root.querySelectorAll !== 'function') return;
+  Array.prototype.slice.call(root.querySelectorAll('.' + KNIU_TABLE_WRAP_CLASS)).forEach(function (wrap) {
+    const parent = wrap.parentNode;
+    if (!parent) return;
+    while (wrap.firstChild) parent.insertBefore(wrap.firstChild, wrap);
+    wrap.remove();
+  });
+  Array.prototype.slice.call(root.querySelectorAll('.' + KNIU_TABLE_CLASS)).forEach(function (table) {
+    table.classList.remove(KNIU_TABLE_CLASS);
+    if (!table.getAttribute('class')) table.removeAttribute('class');
+  });
+}
+
+/** HTML 字符串版：给内容串里的表格补包裹层（富文本正文等一次性渲染场景）。 */
+export function wrapContentTables(html, documentRef = globalThis.document) {
+  const source = String(html == null ? '' : html);
+  if (!documentRef) return source;
+  const template = documentRef.createElement('template');
+  template.innerHTML = source;
+  wrapTablesIn(template.content);
+  return template.innerHTML;
+}
 
 function replaceAll(value, search, replacement) {
   return String(value).split(search).join(replacement);
@@ -21,6 +77,11 @@ function markdownHeadingId(value) {
     .toLowerCase()
     .replace(/\s+/g, '-');
   return text || 'section';
+}
+
+/** 链接/图片 URL 协议白名单：危险协议降级为 `#`，防 markdown 路径的存储型 XSS。 */
+function safeUrl(value) {
+  return isDangerousUrl(value) ? '#' : value;
 }
 
 function parseLinkAttributes(value) {
@@ -48,9 +109,9 @@ function inlineMarkdown(value) {
   };
   text = text.replace(/`([^`\n]+)`/g, (_, code) => token('<code>' + escapeHtml(code.replace(/\\([`|\\])/g, '$1')) + '</code>'));
   text = text.replace(/!\[([^\]]*)\]\(([^\s)]+)(?:\s+["']([^"']*)["'])?\)/g,
-    (_, alt, src, title) => token('<img src="' + escapeHtml(src) + '" alt="' + escapeHtml(alt) + (title ? ' title="' + escapeHtml(title) + '"' : '') + '>'));
+    (_, alt, src, title) => token('<img src="' + escapeHtml(safeUrl(src)) + '" alt="' + escapeHtml(alt) + '"' + (title ? ' title="' + escapeHtml(title) + '"' : '') + '>'));
   text = text.replace(/\[([^\]]+)\]\(([^\s)]+)(?:\s+["']([^"']*)["'])?\)(?: ?\{([^}]*)\})?/g,
-    (_, label, href, title, attributes) => token('<a href="' + escapeHtml(href) + '"' + (title ? ' title="' + escapeHtml(title) + '"' : '') + parseLinkAttributes(attributes) + '>' + inlineMarkdown(label) + '</a>'));
+    (_, label, href, title, attributes) => token('<a href="' + escapeHtml(safeUrl(href)) + '"' + (title ? ' title="' + escapeHtml(title) + '"' : '') + parseLinkAttributes(attributes) + '>' + inlineMarkdown(label) + '</a>'));
   text = text.replace(/\*\*([^*\n]+)\*\*|__([^_\n]+)__/g, (_, strong, strongAlt) => '<strong>' + (strong || strongAlt) + '</strong>');
   text = text.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
   text = text.replace(/\*([^*\n]+)\*|_([^_\n]+)_/g, (_, italic, italicAlt) => '<em>' + (italic || italicAlt) + '</em>');
@@ -69,8 +130,6 @@ function renderMarkdownBlocks(source) {
     if (!paragraph.length) return;
     const content = paragraph.map(function (line, index) {
       const nextLine = paragraph[index + 1] || '';
-      // 富文本编辑器会在保存时裁掉行尾空格。连续的加粗标签说明行
-      // （如“**在线演示：** …”）仍应保留作者输入的逐行结构。
       const labeledLineBreak = /^\*\*[^*\n]+\*\*/.test(line.trim())
         && /^\*\*[^*\n]+\*\*/.test(nextLine.trim());
       const hardBreak = /(?: {2,}|\\)$/.test(line) || labeledLineBreak;
@@ -92,7 +151,7 @@ function renderMarkdownBlocks(source) {
     if (!table) return;
     const head = '<thead><tr>' + table.headers.map(cell => '<th>' + inlineMarkdown(cell) + '</th>').join('') + '</tr></thead>';
     const body = table.rows.length ? '<tbody>' + table.rows.map(row => '<tr>' + row.map(cell => '<td>' + inlineMarkdown(cell) + '</td>').join('') + '</tr>').join('') + '</tbody>' : '';
-    output.push('<table>' + head + body + '</table>');
+    output.push('<div class="' + KNIU_TABLE_WRAP_CLASS + '"><table class="' + KNIU_TABLE_CLASS + '">' + head + body + '</table></div>');
     table = null;
   }
   function flush() {
@@ -245,15 +304,10 @@ function renderMarkdownBlocks(source) {
 
 export function renderMarkdown(source) {
   let rawSource = String(source == null ? '' : source).replace(/\r\n?/g, '\n');
-  // 某些编辑器/接口会把行首引用符保存成 HTML 实体，先还原为 Markdown 的 >。
   rawSource = rawSource.replace(/(^|\n)([ \t]*)\\?(?:&gt;|&#62;|&#x3e;)[ \t]?/gi, '$1$2> ');
-  // 后台编辑器保存的是富文本 HTML。直接保留它，避免把原有 <br>
-  // 拆成 Markdown 行后再次生成或吞掉换行。
   if (/^\s*<(?:p|div|h[1-6]|ul|ol|li|blockquote|table|pre|br)\b/i.test(rawSource)) {
     return rawSource;
   }
-  // 编辑器可能把纯 Markdown 的每一行保存成 "文本<br>"；在没有富文本块标签时，
-  // 将这些编辑器换行还原成 Markdown 换行，才能识别表格分隔行和 --- 分隔线。
   if (/<br\s*\/?>/i.test(rawSource) && /(?:^|\n)\s*(?:#{1,6}\s|>|---+|[-+*]\s|\|)/m.test(rawSource)) {
     rawSource = rawSource.replace(/(?:<br\s*\/?>\s*)+/gi, '\n');
   }
@@ -268,6 +322,25 @@ export function renderMarkdown(source) {
   return rendered.replace(/\u0000CODE_(\d+)\u0000/g, (_, index) => fences[Number(index)] || '');
 }
 
+/**
+ * 剥离富文本编辑器对代码围栏的包裹残留：编辑器会把 ```lang 与收尾 ``` 各自包进
+ * <p>/<div> 或补 <br>，导致 renderMarkdown 的围栏保护正则匹配不上、字面量漏进正文。
+ * 只处理「独立成行的围栏 + 紧邻 <pre>」这一种编辑器产物，不动正文里的行内反引号。
+ */
+export function unwrapEditorCodeFence(value) {
+  return String(value || '')
+    .replace(/((?:^|<\/(?:p|div)>|<br\s*\/?>|\n)\s*)(?:<(?:p|div)[^>]*>\s*)?```[a-z0-9_-]*\s*(?:<\/(?:p|div)>|<br\s*\/?>|\n)+(\s*<pre\b)/gi, '$1$2')
+    .replace(/(<\/pre>\s*)(?:<(?:p|div)[^>]*>\s*)?```\s*(?:<\/(?:p|div)>|<br\s*\/?>)?/gi, '$1');
+}
+
+/**
+ * 文章正文 Markdown 渲染的统一入口：先剥离编辑器围栏残留，再渲染并增强代码块。
+ * 详情页等「编辑器产出 + Markdown 存储」的正文一律走这里，避免各控制器重复拼装。
+ */
+export function renderMarkdownArticle(value, documentRef = globalThis.document) {
+  return enhanceCodeBlocks(renderMarkdown(unwrapEditorCodeFence(value)), documentRef);
+}
+
 function escapeHtml(value) {
   return String(value == null ? '' : value)
     .replace(/&/g, '&amp;')
@@ -278,7 +351,7 @@ function escapeHtml(value) {
 }
 
 function span(className, value) {
-  return '<span class="code-token-' + className + '">' + escapeHtml(value) + '</span>';
+  return '<span class="kniu_sys_code_token_' + className + '">' + escapeHtml(value) + '</span>';
 }
 
 function readLanguage(node) {
@@ -391,10 +464,10 @@ function highlightMarkup(source) {
       continue;
     }
     const attributes = escapeHtml(match[3])
-      .replace(/(\s)([a-z0-9:-]+)(=)/gi, '$1<span class="code-token-attr">$2</span>$3')
-      .replace(/(=)(&quot;.*?&quot;|&#39;.*?&#39;)/g, '$1<span class="code-token-string">$2</span>');
+      .replace(/(\s)([a-z0-9:-]+)(=)/gi, '$1<span class="kniu_sys_code_token_attr">$2</span>$3')
+      .replace(/(=)(&quot;.*?&quot;|&#39;.*?&#39;)/g, '$1<span class="kniu_sys_code_token_string">$2</span>');
     const tagHtml = escapeHtml(match[1])
-      + '<span class="code-token-keyword">' + escapeHtml(match[2]) + '</span>'
+      + '<span class="kniu_sys_code_token_keyword">' + escapeHtml(match[2]) + '</span>'
       + attributes + escapeHtml(match[4]);
     output.push(tagHtml);
     index = end + 1;
@@ -421,11 +494,9 @@ function normalizeCssLine(value, indent) {
   let line = String(value || '').trim();
   if (!line) return line;
   if (/\{$/.test(line)) line = line.replace(/\s*\{$/, ' {');
-  // 声明块中的冒号是属性分隔符；顶层选择器保留伪类写法，如 :hover。
   if (indent > 0 && /^[\w-]+\s*:/.test(line)) {
     line = line.replace(/^([\w-]+)\s*:\s*/, '$1: ');
   }
-  // CSS 列表（font-family、src 等）统一使用逗号加空格。
   line = line.replace(/,\s*/g, ', ');
   return line;
 }
@@ -630,10 +701,10 @@ export function enhanceCodeBlocks(html, documentRef = globalThis.document) {
       fence.language || hint.match(/(?:language|lang)-([a-z0-9_-]+)/i)?.[1] || ''
     );
     const wrapper = documentRef.createElement('pre');
-    wrapper.className = 'article-code';
+    wrapper.className = 'kniu_sys_article_code';
     wrapper.dataset.language = language;
     const body = documentRef.createElement('code');
-    body.className = 'article-code-body';
+    body.className = 'kniu_sys_article_code_body';
     body.innerHTML = highlightCode(source, language);
     wrapper.append(body);
     pre.replaceWith(wrapper);

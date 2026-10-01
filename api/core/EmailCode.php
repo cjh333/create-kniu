@@ -25,6 +25,18 @@ class EmailCode
     return require __DIR__ . '/../config/mail.php';
   }
 
+  /** 验证码连续失败上限（达到即锁定，默认 5 次）。 */
+  public static function failLimit(): int
+  {
+    return max(1, (int)(self::config()['CODE_FAIL_LIMIT'] ?? 5));
+  }
+
+  /** 失败锁定秒数（默认 600 秒即 10 分钟，锁定期间禁发新码与校验）。 */
+  public static function lockSeconds(): int
+  {
+    return max(60, (int)(self::config()['CODE_LOCK_SECONDS'] ?? 600));
+  }
+
   public static function normalizeEmail(string $email): string
   {
     return strtolower(trim($email));
@@ -54,6 +66,18 @@ class EmailCode
     $now = time();
 
     self::prune();
+
+    // 失败锁定优先于发送频率：锁定期内禁止签发新码，防止「重新发码绕过锁定」。
+    $lockUntil = self::lockedUntil($email, $scene);
+    if ($lockUntil > $now) {
+      return [
+        'status' => false,
+        'msg' => '验证码错误次数过多，请 ' . ceil(($lockUntil - $now) / 60) . ' 分钟后再试',
+        'id' => 0,
+        'expire' => 0,
+        'dev' => false
+      ];
+    }
 
     $last = Db::name('tb_email_code')
       ->where('email', '=', $email)
@@ -89,7 +113,7 @@ class EmailCode
       'code_hash' => hash('sha256', $code),
       'expire_time' => $expireAt,
       'used' => 0,
-      'ip' => substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 64),
+      'ip' => substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
       'create_time' => date('Y-m-d H:i:s', $now)
     ]);
 
@@ -125,10 +149,18 @@ class EmailCode
   /**
    * 校验验证码（不消费）。
    *
+   * 失败保护：同一验证码连续失败达到上限（默认 5 次）后锁定该邮箱场景
+   * 10 分钟，锁定期内禁止校验与重发，防止 6 位数字码被在线暴力破解。
+   * 锁定按「邮箱 + 场景」维度判定（取该维度最大 lock_until），重新发码不解锁。
+   *
    * @return array{ status: bool, msg: string, id: int }
    */
   public static function verify(string $email, string $scene, string $code): array
   {
+    $lockUntil = self::lockedUntil($email, $scene);
+    if ($lockUntil > time()) {
+      return ['status' => false, 'msg' => '验证码错误次数过多，请 ' . ceil(($lockUntil - time()) / 60) . ' 分钟后再试', 'id' => 0];
+    }
     $code = trim($code);
     if (!preg_match('/^\d{6}$/', $code)) {
       return ['status' => false, 'msg' => '请输入6位邮箱验证码', 'id' => 0];
@@ -144,16 +176,57 @@ class EmailCode
       return ['status' => false, 'msg' => '验证码错误或已过期，请重新获取', 'id' => 0];
     }
     if (!hash_equals((string)$row['code_hash'], hash('sha256', $code))) {
+      self::registerFailure((int)$row['id']);
       return ['status' => false, 'msg' => '验证码错误或已过期，请重新获取', 'id' => 0];
     }
     return ['status' => true, 'msg' => '验证通过', 'id' => (int)$row['id']];
   }
 
-  /** 标记验证码已使用。 */
+  /**
+   * 标记验证码已使用。
+   *
+   * 核销即成功，该码行不再参与校验，失败计数与锁定标记随 prune() 一并过期清理，
+   * 「邮箱 + 场景」维度的锁定只由失败上限触发，正常核销不产生锁定。
+   */
   public static function consume(int $id): void
   {
     if ($id <= 0) return;
     Db::name('tb_email_code')->where('id', '=', $id)->update(['used' => 1]);
+  }
+
+  /**
+   * 记录一次校验失败，达到上限时写入锁定截止时间。
+   *
+   * @param int $id 验证码行 ID。
+   * @return void
+   */
+  private static function registerFailure(int $id): void
+  {
+    if ($id <= 0) return;
+    Db::name('tb_email_code')->where('id', '=', $id)->inc('fail_count')->update([]);
+    $failCount = (int)(Db::name('tb_email_code')->where('id', '=', $id)->value('fail_count') ?? 0);
+    if ($failCount >= self::failLimit()) {
+      $lockUntil = date('Y-m-d H:i:s', time() + self::lockSeconds());
+      Db::name('tb_email_code')->where('id', '=', $id)->update(['lock_until' => $lockUntil]);
+    }
+  }
+
+  /**
+   * 查询「邮箱 + 场景」维度当前的锁定截止时间戳。
+   *
+   * @param string $email 邮箱。
+   * @param string $scene 场景。
+   * @return int 锁定截止时间戳，未锁定时返回 0。
+   */
+  private static function lockedUntil(string $email, string $scene): int
+  {
+    $lockUntil = Db::name('tb_email_code')
+      ->where('email', '=', $email)
+      ->where('scene', '=', $scene)
+      ->where('lock_until', '>', date('Y-m-d H:i:s'))
+      ->order('lock_until', 'desc')
+      ->value('lock_until');
+    return $lockUntil ? (int)strtotime((string)$lockUntil) : 0;
   }
 
   /** 清理过期一天以上的历史验证码，避免表无限膨胀。 */

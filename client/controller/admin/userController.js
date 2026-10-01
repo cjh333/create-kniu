@@ -1,11 +1,10 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import UI from '../../core/kniuui.js';
-import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 import { assignOptionFields } from '../../core/kniuutil.mjs';
 
-const { controller, onMounted, reactive } = MVVM;
-const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = UI;
+const { controller } = MVVM;
+const { makeSwitchOptions, createRowDeleteHandler, useListPage } = UI;
 const ROLE_TEXT = { '1': '管理员', '2': '普通用户' };
 
 function deriveRoleAuth(role) {
@@ -16,8 +15,8 @@ function canAccessUsers(user) {
   return !!String(user?.name || '').trim();
 }
 
-const userController = controller(function () {
-  const self = this;
+const userController = controller(({ $confirm, $msg, $refs, navigateTo, request, reactive, onMounted }) => {
+  const self = { $confirm, $msg, $refs, navigateTo };
   const currentUser = AUTH.getUser() || {};
   const currentUserName = String(currentUser.name || '');
   const canAdministerUsers = Number(currentUser.roleId || currentUser.role || 0) === 1 || Number(currentUser.roleAuth || 0) === 1;
@@ -132,7 +131,7 @@ const userController = controller(function () {
     }
   });
 
-  const { loadList, changePage, changePageSize } = usePagination({
+  const { loadList, changePage, changePageSize, searchList, debouncedSearch } = useListPage({
     state,
     self,
     url: '/role_list',
@@ -154,8 +153,6 @@ const userController = controller(function () {
       });
     }
   });
-
-  const { searchList, debouncedSearch } = createSearchActions(loadList);
 
   function addRow() {
     if (!canAdministerUsers) return;
@@ -200,10 +197,10 @@ const userController = controller(function () {
     const form = userForm.values;
     const isAdd = !form.id;
     if (!canAdministerUsers) {
-      await REQUEST({
+      await request({
         url: '/role_update',
         type: 'POST',
-        data: { id: form.id, old_password: form.old_password, new_password: form.new_password },
+          data: { id: form.id, old_password: form.old_password, new_password: form.new_password },
         async success(res) {
           if (res.status !== 1) {
             self.$msg({ content: res.msg, type: 'error' });
@@ -239,7 +236,7 @@ const userController = controller(function () {
       data.password = form.password;
       if (!isAdd) data.old_password = form.old_password;
     }
-    await REQUEST({
+    await request({
       url: isAdd ? '/role_add' : '/role_update',
       type: 'POST',
       data,
@@ -250,8 +247,6 @@ const userController = controller(function () {
         }
         state.showmodal = false;
         self.$msg({ content: res.msg, type: 'success' });
-        // tb_role 是静默表；列表由当前页局部状态或用户主动搜索/翻页维护，
-        // 不在成功回调中再次拉取，避免与其它账号相关内容的自动同步叠加请求。
         if (isAdd) {
           await loadList(1);
         } else {
@@ -271,15 +266,26 @@ const userController = controller(function () {
     });
   }
 
+  // 账号表的多个内联字段共用同一写入流程，页面只传入本次变更字段。
+  async function updateRoleField(row, patch) {
+    const result = await request({
+      url: '/role_update',
+      type: 'POST',
+      data: { id: row.id, ...patch }
+    });
+    const saved = result.status === 1;
+    self.$msg({
+      content: result.msg || (saved ? '保存成功' : '保存失败'),
+      type: saved ? 'success' : 'error'
+    });
+    if (saved) Object.assign(row, patch);
+    return saved;
+  }
+
   async function updateMuted(index, list, value) {
     const row = list[index];
     if (!row) return false;
-    let saved = false;
-    await REQUEST({
-      url: '/role_update', type: 'POST', data: { id: row.id, comment_ban: Number(value) ? 1 : 0 },
-      success(res) { saved = res.status === 1; self.$msg({ content: res.msg, type: saved ? 'success' : 'error' }); },
-      fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
-    });
+    const saved = await updateRoleField(row, { comment_ban: Number(value) ? 1 : 0 });
     if (saved) row.muted = Boolean(value);
     return saved;
   }
@@ -287,13 +293,8 @@ const userController = controller(function () {
   async function updateDisabled(index, list, value) {
     const row = list[index];
     if (!row) return false;
-    let saved = false;
     const isShow = Number(value) === 0 ? 0 : 1;
-    await REQUEST({
-      url: '/role_update', type: 'POST', data: { id: row.id, is_show: isShow },
-      success(res) { saved = res.status === 1; self.$msg({ content: res.msg, type: saved ? 'success' : 'error' }); },
-      fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
-    });
+    const saved = await updateRoleField(row, { is_show: isShow });
     if (saved) row.is_show = isShow;
     return saved;
   }
@@ -301,46 +302,21 @@ const userController = controller(function () {
   async function updateRoleAuth(index, list, value) {
     const row = list[index];
     if (!row) return false;
-    let saved = false;
-    await REQUEST({
-      url: '/role_update',
-      type: 'POST',
-      data: { id: row.id, role_auth: Number(value) },
-      success(res) {
-        saved = res.status === 1;
-        self.$msg({ content: res.msg, type: saved ? 'success' : 'error' });
-      },
-      fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
-    });
+    const saved = await updateRoleField(row, { role_auth: Number(value) });
     return saved;
   }
 
   async function updateNickname(index, list, value) {
     const row = list[index];
     if (!row) return false;
-    let saved = false;
-    await REQUEST({
-      url: '/role_update',
-      type: 'POST',
-      data: { id: row.id, nickname: String(value ?? '').trim() },
-      success(res) {
-        saved = res.status === 1;
-        self.$msg({ content: res.msg, type: saved ? 'success' : 'error' });
-      },
-      fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
-    });
+    const saved = await updateRoleField(row, { nickname: String(value ?? '').trim() });
     return saved;
   }
 
   async function updateCommentAudit(index, list, value) {
     const row = list[index];
     if (!row) return false;
-    let saved = false;
-    await REQUEST({
-      url: '/role_update', type: 'POST', data: { id: row.id, comment_audit: Number(value) ? 1 : 0 },
-      success(res) { saved = res.status === 1; self.$msg({ content: res.msg, type: saved ? 'success' : 'error' }); },
-      fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
-    });
+    const saved = await updateRoleField(row, { comment_audit: Number(value) ? 1 : 0 });
     return saved;
   }
 
@@ -352,8 +328,9 @@ const userController = controller(function () {
     confirmMessage: (row) => `确定删除用户“${row.name}”吗？`,
     gate: () => canAdministerUsers,
     getSuccessMessage: (res) => res.msg,
+    reloadOnSuccess: false,
     // 账号表属于静默表；删除账号还可能级联内容表，不能再额外请求列表，
-    // 否则会与级联删除触发的 SYNC.autoSync 重复。当前页直接移除已删除行。
+    // 账号页在成功后直接移除当前行，避免额外请求列表接口。
     onSuccess(row) {
       state.list = (state.list || []).filter(function (item) {
         return Number(item?.id) !== Number(row?.id);

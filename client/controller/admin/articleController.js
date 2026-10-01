@@ -1,13 +1,11 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import UI from '../../core/kniuui.js';
-import REQUEST from '../../core/kniurequest.mjs';
 import { assignModelFields, buildMultipartFormData, formatLocalDateTime, getLocalDateParts, toSingleFileList } from '../../core/kniuutil.mjs';
 
-const { controller, onMounted, reactive } = MVVM;
-const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = UI;
-
-const articleController = controller(function () {
-  const self = this;
+const { controller } = MVVM;
+const { makeSwitchOptions, useListPage } = UI;
+const articleController = controller(({ $msg, $refs, navigateTo, request, reactive, onMounted }) => {
+  const self = { $msg, $refs, navigateTo };
   const canEditContent = true;
   const today = getLocalDateParts();
   const state = reactive({
@@ -31,22 +29,6 @@ const articleController = controller(function () {
       content_mode: 'rich',
       is_show: '1',
       cover: ''
-    },
-    editor: {
-      toolbar: [
-        'code', '|',
-        'undo', 'redo', '|',
-        'bold', 'italic', 'underline', 'strikeThrough', '|',
-        'justifyLeft', 'justifyCenter', 'justifyRight', 'justifyFull', '|',
-        'insertOrderedList', 'insertUnorderedList', '|',
-        'h1', 'h2', 'h3', 'p', '|',
-        'blockquote', 'pre', 'hr', 'table', '|',
-        'fontName', 'fontSize', 'foreColor', 'hiliteColor', '|',
-        'link', 'unlink', 'image', 'media', 'emoticons', '|',
-        'removeFormat', 'clear', 'selectAll', '|',
-        'fullscreen', '|',
-        'markdown'
-      ]
     },
     articleTable: {
       data: [],
@@ -80,7 +62,7 @@ const articleController = controller(function () {
     }
   });
 
-  const { loadList, changePage, changePageSize } = usePagination({
+  const { loadList, changePage, changePageSize, searchList, debouncedSearch, deleteRow } = useListPage({
     state,
     self,
     url: '/article_list',
@@ -88,15 +70,14 @@ const articleController = controller(function () {
     sort: 'asc',
     params: () => ({ keyword: state.keyword }),
     tableKey: 'articleTable',
-    pageKey: 'articlePage'
+    pageKey: 'articlePage',
+    deleteUrl: '/article_delete'
   });
-
-  const { searchList, debouncedSearch } = createSearchActions(loadList);
 
   async function updateShow(index, list, value) {
     const row = list[index];
     if (!row) return;
-    await REQUEST({
+    await request({
       url: '/article_update',
       type: 'POST',
       data: { id: row.id, is_show: value },
@@ -111,14 +92,6 @@ const articleController = controller(function () {
       fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
     });
   }
-
-  const deleteRow = createRowDeleteHandler({
-    self,
-    state,
-    loadList,
-    url: '/article_delete',
-    confirmMessage: '此操作将永久删除该条数据, 是否继续?'
-  });
 
   function editRow(index, list) {
     const row = list[index];
@@ -164,17 +137,18 @@ const articleController = controller(function () {
       fileField: 'cover',
       files: state.files
     });
-    await REQUEST({
+    await request({
       url: isAdd ? '/article_add' : '/article_update',
       type: 'POST',
       data: data,
-      success(res) {
+      async success(res) {
         if (res.status !== 1) {
           self.$msg({ content: res.msg, type: 'error' });
           return;
         }
         state.showmodal = false;
         state.files = [];
+        await loadList(isAdd ? 1 : state.articlePage.currentPage);
         self.$msg({ content: res.msg, type: 'success' });
       },
       fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
@@ -185,7 +159,9 @@ const articleController = controller(function () {
     self.navigateTo('/admin');
   }
 
-  onMounted(function () { loadList(1); });
+  onMounted(function () {
+    loadList(1);
+  });
   return { state, changePage, changePageSize, searchList, debouncedSearch, updateShow, deleteRow, editRow, addRow, closeDialog, saveEdit, goBack };
 });
 

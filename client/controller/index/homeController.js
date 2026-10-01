@@ -1,16 +1,16 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import REQUEST from '../../core/kniurequest.mjs';
 import IDENTITY from '../../core/kniuidentity.mjs';
-import { debounce } from '../../core/kniuutil.mjs';
+import { debounce, getTransientSearchKeyword, setTransientSearchKeyword } from '../../core/kniuutil.mjs';
 
-const { controller, onMounted, reactive } = MVVM;
+const { controller } = MVVM;
 
-const homeController = controller(({ navigateTo, getRouteData, autoSync }) => {
+const homeController = controller(({ eventTo, navigateTo, request, reactive, onMounted }) => {
+  const initialKeyword = getTransientSearchKeyword();
   const state = reactive({
     dailys: [],
     articles: [],
     allArticles: [],
-    keyword: String(getRouteData()?.keyword || ''),
+    keyword: initialKeyword,
     today: '',
     photo: '',
     note: '',
@@ -35,7 +35,6 @@ const homeController = controller(({ navigateTo, getRouteData, autoSync }) => {
   });
 
   let pageRequest = null;
-  let pageRefreshPending = false;
 
   function applyArticleSearch() {
     const keyword = String(state.keyword || '').trim().toLocaleLowerCase();
@@ -47,27 +46,21 @@ const homeController = controller(({ navigateTo, getRouteData, autoSync }) => {
   }
 
   function searchList() {
+    setTransientSearchKeyword(state.keyword);
     applyArticleSearch();
+    eventTo?.emit('home:search', { keyword: getTransientSearchKeyword() });
   }
 
   const debouncedSearch = debounce(searchList, 250);
 
-  async function loadPage(reason) {
-    if (pageRequest) {
-      // 初始加载尚未完成时收到 data-change，只记录一次待刷新，
-      // 避免自动同步在请求结束边界再次发起同一组接口。
-      if (typeof reason === 'string') pageRefreshPending = true;
-      return pageRequest;
-    }
-    const silent = typeof reason === 'string';
-    if (!silent) {
-      state.loading = true;
-      state.error = '';
-    }
-    const run = REQUEST([
-      { url: '/getDaily', type: 'POST', data: {}, redirectOnUnauthorized: false },
-      { url: '/getArticle', type: 'POST', data: {}, redirectOnUnauthorized: false },
-      { url: '/getInfo', type: 'POST', data: { identity_token: IDENTITY.getIdentity().token }, redirectOnUnauthorized: false }
+  async function loadPage() {
+    if (pageRequest) return pageRequest;
+    state.loading = true;
+    state.error = '';
+    const run = request([
+      { url: '/getDaily', type: 'POST', mutation: false, data: {}, redirectOnUnauthorized: false },
+      { url: '/getArticle', type: 'POST', mutation: false, data: {}, redirectOnUnauthorized: false },
+      { url: '/getInfo', type: 'POST', mutation: false, data: { identity_token: IDENTITY.getIdentity().token }, redirectOnUnauthorized: false }
     ]).then(function (results) {
       const daily = results[0];
       const article = results[1];
@@ -88,10 +81,6 @@ const homeController = controller(({ navigateTo, getRouteData, autoSync }) => {
       state.loading = false;
     }).finally(function () {
       pageRequest = null;
-      if (pageRefreshPending) {
-        pageRefreshPending = false;
-        queueMicrotask(function () { loadPage('sse'); });
-      }
     });
     pageRequest = run;
     return run;
@@ -103,20 +92,19 @@ const homeController = controller(({ navigateTo, getRouteData, autoSync }) => {
   }
 
   onMounted(function () {
-    const syncLogin = function () { state.loggedIn = Boolean(IDENTITY.getIdentity().nickname); };
-    const syncSearch = function (event) {
-      state.keyword = String(event?.detail?.keyword || '');
+    const syncLogin = function (identity) { state.loggedIn = Boolean(identity?.nickname); };
+    const syncSearch = function (payload) {
+      state.keyword = setTransientSearchKeyword(payload?.keyword);
       applyArticleSearch();
     };
-    globalThis.addEventListener('kniu-identity-change', syncLogin);
-    globalThis.addEventListener('kniu-home-search', syncSearch);
+    const stopIdentity = IDENTITY.subscribe(syncLogin);
+    const stopSearch = eventTo?.on('home:search', syncSearch);
     loadPage();
     return function () {
-      globalThis.removeEventListener('kniu-identity-change', syncLogin);
-      globalThis.removeEventListener('kniu-home-search', syncSearch);
+      stopIdentity();
+      stopSearch?.();
     };
   });
-  autoSync(loadPage);
   return { state, loadPage, toDetail, searchList, debouncedSearch };
 });
 

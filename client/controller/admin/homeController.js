@@ -1,18 +1,17 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import SERVER from '../../config/server.js';
-import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 
-const { controller, onMounted, reactive } = MVVM;
+const { controller } = MVVM;
 
 const SYSTEM_FIELDS = [
   'username', 'role', 'role_id', 'role_auth', 'platform', 'arch', 'server', 'ip', 'rootDir', 'mysqlVer', 'uptime', 'totalMemory', 'currentMemory'
 ];
 
-const homeController = controller(({ formatTime, getTimeInZone, navigateTo, setInterval }) => {
+const homeController = controller(({ formatTime, getTimeInZone, navigateTo, request, setInterval, reactive, onMounted }) => {
     const state = reactive({
       name: '控制台',
-      icon: 'house',
+      icon: 'home',
       color: '#ff5c35',
       loading: true,
       isAuthenticated: false,
@@ -40,9 +39,10 @@ const homeController = controller(({ formatTime, getTimeInZone, navigateTo, setI
     }
 
     async function loadSystemInfo() {
-      await REQUEST({
+      await request({
         url: '/system',
         type: 'POST',
+        mutation: false,
         success(res) {
           if (res.status !== 1) {
             navigateTo('/login');

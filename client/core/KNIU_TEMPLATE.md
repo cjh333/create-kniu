@@ -69,6 +69,40 @@ export default exampleController;
 
 > 模块规范：本项目全部使用 `export default`。单能力模块直接默认导出函数或对象；多能力核心模块默认导出 API 对象，消费方默认导入后按需解构。
 
+### 跨页面状态 `kniustore.mjs`
+
+跨组件或跨路由的业务状态使用命名状态中心，不把这类状态塞进路由参数或组件局部状态。`track()` 会自动保存上一份记录并深度比对当前值，只有增删改查后的数据确实变化才触发动作；`dispatch()` 用于不需要数据比对的显式动作。两者都会等待全部订阅者完成，适用于保存成功后必须等待列表重拉完成的场景；订阅不再需要时必须调用返回的解绑函数。
+
+```js
+import { createStateStore } from '../../core/kniustore.mjs';
+
+const articleState = createStateStore('admin.article');
+const unsubscribe = articleState.subscribe(function (state, action) {
+  if (action.type === 'saved') return loadList(1);
+});
+
+await articleState.track('editor', { id: articleId, title: form.title }, 'saved');
+unsubscribe();
+```
+
+`REQUEST` 默认把成功的写入请求发布为 `request` 状态中心的 `mutation` 动作，并仅保存请求与响应摘要。纯查询必须显式传 `mutation: false`；Controller 一律使用 setup 注入的 `request()`，不直接导入 `REQUEST()`。当前页面在保存、删除或审核成功后局部更新状态或重新加载当前列表，不依赖全局刷新。
+
+状态快照仅存在当前浏览器会话。账号唯一性以 `tb_role.id` 为准，账号切换或退出会恢复全部 Store 的初始状态，避免不同账号复用比较结果。`setState()`、`patchState()` 与订阅动作都会复制输入并暴露只读快照，调用方不能通过持有对象引用回写 Store。业务表和数据库事务始终是数据真相；保存、删除和审核成功后由当前视图更新状态或重新加载数据。
+
+Controller 需要让异步请求在卸载时自动取消时，使用 setup 注入的 `request()`；它会附带当前作用域的 `signal`，已取消请求不会执行成功、失败或完成回调。组件断连会同步停止 ViewModel；异步 `onBeforeMount()` / `onMounted()` 在恢复后若已卸载，不会再继续后续钩子，刚返回的清理函数会立即运行。
+
+### 表单字段辅助
+
+`kniuutil.mjs` 提供纯函数 `createForm()`、`required()`、`email()`、`pattern()`，用于快速创建与 `<kniu-form>` 兼容的字段对象；模板仍只使用 `kniu:form`，不增加新语法。
+
+```js
+const form = createForm({ name: required('请输入名称'), email: email() }, { labelWidth: '120px' });
+```
+
+### 通用列表组合
+
+`kniuui.js` 的 `useListPage()` 组合分页、搜索与可选删除。它不内置接口、数据表或权限，业务页面仍明确传入 `url`、`deleteUrl` 和删除策略。
+
 路由通过 `ROUTER.add(path, controller)` 将页面与控制器装配起来（视图按文件名约定解析为 `kniu-system-<filename>` 自定义元素）：
 
 ```js
@@ -124,7 +158,7 @@ openExternalUrl('https://www.baidu.com');      // 在新标签页打开外部页
 
 `openExternalUrl()` 仅接受 HTTP/HTTPS 地址，并使用 `noopener,noreferrer` 隔离新页面与当前应用。浏览器仍可能根据用户设置拦截非用户操作触发的弹窗，因此建议在点击事件中调用。
 
-卸载逻辑已自动接管：组件卸载时会执行 `onUnmounted()`、`onMounted()` 返回的清理函数以及框架登记的响应式绑定清理。
+卸载逻辑已自动接管：组件卸载时会执行 `onUnmounted()`、`onMounted()` 返回的清理函数以及框架登记的响应式绑定清理。不要在生命周期的异步回调里自行判断旧路由或手动取消请求，直接使用注入的 `request()` 与 `onScopeDispose()` 即可。
 
 ---
 
@@ -409,6 +443,19 @@ state.tableOptions = { ...state.tableOptions, data: state.list };
 - 列模板内节点（`__kniuTableColumn`）**刻意保留 `kniu:option` 属性**：`kniu:if` / `kniu:for` 克隆列时 expando 不随 `cloneNode` 复制，保留属性让克隆列在递归 `applyBindings` 中重新解析并写入 expando（与 `kniu@change` 同策略）。
 - 绑定只在解析出**真实对象**时写入；解析不到（undefined / null / 非对象）保持原值，防止异步间隙里用数据对象当 state 的重复绑定把已写入的 expando 覆盖成空对象。
 
+### 6.7 组件标签写法（kebab-case / PascalCase）
+
+标签名两种写法等价，均在**字符串层面**（DOM 解析之前）完成归一：
+
+```html
+<kniu-btn><kniu-icon kniu:option="{{icon:'home'}}" />前端首页</kniu-btn>
+<KniuBtn><KniuIcon kniu:option="{{icon:'home'}}" />前端首页</KniuBtn>
+```
+
+- 自定义元素名必须含连字符，HTML 解析器会把 `<KniuBtn>` 小写化为无连字符的 `kniubtn`，因此 PascalCase 写法必须先由 `expandPascalTags()` 转成 `kniu-btn` 再解析，否则元素不会升级（无 shadow、无插槽、无图标逻辑）。
+- **自闭合归一（`<kniu-x ... />` → `<kniu-x></kniu-x>`）必须排在 PascalCase 展开之后**：顺序反了的话，大写的 `<KniuIcon ... />` 先匹配不到自闭合正则，HTML 解析器又忽略非空元素上的自闭合语法，会把后面的兄弟节点（例如按钮文案 `<span>`）吞成 `kniu-icon` 的子节点——图标宿主只是个 1em 盒、没有默认插槽，文案就再也不渲染（实测被吞的 span 尺寸 0×0）。
+- 组件内部若自写 light DOM 子节点（按钮文案、图标等），推荐显式闭合标签，语义最直观。
+
 ### 6.1 `kniu:form` —— 双向绑定 ⭐
 
 只需将 state 单向写入输入框时，使用标准属性指令：
@@ -621,11 +668,11 @@ const id = getRouteData()?.id;
 ```
 
 ```js
-const exampleController = controller(({ eventTo }) => {
+const exampleController = controller(({ $msg, eventTo }) => {
     const state = reactive({ count: 0 });
     function handleClick() {
       state.count += 1;
-      this.$msg('hello world');
+      $msg('hello world');
     }
     function handleKeydown(event) { console.log(event.key); }
     function handleSubmit() { }
@@ -635,7 +682,7 @@ const exampleController = controller(({ eventTo }) => {
 export default exampleController;
 ```
 
-事件函数使用闭包访问 `state`，不依赖 `this`；跨组件消息通过 `setup({ eventTo })` 注入的事件总线发送。
+事件函数使用闭包访问 `state`，不依赖 `this`；跨组件消息通过 setup 注入的 `eventTo` 事件总线发送。
 
 **关键规则与约束：**
 
@@ -774,7 +821,7 @@ return off; // 模板卸载时解绑
 对应 Controller：
 
 ```js
-const demoController = controller(() => {
+const demoController = controller(({ $msg }) => {
     const state = reactive({
       nopay: 12,
       owner: { name: 'Kniu设计' },
@@ -786,7 +833,7 @@ const demoController = controller(() => {
       hasError: true,
       risky: '<script>alert(1)</script><b>富文本</b>',
     });
-    function handleClick() { state.clickCount += 1; }
+    function handleClick() { state.clickCount += 1; $msg(`已点击 ${state.clickCount} 次`); }
     function handleKeydown(event) { state.lastKey = event.key; }
     function handleChange(event) { state.inputMsg = event.target.value; }
     function handleFocus() { state.blurCount += 1; }

@@ -1,5 +1,14 @@
 import AUTH from './kniuauth.mjs';
-import KniuUI from './kniuui.js';
+import UI from './kniuui.js';
+import { createStateStore } from './kniustore.mjs';
+
+const STATUS_SUCCESS = 1;
+const STATUS_UNAUTHORIZED = 1001;
+const requestState = createStateStore('request');
+let authRedirectHandler = null;
+function useAuthRedirect(handler) {
+  authRedirectHandler = typeof handler === 'function' ? handler : null;
+}
 
 var KniuRequest = (function () {
   const nativeFetch =
@@ -15,10 +24,12 @@ var KniuRequest = (function () {
   };
   const FETCH_DEFAULT_REQUEST = {
     type: 'GET',
+    mutation: true,
     data: null,
     dataType: 'json',
     headers: {},
-    credentials: 'include'
+    credentials: 'include',
+    timeout: 15000
   };
 
   function normalizeRequest(raw = {}) {
@@ -38,12 +49,61 @@ var KniuRequest = (function () {
     return query ? `${fullUrl}${fullUrl.includes('?') ? '&' : '?'}${query}` : fullUrl;
   }
 
-  function createFailureResult(httpStatus, msg, request) {
-    return { status: 0, msg, data: null, httpStatus, request };
+  function createFailureResult(httpStatus, msg, request, aborted = false) {
+    return { status: 0, msg, data: null, httpStatus, request, aborted };
   }
 
-  // 同一请求的参数对象可能有不同的属性插入顺序。生成去重 key 时按键名排序，
-  // 避免等价的并发请求因 JSON.stringify 顺序不同而各自发出网络请求。
+  function toStateValue(value) {
+    if (typeof FormData !== 'undefined' && value instanceof FormData) {
+      return [...value.entries()].map(function ([name, item]) {
+        if (typeof File !== 'undefined' && item instanceof File) {
+          return [name, { name: item.name, size: item.size, type: item.type }];
+        }
+        return [name, item];
+      });
+    }
+    return value == null ? null : value;
+  }
+
+  function fingerprint(value) {
+    const source = stableSerialize(value);
+    let hash = 2166136261;
+    for (let index = 0; index < source.length; index += 1) {
+      hash ^= source.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `${source.length}:${(hash >>> 0).toString(16)}`;
+  }
+
+  function toStateSummary(value) {
+    const normalized = toStateValue(value);
+    if (Array.isArray(normalized)) {
+      return { type: 'array', length: normalized.length, fingerprint: fingerprint(normalized) };
+    }
+    if (normalized && typeof normalized === 'object') {
+      return {
+        type: 'object',
+        keys: Object.keys(normalized).sort(),
+        id: normalized.id ?? null,
+        revision: normalized.revision ?? null,
+        total: normalized.total ?? null,
+        fingerprint: fingerprint(normalized)
+      };
+    }
+    return { type: typeof normalized, value: normalized, fingerprint: fingerprint(normalized) };
+  }
+
+  async function trackMutationState(result) {
+    if (!result || result.status !== STATUS_SUCCESS || !result.request?.mutation) return;
+    const request = result.request;
+    await requestState.dispatch('mutation', {
+      method: request.type,
+      url: request.url,
+      request: toStateSummary(request.data),
+      response: toStateSummary(result.data)
+    });
+  }
+
   function stableSerialize(value, seen = new WeakSet()) {
     if (value === null || typeof value !== 'object') {
       if (typeof value === 'undefined') return '"[undefined]"';
@@ -64,34 +124,51 @@ var KniuRequest = (function () {
     return result;
   }
 
-  // 防止多个并发请求同时返回 401 时重复跳转登录页。
-  let isAuthenticationRedirecting = false;
   function handleAuthenticationExpired() {
-    if (isAuthenticationRedirecting) return;
-    isAuthenticationRedirecting = true;
     try {
+      const hash = String(globalThis.location?.hash || '');
+      if (hash.startsWith('#/login') || hash.startsWith('#/register')) return;
       sessionStorage.removeItem('kniu_authed');
       AUTH.markLoggedOut();
-      if (typeof location !== 'undefined' && location.hash !== '#/login') {
-        location.hash = '/login';
-      }
+      if (authRedirectHandler) authRedirectHandler();
+      else if (typeof location !== 'undefined') location.hash = '/login';
     } catch (e) {
 
     }
-    setTimeout(function resetAuthenticationRedirect() { isAuthenticationRedirecting = false; }, 1000);
   }
 
   async function executeRequest(rawRequest) {
     const request = normalizeRequest(rawRequest);
     const url = buildRequestUrl(request.url, request.data, request.type);
     const hasBody = FETCH_METHODS.includes(request.type);
+    const isFormData = typeof FormData !== 'undefined' && request.data instanceof FormData;
+    const timeoutMs = Number(request.timeout) || 0;
+    const explicitTimeout = !!(rawRequest && typeof rawRequest === 'object' && rawRequest.timeout !== undefined);
+    const applyTimeout = timeoutMs > 0 && (!isFormData || explicitTimeout);
+    let timeoutController = null;
+    let timeoutTimer = null;
+    let fetchSignal = request.signal || undefined;
+    if (applyTimeout) {
+      timeoutController = new AbortController();
+      if (request.signal) {
+        if (request.signal.aborted) timeoutController.abort();
+        else request.signal.addEventListener('abort', function forwardAbort() {
+          timeoutController.abort();
+        });
+      }
+      timeoutTimer = setTimeout(function triggerTimeout() {
+        timeoutController.abort();
+      }, timeoutMs);
+      fetchSignal = timeoutController.signal;
+    }
     const fetchInit = {
       method: request.type,
       headers: { ...request.headers },
       credentials: request.credentials,
+      signal: fetchSignal,
     };
     if (hasBody && request.data != null) {
-      if (typeof FormData !== 'undefined' && request.data instanceof FormData) {
+      if (isFormData) {
         Object.keys(fetchInit.headers).forEach(function (name) {
           if (name.toLowerCase() === 'content-type') delete fetchInit.headers[name];
         });
@@ -114,10 +191,12 @@ var KniuRequest = (function () {
       }
       if (request.dataType === 'json') {
         const body = parsed && typeof parsed === 'object' ? parsed : {};
-        const status = Number(body.status) === 1 ? 1 : 0;
+        const status = Number(body.status) || 0;
         const msg = body.msg || (response.ok ? 'success' : 'error');
         const data = body.data !== undefined ? body.data : null;
-        if (httpStatus === 401 && request.redirectOnUnauthorized !== false) handleAuthenticationExpired();
+        if ((httpStatus === 401 || status === STATUS_UNAUTHORIZED) && request.redirectOnUnauthorized !== false) {
+          handleAuthenticationExpired();
+        }
         return { status, msg, data, httpStatus, request };
       }
       if (httpStatus === 401 && request.redirectOnUnauthorized !== false) handleAuthenticationExpired();
@@ -125,7 +204,15 @@ var KniuRequest = (function () {
         ? { status: 1, msg: 'success', data: parsed, httpStatus, request }
         : createFailureResult(httpStatus, `请求失败（HTTP ${httpStatus}）`, request);
     } catch (networkError) {
-      return createFailureResult(0, networkError.message || '网络请求异常', request);
+      const externallyAborted = request.signal && request.signal.aborted === true;
+      const timedOut = !externallyAborted && timeoutController && timeoutController.signal.aborted === true;
+      if (timedOut) {
+        return createFailureResult(0, `请求超时（${timeoutMs}ms）`, request, false);
+      }
+      const aborted = networkError && networkError.name === 'AbortError' || externallyAborted;
+      return createFailureResult(0, aborted ? '请求已取消' : ((networkError && networkError.message) || '网络请求异常'), request, aborted);
+    } finally {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
     }
   }
 
@@ -141,7 +228,7 @@ var KniuRequest = (function () {
         : `${normalized.type}:${buildRequestUrl(normalized.url, normalized.data, normalized.type)}:${normalized.dataType}:${stableSerialize(normalized.data ?? null)}`;
       const ongoing = REQUEST_DEDUP.get(key);
       if (ongoing) return ongoing;
-      const promise = executeRequest(normalized).finally(function clearPendingRequest() {
+      const promise = executeRequest(req).finally(function clearPendingRequest() {
         if (REQUEST_DEDUP.get(key) === promise) REQUEST_DEDUP.delete(key);
       });
       REQUEST_DEDUP.set(key, promise);
@@ -157,12 +244,14 @@ var KniuRequest = (function () {
       const result = results[index];
       const config = list[index];
       if (!config) continue;
+      if (result.aborted) continue;
       const httpSucceeded = result.httpStatus >= 200 && result.httpStatus < 300;
       const callbackContext = {
-        $msg: KniuUI.msg,
-        $confirm: KniuUI.confirm
+        $msg: UI.msg,
+        $confirm: UI.confirm
       };
       try {
+        await trackMutationState(result);
         if (httpSucceeded) await config.success?.call(callbackContext, result);
         else await config.fail?.call(callbackContext, result);
       } finally {
@@ -175,4 +264,7 @@ var KniuRequest = (function () {
   return { sendRequests };
 }());
 
-export default KniuRequest.sendRequests;
+const sendRequests = KniuRequest.sendRequests;
+
+export default sendRequests;
+export { STATUS_SUCCESS, STATUS_UNAUTHORIZED, requestState, useAuthRedirect };

@@ -1,14 +1,13 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import UI from '../../core/kniuui.js';
-import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 
-const { controller, onMounted, reactive } = MVVM;
-const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = UI;
+const { controller } = MVVM;
+const { makeSwitchOptions, useListPage } = UI;
 
 function createCommentManagementController(managementType = 'comment') {
-  return controller(function () {
-    const self = this;
+  return controller(({ $msg, eventTo, navigateTo, request, reactive, onMounted }) => {
+    const self = { $msg, navigateTo };
     const canEditContent = Number(AUTH.getUser()?.roleId || AUTH.getUser()?.role || 0) === 1 || Number(AUTH.getUser()?.roleAuth || 0) === 1;
     const state = reactive({
       canEditContent,
@@ -44,18 +43,20 @@ function createCommentManagementController(managementType = 'comment') {
       ]
     });
 
-    const { loadList, changePage, changePageSize } = usePagination({
+    const { loadList, changePage, changePageSize, searchList, debouncedSearch, deleteRow } = useListPage({
       state,
       self,
       url: '/comment_list',
       field: 'sid',
       sort: 'asc',
-      params: () => ({ keyword: state.keyword, type: state.type, audit: state.audit }),
-      tableKey: 'commentTable',
-      pageKey: 'commentPage'
+    params: () => ({ keyword: state.keyword, type: state.type, audit: state.audit }),
+    tableKey: 'commentTable',
+    pageKey: 'commentPage',
+    deleteUrl: '/comment_delete',
+    deleteMessage: (row) => Number(row.parent_id) === 0
+      ? '此操作将永久删除该评论及其全部回复, 是否继续?'
+      : '此操作将永久删除该回复, 是否继续?'
     });
-
-    const { searchList, debouncedSearch } = createSearchActions(loadList);
 
     function onFilterChange() {
       loadList(1);
@@ -71,10 +72,10 @@ function createCommentManagementController(managementType = 'comment') {
       const row = list[index];
       if (!row) return;
       let saved = false;
-      await REQUEST({
+      await request({
         url: '/comment_reply_update',
         type: 'POST',
-        data: { id: row.id, is_read: Number(value) === 1 ? 1 : 0 },
+          data: { id: row.id, is_read: Number(value) === 1 ? 1 : 0 },
         success(res) {
           if (res.status !== 1) {
             self.$msg({ content: res.msg, type: 'error' });
@@ -83,7 +84,7 @@ function createCommentManagementController(managementType = 'comment') {
           saved = true;
           row.is_read = Number(value) === 1 ? 1 : 0;
           self.$msg({ content: res.msg, type: 'success' });
-          globalThis.dispatchEvent(new CustomEvent('kniu:reply-notification-change'));
+          eventTo?.emit('reply:notification-change');
         },
         fail(res) {
           self.$msg({ content: res.msg, type: 'error' });
@@ -93,10 +94,10 @@ function createCommentManagementController(managementType = 'comment') {
     }
 
     async function auditRequest(id, audit) {
-      await REQUEST({
+      await request({
         url: '/comment_audit',
         type: 'POST',
-        data: { id, audit },
+          data: { id, audit },
         success(res) {
           if (res.status !== 1) {
             self.$msg({ content: res.msg, type: 'error' });
@@ -112,10 +113,10 @@ function createCommentManagementController(managementType = 'comment') {
       const row = list[index];
       if (!row) return false;
       let saved = false;
-      await REQUEST({
+      await request({
         url: '/comment_update',
         type: 'POST',
-        data: { id: row.id, sid: Math.max(0, Number(value) || 0) },
+          data: { id: row.id, sid: Math.max(0, Number(value) || 0) },
         success(res) {
           saved = res.status === 1;
           self.$msg({ content: res.msg, type: saved ? 'success' : 'error' });
@@ -124,16 +125,6 @@ function createCommentManagementController(managementType = 'comment') {
       });
       return saved;
     }
-
-    const deleteRow = createRowDeleteHandler({
-      self,
-      state,
-      loadList,
-      url: '/comment_delete',
-      confirmMessage: (row) => Number(row.parent_id) === 0
-        ? '此操作将永久删除该评论及其全部回复, 是否继续?'
-        : '此操作将永久删除该回复, 是否继续?'
-    });
 
     function goBack() {
       self.navigateTo('/admin');

@@ -1,14 +1,13 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import UI from '../../core/kniuui.js';
-import REQUEST from '../../core/kniurequest.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 import { assignModelFields, updateListRecord } from '../../core/kniuutil.mjs';
 
-const { controller, onMounted, reactive } = MVVM;
-const { usePagination, makeSwitchOptions, createSearchActions, createRowDeleteHandler } = UI;
+const { controller } = MVVM;
+const { makeSwitchOptions, useListPage } = UI;
 
-const dailyController = controller(function () {
-  const self = this;
+const dailyController = controller(({ $msg, navigateTo, request, reactive, onMounted }) => {
+  const self = { $msg, navigateTo };
   const canEditContent = Number(AUTH.getUser()?.roleId || AUTH.getUser()?.role || 0) === 1 || Number(AUTH.getUser()?.roleAuth || 0) === 1;
   const state = reactive({
     canEditContent,
@@ -44,7 +43,7 @@ const dailyController = controller(function () {
     switchOptions: makeSwitchOptions(canEditContent)
   });
 
-  const { loadList, changePage, changePageSize, syncOptions } = usePagination({
+  const { loadList, changePage, changePageSize, syncOptions, searchList, debouncedSearch, deleteRow } = useListPage({
     state,
     self,
     url: '/daily_list',
@@ -52,15 +51,14 @@ const dailyController = controller(function () {
     sort: 'asc',
     params: () => ({ keyword: state.keyword }),
     tableKey: 'dailyTable',
-    pageKey: 'dailyPage'
+    pageKey: 'dailyPage',
+    deleteUrl: '/daily_delete'
   });
-
-  const { searchList, debouncedSearch } = createSearchActions(loadList);
 
   async function updateShow(index, list, value) {
     const row = list[index];
     if (!row) return;
-    await REQUEST({
+    await request({
       url: '/daily_update',
       type: 'POST',
       data: { id: row.id, is_show: value },
@@ -77,14 +75,6 @@ const dailyController = controller(function () {
     });
   }
 
-  const deleteRow = createRowDeleteHandler({
-    self,
-    state,
-    loadList,
-    url: '/daily_delete',
-    confirmMessage: '此操作将永久删除该条数据, 是否继续?'
-  });
-
   function editRow(index, list) {
     const row = list[index];
     if (!row) return false;
@@ -100,7 +90,7 @@ const dailyController = controller(function () {
   async function saveEdit() {
     const form = state.editform;
     if (!form.id) return;
-    await REQUEST({
+    await request({
       url: '/daily_update',
       type: 'POST',
       data: {

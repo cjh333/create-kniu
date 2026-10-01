@@ -64,6 +64,7 @@
   -o-flex-flow: row wrap;
   margin-top: calc(15 / var(--kniu_vw));
   gap: calc(20 / var(--kniu_vw));
+  font-size: max(10px, calc(14 / var(--kniu_vw)));
 }
 
 .index_article_info {

@@ -5,6 +5,8 @@ CREATE TABLE `tb_email_code` (
     `code_hash` char(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '验证码SHA-256摘要',
     `expire_time` datetime NOT NULL COMMENT '过期时间',
     `used` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '是否已使用(0否,1是)',
+    `fail_count` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '校验失败次数',
+    `lock_until` datetime NOT NULL DEFAULT '1970-01-01 00:00:00' COMMENT '失败锁定截止时间(达到上限后写入)',
     `ip` varchar(45) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '请求IP',
     `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
@@ -14,5 +16,6 @@ CREATE TABLE `tb_email_code` (
         `used`,
         `expire_time`
     ),
-    KEY `idx_email_code_expire` (`expire_time`)
+    KEY `idx_email_code_expire` (`expire_time`),
+    KEY `idx_email_code_lock` (`email`, `scene`, `lock_until`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '邮箱验证码';
