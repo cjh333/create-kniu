@@ -1,0 +1,5 @@
+
+              :host{display:flex;width:100%;min-width:0;flex-direction:column;align-items:stretch;gap:10px;font-family:var(--kniu-font-family);font-size:var(--kniu-navbar-font-size)}
+              ::slotted(kniu-navbar-cell),::slotted(kniu-sub-navbar),::slotted(kniu-user-login){font-size:inherit}
+              @media(min-width:calc(1280px - 60px)){:host{width:auto;flex-direction:row;align-items:center}}
+            

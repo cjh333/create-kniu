@@ -1,0 +1,22 @@
+@charset "UTF-8";
+
+.kniu_sys_editor_popover_link {
+  border-radius: 8px;
+  -webkit-border-radius: 8px;
+  -moz-border-radius: 8px;
+  -ms-border-radius: 8px;
+  -o-border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+  -webkit-box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+  -moz-box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+  -ms-box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+  -o-box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+}
+
+.kniu_sys_editor_popover_media_edit {
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .6), 0 8px 24px rgba(0, 0, 0, .22);
+  -webkit-box-shadow: 0 0 0 9999px rgba(0, 0, 0, .6), 0 8px 24px rgba(0, 0, 0, .22);
+  -moz-box-shadow: 0 0 0 9999px rgba(0, 0, 0, .6), 0 8px 24px rgba(0, 0, 0, .22);
+  -ms-box-shadow: 0 0 0 9999px rgba(0, 0, 0, .6), 0 8px 24px rgba(0, 0, 0, .22);
+  -o-box-shadow: 0 0 0 9999px rgba(0, 0, 0, .6), 0 8px 24px rgba(0, 0, 0, .22);
+}

@@ -9,6 +9,7 @@ CREATE TABLE `tb_article` (
     `subtitle` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '副标题',
     `summary` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '摘要',
     `content` longtext COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '正文',
+    `content_mode` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'rich' COMMENT '正文渲染方式(rich富文本,markdown)',
     `cover` varchar(1024) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '封面地址',
     `url` varchar(2048) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '外链地址',
     `hits` bigint unsigned NOT NULL DEFAULT 0 COMMENT '浏览次数',

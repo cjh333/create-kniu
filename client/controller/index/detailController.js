@@ -1,5 +1,5 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import UI from '../../core/kniuui.js';
+import UI from '../../core/kniuui/kniuui.js';
 import { STATUS_UNAUTHORIZED } from '../../core/kniurequest.mjs';
 import IDENTITY from '../../core/kniuidentity.mjs';
 import { wrapContentTables, renderMarkdownArticle } from '../../core/kniucode.mjs';

@@ -1,4 +1,4 @@
-import TEMPLATE from './kniutemplate.mjs';
+import TEMPLATE from './kniutemplate/kniutemplate.mjs';
 import MVVM from './kniumvvm.mjs';
 import SERVER from '../config/server.js';
 import { resolveAliasReferences } from './kniuutil.mjs';

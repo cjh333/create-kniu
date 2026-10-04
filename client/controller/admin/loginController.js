@@ -1,7 +1,7 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 import IDENTITY from '../../core/kniuidentity.mjs';
-import UI from '../../core/kniuui.js';
+import UI from '../../core/kniuui/kniuui.js';
 import { optionsToValues } from '../../core/kniuutil.mjs';
 
 const { controller } = MVVM;
@@ -169,6 +169,11 @@ const loginController = controller(({ navigateTo, getRouteData, request, reactiv
     state.subtitle = '通过邮箱验证码重置密码，无需原密码';
   }
 
+  // 返回前台首页：与页脚「返回首页」同一去向，仅把入口提到主按钮行。
+  function toHome() {
+    navigateTo('/');
+  }
+
   function clearCodeTimer() {
     if (codeTimer) { clearInterval(codeTimer); codeTimer = null; }
   }
@@ -333,7 +338,7 @@ const loginController = controller(({ navigateTo, getRouteData, request, reactiv
     clearCodeTimer();
   });
 
-  return { state, refreshCaptcha, onSubmit, toLogin, toRegister, toReset, onResetSubmit, sendRegisterCode, sendResetCode };
+  return { state, refreshCaptcha, onSubmit, toLogin, toRegister, toReset, toHome, onResetSubmit, sendRegisterCode, sendResetCode };
 });
 
 export default loginController;

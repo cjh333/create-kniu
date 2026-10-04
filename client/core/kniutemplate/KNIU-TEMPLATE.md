@@ -12,7 +12,7 @@
 
 响应式状态和文本插值作为基础内容置于核心能力之前；模板复用、综合示例与注意事项置于其后。
 
-> 源码：`client/core/kniutemplate.mjs`  
+> 源码：`client/core/kniutemplate/kniutemplate.mjs`  
 > 本文件只描述使用方式，不内联到 `.mjs` 源码中。
 
 ---

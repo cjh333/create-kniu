@@ -1,5 +1,5 @@
 import EVENTER from './kniueventer.mjs';
-import UTIL from './kniuui.js';
+import UTIL from './kniuui/kniuui.js';
 import AUTH from './kniuauth.mjs';
 import MVVM from './kniumvvm.mjs';
 import SERVER from '../config/server.js';

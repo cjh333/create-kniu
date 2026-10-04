@@ -1,0 +1,1 @@
+.kniu_sys_input_append::slotted(kniu-btn),.kniu_sys_input_prepend::slotted(kniu-btn){align-self:stretch;height:calc(100% + 2px);min-height:28px;margin-top:-1px;margin-bottom:-1px;vertical-align:top;box-sizing:border-box}

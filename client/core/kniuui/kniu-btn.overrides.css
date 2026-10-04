@@ -1,0 +1,4 @@
+.kniu_sys_button_icon{display:inline-flex;align-items:center;justify-content:center}.kniu_sys_button_icon kniu-icon{display:block;width:1em;height:1em;overflow:visible}
+:host([block]){height:100%}:host([block]) .kniu_sys_button{width:100%;height:100%}
+slot::slotted(kniu-icon){font-size:var(--kniu-button-icon-size,1em)}
+:host([append-borderless]) .kniu_sys_button{border:none;border-radius:0}

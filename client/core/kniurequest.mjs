@@ -1,12 +1,12 @@
 import AUTH from './kniuauth.mjs';
-import UI from './kniuui.js';
+import UI from './kniuui/kniuui.js';
 import { createStateStore } from './kniustore.mjs';
 
 const STATUS_SUCCESS = 1;
 const STATUS_UNAUTHORIZED = 1001;
 const requestState = createStateStore('request');
 let authRedirectHandler = null;
-function useAuthRedirect(handler) {
+function authRedirect(handler) {
   authRedirectHandler = typeof handler === 'function' ? handler : null;
 }
 
@@ -267,4 +267,4 @@ var KniuRequest = (function () {
 const sendRequests = KniuRequest.sendRequests;
 
 export default sendRequests;
-export { STATUS_SUCCESS, STATUS_UNAUTHORIZED, requestState, useAuthRedirect };
+export { STATUS_SUCCESS, STATUS_UNAUTHORIZED, requestState, authRedirect };

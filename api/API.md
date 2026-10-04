@@ -107,6 +107,14 @@ npm run build   # = cross-env PROCESS_ENV=production node client/core/kniubuilde
 
 所有已登录后台账号均可调用 `/article_add` 新增文章，并可使用 `/article_media_upload` 上传正文媒体；文章编辑、删除、显示状态修改及其他管理操作继续遵循原有权限和文章归属限制。
 
+### 系统信息接口（后台，POST，需登录）
+
+| 端点 | 入参 | 说明 |
+| --- | --- | --- |
+| `/system` | `scope`（可选，`memory` / `uptime`） | 后台首页「系统信息」数据源。按 `scope` **只重算对应字段**：`memory` → `currentMemory` + `memoryRefreshMs`；`uptime` → `uptime` + `uptimeRefreshMs`；`all`（不传或未知值兜底）→ 两者都刷。`currentTime` / `UTCTime` 每次都刷。静态字段（总内存、CPU、PHP 版本等）走 `api/runtime/cache/system_info.json` 缓存，动态字段不缓存 |
+
+响应里的两条刷新节奏由后端下发、前端据此分别轮询：`memoryRefreshMs`（2000，读系统内存启用 FFI 后约 0.3ms）、`uptimeRefreshMs`（60000；开机不足 1 分钟时运行时间按秒显示，此时为 1000）。「运行时间」精度只到分钟，故不跟随秒级轮询——两条轮询各自只发自己 `scope` 的请求，避免秒级请求白白重算分钟级的量。
+
 ### 评论接口（公开，POST）
 
 | 端点 | 入参 | 说明 |
@@ -167,6 +175,7 @@ npm run build   # = cross-env PROCESS_ENV=production node client/core/kniubuilde
 - 身份绑定：`POST /frontBind`（入参账号密码与 `identity_token`）校验账号密码后绑定前台身份并建立前台会话（个人中心入口，无需验证码）；前台会话 `front_token` 与后台 `admin_token` 完全独立。令牌从旧账号切换到新账号时必须先以 SQL `NULL` 解除旧绑定。
 - 前台注册：`POST /frontRegister` 校验 `username`、`password`、`confirm`、`email`、`email_code`、`identity_token` 及算术验证码后，在 `tb_role` 创建普通账号并按 `tb_role.id` 绑定前台身份；邮箱统一转小写但允许重复，账号名必须唯一；异常统一返回 JSON，不输出 HTML 500。
 - 当前数据库建表与初始化数据基线统一位于 `!kniu_project/kniusql/`；历史迁移脚本不属于当前仓库基线，恢复数据前应先备份并按部署记录执行迁移。
+- 改密码即失效（2026-10-03）：`POST /role_update` 只要密码成功落库，被改账号的**全部后台会话立即作废**，由后端强制保证、前端不参与判定。改的是当前登录账号时，后端先删除该账号在其它设备上的会话文件、再销毁当前请求的会话，响应 `data.logout=true`（前端据此跳 `#/login`）；管理员改他人密码时管理员会话保留、仅被改账号的会话文件被删除，响应 `data.logout=false`。只改昵称/角色/启用状态等非密码字段（以及批量勾选 `KNIU_TABLE_EVENT_CHECKALL`）不触发登出。会话为项目文件存储（`api/runtime/session`），删除判据是该文件里 `admin_token` 段的 `id` 与目标账号一致。
 
 ## 六、新增接口
 

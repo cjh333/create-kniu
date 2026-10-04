@@ -34,6 +34,17 @@ const server = createServer(async function (request, response) {
       await sendStaticBody(request, response, headers, Buffer.from(body));
       return;
     }
+    // CSS 文本模块通道：`/client/core/kniuui/*.css?module` → `export default "<CSS 文本>"`。
+    // 浏览器里要让组件「同步」拿到 CSS 文本（样式必须随组件挂载同步生效，不能异步 fetch），
+    // 只能把 .css 当 JS 模块来 import；`?module` 是这条通道的显式标记，普通 .css 请求不受影响。
+    // dist 侧由 kniubuilder 的 .css 分支产出同语义模块（见 SKILL #126），两侧必须一致。
+    if (parsedUrl.searchParams.has('module') && extname(PATH_NAME) === '.css') {
+      const cssFile = normalize(join(ROOT, PATH_NAME));
+      if (!cssFile.startsWith(ROOT)) throw new Error('Invalid path');
+      const body = `export default ${JSON.stringify(await readFile(cssFile, 'utf8'))};`;
+      await sendStaticBody(request, response, { 'Content-Type': 'text/javascript; charset=utf-8', ...NO_CACHE }, Buffer.from(body));
+      return;
+    }
     let file = PATH_NAME === '/'
       ? VIEW_INDEX
       : PATH_NAME === '/upload' || PATH_NAME.startsWith('/upload/')

@@ -1,8 +1,8 @@
 import ROUTER from './config/router.js';
 import CREATEAPP from './core/kniubase.mjs';
 import IDENTITY from './core/kniuidentity.mjs';
-import { useAuthRedirect } from './core/kniurequest.mjs';
-import UI from './core/kniuui.js';
+import { authRedirect } from './core/kniurequest.mjs';
+import UI from './core/kniuui/kniuui.js';
 
 const app = CREATEAPP();
 app.use(ROUTER);
@@ -22,10 +22,10 @@ UI.use({
     '--kniu-color-primary': '#409eff',
     '--kniu-border-color': '#dcdfe6',
     '--kniu-radius': '4px',
-    '--kniu-control-height': 'max(28px,calc(32 / var(--kniu_vw)))'
+    '--kniu-control-height': 'max(28px,calc(32/var(--kniu_vw)))'
   }
 });
-useAuthRedirect(function () {
+authRedirect(function () {
   const hashPath = String(globalThis.location?.hash || '').replace(/^#/, '');
   const routePath = hashPath.split('?')[0].split('#')[0] || '/';
   if (routePath === '/login' || routePath === '/register') return;

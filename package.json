@@ -9,7 +9,8 @@
     "dev": "node client/core/kniuserver.mjs --env=development",
     "kill": "taskkill /F /IM node.exe",
     "preview": "node client/core/kniupreview.mjs --env=development",
-    "test": "node test/core-state-sync.mjs && php test/check_no_auth_list.php"
+    "test": "node test/core-state-sync.mjs && node test/core-cadence.mjs && php test/check_no_auth_list.php",
+    "check:schema": "php test/check_schema_vs_sql.php"
   },
   "devDependencies": {},
   "dependencies": {}

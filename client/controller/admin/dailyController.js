@@ -1,5 +1,5 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import UI from '../../core/kniuui.js';
+import UI from '../../core/kniuui/kniuui.js';
 import AUTH from '../../core/kniuauth.mjs';
 import { assignModelFields, updateListRecord } from '../../core/kniuutil.mjs';
 

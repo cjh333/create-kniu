@@ -1,5 +1,5 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import UI from '../../core/kniuui.js';
+import UI from '../../core/kniuui/kniuui.js';
 import AUTH from '../../core/kniuauth.mjs';
 import { assignOptionFields } from '../../core/kniuutil.mjs';
 
@@ -190,6 +190,23 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
 
   function closeDialog() { state.showmodal = false; }
 
+  /**
+   * 密码落库后由后端作废被改账号的全部会话，并用响应里的 logout 标识
+   * 告知「当前登录者是否已被登出」；前端只负责同步本地登录态并跳回登录页。
+   * @param {object} res 接口响应。
+   * @return {Promise<boolean>} 是否已强制登出。
+   */
+  async function applyForcedLogout(res) {
+    if (!res || !res.data || !res.data.logout) return false;
+    try {
+      await AUTH.logout();
+    } catch (error) {
+      console.warn('[users] logout after password change failed:', error);
+    }
+    self.navigateTo('/login');
+    return true;
+  }
+
   async function saveEdit() {
     const userForm = self.$refs.form;
     if (!userForm) return;
@@ -208,12 +225,7 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
           }
           state.showmodal = false;
           self.$msg({ content: res.msg, type: 'success' });
-          try {
-            await AUTH.logout();
-          } catch (error) {
-            console.warn('[users] logout after password change failed:', error);
-          }
-          self.navigateTo('/login');
+          await applyForcedLogout(res);
         },
         fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
       });
@@ -247,6 +259,8 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
         }
         state.showmodal = false;
         self.$msg({ content: res.msg, type: 'success' });
+        // 管理员改了自己的密码时后端同样会登出当前会话，此时不再刷新列表。
+        if (await applyForcedLogout(res)) return;
         if (isAdd) {
           await loadList(1);
         } else {

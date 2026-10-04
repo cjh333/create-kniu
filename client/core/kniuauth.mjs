@@ -1,4 +1,4 @@
-import TEMPLATE from './kniutemplate.mjs';
+import TEMPLATE from './kniutemplate/kniutemplate.mjs';
 import REQUEST from './kniurequest.mjs';
 import IDENTITY from './kniuidentity.mjs';
 import { resetAllStateStores } from './kniustore.mjs';

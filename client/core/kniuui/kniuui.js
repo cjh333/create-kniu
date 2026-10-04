@@ -1,10 +1,66 @@
-import TEMPLATE from './kniutemplate.mjs';
-import REQUEST from './kniurequest.mjs';
-import IDENTITY from './kniuidentity.mjs';
-import { getResponseRecords, debounce } from './kniuutil.mjs';
-import { sanitizeRichHtml, sanitizeRichHtmlAsync } from './kniusanitizer.mjs';
-import { KNIU_TABLE_CLASS, KNIU_TABLE_WRAP_CLASS, unwrapTablesIn, wrapTablesIn } from './kniucode.mjs';
-import { KNIU_ICON_NAMES, KNIU_ICON_SVG } from './kniuiconsvg.mjs';
+import TEMPLATE from '../kniutemplate/kniutemplate.mjs';
+import REQUEST from '../kniurequest.mjs';
+import IDENTITY from '../kniuidentity.mjs';
+import { getResponseRecords, debounce } from '../kniuutil.mjs';
+import { sanitizeRichHtml, sanitizeRichHtmlAsync } from '../kniusanitizer.mjs';
+import { KNIU_TABLE_CLASS, KNIU_TABLE_WRAP_CLASS, unwrapTablesIn, wrapTablesIn } from '../kniucode.mjs';
+import { KNIU_ICON_NAMES, KNIU_ICON_SVG } from '../kniuiconsvg.mjs';
+import KNIU_EDITOR_CSS from './kniu-editor.css?module';
+import KNIU_EDITOR_OVERRIDE_CSS from './kniu-editor.overrides.css?module';
+import KNIU_DROPDOWN_OPTION_CSS from './kniu-dropdown.option.css?module';
+import KNIU_BTN_CSS from './kniu-btn.css?module';
+import KNIU_BTN_METRICS_CSS from './kniu-btn.metrics.css?module';
+import KNIU_BTN_OVERRIDES_CSS from './kniu-btn.overrides.css?module';
+import KNIU_BTN_GROUP_CSS from './kniu-btn-group.css?module';
+import KNIU_SWITCH_CSS from './kniu-switch.css?module';
+import KNIU_MODAL_CSS from './kniu-modal.css?module';
+import KNIU_MODAL_CONFIRM_CSS from './kniu-modal.confirm.css?module';
+import KNIU_TABLE_COL_CSS from './kniu-table-col.css?module';
+import KNIU_LOADING_CSS from './kniu-loading.css?module';
+import KNIU_MSG_CSS from './kniu-msg.css?module';
+import KNIU_SELECT_CSS from './kniu-select.css?module';
+import KNIU_RADIO_GROUP_CSS from './kniu-radio-group.css?module';
+import KNIU_PAGE_CSS from './kniu-page.css?module';
+import KNIU_IMAGE_CSS from './kniu-image.css?module';
+import KNIU_IMAGE_OVERRIDES_CSS from './kniu-image.overrides.css?module';
+import KNIU_INPUT_CSS from './kniu-input.css?module';
+import KNIU_INPUT_STATES_CSS from './kniu-input.states.css?module';
+import KNIU_INPUT_AFFIX_CSS from './kniu-input.affix.css?module';
+import KNIU_INPUT_PASSWORD_CSS from './kniu-input.password.css?module';
+import KNIU_INPUT_TEXTAREA_CSS from './kniu-input.textarea.css?module';
+import KNIU_INPUT_METRICS_CSS from './kniu-input.metrics.css?module';
+import KNIU_INPUT_GROUP_CSS from './kniu-input-group.css?module';
+import KNIU_DATE_PICKER_CSS from './kniu-date-picker.css?module';
+import KNIU_DATE_PICKER_OVERRIDES_CSS from './kniu-date-picker.overrides.css?module';
+import KNIU_UPLOAD_CSS from './kniu-upload.css?module';
+import KNIU_ICON_CSS from './kniu-icon.css?module';
+import KNIU_BADGE_CSS from './kniu-badge.css?module';
+import KNIU_TAG_CSS from './kniu-tag.css?module';
+import KNIU_STATUS_CSS from './kniu-status.css?module';
+import KNIU_EMPTY_CSS from './kniu-empty.css?module';
+import KNIU_EDITOR_PRINT_CSS from './kniu-editor.print.css?module';
+import KNIU_NAVBAR_CELLS_CSS from './kniu-navbar-cells.css?module';
+import KNIU_NAVBAR_CELL_CSS from './kniu-navbar-cell.css?module';
+import KNIU_SUB_NAVBAR_CSS from './kniu-sub-navbar.css?module';
+import KNIU_SUB_NAVBAR_OVERRIDES_CSS from './kniu-sub-navbar.overrides.css?module';
+import KNIU_NAVBAR_CSS from './kniu-navbar.css?module';
+import KNIU_BACKTOP_CSS from './kniu-backtop.css?module';
+import KNIU_LIKE_CSS from './kniu-like.css?module';
+import KNIU_USER_LOGIN_CSS from './kniu-user-login.css?module';
+import KNIU_USER_LOGIN_OVERRIDES_CSS from './kniu-user-login.overrides.css?module';
+import KNIU_ARTICLE_TAB_CSS from './kniu-article-tab.css?module';
+import KNIU_ARTICLE_TAB_RENDER_CSS from './kniu-article-tab.render.css?module';
+import KNIU_BASE_CONTAIN_CSS from './kniu-base.css?module';
+import KNIU_FONT_FACE_CSS from './kniu-font-face.css?module';
+import KNIU_DROPDOWN_CSS from './kniu-dropdown.css?module';
+import KNIU_CONTENT_TABLE_CSS from './kniu-content-table.css?module';
+import KNIU_COMMENT_CSS from './kniu-comment.css?module';
+import KNIU_TABLE_CSS from './kniu-table.css?module';
+import KNIU_INPUT_PASSWORD_ACTIONS_CSS from './kniu-input.password-actions.css?module';
+import KNIU_INPUT_TIP_CSS from './kniu-input.tip.css?module';
+import KNIU_NAVBAR_PLACEHOLDER_CSS from './kniu-navbar.placeholder.css?module';
+import KNIU_MARKDOWN_CSS from './kniu-markdown.css?module';
+import KNIU_RICHTEXT_CSS from './kniu-richtext.css?module';
 
 const { reactive, compileExpression } = TEMPLATE;
 
@@ -21,19 +77,16 @@ var KniuUI = (function () {
   var shadowTemplateCache = new Map();
   var shadowStyleSheetCache = new Map();
   var normalizedCssCache = new Map();
-  // 模板缓存上限：与 tableTemplateCache 保持一致，防止动态内容（如文章标题拼进 innerHTML）导致只增不减。
   var SHADOW_TEMPLATE_CACHE_LIMIT = 200;
   var tableTemplateCache = new Map();
-  // ShadowRoot.prototype 的 innerHTML descriptor 全局只查一次，所有组件实例复用。
   var shadowInnerHTMLDescriptor = null;
-  // 批量合并 adoptedStyleSheet：同一同步执行段内多次注入样式只在下一个微任务里赋值一次。
   var pendingAdoptedSheets = new Map();
   var adoptedSheetsFlushScheduled = false;
-  var KNIU_BASE_CONTAIN_CSS = ':host{contain:layout}';
+
   var KNIU_FONT_FAMILY = 'KniuHei_Regular';
   var KNIU_FONT_MONO_FAMILY = 'KniuHei_Regular';
   var KNIU_FONT_SERIF_FAMILY = 'KniuHei_Regular';
-  var KNIU_FONT_FACE_CSS = '@font-face{font-family:KniuHei_Bold;src:url("/public/static/font/KniuHei-Bold.woff2") format("woff2");font-style:normal;font-weight:700;font-display:swap}@font-face{font-family:KniuHei_BoldSemi;src:url("/public/static/font/KniuHei-BoldSemi.woff2") format("woff2");font-style:normal;font-weight:600;font-display:swap}@font-face{font-family:KniuHei_Heavy;src:url("/public/static/font/KniuHei-Heavy.woff2") format("woff2");font-style:normal;font-weight:900;font-display:swap}@font-face{font-family:KniuHei_Light;src:url("/public/static/font/KniuHei-Light.woff2") format("woff2");font-style:normal;font-weight:300;font-display:swap}@font-face{font-family:KniuHei_LightExtra;src:url("/public/static/font/KniuHei-LightExtra.woff2") format("woff2");font-style:normal;font-weight:200;font-display:swap}@font-face{font-family:KniuHei_Medium;src:url("/public/static/font/KniuHei-Medium.woff2") format("woff2");font-style:normal;font-weight:500;font-display:swap}@font-face{font-family:KniuHei_Regular;src:url("/public/static/font/KniuHei-Regular.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap}';
+
   var KNIU_BASE_FONT_CSS = KNIU_FONT_FACE_CSS + ':host{--kniu-font-family:' + KNIU_FONT_FAMILY + ';--kniu-font-mono-family:' + KNIU_FONT_MONO_FAMILY + ';--kniu-font-serif-family:' + KNIU_FONT_SERIF_FAMILY + ';--kniu-navbar-font-size:max(12px,calc(14 / var(--kniu_vw)));font-family:var(--kniu-font-family)}';
   var KNIU_CONTAIN_EXCLUDE_TAGS = { 'KNIU-TABLE': 1, 'KNIU-NAVBAR': 1, 'KNIU-MODAL': 1, 'KNIU-DATE-PICKER': 1, 'KNIU-SELECT': 1, 'KNIU-USER-LOGIN': 1, 'KNIU-INPUT': 1, 'KNIU-COMMENT': 1 };
   var RICH_TEXT_LITERAL_TAG_RE = /<(\/?)(script|iframe|object|embed|link|meta|style|base|form)(?=\s|\/?>)/gi;
@@ -465,9 +518,6 @@ var KniuUI = (function () {
     else Promise.resolve().then(flushPendingAdoptedSheets);
   }
 
-  // 向 shadow root 注入一段共享样式。
-  // raw 为 true 时跳过 px 换算（原样写入），用于已经写好 calc/max 的样式。
-  // 返回值仅在降级到 <style> 节点时为该节点，其余情况为 null（保持原有约定）。
   function adoptSharedStyle(root, cssText, raw) {
     if (!root || !cssText) return null;
     const css = raw ? String(cssText) : normalizeComponentCss(cssText);
@@ -492,32 +542,13 @@ var KniuUI = (function () {
     return adoptSharedStyle(root, cssText, true);
   }
 
-  var KNIU_DROPDOWN_CSS = [
-    '.kniu_sys_dropdown_panel{background-color:#fff;border:1px solid #e4e7ed;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1)}',
-    '.kniu_sys_dropdown_option{display:flex;align-items:center;width:100%;min-height:32px;padding:0 12px;border:0;border-radius:0;background-color:transparent;color:#606266;font:inherit;font-size:12px;text-align:left;cursor:pointer;box-sizing:border-box}',
-    '.kniu_sys_dropdown_option:hover:not([disabled]),.kniu_sys_dropdown_option:focus-visible:not([disabled]){color:#409eff;background-color:#f5f7fa;outline:0}',
-    '.kniu_sys_dropdown_option[disabled]{color:#c0c4cc;cursor:not-allowed}'
-  ].join('');
-
   function adoptDropdownStyle(root) {
     adoptSharedStyle(root, KNIU_DROPDOWN_CSS);
-    appendRawStyle(root, '.kniu_sys_dropdown_option{min-height:max(28px,calc(32 / var(--kniu_vw)))}');
+    appendRawStyle(root, KNIU_DROPDOWN_OPTION_CSS);
   }
 
-  /**
-   * 内容区表格包裹层（编辑器内容区 / markdown 正文 / 富文本正文共用同一套类名）。
-   * `min-width:768px` 是绝对下限、不随 `--kniu_vw` 设计尺寸换算，故这份 CSS 一律原样写入
-   * （组件侧走 appendRawStyle，文档侧由 installMarkdownStyles / installRichTextStyles 注入）。
-   */
-  var KNIU_CONTENT_TABLE_CSS = '.kniu_sys_article_table_wrap{overflow:hidden;overflow-x:auto;width:100%}.kniu_sys_article_table{min-width:768px}';
-  /**
-   * 文档级内容区（markdown 正文 / 富文本正文）额外一份：**外边距由外壳承担**，表格自身不再带 margin。
-   * 编辑器内容区的表格自带 inline margin（_insertTable 写入），故组件侧只用上面那份基础契约。
-   */
   var KNIU_CONTENT_TABLE_DOC_CSS = KNIU_CONTENT_TABLE_CSS + '.kniu_sys_article_table_wrap{margin:10px 0 20px}';
 
-  // 全局只解析一次 ShadowRoot 的 innerHTML descriptor，避免每个组件实例都遍历原型链。
-  // shadowInnerHTMLDescriptor：null 表示未计算，false 表示已确认不存在，对象表示已缓存。
   function getShadowInnerHTMLDescriptor() {
     if (shadowInnerHTMLDescriptor !== null) return shadowInnerHTMLDescriptor || null;
     if (typeof ShadowRoot === 'undefined') { shadowInnerHTMLDescriptor = false; return null; }
@@ -558,12 +589,8 @@ var KniuUI = (function () {
         root.replaceChildren(template.content.cloneNode(true));
         if (styleText) {
           if (supportsAdoptedStyleSheets(root)) {
-            // 基础样式（KNIU_BASE_FONT_CSS / KNIU_BASE_CONTAIN_CSS）由 attachComponentShadow
-            // 写入 adoptedStyleSheets，且 replaceChildren 不会清空 adoptedStyleSheets，
-            // 因此这里只需追加内联样式，绝不能重置，否则组件在 innerHTML 之后注入的样式会丢失。
             adoptSharedStyle(root, styleText);
           } else {
-            // 降级路径：replaceChildren 会清掉之前追加的 <style> 节点，需要重新补回基础样式。
             if (shouldContainHost(host.tagName)) {
               const base = (root.ownerDocument || (root.host && root.host.ownerDocument) || document).createElement('style');
               base.textContent = KNIU_BASE_CONTAIN_CSS;
@@ -645,7 +672,6 @@ var KniuUI = (function () {
     const zIndex = cfg.zIndex == null ? 10030 : cfg.zIndex;
     portal.style.cssText = 'position:fixed;inset:0;display:block;width:0;height:0;pointer-events:none;z-index:' + zIndex;
     const root = portal.attachShadow({ mode: 'open' });
-    // 先把宿主 root 待写入的共享样式落到 adoptedStyleSheets，再整体复制给 portal。
     flushPendingAdoptedSheets();
     if (typeof CSSStyleSheet !== 'undefined' && hostRoot.adoptedStyleSheets?.length && typeof root.adoptedStyleSheets !== 'undefined') {
       root.adoptedStyleSheets = hostRoot.adoptedStyleSheets.slice();
@@ -674,11 +700,6 @@ var KniuUI = (function () {
     return state;
   }
 
-  // 行模板编译缓存：列配置里的 options/condition 表达式（如
-  // type:"{{scope.row.role_text == '管理员' ? 'success' : 'primary'}}"）在每一行都会被求值，
-  // 每次都 matchAll + 重建闭包是纯浪费，故缓存「表达式求值器列表」这一编译产物。
-  // 铁律：行数据 (row, rowIndex) 必须由调用参数传入，绝不能把某一行的 row 捕获进缓存内容，
-  // 否则所有行都会渲染成第一行的值（列 options/condition 全部冻结）。
   var TABLE_TEMPLATE_CACHE_LIMIT = 200;
   var TABLE_TEMPLATE_RE = /\{\{\s*([\s\S]*?)\s*\}\}/g;
 
@@ -692,18 +713,14 @@ var KniuUI = (function () {
   }
 
   function resolveTableRowTemplate(template, row, rowIndex) {
-    // 函数模板与无插值字符串没有可缓存的开销，直接返回
     if (typeof template === 'function') return template(row, rowIndex);
     if (typeof template !== 'string' || !template.includes('{{')) return template;
-
     let compiled = tableTemplateCache.get(template);
     if (compiled === undefined) {
       compiled = compileTableRowTemplate(template);
-      // 模板来自列配置，种类有限；上限只是防御性兜底
       if (tableTemplateCache.size >= TABLE_TEMPLATE_CACHE_LIMIT) tableTemplateCache.clear();
       tableTemplateCache.set(template, compiled);
     }
-    // 含 "{{" 但没有完整的 {{...}}（未闭合）→ 保持原样，与旧实现一致
     if (!compiled) return template;
 
     const scope = { scope: { row: row, $index: rowIndex } };
@@ -719,26 +736,12 @@ var KniuUI = (function () {
     });
   }
 
-  // 根滚动锁（所有者计数，全站唯一入口）。
-  //
-  // 背景：<html> 的滚动来自 kniu.css 的 `html{overflow-x:hidden;overflow-y:auto}`，
-  // 所以「锁页面滚动」= 往 documentElement/body 写行内 overflow:hidden。历史上
-  // 全局加载遮罩、导航移动菜单、弹窗各写各的、各自快照后再回写，于是出现
-  // 「A 持锁时 B 去快照，B 后释放把 hidden 又写回去」的脏快照 —— 页面切换后
-  // <html style="overflow:hidden"> 永久残留，新页面滚不动（移动端最明显）。
-  //
-  // 不变量：
-  //   1) 只有「第一个」持锁者记录原始内联值，只有「最后一个」释放者回写；
-  //   2) 所有者（Set 成员，可以是任意对象/字符串）重复上锁/解锁幂等，计数不会漂移；
-  //   3) 上锁时给 <html> 打 dataset 标记，恢复/兜底清理据此判断「这个值是本模块写的」，
-  //      残留不会被误当成页面原始值保存。
   function scrollLockNodes() {
     if (typeof document === 'undefined' || !document.documentElement || !document.body) return null;
     return { root: document.documentElement, body: document.body };
   }
+
   function readScrollLockOriginals(nodes) {
-    // 标记存在说明上一次锁没走到恢复（异常/旧版本遗留），此时行内值是本模块写的，
-    // 不能当原始值保存，否则会把 hidden 永久固化。
     var leftOver = nodes.root.dataset[SCROLL_LOCK_FLAG] === '1';
     var props = ['overflow', 'overflowX', 'overflowY'];
     var originals = { root: {}, body: {} };
@@ -748,6 +751,7 @@ var KniuUI = (function () {
     });
     return originals;
   }
+
   function applyScrollLock(nodes) {
     nodes.root.dataset[SCROLL_LOCK_FLAG] = '1';
     nodes.root.style.setProperty('overflow', 'hidden');
@@ -757,16 +761,17 @@ var KniuUI = (function () {
     nodes.body.style.setProperty('overflow-x', 'hidden');
     nodes.body.style.setProperty('overflow-y', 'hidden');
   }
+
   function writeScrollLockOriginals(nodes, originals) {
     if (!originals) return;
     ['overflow', 'overflowX', 'overflowY'].forEach(function (prop) {
       nodes.root.style[prop] = originals.root[prop] || '';
       nodes.body.style[prop] = originals.body[prop] || '';
     });
-    // 声明被清空后 <html>/<body> 会残留 style=""，按空属性约定移除属性本身。
     pruneEmptyAttributes(nodes.root);
     pruneEmptyAttributes(nodes.body);
   }
+
   function releaseScrollLock(nodes) {
     var originals = scrollLockOriginals;
     var leftOver = !!nodes && nodes.root.dataset[SCROLL_LOCK_FLAG] === '1';
@@ -777,7 +782,7 @@ var KniuUI = (function () {
     delete nodes.root.dataset[SCROLL_LOCK_FLAG];
     return leftOver || !!originals;
   }
-  // 上锁：owner 任意唯一标识（组件实例/字符串）。返回是否生效。
+
   function lockDocumentScroll(owner) {
     var nodes = scrollLockNodes();
     if (!nodes) return false;
@@ -788,7 +793,7 @@ var KniuUI = (function () {
     applyScrollLock(nodes);
     return true;
   }
-  // 解锁：非持锁者调用是空操作（不会误恢复别人的锁）。
+
   function unlockDocumentScroll(owner) {
     var key = owner || 'anonymous';
     if (!scrollLockOwners.has(key)) return false;
@@ -797,8 +802,7 @@ var KniuUI = (function () {
     releaseScrollLock(scrollLockNodes());
     return true;
   }
-  // 兜底校正：没有任何持锁者却残留行内锁值（旧版本遗留 / 异常退出）时强制清掉。
-  // 路由切换时调用 —— 这就是「页面互相切换能有效监听并删除 overflow:hidden」的落点。
+
   function reconcileDocumentScrollLock() {
     var nodes = scrollLockNodes();
     if (!nodes) return false;
@@ -811,17 +815,7 @@ var KniuUI = (function () {
     delete nodes.root.dataset[SCROLL_LOCK_FLAG];
     return true;
   }
-  // ---- 空属性清理 ----------------------------------------------------------
-  // 浏览器**不会**回收「值为空」的属性：`setAttribute('class','')` 得到 `class=""`；
-  // style 声明被逐条清空后同样残留 `style=""`（Blink 实测 `hasAttribute('style')`
-  // 仍为 true，"空 style 会自动移除"的旧经验已不成立）。脏属性会随节点长期驻留，
-  // 切页最直观：`<html style="">`、`<div class="">` 一类残留越积越多。
-  //
-  // 框架约定：凡 JS 写入的**呈现型属性**（style / class / id，以及显式传入的 data-*）
-  // 值为空即删除属性本身。两条豁免：
-  //   ① 布尔属性（disabled / open / checked / ...）的空值**就是**它的存在意义，永不删除；
-  //   ② `value=""`（清空输入）、`alt=""`（装饰图）、`title=""` / `placeholder=""` / `name=""`
-  //      等空串在语义上有效，同样不删。
+
   var BOOLEAN_ATTRIBUTES = new Set([
     'allowfullscreen', 'async', 'autofocus', 'autoplay', 'checked', 'controls', 'default',
     'defer', 'disabled', 'formnovalidate', 'hidden', 'inert', 'ismap', 'itemscope', 'loop',
@@ -829,15 +823,12 @@ var KniuUI = (function () {
     'required', 'reversed', 'selected'
   ]);
   var SEMANTIC_EMPTY_ATTRIBUTES = new Set(['value', 'alt', 'title', 'placeholder', 'name', 'label']);
-  // 省略 names 时的默认扫描范围。**刻意不含 data-\***：组件常以 `dataset.value = ''`
-  // 表达「空值选项」，删掉属性会让读取方拿到 undefined 而非 ''，属行为变更。
-  // 需要清理 data-* 时显式传 names，例如 pruneEmptyAttributes(el, ['data-state', 'data-open'])。
   var PRUNABLE_ATTRIBUTE_NAMES = ['style', 'class', 'id'];
 
   function isEmptyAttributeValue(value) {
     return value == null || String(value).trim() === '';
   }
-  // 删除元素上的单个空属性，返回是否真的删了。布尔属性与语义空串属性一律跳过。
+
   function pruneEmptyAttribute(element, name) {
     if (!element || element.nodeType !== 1 || !name) return false;
     var attr = String(name).toLowerCase();
@@ -847,7 +838,7 @@ var KniuUI = (function () {
     element.removeAttribute(attr);
     return true;
   }
-  // 批量清理：无 names 时按 PRUNABLE_ATTRIBUTE_NAMES 扫。返回删除条数。
+
   function pruneEmptyAttributes(element, names) {
     if (!element || element.nodeType !== 1) return 0;
     var list = (names && names.length) ? names : PRUNABLE_ATTRIBUTE_NAMES;
@@ -857,9 +848,7 @@ var KniuUI = (function () {
     }
     return removed;
   }
-  // 深度清理一棵子树（**含 shadow tree**）里的空呈现型属性，返回删除条数。
-  // 用途：页面渲染收尾时跑一次，回收渲染过程中产生的空属性。只读属性、不读几何，
-  // 不会触发强制同步布局（见项目 Shadow DOM 性能铁律）。
+
   function pruneEmptyAttributeTree(root, names) {
     if (!root || root.nodeType !== 1) return 0;
     var removed = 0;
@@ -876,7 +865,7 @@ var KniuUI = (function () {
     }
     return removed;
   }
-  // 根元素兜底：<html>/<body> 是跨页存活节点，切页后不该留任何空的 style/class/id。
+
   function pruneEmptyRootAttributes() {
     if (typeof document === 'undefined' || !document.documentElement) return 0;
     var removed = pruneEmptyAttributes(document.documentElement);
@@ -884,7 +873,6 @@ var KniuUI = (function () {
     return removed;
   }
 
-  // 切换路由加载态。
   function setLoading(value) {
     const next = !!value;
     if (state.loading === next) return;
@@ -966,80 +954,11 @@ var KniuUI = (function () {
     let shadowVisibilityFrame = 0;
     let viewportResizeObserver = null;
 
-    const tableStyleSheetText = `
-      :host{display:block;width:100%;min-width:0}
-      .kniu_sys_table_group{position:relative;width:100%;overflow:hidden;background-color:#fff;color:#606266;font-size:14px;box-sizing:border-box}
-      .kniu_sys_table_viewport{width:100%;max-width:100%;overflow-x:auto;overflow-y:auto;box-sizing:border-box}
-      @supports(overflow-y:overlay){.kniu_sys_table_viewport{overflow-y:overlay}}
-      .kniu_sys_table{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;background-color:#fff;box-sizing:border-box}
-      .kniu_sys_table th,.kniu_sys_table td{border-bottom:1px solid #ebeef5;padding:5px 10px;height:max(38px,calc(48 / var(--kniu_vw)));box-sizing:border-box;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background-color:#fff}
-      .kniu_sys_table th{position:sticky;top:0;z-index:3;color:#909399;font-weight:600;background-color:#f5f7fa}
-      .kniu_sys_table_group[data-empty="true"] thead{pointer-events:none;user-select:none}
-      .kniu_sys_table_group[data-empty="true"] thead th{cursor:not-allowed!important}
-      .kniu_sys_table_group[data-empty="true"] .kniu_sys_table_sort,.kniu_sys_table_group[data-empty="true"] .kniu_sys_table_selection{cursor:not-allowed}
-      .kniu_sys_table tbody tr:hover td{background-color:#f5f7fa}
-      .kniu_sys_table_group[data-stripe="true"] tbody tr:nth-child(even) td{background-color:#fafafa}
-      .kniu_sys_table_group[data-stripe="true"] tbody tr:hover td{background-color:#f5f7fa}
-      .kniu_sys_table_group[data-highlight-current-row="true"] tbody tr[data-current="true"] td{background-color:#ecf5ff}
-      .kniu_sys_table_group[data-border="true"]{border:1px solid #ebeef5;border-right:0;border-bottom:0}
-      .kniu_sys_table_group[data-border="true"] th,.kniu_sys_table_group[data-border="true"] td{border-right:1px solid #ebeef5}
-      .kniu_sys_table_group[data-size="large"] th,.kniu_sys_table_group[data-size="large"] td{height:52px;padding:0 12px}
-      .kniu_sys_table_group[data-size="small"] th,.kniu_sys_table_group[data-size="small"] td{height:40px;padding:0 8px;font-size:12px}
-      .kniu_sys_table .kniu_sys_table_fixed_left{position:sticky;z-index:2;background-color:#fff;left:var(--kniu-fixed-left,auto)}
-      .kniu_sys_table .kniu_sys_table_fixed_right{position:sticky;z-index:2;background-color:#fff;right:var(--kniu-fixed-right,auto)}
-      .kniu_sys_table th.kniu_sys_table_fixed_left,.kniu_sys_table th.kniu_sys_table_fixed_right{z-index:5;background-color:#f5f7fa}
-      .kniu_sys_table_fixed_shadow{position:absolute;top:0;bottom:0;z-index:10;display:none;pointer-events:none;box-shadow:0 0 10px rgba(0,0,0,.12)}
-      .kniu_sys_table_fixed_shadow_left{left:0}
-      .kniu_sys_table_fixed_shadow_right{right:0}
-      .kniu_sys_table_group{--kniu-table-edge-fade:rgba(0,0,0,.1)}
-      .kniu_sys_table_group[data-mobile-overflow-left="true"]::before,.kniu_sys_table_group[data-mobile-overflow-right="true"]::after{content:"";position:absolute;z-index:11;top:0;bottom:0;width:26px;pointer-events:none}
-      .kniu_sys_table_group[data-mobile-overflow-left="true"]::before{left:0;background-image:linear-gradient(to right,var(--kniu-table-edge-fade),transparent)}
-      .kniu_sys_table_group[data-mobile-overflow-right="true"]::after{right:0;background-image:linear-gradient(to left,var(--kniu-table-edge-fade),transparent)}
-      .kniu_sys_table_action{border:0;padding:4px 0;background-color:transparent;color:#409eff;font:inherit;cursor:pointer}
-      .kniu_sys_table_action:hover{color:#66b1ff}
-      .kniu_sys_table_editable{cursor:text}
-      .kniu_sys_table_editable:hover{background-color:#ecf5ff!important}
-      .kniu_sys_table_edit_input{width:100%;height:32px;padding:0 8px;border:1px solid #409eff;border-radius:3px;outline:0;box-sizing:border-box;color:#606266;font:inherit}
-      .kniu_sys_table_empty td{height:80px;text-align:center;color:#909399}
-      .kniu_sys_table_empty:hover td{background-color:#fff!important;cursor:default}
-      .kniu_sys_table_empty td slot[name="empty"]{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
-      .kniu_sys_table_sort{display:inline-flex;justify-content:center;align-items:center;flex-flow:column;margin-left:5px;vertical-align:middle;color:#c0c4cc;cursor:pointer}.kniu_sys_table_sort_up,.kniu_sys_table_sort_down{display:flex;align-items:center;justify-content:center;height:13px;line-height:0}.kniu_sys_table_sort kniu-icon{display:block;width:max(10px,calc(12 / var(--kniu_vw)));height:max(10px,calc(12 / var(--kniu_vw)));flex:none}.kniu_sys_table_sort[data-order="ascending"] .kniu_sys_table_sort_up,.kniu_sys_table_sort[data-order="descending"] .kniu_sys_table_sort_down{color:#333}
-      .kniu_sys_table_selection{appearance:none;width:max(12px,calc(14 / var(--kniu_vw)));height:max(12px,calc(14 / var(--kniu_vw)));margin:0;border:1px solid #dcdfe6;border-radius:2px;outline:0;background-color:#fff;background-position:center;background-repeat:no-repeat;background-size:10px 8px;box-sizing:border-box;cursor:pointer;transition:border-color .2s,background-color .2s}.kniu_sys_table_selection:checked{border-color:#409eff;background-color:#409eff;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 10'%3E%3Cpath d='M1 5l3 3 7-7' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}.kniu_sys_table_selection:indeterminate{border-color:#409eff;background-color:#409eff;background-image:linear-gradient(#fff,#fff);background-size:8px 2px}.kniu_sys_table_selection:focus-visible{outline:2px solid rgba(64,158,255,.3);outline-offset:2px}.kniu_sys_table_selection:disabled{border-color:#dcdfe6;background-color:#f5f7fa;cursor:not-allowed;opacity:.65}.kniu_sys_table_selection:disabled:checked,.kniu_sys_table_selection:disabled:indeterminate{border-color:#a0cfff;background-color:#a0cfff}
-      .kniu_sys_table_cell_tooltip{position:relative}
-      .kniu_sys_table_tooltip{position:fixed;z-index:9999;max-width:50vw;padding:8px 12px;border-radius:4px;background-color:rgba(48,49,51,.92);color:#fff;font-size:12px;line-height:1.5;white-space:normal;word-break:break-all;box-shadow:0 2px 12px rgba(0,0,0,.18);pointer-events:none}
-      .kniu_sys_table_tooltip::after{content:"";position:absolute;width:0;height:0;border:6px solid transparent;pointer-events:none;left:var(--kniu_tip_arrow_x,50%);transform:translateX(-50%)}
-      .kniu_sys_table_tooltip[data-placement="top"]::after{bottom:-12px;border-top-color:rgba(48,49,51,.92)}
-      .kniu_sys_table_tooltip[data-placement="bottom"]::after{top:-12px;border-bottom-color:rgba(48,49,51,.92)}
-      .kniu_sys_table_loading{position:absolute;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background-color:rgba(255,255,255,.9);color:#606266;opacity:0;visibility:hidden;transition:opacity .2s ease,visibility .2s ease;pointer-events:auto}
-      .kniu_sys_table_loading[data-active="true"]{opacity:1;visibility:visible}
-      .kniu_sys_table_loading_spinner{width:34px;height:34px;box-sizing:border-box;border:3px solid rgba(64,158,255,.25);border-top-color:#409eff;border-radius:50%;animation:kniu_sys_table_loading_spin .7s linear infinite}
-      .kniu_sys_table_loading_text{font-size:13px;max-width:80%;text-align:center}
-      @keyframes kniu_sys_table_loading_spin{to{transform:rotate(360deg)}}
-      :host([theme="dark"]) .kniu_sys_table_group{--kniu-table-edge-fade:rgba(255,255,255,.1)}
-      :host-context([data-theme="dark"]) .kniu_sys_table_group{--kniu-table-edge-fade:rgba(255,255,255,.1)}
-      @media (prefers-color-scheme:dark){.kniu_sys_table_group{--kniu-table-edge-fade:rgba(255,255,255,.1)}}
-      .kniu_sys_table td.kniu_sys_table_fixed_left,.kniu_sys_table td.kniu_sys_table_fixed_right{position:static;z-index:auto}
-      .kniu_sys_table .kniu_sys_table_fixed_left,.kniu_sys_table .kniu_sys_table_fixed_right{left:auto;right:auto}
-      .kniu_sys_table_fixed_shadow{display:none}
-      @media (min-width:calc(1280px - 60px)){
-        .kniu_sys_table_group[data-mobile-overflow-left="true"]::before,.kniu_sys_table_group[data-mobile-overflow-right="true"]::after{display:none}
-        .kniu_sys_table td.kniu_sys_table_fixed_left,.kniu_sys_table th.kniu_sys_table_fixed_left{position:sticky;z-index:2;left:var(--kniu-fixed-left,auto)}
-        .kniu_sys_table td.kniu_sys_table_fixed_right,.kniu_sys_table th.kniu_sys_table_fixed_right{position:sticky;z-index:2;right:var(--kniu-fixed-right,auto)}
-        .kniu_sys_table th.kniu_sys_table_fixed_left,.kniu_sys_table th.kniu_sys_table_fixed_right{z-index:5}
-      }
-      @media (min-width: calc(1600px - 60px)) {
-        .kniu_sys_table_sort_up,
-        .kniu_sys_table_sort_down{
-          height:9px;
-        }
-      }
-      @media (prefers-reduced-motion:reduce){.kniu_sys_table_loading_spinner{animation:none}}
-    `;
     const style = supportsAdoptedStyleSheets(target)
-      ? (adoptSharedStyle(target, tableStyleSheetText), null)
+      ? (adoptSharedStyle(target, KNIU_TABLE_CSS), null)
       : (function () {
         const element = documentRef.createElement('style');
-        element.textContent = normalizeComponentCss(tableStyleSheetText);
+        element.textContent = normalizeComponentCss(KNIU_TABLE_CSS);
         return element;
       })();
     const group = documentRef.createElement('div');
@@ -1176,10 +1095,10 @@ var KniuUI = (function () {
       const rect = cell.getBoundingClientRect();
       const tw = tooltip.offsetWidth;
       const th = tooltip.offsetHeight;
-      const vGap = 6;     // tip 与单元格的垂直间距（正好容纳 6px 高的指向小三角）
-      const hMargin = 8;  // tip 与视口边缘的水平留白
+      const vGap = 6;
+      const hMargin = 8;
       let top;
-      let placement = 'top'; // tip 在单元格上方 → 三角在 tip 底部朝下指向单元格
+      let placement = 'top';
       const spaceAbove = rect.top;
       const spaceBelow = window.innerHeight - rect.bottom;
       if (spaceAbove >= th + vGap) {
@@ -1370,16 +1289,6 @@ var KniuUI = (function () {
         && !Array.isArray(column.actions);
     }
 
-    function setWidgetAttribute(element, name, value) {
-      if (value == null || value === '') element.removeAttribute(name);
-      else element.setAttribute(name, String(value));
-    }
-
-    function setWidgetFlag(element, name, active) {
-      if (active) element.setAttribute(name, '');
-      else element.removeAttribute(name);
-    }
-
     function updateCellWidget(cell, column, row, rowIndex) {
       const child = cell.firstElementChild;
       if (column.type === 'checkbox') {
@@ -1455,7 +1364,6 @@ var KniuUI = (function () {
       return true;
     }
 
-    // 更新单元格内容：文本列走极速路径，控件列优先复用。
     function renderCellContent(cell, column, row, rowIndex, reused) {
       if (!cell) return;
       if (isPlainTextColumn(column)) {
@@ -1487,7 +1395,6 @@ var KniuUI = (function () {
       appendCellContent(cell, column, row, rowIndex);
     }
 
-    // 新建数据行：一次性用 DocumentFragment 挂载全部单元格，避免逐个 append 触发多次布局。
     function createBodyRow(offsets) {
       const tableRow = documentRef.createElement('tr');
       const cellFragment = documentRef.createDocumentFragment();
@@ -1523,7 +1430,6 @@ var KniuUI = (function () {
       return tableRow;
     }
 
-    // 列结构签名：单元格数量与列布局（宽度 / 固定 / 可编辑）一旦变化，复用行必须重建。
     function columnSignature() {
       let signature = String(columns.length);
       for (let i = 0; i < columns.length; i += 1) {
@@ -1618,17 +1524,12 @@ var KniuUI = (function () {
       const row = head?.rows?.[0] || table.querySelector('tbody tr:not(.kniu_sys_table_empty)');
       const measured = [];
       let anyMeasured = false;
-      // 只测固定列：唯一消费者 resyncFixedGeometry 的 widthOf(index) 只对 fixed 列取值，
-      // 全表测量在宽表上是无谓的 rect 读取；且先把全部 rect 读完再返回，调用方之后才写样式，
-      // 保证「读-写」不交错，最多触发一次强制布局。
       for (let index = 0; index < columns.length; index += 1) {
         const fixed = columns[index].fixed;
         if (fixed !== true && fixed !== 'left' && fixed !== 'right') continue;
         const cell = row?.cells?.[index];
         const width = cell ? cell.getBoundingClientRect().width : 0;
         if (width > 0) anyMeasured = true;
-        // 0 宽是真实的布局几何（桌面横向溢出时 table-layout:fixed 把无 width 的自动列挤压成 0），
-        // 不能回退设计宽——旧版 `|| columnWidth(...)` 让阴影比固定块宽出一截（2026-09-29 报障根因）。
         measured[index] = width;
       }
       if (!anyMeasured) return null;
@@ -1636,9 +1537,6 @@ var KniuUI = (function () {
       return measured;
     }
 
-    // 桌面端列宽由容器与 table-layout:fixed 共同决定（拉伸自动列 / 溢出挤压成 0 / 全显式列按比例扩展），
-    // 粘性偏移与设计宽累加、阴影与实测宽两套数字必然错位。统一按「实测几何」重算一遍：
-    // 偏移（--kniu-fixed-left/right）与阴影宽度都从同一份实测列宽累加，并在容器 resize 时重新同步。
     function resyncFixedGeometry() {
       const offsets = lastFixedOffsets;
       const measured = measureColumnWidths();
@@ -1998,16 +1896,10 @@ var KniuUI = (function () {
       const wasMobile = columnPlan ? columnPlan.isMobile : null;
       refreshColumnPlan();
       applyTableMinWidth();
-      // 跨断点（桌面 ⇄ 移动）会换一套列宽计划：桌面 minTotalWidth 不含自动列预算、移动含 defaultColumnWidth，
-      // 且自动列的 inline min-width 只在移动态渲染时写入。不整体重渲染就会残留上一断点的列宽，
-      // 阴影宽随之错位（2026-09-29 报障场景之一）→ 断点翻转时走 render()，
-      // render 内部已完成 resyncFixedGeometry 与显隐刷新，直接返回即可。
       if (wasMobile !== null && wasMobile !== columnPlan.isMobile) {
         render();
         return;
       }
-      // 容器宽度变化 → table-layout:fixed 重新分配列宽 → 阴影宽与粘性偏移必须按新实测几何同步，
-      // 否则阴影停在旧值（resize 后比固定块宽/窄）。
       resyncFixedGeometry();
       updateFixedShadowVisibility();
     }
@@ -2083,17 +1975,12 @@ var KniuUI = (function () {
       constructor() {
         super();
         attachComponentShadow(this);
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-flex;vertical-align:middle;flex-shrink:0}:host([block]){display:flex;width:100%}.kniu_sys_button{--kniu-button-color:#606266;--kniu-button-bg:#fff;--kniu-button-border:#dcdfe6;--kniu-button-hover-color:#409eff;--kniu-button-hover-bg:#ecf5ff;--kniu-button-hover-border:#c6e2ff;--kniu-button-active-bg:#ecf5ff;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;min-height:32px;margin:0;padding:8px 15px;border:1px solid var(--kniu-button-border);border-radius:4px;outline:0;background-color:var(--kniu-button-bg);color:var(--kniu-button-color);font:500 14px/1 var(--kniu-font-family);text-decoration:none;white-space:nowrap;cursor:pointer;user-select:none;transition:.1s}.kniu_sys_button:hover,.kniu_sys_button:focus-visible{border-color:var(--kniu-button-hover-border);background-color:var(--kniu-button-hover-bg);color:var(--kniu-button-hover-color)}.kniu_sys_button:active{background-color:var(--kniu-button-active-bg);filter:brightness(.94)}.kniu_sys_button[data-type="primary"]{--kniu-button-color:#fff;--kniu-button-bg:#409eff;--kniu-button-border:#409eff;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#79bbff;--kniu-button-hover-border:#79bbff}.kniu_sys_button[data-type="success"]{--kniu-button-color:#fff;--kniu-button-bg:#67c23a;--kniu-button-border:#67c23a;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#95d475;--kniu-button-hover-border:#95d475}.kniu_sys_button[data-type="warning"]{--kniu-button-color:#fff;--kniu-button-bg:#e6a23c;--kniu-button-border:#e6a23c;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#eebe77;--kniu-button-hover-border:#eebe77}.kniu_sys_button[data-type="danger"]{--kniu-button-color:#fff;--kniu-button-bg:#f56c6c;--kniu-button-border:#f56c6c;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#f89898;--kniu-button-hover-border:#f89898}.kniu_sys_button[data-type="info"]{--kniu-button-color:#fff;--kniu-button-bg:#909399;--kniu-button-border:#909399;--kniu-button-hover-color:#fff;--kniu-button-hover-bg:#b1b3b8;--kniu-button-hover-border:#b1b3b8}.kniu_sys_button[data-plain="true"]{--kniu-button-color:var(--kniu-button-border);--kniu-button-bg:color-mix(in srgb,var(--kniu-button-border) 10%,#fff);--kniu-button-hover-color:#fff;--kniu-button-hover-bg:var(--kniu-button-border);--kniu-button-hover-border:var(--kniu-button-border)}.kniu_sys_button[data-type="default"][data-plain="true"]{--kniu-button-color:#606266;--kniu-button-bg:#fff;--kniu-button-border:#dcdfe6;--kniu-button-hover-color:#409eff;--kniu-button-hover-bg:#ecf5ff;--kniu-button-hover-border:#c6e2ff}.kniu_sys_button[data-text="true"],.kniu_sys_button[data-link="true"]{border-color:transparent;background-color:transparent;color:var(--kniu-button-border)}.kniu_sys_button[data-type="default"][data-text="true"],.kniu_sys_button[data-type="default"][data-link="true"]{color:#606266}.kniu_sys_button[data-text="true"]:hover{border-color:transparent;background-color:#f5f7fa}.kniu_sys_button[data-text="true"][data-bg="true"]{background-color:#f5f7fa}.kniu_sys_button[data-text="true"][data-bg="true"]:hover{background-color:#e9e9eb}.kniu_sys_button[data-unstyled="true"]{border:0;background-color:transparent;padding:0;margin:0;min-height:0;width:100%;justify-content:flex-start;color:inherit;font:inherit;border-radius:0}.kniu_sys_button[data-link="true"]{height:auto;min-height:0;padding:2px}.kniu_sys_button[data-link="true"]:hover,.kniu_sys_button[data-link="true"]:focus-visible{border-color:transparent;background-color:transparent;filter:brightness(.8)}.kniu_sys_button[data-size="large"]{min-height:40px;padding:12px 19px;font-size:14px}.kniu_sys_button[data-size="small"]{min-height:24px;padding:5px 11px;font-size:12px}.kniu_sys_button[data-round="true"]{border-radius:999px}.kniu_sys_button[data-circle="true"]{width:32px;height:32px;padding:0;border-radius:50%}.kniu_sys_button[data-circle="true"][data-size="large"]{width:40px;height:40px}.kniu_sys_button[data-circle="true"][data-size="small"]{width:24px;height:24px}.kniu_sys_button:disabled{border-color:#e4e7ed;background-color:#fff;color:#a8abb2;cursor:not-allowed;filter:none;opacity:.6}.kniu_sys_button[data-block="true"]{width:100%}.kniu_sys_button_icon:empty{display:none}.kniu_sys_button_loading{display:none;width:12px;height:12px;box-sizing:border-box;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:kniu_sys_button_spin .8s linear infinite}.kniu_sys_button_loading[class]:not([class="kniu_sys_button_loading"]){border:0;animation:none}.kniu_sys_button[data-loading="true"] .kniu_sys_button_loading{display:inline-block}.kniu_sys_button_label{display:inline-flex;align-items:center;gap:6px;min-width:0}.kniu_sys_button_label[data-auto-space="true"]{letter-spacing:.25em;margin-right:-.25em}@keyframes kniu_sys_button_spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.kniu_sys_button_loading{animation:none}}</style><button class="kniu_sys_button" type="button"><span class="kniu_sys_button_loading" aria-hidden="true"></span><i class="kniu_sys_button_icon" aria-hidden="true"></i><span class="kniu_sys_button_label"><slot></slot></span></button>`;
+        this.shadowRoot.innerHTML = `<style>${KNIU_BTN_CSS}</style><button class="kniu_sys_button" type="button"><span class="kniu_sys_button_loading" aria-hidden="true"></span><i class="kniu_sys_button_icon" aria-hidden="true"></i><span class="kniu_sys_button_label"><slot></slot></span></button>`;
         this._button = this.shadowRoot.querySelector('.kniu_sys_button');
-        appendRawStyle(this.shadowRoot, '.kniu_sys_button{height:max(28px,calc(40 / var(--kniu_vw)))!important;min-height:max(28px,calc(40 / var(--kniu_vw)))!important;padding:0 15px}.kniu_sys_button[data-size="large"]{height:max(28px,calc(40 / var(--kniu_vw)))!important;min-height:max(28px,calc(40 / var(--kniu_vw)))!important;padding:0 19px}.kniu_sys_button[data-size="small"]{height:max(28px,calc(28 / var(--kniu_vw)))!important;min-height:max(28px,calc(28 / var(--kniu_vw)))!important;padding:0 11px}.kniu_sys_button[data-circle="true"]{width:max(28px,calc(40 / var(--kniu_vw)))!important;height:max(28px,calc(40 / var(--kniu_vw)))!important}.kniu_sys_button[data-circle="true"][data-size="large"]{width:max(28px,calc(40 / var(--kniu_vw)))!important;height:max(28px,calc(40 / var(--kniu_vw)))!important}.kniu_sys_button[data-circle="true"][data-size="small"]{width:max(28px,calc(28 / var(--kniu_vw)))!important;height:max(28px,calc(28 / var(--kniu_vw)))!important}');
-        appendRawStyle(this.shadowRoot, '.kniu_sys_button{border-radius:var(--kniu-radius,4px)}.kniu_sys_button[data-type="primary"]{--kniu-button-bg:var(--kniu-color-primary,#409eff);--kniu-button-border:var(--kniu-color-primary,#409eff)}');
-        appendRawStyle(this.shadowRoot, ':host([block]){min-height:28px;vertical-align:top}:host([block]) .kniu_sys_button{height:100%!important;min-height:28px!important;padding-top:0;padding-bottom:0}');
+        appendRawStyle(this.shadowRoot, KNIU_BTN_METRICS_CSS);
         this._bindButton();
         this.shadowRoot.querySelector('slot').addEventListener('slotchange', () => this._syncAutoSpace());
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_button_icon{display:inline-flex;align-items:center;justify-content:center}.kniu_sys_button_icon kniu-icon{display:block;width:1em;height:1em;overflow:visible}');
-        adoptSharedStyle(this.shadowRoot, ':host([block]){height:100%}:host([block]) .kniu_sys_button{width:100%;height:100%}');
-        adoptSharedStyle(this.shadowRoot, 'slot::slotted(kniu-icon){font-size:var(--kniu-button-icon-size,1em)}');
-        adoptSharedStyle(this.shadowRoot, ':host([append-borderless]) .kniu_sys_button{border:none;border-radius:0}');
+        adoptSharedStyle(this.shadowRoot, KNIU_BTN_OVERRIDES_CSS);
       }
       _bindButton() {
         this._icon = this._button.querySelector('.kniu_sys_button_icon');
@@ -2190,7 +2077,7 @@ var KniuUI = (function () {
       constructor() {
         super();
         attachComponentShadow(this);
-        this.shadowRoot.innerHTML = '<style>:host{display:inline-flex;align-items:center;gap:10px}</style><slot></slot>';
+        this.shadowRoot.innerHTML = '<style>' + KNIU_BTN_GROUP_CSS + '</style><slot></slot>';
       }
     }
     customElements.define('kniu-btn-group', KniuSysButtonGroup);
@@ -2211,7 +2098,7 @@ var KniuUI = (function () {
         this._inactiveValue = undefined;
         this._propDisabled = false;
         this._options = null;
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;flex-shrink:0}.kniu_sys_switch_group{display:flex;width:100%;align-items:stretch}.kniu_sys_switch_content{flex:1;min-width:0;display:flex;align-items:center;justify-content:flex-start;padding:0 12px;background-color:#fff;box-sizing:border-box}.kniu_sys_switch_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_switch_group[data-affix="true"] .kniu_sys_switch_content{border:1px solid #dcdfe6}.kniu_sys_switch_group[data-has-prepend="true"] .kniu_sys_switch_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_switch_group[data-has-prepend="true"] .kniu_sys_switch_content{border-radius:0 4px 4px 0}.kniu_sys_switch_group[data-has-append="true"] .kniu_sys_switch_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_switch_group[data-affix="true"]{height:40px}.kniu_sys_switch_group:not([data-affix="true"]) .kniu_sys_switch_content{padding:0;background-color:transparent}.kniu_sys_switch{position:relative;display:inline-flex;align-items:center;gap:8px;color:#303133;font-size:14px;line-height:20px;cursor:pointer;user-select:none}.kniu_sys_switch_input{position:absolute;width:0;height:0;opacity:0}.kniu_sys_switch_core{position:relative;display:inline-block;box-sizing:border-box;height:max(18px,calc(20 / var(--kniu_vw)));padding:0;border:0 solid transparent;border-radius:max(16px,calc(10 / var(--kniu_vw)));background-color:#c0ccda;outline:0;cursor:pointer;transition:border-color .3s,background-color .3s}.kniu_sys_switch_button{position:absolute;top:50%;left:2px;margin-top:calc(max(12px,calc(16 / var(--kniu_vw))) / -2);width:max(12px,calc(16 / var(--kniu_vw)));height:max(12px,calc(16 / var(--kniu_vw)));border-radius:50%;background-color:#fff;transition:transform .3s}.kniu_sys_switch[data-active="true"] .kniu_sys_switch_button{transform:translateX(var(--kniu-switch-distance))}.kniu_sys_switch_text{white-space:nowrap}.kniu_sys_switch_icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}.kniu_sys_switch_icon:empty{display:none}.kniu_sys_switch[data-disabled="true"]{opacity:.6;cursor:not-allowed}.kniu_sys_switch_input:focus-visible+.kniu_sys_switch_core{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}</style><div class="kniu_sys_switch_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_switch_affix kniu_sys_switch_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_switch_content"><label class="kniu_sys_switch" data-active="false" data-disabled="false"><span class="kniu_sys_switch_text kniu_sys_switch_inactive_text"></span><input class="kniu_sys_switch_input" type="checkbox"><button class="kniu_sys_switch_core" type="button"><span class="kniu_sys_switch_button"></span><i class="kniu_sys_switch_icon"></i></button><span class="kniu_sys_switch_text kniu_sys_switch_active_text"></span></label></div><span class="kniu_sys_switch_affix kniu_sys_switch_append"><slot name="append"></slot></span></div>`;
+        this.shadowRoot.innerHTML = `<style>${KNIU_SWITCH_CSS}</style><div class="kniu_sys_switch_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_switch_affix kniu_sys_switch_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_switch_content"><label class="kniu_sys_switch" data-active="false" data-disabled="false"><span class="kniu_sys_switch_text kniu_sys_switch_inactive_text"></span><input class="kniu_sys_switch_input" type="checkbox"><button class="kniu_sys_switch_core" type="button"><span class="kniu_sys_switch_button"></span><i class="kniu_sys_switch_icon"></i></button><span class="kniu_sys_switch_text kniu_sys_switch_active_text"></span></label></div><span class="kniu_sys_switch_affix kniu_sys_switch_append"><slot name="append"></slot></span></div>`;
         this._root = this.shadowRoot.querySelector('.kniu_sys_switch');
         this._input = this.shadowRoot.querySelector('.kniu_sys_switch_input');
         this._core = this.shadowRoot.querySelector('.kniu_sys_switch_core');
@@ -2298,45 +2185,14 @@ var KniuUI = (function () {
     if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
     if (customElements.get('kniu-modal')) return;
 
-    const GENERIC_HTML = '<style>'
-      + ':host{position:fixed;inset:0;z-index:2000;display:none}'
-      + ':host([show="true"]){display:block!important}'
-      + '.kniu_sys_modal_mask{position:absolute;inset:0;background-color:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;animation:kniu_sys_modal_mask_in .25s ease both}'
-      + '.kniu_sys_modal_dialog{position:relative;width:var(--kniu-modal-width,auto);min-width:320px;max-width:100%;background-color:#fff;border-radius:6px;box-shadow:0 2px 12px rgba(0,0,0,.18);display:flex;flex-direction:column;max-height:90vh;overflow:visible;animation:kniu_sys_modal_box_in .25s cubic-bezier(.25,.8,.25,1)}'
-      + '.kniu_sys_modal_header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #ebeef5;font-size:16px;font-weight:600;color:#303133;flex:none}'
-      + '.kniu_sys_modal_header slot::slotted(kniu-btn){--kniu-button-icon-size:24px}'
-      + '.kniu_sys_modal_body{padding:20px 24px;overflow:auto;flex:1 1 auto;box-sizing:border-box}'
-      + '.kniu_sys_modal_footer{padding:12px 20px;border-top:1px solid #ebeef5;text-align:right;flex:none}'
-      + '.kniu_sys_modal_footer kniu-btn{margin-left:12px}'
-      + '@keyframes kniu_sys_modal_mask_in{0%{opacity:0}100%{opacity:1}}@keyframes kniu_sys_modal_box_in{0%{transform:translateY(-20px);opacity:0}100%{transform:translateY(0);opacity:1}}'
-      + '@keyframes kniu_sys_modal_mask_out{0%{opacity:1}100%{opacity:0}}@keyframes kniu_sys_modal_box_out{0%{transform:translateY(0);opacity:1}100%{transform:translateY(-20px);opacity:0}}'
-      + ':host([closing]) .kniu_sys_modal_mask{animation:kniu_sys_modal_mask_out .22s ease both}:host([closing]) .kniu_sys_modal_dialog{animation:kniu_sys_modal_box_out .22s cubic-bezier(.25,.8,.25,1) both}'
-      + '@media (prefers-reduced-motion:reduce){.kniu_sys_modal_mask,.kniu_sys_modal_dialog{animation:none}}</style>'
+    const GENERIC_HTML = '<style>' + KNIU_MODAL_CSS + '</style>'
       + '<div class="kniu_sys_modal_mask" part="mask"><div class="kniu_sys_modal_dialog" part="dialog">'
       + '<div class="kniu_sys_modal_header"><slot name="header"></slot></div>'
       + '<div class="kniu_sys_modal_body"><slot name="default"></slot></div>'
       + '<div class="kniu_sys_modal_footer"><slot name="footer"></slot></div>'
       + '</div></div>';
 
-    const CONFIRM_HTML = '<style>'
-      + ':host{position:fixed;inset:0;z-index:2000;display:none}'
-      + ':host([show="true"]){display:block!important}'
-      + '.kniu_sys_modal_mask{position:absolute;inset:0;background-color:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;animation:kniu_sys_modal_mask_in .25s ease both}'
-      + '.kniu_sys_modal_dialog{position:relative;width:var(--kniu-modal-width,auto);min-width:320px;max-width:100%;background-color:#fff;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1);display:flex;flex-direction:column;overflow:hidden;animation:kniu_sys_modal_box_in .25s cubic-bezier(.25,.8,.25,1) both}'
-      + '.kniu_sys_modal_header{position:relative;padding:15px 15px 10px;flex:none}'
-      + '.kniu_sys_modal_confirm_title{margin:0;padding-right:40px;color:#303133;font-size:18px;font-weight:400;line-height:1}'
-      + '.kniu_sys_modal_close{position:absolute;top:0;right:6px;display:flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:0;background-color:transparent;color:#909399;cursor:pointer}'
-      + '.kniu_sys_modal_close kniu-icon{display:block;width:26px;height:26px}'
-      + '.kniu_sys_modal_close:hover{color:#409eff}'
-      + '.kniu_sys_modal_body{display:flex;align-items:flex-start;padding:10px 15px 15px;color:#606266;font-size:14px;flex:none}'
-      + '.kniu_sys_modal_confirm_icon{flex:none;margin-right:10px;font-size:24px;line-height:24px}'
-      + '.kniu_sys_modal_confirm_message{margin:0;line-height:24px}'
-      + '.kniu_sys_modal_footer{padding:10px 15px 15px;text-align:right;flex:none}'
-      + '.kniu_sys_modal_footer kniu-btn{margin-left:12px}'
-      + '@keyframes kniu_sys_modal_mask_in{0%{opacity:0}100%{opacity:1}}@keyframes kniu_sys_modal_box_in{0%{transform:translateY(-20px);opacity:0}100%{transform:translateY(0);opacity:1}}'
-      + '@keyframes kniu_sys_modal_mask_out{0%{opacity:1}100%{opacity:0}}@keyframes kniu_sys_modal_box_out{0%{transform:translateY(0);opacity:1}100%{transform:translateY(-20px);opacity:0}}'
-      + ':host([closing]) .kniu_sys_modal_mask{animation:kniu_sys_modal_mask_out .22s ease both}:host([closing]) .kniu_sys_modal_dialog{animation:kniu_sys_modal_box_out .22s cubic-bezier(.25,.8,.25,1) both}'
-      + '@media (prefers-reduced-motion:reduce){.kniu_sys_modal_mask,.kniu_sys_modal_dialog{animation:none}}</style>'
+    const CONFIRM_HTML = '<style>' + KNIU_MODAL_CONFIRM_CSS + '</style>'
       + '<div class="kniu_sys_modal_mask" part="mask"><div class="kniu_sys_modal_dialog" part="dialog">'
       + '<div class="kniu_sys_modal_header"><h4 class="kniu_sys_modal_confirm_title"></h4><button class="kniu_sys_modal_close" type="button" aria-label="关闭"><kniu-icon icon="close"></kniu-icon></button></div>'
       + '<div class="kniu_sys_modal_body"><span class="kniu_sys_modal_confirm_icon"></span><p class="kniu_sys_modal_confirm_message"></p></div>'
@@ -2364,7 +2220,6 @@ var KniuUI = (function () {
       }
       disconnectedCallback() {
         document.removeEventListener('keydown', this._handleKeydown);
-        // 弹窗在打开状态下被页面切换带走时，必须释放自己的根滚动锁，否则新页面滚不动。
         this._unlockScrollbar();
       }
       attributeChangedCallback(name) {
@@ -2461,7 +2316,6 @@ var KniuUI = (function () {
       }
       _lockScrollbar() {
         if ((this.getAttribute('scrollbar') || 'true') === 'false') {
-          // 走统一的根滚动锁：所有者是本弹窗实例，不会和其他锁互相覆盖快照。
           this._scrollLocked = lockDocumentScroll(this);
         }
       }
@@ -2544,7 +2398,7 @@ var KniuUI = (function () {
         constructor() {
           super();
           attachComponentShadow(this);
-          this.shadowRoot.innerHTML = '<style>:host{display:none}</style><slot></slot>';
+          this.shadowRoot.innerHTML = '<style>' + KNIU_TABLE_COL_CSS + '</style><slot></slot>';
         }
         set onChange(value) { this._onChange = typeof value === 'function' ? value : null; }
         get onChange() { return this._onChange; }
@@ -2865,7 +2719,7 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this._show = false;
-        this.shadowRoot.innerHTML = `<style>:host{position:fixed;inset:0;z-index:2147483647;display:block;pointer-events:none}:host([contained]){position:absolute;z-index:50}.kniu_sys_loading_mask{position:absolute;inset:0;display:grid;place-items:center;opacity:0;visibility:hidden;transition:opacity .4s ease,visibility .4s ease;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);background-color:#fff}.kniu_sys_loading_mask[data-show="true"]{opacity:1;visibility:visible;transition:none;pointer-events:auto}:host([contained]) .kniu_sys_loading_mask{z-index:0}.kniu_sys_loading_spinner{width:38px;height:38px;border:3px solid rgba(102,126,234,.25);border-top-color:#667eea;border-radius:50%;animation:kniu_sys_loading_spin .7s linear infinite}@keyframes kniu_sys_loading_spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.kniu_sys_loading_spinner{animation:none}}</style><div class="kniu_sys_loading_mask" data-show="true" role="status" aria-label="加载中"><span class="kniu_sys_loading_spinner"></span></div>`;
+        this.shadowRoot.innerHTML = `<style>${KNIU_LOADING_CSS}</style><div class="kniu_sys_loading_mask" data-show="true" role="status" aria-label="加载中"><span class="kniu_sys_loading_spinner"></span></div>`;
         this._mask = this.shadowRoot.querySelector('.kniu_sys_loading_mask');
       }
       set show(value) {
@@ -2887,7 +2741,7 @@ var KniuUI = (function () {
         this._message = '';
         this._type = 'info';
         this._visible = false;
-        this.shadowRoot.innerHTML = `<style>:host{position:fixed;inset:0;z-index:2147483000;display:block;pointer-events:none}.kniu_sys_toast{position:absolute;right:28px;bottom:28px;padding:14px 18px;border:1px solid #ebeef5;border-radius:4px;opacity:0;pointer-events:none;transform:translateY(12px);background-color:#edf2fc;color:#909399;transition:.25s;box-shadow:0 12px 40px rgba(23,33,59,.18)}.kniu_sys_toast[data-type="success"]{border-color:#e1f3d8;background-color:#f0f9eb;color:#67c23a}.kniu_sys_toast[data-type="warning"]{border-color:#faecd8;background-color:#fdf6ec;color:#e6a23c}.kniu_sys_toast[data-type="error"]{border-color:#fde2e2;background-color:#fef0f0;color:#f56c6c}.kniu_sys_toast[data-visible="true"]{opacity:1;transform:none}</style><div class="kniu_sys_toast" data-visible="false" data-type="info" role="status" aria-live="polite"></div>`;
+        this.shadowRoot.innerHTML = `<style>${KNIU_MSG_CSS}</style><div class="kniu_sys_toast" data-visible="false" data-type="info" role="status" aria-live="polite"></div>`;
         this._toast = this.shadowRoot.querySelector('.kniu_sys_toast');
       }
       set message(value) {
@@ -3093,7 +2947,6 @@ var KniuUI = (function () {
     };
   }
 
-  // 通用列表组合器：仅编排分页、搜索、删除，不包含任何项目接口或数据表。
   function useListPage(config) {
     const options = config || {};
     const pager = usePagination(options);
@@ -3145,7 +2998,7 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this._value = '';
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;min-width:120px}.kniu_sys_select_wrap{position:relative;width:100%}.kniu_sys_select{display:flex;align-items:center;width:100%;height:max(28px,calc(var(--kniu-select-h,40) / var(--kniu_vw)));padding:0 34px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px var(--kniu-font-family);cursor:pointer;box-sizing:border-box;white-space:nowrap}.kniu_sys_select:hover{border-color:#c0c4cc}.kniu_sys_select:focus-visible,.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select{border-color:#409eff}.kniu_sys_select:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_select_arrow{position:absolute;top:50%;right:12px;width:7px;height:7px;border-right:1px solid #909399;border-bottom:1px solid #909399;transform:translateY(-70%) rotate(45deg);transition:transform .2s;pointer-events:none}.kniu_sys_select_wrap[data-open="true"] .kniu_sys_select_arrow{transform:translateY(-30%) rotate(225deg)}.kniu_sys_select_dropdown{position:fixed;z-index:10030;max-height:220px;overflow:auto;padding:5px 0;opacity:0;visibility:hidden;transform:translateY(-4px);transition:.16s}.kniu_sys_select_dropdown[data-placement="top"]{transform:translateY(4px)}.kniu_sys_select_dropdown[data-open="true"]{opacity:1;visibility:visible;transform:none}.kniu_sys_select_option{height:32px}.kniu_sys_select_option.kniu_sys_select_selected{color:#409eff;background-color:#f5f7fa}.kniu_sys_select_slot{display:none}</style><div class="kniu_sys_select_wrap" data-open="false" data-placement="bottom"><button type="button" class="kniu_sys_select" aria-haspopup="listbox" aria-expanded="false"></button><span class="kniu_sys_select_arrow" aria-hidden="true"></span><div class="kniu_sys_select_dropdown kniu_sys_dropdown_panel" role="listbox"></div></div><slot class="kniu_sys_select_slot"></slot>`;
+        this.shadowRoot.innerHTML = `<style>${KNIU_SELECT_CSS}</style><div class="kniu_sys_select_wrap" data-open="false" data-placement="bottom"><button type="button" class="kniu_sys_select" aria-haspopup="listbox" aria-expanded="false"></button><span class="kniu_sys_select_arrow" aria-hidden="true"></span><div class="kniu_sys_select_dropdown kniu_sys_dropdown_panel" role="listbox"></div></div><slot class="kniu_sys_select_slot"></slot>`;
         adoptDropdownStyle(this.shadowRoot);
         this._wrap = this.shadowRoot.querySelector('.kniu_sys_select_wrap');
         this._select = this.shadowRoot.querySelector('.kniu_sys_select');
@@ -3283,7 +3136,7 @@ var KniuUI = (function () {
         attachComponentShadow(this);
         this._value = '';
         this._radioName = `kniu-radio-${Math.random().toString(36).slice(2)}`;
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle}.kniu_sys_radio_group{display:flex;align-items:center;flex-wrap:wrap;gap:18px;min-height:40px}.kniu_sys_radio{display:inline-flex;align-items:center;gap:7px;color:#606266;font:14px/1.5 var(--kniu-font-family);cursor:pointer;user-select:none}.kniu_sys_radio_control{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none}.kniu_sys_radio_input{position:relative;-webkit-appearance:none;appearance:none;width:max(12px,calc(14 / var(--kniu_vw)));height:max(12px,calc(14 / var(--kniu_vw)));margin:0;border:1px solid #dcdfe6;border-radius:50%;outline:0;background-color:#fff;box-sizing:border-box;cursor:pointer;transition:border-color .2s,background-color .2s}.kniu_sys_radio_dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:max(5px,calc(5 / var(--kniu_vw)));height:max(5px,calc(5 / var(--kniu_vw)));border-radius:50%;background-color:#fff;display:none;pointer-events:none}.kniu_sys_radio_input:checked{border-color:#409eff;background-color:#409eff}.kniu_sys_radio_input:checked~.kniu_sys_radio_dot{display:block}.kniu_sys_radio_input:focus-visible{outline:2px solid rgba(64,158,255,.3);outline-offset:2px}.kniu_sys_radio:hover{color:#409eff}.kniu_sys_radio:hover .kniu_sys_radio_input{border-color:#409eff}.kniu_sys_radio[data-size="large"] .kniu_sys_radio_input{width:max(12px,calc(16 / var(--kniu_vw)));height:max(12px,calc(16 / var(--kniu_vw)))}.kniu_sys_radio[data-size="large"] .kniu_sys_radio_dot{width:max(5px,calc(6 / var(--kniu_vw)));height:max(5px,calc(6 / var(--kniu_vw)))}.kniu_sys_radio[data-size="small"]{font-size:12px}.kniu_sys_radio[data-size="small"] .kniu_sys_radio_input{width:max(12px,calc(12 / var(--kniu_vw)));height:max(12px,calc(12 / var(--kniu_vw)))}.kniu_sys_radio[data-size="small"] .kniu_sys_radio_dot{width:max(5px,calc(5 / var(--kniu_vw)));height:max(5px,calc(5 / var(--kniu_vw)))}.kniu_sys_radio[data-disabled="true"]{color:#c0c4cc;cursor:not-allowed}.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input{border-color:#dcdfe6;background-color:#f5f7fa;cursor:not-allowed}.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input:checked{border-color:#a0cfff;background-color:#a0cfff}</style><div class="kniu_sys_radio_group" role="radiogroup"></div><slot hidden></slot>`;
+        this.shadowRoot.innerHTML = `<style>${KNIU_RADIO_GROUP_CSS}</style><div class="kniu_sys_radio_group" role="radiogroup"></div><slot hidden></slot>`;
         this._group = this.shadowRoot.querySelector('.kniu_sys_radio_group');
         this._group.addEventListener('change', (event) => {
           const input = event.target;
@@ -3379,25 +3232,7 @@ var KniuUI = (function () {
         this._sizes = [10, 20, 50, 100];
         this._options = null;
         this.shadowRoot.innerHTML = `
-          <style>
-            :host{display:block}
-            .kniu_sys_page{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:calc(16 / var(--kniu_vw)) calc(6 / var(--kniu_vw));margin-top:calc(30 / var(--kniu_vw));font-size:13px;color:#606266}
-            .kniu_sys_page[hidden]{display:none}
-            .kniu_sys_page_pager{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
-            .kniu_sys_page_btn{min-width:max(28px,calc(30 / var(--kniu_vw)));height:max(28px,calc(30 / var(--kniu_vw)));padding:0 8px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;cursor:pointer;font-size:13px;font-family:inherit;transition:all .2s}
-            .kniu_sys_page_btn:hover:not([disabled]):not(.kniu_sys_page_btn_active){color:#409eff;border-color:#c6e2ff}
-            .kniu_sys_page_btn.kniu_sys_page_btn_active{color:#fff;background-color:#409eff;border-color:#409eff;cursor:default}
-            .kniu_sys_page_btn[disabled]{color:#c0c4cc;cursor:not-allowed;background-color:#fff}
-            .kniu_sys_page_btn[data-background="true"]:not(.kniu_sys_page_btn_active):not([disabled]){background-color:#f4f4f5}
-            .kniu_sys_page_sizes{width:max-content;min-width:0;font-size:13px}
-            .kniu_sys_page_jumper{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
-            .kniu_sys_page_jumper_input{width:46px;height:max(28px,calc(30 / var(--kniu_vw)));padding:0 6px;border:1px solid #dcdfe6;border-radius:4px;outline:0;color:#606266;font:inherit;text-align:center;box-sizing:border-box}
-            .kniu_sys_page_jumper_input{-moz-appearance:textfield}.kniu_sys_page_jumper_input::-webkit-inner-spin-button,.kniu_sys_page_jumper_input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
-            .kniu_sys_page_jumper_input:hover{border-color:#c0c4cc}.kniu_sys_page_jumper_input:focus{border-color:#409eff}
-            .kniu_sys_page_head,.kniu_sys_page_body{display:flex;align-items:center;flex-wrap:wrap;gap:6px;justify-content:center}
-            @media (min-width:calc(1024px - 60px)){.kniu_sys_page{margin-top:calc(16 / var(--kniu_vw));}}
-            @media (min-width:calc(1280px - 60px)){.kniu_sys_page{justify-content:flex-start}.kniu_sys_page_head,.kniu_sys_page_body{justify-content:flex-start}}
-          </style>
+          <style>${KNIU_PAGE_CSS}</style>
           <div class="kniu_sys_page" hidden>
             <div class="kniu_sys_page_head">
               <button class="kniu_sys_page_btn kniu_sys_page_first" type="button">首页</button>
@@ -3615,9 +3450,9 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this._fit = 'contain';
-        this.shadowRoot.innerHTML = `<style>:host{display:inline-block;vertical-align:middle;overflow:hidden;flex-shrink:0;background-color:#f5f7fa}.kniu_sys_image_group{display:flex;width:100%;height:100%;align-items:stretch}.kniu_sys_image_content{position:relative;flex:1;min-width:0;height:100%;display:flex;align-items:center;justify-content:flex-start;padding:0 12px;background-color:#fff;box-sizing:border-box;overflow:hidden}.kniu_sys_image_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_image_group[data-affix="true"] .kniu_sys_image_content{border:1px solid #dcdfe6}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_content{border-radius:0 4px 4px 0}.kniu_sys_image_group[data-has-append="true"] .kniu_sys_image_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_image_group[data-affix="true"]{height:40px}.kniu_sys_image_group:not([data-affix="true"]) .kniu_sys_image_content{padding:0;background-color:transparent}.kniu_sys_image_wrap{position:relative;width:100%;height:100%;overflow:hidden;background-color:inherit}.kniu_sys_image{display:block;width:100%;height:100%}.kniu_sys_image_status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background-color:inherit;color:#909399;font-size:12px}.kniu_sys_image_status[data-hidden="true"]{display:none}</style><div class="kniu_sys_image_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_image_affix kniu_sys_image_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_image_content"><div class="kniu_sys_image_wrap"><span class="kniu_sys_image_status">加载中…</span></div></div><span class="kniu_sys_image_affix kniu_sys_image_append"><slot name="append"></slot></span></div>`;
+        this.shadowRoot.innerHTML = `<style>${KNIU_IMAGE_CSS}</style><div class="kniu_sys_image_group" data-affix="false" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_image_affix kniu_sys_image_prepend"><slot name="prepend"></slot></span><div class="kniu_sys_image_content"><div class="kniu_sys_image_wrap"><span class="kniu_sys_image_status">加载中…</span></div></div><span class="kniu_sys_image_affix kniu_sys_image_append"><slot name="append"></slot></span></div>`;
         this._image = null;
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_image_group,.kniu_sys_image_wrap,.kniu_sys_image{width:100%;height:100%;box-sizing:border-box}');
+        adoptSharedStyle(this.shadowRoot, KNIU_IMAGE_OVERRIDES_CSS);
         this._status = this.shadowRoot.querySelector('.kniu_sys_image_status');
       }
       connectedCallback() {
@@ -3732,18 +3567,13 @@ var KniuUI = (function () {
         constructor() {
           super();
           attachComponentShadow(this);
-          this.shadowRoot.innerHTML = `<style>:host{display:block;width:100%}.kniu_sys_input_group{display:flex;width:100%;height:40px}.kniu_sys_input_wrap{position:relative;display:block;flex:1;min-width:0}.kniu_sys_input{display:block;width:100%;height:40px;padding:0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px/40px var(--kniu-font-family);box-sizing:border-box;transition:border-color .2s}.kniu_sys_input::placeholder{color:#c0c4cc}.kniu_sys_input:hover{border-color:#c0c4cc}.kniu_sys_input:focus{position:relative;z-index:1;border-color:#409eff}.kniu_sys_input:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_input_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input{border-radius:0 4px 4px 0}.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input{border-radius:4px 0 0 4px}.kniu_sys_input_group[data-has-prepend="true"][data-has-append="true"] .kniu_sys_input{border-radius:0}.kniu_sys_input_group[data-has-append-btn="true"] .kniu_sys_input_append,.kniu_sys_input_group[data-has-prepend-btn="true"] .kniu_sys_input_prepend{padding:0;align-items:stretch}.kniu_sys_input_append::slotted(kniu-btn),.kniu_sys_input_prepend::slotted(kniu-btn){display:flex;flex:1;align-items:center;justify-content:center;margin:0;width:100%;height:100%}</style><span class="kniu_sys_input_group" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_input_affix kniu_sys_input_prepend"><slot name="prepend"></slot></span><input class="kniu_sys_input" type="text"><span class="kniu_sys_input_affix kniu_sys_input_append"><slot name="append"></slot></span></span>`;
-          adoptSharedStyle(this.shadowRoot, ':host([data-invalid="true"]) .kniu_sys_input,:host([data-invalid="true"]) .kniu_sys_input_affix{border-color:#f56c6c}');
-          adoptSharedStyle(this.shadowRoot, '.kniu_sys_input:read-only:hover,.kniu_sys_input:read-only:focus{z-index:auto;border-color:#dcdfe6;outline:0;box-shadow:none;cursor:default}');
-          adoptSharedStyle(this.shadowRoot, '.kniu_sys_input_affix{width:var(--kniu-input-label-width,auto);flex-basis:var(--kniu-input-label-width,auto)}');
-          adoptSharedStyle(this.shadowRoot, '.kniu_sys_input_group[data-upload-append="true"]{height:auto;align-items:flex-start}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_wrap{display:none}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_append{display:block;flex:1;width:auto!important;flex-basis:auto!important;padding:0;border:0;background-color:transparent;line-height:normal;text-align:left}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_prepend{height:40px}.kniu_sys_input_group[data-upload-append="true"][data-has-prepend="true"]{display:block}.kniu_sys_input_group[data-upload-append="true"][data-has-prepend="true"] .kniu_sys_input_prepend{display:flex;align-self:flex-start;justify-content:flex-start;width:100%;min-width:100%;box-sizing:border-box;border:1px solid #dcdfe6;border-bottom:none;border-radius:4px 4px 0 0}@media (min-width:calc(1280px - 60px)){.kniu_sys_input_group[data-upload-append="true"][data-has-prepend="true"]{display:flex;align-items:flex-start}.kniu_sys_input_group[data-upload-append="true"][data-has-prepend="true"] .kniu_sys_input_prepend{width:auto;min-width:0;justify-content:center;border:1px solid #dcdfe6;border-right:0;border-radius:4px 0 0 4px}}');
+          this.shadowRoot.innerHTML = `<style>${KNIU_INPUT_CSS}</style><span class="kniu_sys_input_group" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_input_affix kniu_sys_input_prepend"><slot name="prepend"></slot></span><input class="kniu_sys_input" type="text"><span class="kniu_sys_input_affix kniu_sys_input_append"><slot name="append"></slot></span></span>`;
+          adoptSharedStyle(this.shadowRoot, KNIU_INPUT_STATES_CSS);
           this._input = this.shadowRoot.querySelector('.kniu_sys_input');
-          adoptSharedStyle(this.shadowRoot, '@media (min-width:calc(1280px - 60px)){.kniu_sys_input_group{height:40px}.kniu_sys_input{height:40px;min-height:40px;line-height:40px}.kniu_sys_input_affix{line-height:38px}}');
-          appendRawStyle(this.shadowRoot, '.kniu_sys_input_append::slotted(kniu-btn),.kniu_sys_input_prepend::slotted(kniu-btn){align-self:stretch;height:calc(100% + 2px);min-height:28px;margin-top:-1px;margin-bottom:-1px;vertical-align:top;box-sizing:border-box}');
+          appendRawStyle(this.shadowRoot, KNIU_INPUT_AFFIX_CSS);
           this._affixObserver = null;
           this._passwordVisible = false;
-          const passwordStyle = `.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input:not(textarea),.kniu_sys_input_wrap[data-clearable="true"] .kniu_sys_input:not(textarea){padding-right:40px}.kniu_sys_input_wrap[data-show-password="true"][data-clearable="true"] .kniu_sys_input:not(textarea){padding-right:72px}.kniu_sys_input_wrap[data-clearable="true"] textarea.kniu_sys_input{padding-right:32px}.kniu_sys_input_password,.kniu_sys_input_clear{position:absolute;z-index:2;top:0;right:0;display:flex;visibility:hidden;align-items:center;justify-content:center;width:36px;height:40px;padding:0;border:0;outline:0;background-color:transparent;color:#c0c4cc;font-size:17px;line-height:40px;text-align:center;cursor:pointer;opacity:0;pointer-events:none}.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input_password,.kniu_sys_input_wrap[data-clear-visible="true"] .kniu_sys_input_clear{visibility:visible;opacity:1;pointer-events:auto}.kniu_sys_input_wrap[data-show-password="true"] .kniu_sys_input_clear{right:34px}.kniu_sys_input_wrap[data-clear-visible="true"] textarea.kniu_sys_input ~ .kniu_sys_input_clear{top:8px;right:8px;width:auto;height:auto;line-height:1}.kniu_sys_input_password:hover,.kniu_sys_input_password:focus,.kniu_sys_input_clear:hover,.kniu_sys_input_clear:focus{color:#409eff}.kniu_sys_input_password[aria-disabled="true"],.kniu_sys_input_clear[aria-disabled="true"]{cursor:not-allowed;color:#dcdfe6}.kniu_sys_input_password_icon{width:18px;height:18px}`;
-          adoptSharedStyle(this.shadowRoot, '@media (min-width:calc(1280px - 60px)){.kniu_sys_input_password,.kniu_sys_input_clear{height:40px;line-height:40px}}');
+          adoptSharedStyle(this.shadowRoot, KNIU_INPUT_PASSWORD_CSS);
           const wrap = document.createElement('span');
           wrap.className = 'kniu_sys_input_wrap';
           const passwordButton = document.createElement('span');
@@ -3762,9 +3592,8 @@ var KniuUI = (function () {
           tipPanel.setAttribute('aria-hidden', 'true');
           this._input.replaceWith(wrap);
           wrap.append(this._input, clearButton, passwordButton, tipPanel);
-          adoptSharedStyle(this.shadowRoot, passwordStyle);
-          const tipStyle = '.kniu_sys_input_tip{position:fixed;z-index:10030;display:none;min-width:200px;max-width:calc(100vw - 16px);padding:8px 0;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;color:#606266;font-size:13px;line-height:1.6;text-align:left;white-space:normal;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.kniu_sys_input_tip[data-open="true"]{display:block}.kniu_sys_input_tip ul{margin:0;padding:0;list-style:none}.kniu_sys_input_tip li{margin:0;padding:4px 14px}.kniu_sys_input_tip--single{padding:8px 14px;color:#909399;white-space:pre-line}';
-          adoptSharedStyle(this.shadowRoot, tipStyle);
+          adoptSharedStyle(this.shadowRoot, KNIU_INPUT_PASSWORD_ACTIONS_CSS);
+          adoptSharedStyle(this.shadowRoot, KNIU_INPUT_TIP_CSS);
           this._wrap = wrap;
           this._passwordButton = passwordButton;
           this._clearButton = clearButton;
@@ -3789,8 +3618,8 @@ var KniuUI = (function () {
             if (this.shadowRoot.activeElement !== this._input) this._input.focus({ preventScroll: true });
           });
           this._bindControl(this._input);
-          adoptSharedStyle(this.shadowRoot, 'textarea.kniu_sys_input{height:auto;min-height:120px;padding:8px 12px;line-height:1.5;font:14px/1.5 var(--kniu-font-family);resize:vertical;white-space:pre-wrap;overflow:auto}.kniu_sys_input_group[data-is-textarea="true"]{height:auto;align-items:stretch}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"]{display:block}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{align-self:flex-start;display:flex;justify-content:flex-start;width:100%;min-width:100%;padding-top:0;padding-bottom:0;box-sizing:border-box;border:1px solid #dcdfe6;border-bottom:none;border-radius:4px 4px 0 0}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input{border-radius:0 0 4px 4px}@media (min-width:calc(1280px - 60px)){.kniu_sys_input_group[data-is-textarea="true"]{min-height:40px}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"]{display:flex}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{width:auto;min-width:0;justify-content:center;border:1px solid #dcdfe6;border-right:0;border-radius:4px 0 0 4px;height:40px}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input{border-radius:0 4px 4px 0}}');
-          appendRawStyle(this.shadowRoot, '.kniu_sys_input_group{height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_input{height:max(28px,calc(40 / var(--kniu_vw)));min-height:28px;line-height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_input_affix{line-height:max(26px,calc(38 / var(--kniu_vw)))}.kniu_sys_input_password,.kniu_sys_input_clear{height:max(28px,calc(40 / var(--kniu_vw)));line-height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_input_group[data-upload-append="true"]{height:auto}.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_prepend{height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_input_group[data-is-textarea="true"]{height:auto;min-height:28px}.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend{height:max(28px,calc(40 / var(--kniu_vw)))})');
+          adoptSharedStyle(this.shadowRoot, KNIU_INPUT_TEXTAREA_CSS);
+          appendRawStyle(this.shadowRoot, KNIU_INPUT_METRICS_CSS);
         }
         connectedCallback() {
           if (!this.hasAttribute('autocomplete')) this.setAttribute('autocomplete', 'off');
@@ -4008,7 +3837,7 @@ var KniuUI = (function () {
           super();
           attachComponentShadow(this);
           this._templateObserver = null;
-          this.shadowRoot.innerHTML = `<style>:host{display:block}.kniu_sys_input_group{display:grid;grid-template-columns:var(--kniu-label-width,80px) minmax(0,1fr);align-items:stretch;border:1px solid #dcdfe6;border-radius:4px;overflow:hidden;background-color:#fff}.kniu_sys_input_label{padding:0 12px;background-color:#f5f7fa;border-right:1px solid #dcdfe6;color:#606266;font-size:14px;line-height:1.5;text-align:right;box-sizing:border-box;min-height:40px;display:flex;align-items:center;justify-content:flex-end}.kniu_sys_input_label[data-required="true"]::before{content:"*";margin-right:4px;color:#f56c6c}.kniu_sys_input_content{display:flex;align-items:center;min-width:0;min-height:40px;padding:0 12px;background-color:#fff}.kniu_sys_input_group[data-position="left"] .kniu_sys_input_label{justify-content:flex-start}.kniu_sys_input_group[data-position="right"] .kniu_sys_input_label{justify-content:flex-end}:host([data-template-affix="true"]) .kniu_sys_input_label{justify-content:center;text-align:center}.kniu_sys_input_group[data-position="top"]{grid-template-columns:minmax(0,1fr);align-items:stretch}.kniu_sys_input_group[data-position="top"] .kniu_sys_input_label{padding:0 0 8px;min-height:auto;display:block;text-align:left;background-color:transparent;border-right:0}.kniu_sys_input_group[data-position="top"] .kniu_sys_input_content{padding:0}.kniu_sys_input_group[data-contains-input="true"]{border:0;border-radius:0;overflow:visible;background-color:transparent}.kniu_sys_input_group[data-has-label="false"]{border:0;border-radius:0;overflow:visible;background-color:transparent;grid-template-columns:minmax(0,1fr)}.kniu_sys_input_group[data-has-label="false"] .kniu_sys_input_label{background-color:transparent;border-right:0}.kniu_sys_input_group[data-contains-input="true"] .kniu_sys_input_content,.kniu_sys_input_group[data-has-label="false"] .kniu_sys_input_content{padding:0;background-color:transparent}</style><label class="kniu_sys_input_group" data-position="right" data-has-label="false" data-contains-input="false"><span class="kniu_sys_input_content"><slot></slot></span></label>`;
+          this.shadowRoot.innerHTML = `<style>${KNIU_INPUT_GROUP_CSS}</style><label class="kniu_sys_input_group" data-position="right" data-has-label="false" data-contains-input="false"><span class="kniu_sys_input_content"><slot></slot></span></label>`;
         }
         connectedCallback() {
           this._mountTemplates();
@@ -4098,30 +3927,11 @@ var KniuUI = (function () {
       constructor() {
         super();
         attachComponentShadow(this);
-        this.shadowRoot.innerHTML = `<style>
-          :host{display:block;width:100%}.kniu_sys_date_picker_group{display:flex;width:100%;height:40px}.kniu_sys_date_picker_input_wrap{position:relative;display:block;flex:1;min-width:0}.kniu_sys_date_picker_input{display:block;width:100%;height:40px;padding:0 38px 0 12px;border:1px solid #dcdfe6;border-radius:4px;outline:0;background-color:#fff;color:#606266;font:14px var(--kniu-font-family);cursor:pointer;box-sizing:border-box;transition:border-color .2s}.kniu_sys_date_picker_input:hover{border-color:#c0c4cc}.kniu_sys_date_picker_input:focus,:host([data-open="true"]) .kniu_sys_date_picker_input{position:relative;z-index:1;border-color:#409eff}.kniu_sys_date_picker_input:disabled{background-color:#f5f7fa;color:#c0c4cc;cursor:not-allowed}.kniu_sys_date_picker_calendar_icon{position:absolute;z-index:2;top:0;right:0;display:grid;width:38px;height:40px;place-items:center;color:#909399;pointer-events:none}.kniu_sys_date_picker_affix{display:none;align-items:center;justify-content:center;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;white-space:nowrap;box-sizing:border-box}.kniu_sys_date_picker_group[data-has-prepend="true"] .kniu_sys_date_picker_prepend{display:flex;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_date_picker_group[data-has-append="true"] .kniu_sys_date_picker_append{display:flex;border-left:0;border-radius:0 4px 4px 0}.kniu_sys_date_picker_group[data-has-prepend="true"] .kniu_sys_date_picker_input{border-radius:0 4px 4px 0}.kniu_sys_date_picker_group[data-has-append="true"] .kniu_sys_date_picker_input{border-radius:4px 0 0 4px}.kniu_sys_date_picker_group[data-has-prepend="true"][data-has-append="true"] .kniu_sys_date_picker_input{border-radius:0}
-          .kniu_sys_date_picker_panel{position:fixed;z-index:10020;width:calc(100vw - 16px);border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.kniu_sys_date_picker_panel[hidden]{display:none}.kniu_sys_date_picker_panel[data-placement="bottom"]{transform-origin:center top}.kniu_sys_date_picker_panel[data-placement="top"]{transform-origin:center bottom}.kniu_sys_date_picker_panel[data-state="open"][data-placement="bottom"]{animation:kniu_date_in_bottom .18s ease-out both}.kniu_sys_date_picker_panel[data-state="open"][data-placement="top"]{animation:kniu_date_in_top .18s ease-out both}.kniu_sys_date_picker_panel[data-state="closing"][data-placement="bottom"]{animation:kniu_date_out_bottom .15s ease-in both}.kniu_sys_date_picker_panel[data-state="closing"][data-placement="top"]{animation:kniu_date_out_top .15s ease-in both}@keyframes kniu_date_in_bottom{from{opacity:0;transform:translateY(-8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_in_top{from{opacity:0;transform:translateY(8px) scaleY(.96)}to{opacity:1;transform:translateY(0) scaleY(1)}}@keyframes kniu_date_out_bottom{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(-6px) scaleY(.97)}}@keyframes kniu_date_out_top{from{opacity:1;transform:translateY(0) scaleY(1)}to{opacity:0;transform:translateY(6px) scaleY(.97)}}.kniu_sys_date_picker_head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.kniu_sys_date_picker_head button,.kniu_sys_date_picker_day,.kniu_sys_date_picker_chooser button,.kniu_sys_date_picker_title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.kniu_sys_date_picker_head>button{height:30px;border-radius:4px;font-size:17px}.kniu_sys_date_picker_head button:hover,.kniu_sys_date_picker_day:hover,.kniu_sys_date_picker_chooser button:hover,.kniu_sys_date_picker_title button:hover{color:#409eff}.kniu_sys_date_picker_title{display:flex;align-items:center;justify-content:center;gap:0;color:#303133;font-size:15px;font-weight:500}.kniu_sys_date_picker_title button{padding:6px 4px;border-radius:4px;font:inherit}.kniu_sys_date_picker_week,.kniu_sys_date_picker_days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.kniu_sys_date_picker_week[hidden],.kniu_sys_date_picker_days[hidden],.kniu_sys_date_picker_time[hidden]{display:none}.kniu_sys_date_picker_week{border-bottom:1px solid #ebeef5}.kniu_sys_date_picker_week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.kniu_sys_date_picker_day{justify-self:center;width:30px;height:30px;padding:0;border-radius:50%;font-size:12px}.kniu_sys_date_picker_day.kniu_sys_date_picker_other{color:#c0c4cc}.kniu_sys_date_picker_day.kniu_sys_date_picker_today{color:#409eff;font-weight:600}.kniu_sys_date_picker_day.kniu_sys_date_picker_selected,.kniu_sys_date_picker_chooser button.kniu_sys_date_picker_selected{background-color:#409eff;color:#fff}.kniu_sys_date_picker_chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.kniu_sys_date_picker_chooser[hidden]{display:none}.kniu_sys_date_picker_chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;padding:0;border-radius:4px;font-size:13px;text-align:center}.kniu_sys_date_picker_time{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:10px 12px;border-bottom:1px solid #ebeef5}.kniu_sys_date_picker_time::before{content:'选择时间';margin-right:auto;color:#606266;font-size:13px}.kniu_sys_date_picker_time_field{position:relative}.kniu_sys_date_picker_time_value{width:48px;height:30px;padding:0;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;cursor:pointer}.kniu_sys_date_picker_time_value:hover,.kniu_sys_date_picker_time_value:focus,.kniu_sys_date_picker_time_field[data-open="true"] .kniu_sys_date_picker_time_value{border-color:#409eff;outline:0}.kniu_sys_date_picker_time_options{position:absolute;top:34px;left:0;z-index:4;display:block;width:48px;max-height:168px;padding:4px 0;overflow-y:auto;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.1);box-sizing:border-box}.kniu_sys_date_picker_time_options[hidden]{display:none}.kniu_sys_date_picker_time_option{display:block;width:100%;height:28px;padding:0;border:0;background-color:#fff;color:#606266;font-size:12px;text-align:center;cursor:pointer}.kniu_sys_date_picker_time_option:hover{background-color:#f5f7fa}.kniu_sys_date_picker_time_option.kniu_sys_date_picker_selected{background-color:#ecf5ff;color:#409eff;font-weight:600}.kniu_sys_date_picker_footer{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-top:1px solid #ebeef5}.kniu_sys_date_picker_date_preview{min-width:0;overflow:hidden;color:#606266;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.kniu_sys_date_picker_footer div{display:flex;flex:none;gap:3px}.kniu_sys_date_picker_action{height:28px;padding:0 5px;border:0;border-radius:3px;background-color:#fff;color:#409eff;cursor:pointer}.kniu_sys_date_picker_action:hover{background-color:#ecf5ff}.kniu_sys_date_picker_action.primary{border:1px solid #dcdfe6;background-color:#fff;color:#606266}.kniu_sys_date_picker_action.primary:hover{color:#409eff;border-color:#c6e2ff}@media(min-width:361px){.kniu_sys_date_picker_panel{width:322px}}@media(prefers-reduced-motion:reduce){.kniu_sys_date_picker_panel[data-state]{animation:none}}
-        </style><span class="kniu_sys_date_picker_group" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_date_picker_affix kniu_sys_date_picker_prepend"><slot name="prepend"></slot></span><span class="kniu_sys_date_picker_input_wrap"><input class="kniu_sys_date_picker_input" type="text" readonly placeholder="请选择日期时间"><span class="kniu_sys_date_picker_calendar_icon"><kniu-icon icon="date"></kniu-icon></span></span><span class="kniu_sys_date_picker_affix kniu_sys_date_picker_append"><slot name="append"></slot></span></span><section class="kniu_sys_date_picker_panel" hidden><div class="kniu_sys_date_picker_head"><button type="button" data-action="prev-year">«</button><button type="button" data-action="prev-month">‹</button><div class="kniu_sys_date_picker_title"><button type="button" data-action="choose-year"></button><button type="button" data-action="choose-month"></button></div><button type="button" data-action="next-month">›</button><button type="button" data-action="next-year">»</button></div><div class="kniu_sys_date_picker_week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div class="kniu_sys_date_picker_days"></div><div class="kniu_sys_date_picker_chooser" hidden></div><div class="kniu_sys_date_picker_time"><span class="kniu_sys_date_picker_time_field" data-time-field="hour"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="小时"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span><span data-time-separator="minute">:</span><span class="kniu_sys_date_picker_time_field" data-time-field="minute"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="分钟"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span><span data-time-separator="second">:</span><span class="kniu_sys_date_picker_time_field" data-time-field="second"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="秒"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span></div><div class="kniu_sys_date_picker_footer"><span class="kniu_sys_date_picker_date_preview"></span><div><button class="kniu_sys_date_picker_action" type="button" data-action="reset">重置</button><button class="kniu_sys_date_picker_action" type="button" data-action="today">现在</button><button class="kniu_sys_date_picker_action" type="button" data-action="confirm">确定</button></div></div></section>`;
+        this.shadowRoot.innerHTML = `<style>${KNIU_DATE_PICKER_CSS}</style><span class="kniu_sys_date_picker_group" data-has-prepend="false" data-has-append="false"><span class="kniu_sys_date_picker_affix kniu_sys_date_picker_prepend"><slot name="prepend"></slot></span><span class="kniu_sys_date_picker_input_wrap"><input class="kniu_sys_date_picker_input" type="text" readonly placeholder="请选择日期时间"><span class="kniu_sys_date_picker_calendar_icon"><kniu-icon icon="date"></kniu-icon></span></span><span class="kniu_sys_date_picker_affix kniu_sys_date_picker_append"><slot name="append"></slot></span></span><section class="kniu_sys_date_picker_panel" hidden><div class="kniu_sys_date_picker_head"><button type="button" data-action="prev-year">«</button><button type="button" data-action="prev-month">‹</button><div class="kniu_sys_date_picker_title"><button type="button" data-action="choose-year"></button><button type="button" data-action="choose-month"></button></div><button type="button" data-action="next-month">›</button><button type="button" data-action="next-year">»</button></div><div class="kniu_sys_date_picker_week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div class="kniu_sys_date_picker_days"></div><div class="kniu_sys_date_picker_chooser" hidden></div><div class="kniu_sys_date_picker_time"><span class="kniu_sys_date_picker_time_field" data-time-field="hour"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="小时"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span><span data-time-separator="minute">:</span><span class="kniu_sys_date_picker_time_field" data-time-field="minute"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="分钟"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span><span data-time-separator="second">:</span><span class="kniu_sys_date_picker_time_field" data-time-field="second"><button class="kniu_sys_date_picker_time_value" type="button" aria-label="秒"></button><span class="kniu_sys_date_picker_time_options" hidden></span></span></div><div class="kniu_sys_date_picker_footer"><span class="kniu_sys_date_picker_date_preview"></span><div><button class="kniu_sys_date_picker_action" type="button" data-action="reset">重置</button><button class="kniu_sys_date_picker_action" type="button" data-action="today">现在</button><button class="kniu_sys_date_picker_action" type="button" data-action="confirm">确定</button></div></div></section>`;
         const datePanel = this.shadowRoot.querySelector('.kniu_sys_date_picker_panel');
         if (datePanel) datePanel.classList.add('kniu_sys_dropdown_panel');
         adoptDropdownStyle(this.shadowRoot);
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_day.kniu_sys_date_picker_disabled{color:#c0c4cc;cursor:not-allowed}.kniu_sys_date_picker_day.kniu_sys_date_picker_disabled:hover{color:#c0c4cc}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_head[hidden]{display:none}.kniu_sys_date_picker_time::before{content:attr(data-label)}.kniu_sys_date_picker_day[data-mark]{position:relative;font-size:11px}.kniu_sys_date_picker_day[data-mark]::after{content:"";position:absolute;top:2px;right:2px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.kniu_sys_date_picker_day.kniu_sys_date_picker_selected[data-mark]::after{background-color:#fff}.kniu_sys_date_picker_panel[data-range="true"]{width:min(650px,calc(100vw - 16px))}.kniu_sys_date_picker_range_calendars{display:grid;grid-template-columns:repeat(2,280px);overflow-x:auto}.kniu_sys_date_picker_range_calendars[hidden]{display:none}.kniu_sys_date_picker_range_pane+ .kniu_sys_date_picker_range_pane{border-left:1px solid #ebeef5}.kniu_sys_date_picker_range_head{display:grid;grid-template-columns:30px 30px 1fr 30px 30px;align-items:center;padding:10px 12px 4px}.kniu_sys_date_picker_range_head button,.kniu_sys_date_picker_range_day,.kniu_sys_date_picker_range_chooser button,.kniu_sys_date_picker_range_title button{border:0;background-color:transparent;color:#606266;cursor:pointer}.kniu_sys_date_picker_range_head button{height:30px;border-radius:4px;font-size:17px}.kniu_sys_date_picker_range_head button:hover,.kniu_sys_date_picker_range_day:hover,.kniu_sys_date_picker_range_chooser button:hover,.kniu_sys_date_picker_range_title button:hover{color:#409eff}.kniu_sys_date_picker_range_title{display:flex;align-items:center;justify-content:center;color:#303133;font-size:15px;font-weight:500}.kniu_sys_date_picker_range_title button{padding:6px 4px;border-radius:4px;font:inherit}.kniu_sys_date_picker_range_week,.kniu_sys_date_picker_range_days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin:0 12px}.kniu_sys_date_picker_range_week[hidden],.kniu_sys_date_picker_range_days[hidden],.kniu_sys_date_picker_range_chooser[hidden]{display:none}.kniu_sys_date_picker_range_week{border-bottom:1px solid #ebeef5}.kniu_sys_date_picker_range_week span{height:30px;color:#606266;font-size:12px;line-height:30px;text-align:center}.kniu_sys_date_picker_range_day{position:relative;justify-self:stretch;height:30px;padding:0;font-size:12px}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_other{color:#c0c4cc}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_in_range{background-color:#ecf5ff;color:#409eff}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_start,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_end{border-radius:4px;background-color:#409eff;color:#fff}.kniu_sys_date_picker_range_day[data-mark]{font-size:11px}.kniu_sys_date_picker_range_day[data-mark]::after{content:"";position:absolute;top:2px;right:4px;width:4px;height:4px;border-radius:50%;background-color:#f56c6c}.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_start[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_end[data-mark]::after{background-color:#fff}.kniu_sys_date_picker_range_chooser{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,1fr);place-items:center;gap:8px;min-height:224px;padding:18px 16px}.kniu_sys_date_picker_range_chooser button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:52px;border-radius:4px;font-size:13px}.kniu_sys_date_picker_range_chooser button.kniu_sys_date_picker_selected{background-color:#409eff;color:#fff}@media(min-width:621px){.kniu_sys_date_picker_range_calendars{grid-template-columns:repeat(2,minmax(280px,1fr))}}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel,.kniu_sys_date_picker_panel[data-range="true"]{width:min(218px,calc(100vw - 16px))}.kniu_sys_date_picker_head,.kniu_sys_date_picker_range_head{grid-template-columns:24px 24px minmax(0,1fr) 24px 24px;padding:6px 6px 2px}.kniu_sys_date_picker_head>button,.kniu_sys_date_picker_range_head button{height:26px;font-size:14px}.kniu_sys_date_picker_title,.kniu_sys_date_picker_range_title{font-size:12px;white-space:nowrap}.kniu_sys_date_picker_title button,.kniu_sys_date_picker_range_title button{padding:4px 2px}.kniu_sys_date_picker_title[data-lang="en"] [data-action="choose-month"],.kniu_sys_date_picker_range_title[data-lang="en"] [data-range-choose="month"]{order:-1}.kniu_sys_date_picker_week,.kniu_sys_date_picker_days,.kniu_sys_date_picker_range_week,.kniu_sys_date_picker_range_days{gap:0;margin:0 6px}.kniu_sys_date_picker_days,.kniu_sys_date_picker_range_days{padding:4px 0}.kniu_sys_date_picker_week span,.kniu_sys_date_picker_range_week span{height:24px;font-size:10px;line-height:24px}.kniu_sys_date_picker_day,.kniu_sys_date_picker_range_day{height:26px;font-size:10px}.kniu_sys_date_picker_day{width:26px}.kniu_sys_date_picker_day[data-mark],.kniu_sys_date_picker_range_day[data-mark]{font-size:8px}.kniu_sys_date_picker_day.kniu_sys_date_picker_selected[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_in_range[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_start[data-mark]::after,.kniu_sys_date_picker_range_day.kniu_sys_date_picker_range_end[data-mark]::after{display:none}.kniu_sys_date_picker_chooser,.kniu_sys_date_picker_range_chooser{grid-template-columns:repeat(3,minmax(0,1fr));height:189px;min-height:0;padding:8px;gap:4px;box-sizing:border-box}.kniu_sys_date_picker_chooser[data-mode="year"],.kniu_sys_date_picker_range_chooser[data-mode="year"]{grid-template-rows:repeat(5,minmax(0,1fr))}.kniu_sys_date_picker_chooser[data-mode="month"],.kniu_sys_date_picker_range_chooser[data-mode="month"]{grid-template-rows:repeat(4,minmax(0,1fr))}.kniu_sys_date_picker_chooser button,.kniu_sys_date_picker_range_chooser button{min-height:0;font-size:11px}.kniu_sys_date_picker_time{gap:2px;padding:6px}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time[hidden]{display:flex;visibility:hidden}.kniu_sys_date_picker_time::before{font-size:10px}.kniu_sys_date_picker_time_value{width:38px;height:26px;font-size:11px}.kniu_sys_date_picker_time_options{top:29px;width:38px;max-height:140px}.kniu_sys_date_picker_time_option{height:25px}.kniu_sys_date_picker_footer{padding:5px 6px}.kniu_sys_date_picker_action{width:42px;height:25px;padding:0;font-size:11px}.kniu_sys_date_picker_range_calendars{grid-template-columns:minmax(0,1fr);overflow:visible}.kniu_sys_date_picker_range_pane+ .kniu_sys_date_picker_range_pane{border-top:1px solid #ebeef5;border-left:0}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"]{display:grid;width:min(350px,calc(100vw - 16px));grid-template-columns:minmax(0,218px) minmax(0,132px)}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_head{grid-column:1;grid-row:1}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_week{grid-column:1;grid-row:2}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_days{grid-column:1;grid-row:3}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_chooser{grid-column:1;grid-row:2 / span 2}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_range_calendars{grid-column:1;grid-row:1 / span 3}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time{display:grid;grid-column:2;grid-row:1 / span 3;align-self:start;width:100%;height:223px;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch;gap:0;padding:0;overflow:hidden;border-bottom:0;border-left:1px solid #ebeef5;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[hidden]{display:grid;visibility:hidden}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time::before,.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time>span:not(.kniu_sys_date_picker_time_field){display:none}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field{display:flex;min-width:0;height:223px;overflow:hidden;flex-direction:column;border-left:1px solid #ebeef5;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field:first-of-type{border-left:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field::before{content:attr(data-label);display:block;flex:none;height:34px;border-bottom:1px solid #ebeef5;color:#606266;font-size:10px;line-height:34px;text-align:center;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_value{display:none}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options[hidden]{position:static;display:block;width:100%;height:189px;max-height:189px;padding:0;overflow-x:hidden;overflow-y:auto;border:0;border-radius:0;background-color:#fff;box-shadow:none;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_option{height:25px}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_footer{grid-column:1 / -1;grid-row:4}.kniu_sys_date_picker_panel[data-type="datetime"][data-range="true"]{width:min(350px,calc(100vw - 16px))}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"])>.kniu_sys_date_picker_head{grid-column:1 / -1;grid-row:1}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"])>.kniu_sys_date_picker_time{grid-column:2;grid-row:2 / span 2;height:189px}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_field{height:189px}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_field::before{height:25px;line-height:25px}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options[hidden]{height:164px;max-height:164px}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options{scrollbar-width:none}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options:hover{scrollbar-width:thin;scrollbar-color:#c0c4cc transparent}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options::-webkit-scrollbar{width:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options:hover::-webkit-scrollbar{width:6px}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options::-webkit-scrollbar-thumb{border-radius:6px;background-color:#c0c4cc}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options::-webkit-scrollbar-track{background-color:transparent}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time{position:relative;border-left:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field{border-left:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field::before{border-bottom:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field:not(:first-of-type) .kniu_sys_date_picker_time_options{border-left:1px solid #dcdfe6}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time::after{content:"";position:absolute;z-index:2;top:34px;right:0;bottom:0;left:0;border:1px solid #dcdfe6;pointer-events:none;box-sizing:border-box}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"])>.kniu_sys_date_picker_time::after{top:25px}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_week,.kniu_sys_date_picker_range_week{border-bottom:0}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_head,.kniu_sys_date_picker_range_head{border-bottom:1px solid #ebeef5}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options[hidden]{border:1px solid #dcdfe6}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time::after{display:none}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field:not(:first-of-type) .kniu_sys_date_picker_time_options{border-left:0}.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options[hidden]{height:185px;max-height:185px}.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options[hidden]{height:160px;max-height:160px}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-show-hour="false"] [data-time-field="minute"] .kniu_sys_date_picker_time_options,.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-show-hour="false"][data-show-minute="false"] [data-time-field="second"] .kniu_sys_date_picker_time_options{border-left:1px solid #dcdfe6!important}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time{padding-right:4px}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[hidden]{display:none!important}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_time[data-show-seconds="false"]{grid-template-columns:repeat(2,minmax(0,1fr))}.kniu_sys_date_picker_time[data-show-seconds="false"] [data-time-field="second"],.kniu_sys_date_picker_time[data-show-seconds="false"] [data-time-separator="second"]{display:none!important}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_panel[data-type="datetime"][data-show-seconds="false"]{width:min(306px,calc(100vw - 16px));grid-template-columns:minmax(0,218px) minmax(0,88px)}.kniu_sys_date_picker_panel[data-type="datetime"][data-show-seconds="false"]>.kniu_sys_date_picker_time{grid-template-columns:repeat(2,minmax(0,1fr))}.kniu_sys_date_picker_panel[data-type="datetime"][data-range="true"][data-show-seconds="false"]{width:min(306px,calc(100vw - 16px))}');
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_date_picker_time[data-show-hour="false"] [data-time-field="hour"],.kniu_sys_date_picker_time[data-show-minute="false"] [data-time-field="minute"],.kniu_sys_date_picker_time[data-show-seconds="false"] [data-time-field="second"]{display:none!important}.kniu_sys_date_picker_time[data-show-minute-separator="false"] [data-time-separator="minute"],.kniu_sys_date_picker_time[data-show-second-separator="false"] [data-time-separator="second"]{display:none!important}.kniu_sys_date_picker_panel[data-type="datetime"][data-time-columns="1"]{width:min(262px,calc(100vw - 16px))!important;grid-template-columns:minmax(0,218px) minmax(0,44px)!important}.kniu_sys_date_picker_panel[data-type="datetime"][data-time-columns="2"]{width:min(306px,calc(100vw - 16px))!important;grid-template-columns:minmax(0,218px) minmax(0,88px)!important}.kniu_sys_date_picker_panel[data-type="datetime"][data-time-columns="3"]{width:min(350px,calc(100vw - 16px))!important;grid-template-columns:minmax(0,218px) minmax(0,132px)!important}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-time-columns="1"]{grid-template-columns:minmax(0,1fr)!important}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-time-columns="2"]{grid-template-columns:repeat(2,minmax(0,1fr))!important}.kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-time-columns="3"]{grid-template-columns:repeat(3,minmax(0,1fr))!important}');
+        adoptSharedStyle(this.shadowRoot, KNIU_DATE_PICKER_OVERRIDES_CSS);
         this._input = this.shadowRoot.querySelector('.kniu_sys_date_picker_input');
         this._panel = this.shadowRoot.querySelector('.kniu_sys_date_picker_panel');
         this._days = this.shadowRoot.querySelector('.kniu_sys_date_picker_days');
@@ -5027,9 +4837,7 @@ var KniuUI = (function () {
         attachComponentShadow(this);
         this._files = [];
         this._objectUrls = new Map();
-        this.shadowRoot.innerHTML = `<style>
-          :host{display:block;width:100%;color:#606266;font:14px/1.5 var(--kniu-font-family)}:host([disabled]){background-color:transparent!important}.kniu_sys_upload_bar{display:flex;align-items:stretch;width:100%;min-height:max(28px,calc(40 / var(--kniu_vw)))}.kniu_sys_upload_hint{display:flex;flex:1;align-items:center;min-width:0;padding:0 12px;border:1px solid #dcdfe6;border-right:0;background-color:#f5f7fa;color:#c0c4cc;box-sizing:border-box}.kniu_sys_upload_btn{flex:none;padding:0 20px;border:1px solid #409eff;border-radius:0 4px 4px 0;background-color:#409eff;color:#fff;font:inherit;cursor:pointer}.kniu_sys_upload_btn:hover{background-color:#66b1ff;border-color:#66b1ff}.kniu_sys_upload_btn:focus-visible{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}.kniu_sys_upload_btn:disabled{background-color:#a0cfff;border-color:#a0cfff;cursor:not-allowed}.kniu_sys_upload_input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.kniu_sys_upload_wall{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}.kniu_sys_upload_item{position:relative;width:160px;height:160px;overflow:hidden;background-color:#f5f7fa}.kniu_sys_upload_image{display:block;width:100%;height:100%;object-fit:contain}.kniu_sys_upload_remove{position:absolute;top:8px;right:8px;display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background-color:#aab4c4;color:#fff;font:18px/1 var(--kniu-font-family);cursor:pointer}.kniu_sys_upload_remove:hover{background-color:#f56c6c}.kniu_sys_upload_empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#c0c4cc;font-size:18px;background-image:linear-gradient(135deg,#f7f9fc,#f1f4fa)}.kniu_sys_upload_empty kniu-icon{width:38px;height:38px}
-        </style><div class="kniu_sys_upload_bar"><span class="kniu_sys_upload_hint"></span><button class="kniu_sys_upload_btn" type="button"><slot>选择图片</slot></button><input class="kniu_sys_upload_input" type="file"></div><div class="kniu_sys_upload_wall" aria-live="polite"></div>`;
+        this.shadowRoot.innerHTML = `<style>${KNIU_UPLOAD_CSS}</style><div class="kniu_sys_upload_bar"><span class="kniu_sys_upload_hint"></span><button class="kniu_sys_upload_btn" type="button"><slot>选择图片</slot></button><input class="kniu_sys_upload_input" type="file"></div><div class="kniu_sys_upload_wall" aria-live="polite"></div>`;
         this._input = this.shadowRoot.querySelector('.kniu_sys_upload_input');
         this._button = this.shadowRoot.querySelector('.kniu_sys_upload_btn');
         this._hint = this.shadowRoot.querySelector('.kniu_sys_upload_hint');
@@ -5202,18 +5010,7 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this.shadowRoot.innerHTML =
-          '<style>' +
-          ':host{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;line-height:0;font-size:inherit;flex-shrink:0;width:1em;height:1em}' +
-          ':host([hidden]){display:none}' +
-          '.kniu_sys_icon_glyph{display:none;width:100%;height:100%;font-size:1em;font-style:normal;font-weight:400;line-height:1;text-align:center}' +
-          ':host(.kniu_sys_icon_has_glyph) .kniu_sys_icon_glyph{display:block}' +
-          ':host(.kniu_sys_icon_has_glyph) slot{display:none}' +
-          '.kniu_sys_icon_glyph svg{display:block;width:100%;height:100%;overflow:visible}' +
-          ':host([data-spin]) .kniu_sys_icon_glyph{animation:kniu_sys_icon_spin .8s linear infinite}' +
-          '@keyframes kniu_sys_icon_spin{to{transform:rotate(360deg)}}' +
-          '@media(prefers-reduced-motion:reduce){:host([data-spin]) .kniu_sys_icon_glyph{animation:none}}' +
-          '::slotted(*){display:inline-flex;vertical-align:middle}' +
-          '</style>' +
+          '<style>' + KNIU_ICON_CSS + '</style>' +
           '<span class="kniu_sys_icon_glyph"></span><slot></slot>';
       }
       connectedCallback() { this._render(); }
@@ -5254,15 +5051,7 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this.shadowRoot.innerHTML =
-          '<style>' +
-          ':host{display:inline-flex;position:relative;vertical-align:middle;line-height:0;flex-shrink:0}' +
-          ':host([hidden]){display:none}' +
-          ':host([unstyled]){background-color:transparent;border:0;padding:0}' +
-          '.kniu_sys_badge_indicator{position:absolute;top:0;right:0;transform:translate(50%,-50%);box-sizing:border-box;pointer-events:none;display:flex;align-items:center;justify-content:center}' +
-          '.kniu_sys_badge_indicator[data-shape="dot"]{width:8px;height:8px;border-radius:50%;background-color:#f56c6c;border:1.5px solid #fff}' +
-          '.kniu_sys_badge_indicator[data-shape="sup"]{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background-color:#f56c6c;color:#fff;font-size:12px;line-height:18px;font-weight:600;border:1.5px solid #fff;white-space:nowrap}' +
-          ':host([unstyled]) .kniu_sys_badge_indicator{border-color:transparent}' +
-          '</style>' +
+          '<style>' + KNIU_BADGE_CSS + '</style>' +
           '<slot></slot>' +
           '<span class="kniu_sys_badge_indicator" aria-hidden="true"></span>';
       }
@@ -5307,7 +5096,7 @@ var KniuUI = (function () {
       constructor() {
         super();
         attachComponentShadow(this);
-        this.shadowRoot.innerHTML = `<style>:host{--kniu-tag-color:#409eff;--kniu-tag-bg:#ecf5ff;--kniu-tag-border:#d9ecff;display:inline-flex;vertical-align:middle}.kniu_sys_tag{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:24px;padding:0 9px;border:1px solid var(--kniu-tag-border);border-radius:4px;background-color:var(--kniu-tag-bg);color:var(--kniu-tag-color);font:12px/1 var(--kniu-font-family);white-space:nowrap;box-sizing:border-box}:host([type="success"]){--kniu-tag-color:#67c23a;--kniu-tag-bg:#f0f9eb;--kniu-tag-border:#e1f3d8}:host([type="warning"]){--kniu-tag-color:#e6a23c;--kniu-tag-bg:#fdf6ec;--kniu-tag-border:#faecd8}:host([type="danger"]){--kniu-tag-color:#f56c6c;--kniu-tag-bg:#fef0f0;--kniu-tag-border:#fde2e2}:host([type="info"]){--kniu-tag-color:#909399;--kniu-tag-bg:#f4f4f5;--kniu-tag-border:#e9e9eb}:host([effect="dark"]){--kniu-tag-bg:var(--kniu-tag-color);--kniu-tag-border:var(--kniu-tag-color)}:host([effect="dark"]) .kniu_sys_tag{color:#fff}:host([effect="plain"]){--kniu-tag-bg:#fff}:host([size="large"]) .kniu_sys_tag{height:28px;padding:0 11px;font-size:13px}:host([size="small"]) .kniu_sys_tag{height:20px;padding:0 7px}:host([round]) .kniu_sys_tag{border-radius:999px}:host([disabled]){opacity:.55;pointer-events:none}.kniu_sys_tag_close{display:none;width:14px;height:14px;padding:0;border:0;border-radius:50%;background-color:transparent;color:inherit;font:14px/12px var(--kniu-font-family);cursor:pointer}:host([closable]) .kniu_sys_tag_close{display:inline-flex;align-items:center;justify-content:center}</style><span class="kniu_sys_tag"><slot></slot><button class="kniu_sys_tag_close" type="button" aria-label="关闭">×</button></span>`;
+        this.shadowRoot.innerHTML = `<style>${KNIU_TAG_CSS}</style><span class="kniu_sys_tag"><slot></slot><button class="kniu_sys_tag_close" type="button" aria-label="关闭">×</button></span>`;
         this.shadowRoot.querySelector('.kniu_sys_tag_close').addEventListener('click', (event) => {
           event.stopPropagation();
           if (this.hasAttribute('disabled')) return;
@@ -5326,7 +5115,7 @@ var KniuUI = (function () {
       constructor() {
         super();
         attachComponentShadow(this);
-        this.shadowRoot.innerHTML = `<style>:host{--kniu-status-color:#409eff;display:inline-flex;vertical-align:middle}:host([type="success"]){--kniu-status-color:#67c23a}:host([type="warning"]){--kniu-status-color:#e6a23c}:host([type="danger"]){--kniu-status-color:#f56c6c}:host([type="info"]){--kniu-status-color:#909399}.kniu_sys_status{display:inline-flex;align-items:center;gap:6px;color:#606266;font:14px/1.5 var(--kniu-font-family);white-space:nowrap}.kniu_sys_status_dot{width:6px;height:6px;border-radius:50%;background-color:var(--kniu-status-color);flex:none}:host([size="large"]) .kniu_sys_status{font-size:16px}:host([size="large"]) .kniu_sys_status_dot{width:8px;height:8px}:host([size="small"]) .kniu_sys_status{gap:5px;font-size:12px}:host([size="small"]) .kniu_sys_status_dot{width:5px;height:5px}</style><span class="kniu_sys_status"><i class="kniu_sys_status_dot" aria-hidden="true"></i><slot></slot></span>`;
+        this.shadowRoot.innerHTML = `<style>${KNIU_STATUS_CSS}</style><span class="kniu_sys_status"><i class="kniu_sys_status_dot" aria-hidden="true"></i><slot></slot></span>`;
       }
     }
     customElements.define('kniu-status', KniuSysStatus);
@@ -5357,14 +5146,7 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this.shadowRoot.innerHTML =
-          '<style>' +
-          ':host{display:flex;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box;padding:40px 0;color:#909399;font-size:14px;line-height:1.5;text-align:center}' +
-          ':host([hidden]){display:none}' +
-          '.kniu_sys_empty_img{width:200px;height:128px;margin-bottom:16px;color:#C0C4CC}' +
-          '.kniu_sys_empty_img svg{display:block;width:100%;height:100%;fill:currentColor}' +
-          '.kniu_sys_empty_text{color:#909399}' +
-          '::slotted(*){margin-top:8px;color:#909399}' +
-          '</style>' +
+          '<style>' + KNIU_EMPTY_CSS + '</style>' +
           '<span class="kniu_sys_empty_img">' + EMPTY_SVG + '</span>' +
           '<span class="kniu_sys_empty_text"></span>' +
           '<slot></slot>';
@@ -5459,16 +5241,10 @@ var KniuUI = (function () {
       ['markdown']
     ];
 
-    /**
-     * 给内容里的表格补一层横向滚动父元素（渲染态装饰）。
-     * 包裹动作会把光标挤到编辑器根节点，因此 `skipNode`（当前选区锚点）落在表内时跳过，
-     * 交由失焦兜底；表内嵌套的表格不包裹（避免撑破单元格）。
-     */
     function wrapEditorTables(editor, skipNode) {
       wrapTablesIn(editor, skipNode || null);
     }
 
-    /** 去掉渲染态包裹层：取值 / 源码模式 / 保存内容都还原为裸 `<table>`。 */
     function stripEditorTableWraps(root) {
       unwrapTablesIn(root);
     }
@@ -5479,133 +5255,6 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this.shadowRoot.innerHTML = [
-          '<style>',
-          ':host{display:block;width:100%}',
-          '.kniu_sys_editor_group{width:100%}',
-          '.kniu_sys_editor_affix{display:none;align-items:center;justify-content:center;align-self:flex-start;flex:none;padding:0 20px;border:1px solid #dcdfe6;background-color:#f5f7fa;color:#909399;font-size:14px;line-height:38px;text-align:center;white-space:nowrap;box-sizing:border-box}',
-          '.kniu_sys_editor_group[data-has-prepend="true"] .kniu_sys_editor_prepend{display:flex;justify-content:flex-start;width:100%;min-width:100%;height:max(28px,calc(40 / var(--kniu_vw)));border:calc(1 / var(--kniu_vw)) solid #dcdfe6;border-bottom:none;border-radius:calc(4 / var(--kniu_vw)) calc(4 / var(--kniu_vw)) 0 0}',
-          '.kniu_sys_editor_main{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;overflow:hidden}',
-          '.kniu_sys_editor_group[data-has-prepend="true"] .kniu_sys_editor_main{border-radius:0 0 calc(4 / var(--kniu_vw)) calc(4 / var(--kniu_vw))}',
-          '.kniu_sys_editor_toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:6px 8px;border-bottom:1px solid #ebeef5;background-color:#f5f7fa}',
-          '.kniu_sys_editor_btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:30px;padding:0;border:0;border-radius:4px;background-color:transparent;color:#333;font-size:14px;font-weight:600;line-height:1;cursor:pointer;transition:background-color .15s,color .15s;flex:none;overflow:hidden}',
-          // 工具栏图标一律同盒：源几何已按「墨迹最长边铺满 viewBox」统一（见 kniuiconsvg.mjs），
-          // 同盒即等大，原先「按字形实测高度逐按钮补偿渲染盒」的 8 条规则已全部删除（勿恢复）。
-          '.kniu_sys_editor_btn > kniu-icon{display:block;width:16px;height:16px;font-size:16px;flex:none}',
-          '.kniu_sys_editor_btn > *{font-weight:600}',
-          '.kniu_sys_editor_btn > b,.kniu_sys_editor_btn > i,.kniu_sys_editor_btn > u,.kniu_sys_editor_btn > s{display:inline-flex;align-items:center;justify-content:center;height:17px;min-width:17px;min-height:17px;font-size:14px;line-height:1;font-weight:700;text-align:center;letter-spacing:0}',
-          '.kniu_sys_editor_btn > :not(svg):not(kniu-icon):not(b):not(i):not(u):not(s){display:inline-flex;align-items:center;justify-content:center;min-width:17px;min-height:17px;font-size:14px;line-height:1;text-align:center}',
-          '.kniu_sys_editor_btn:hover{background-color:#ecf5ff;color:#409eff}',
-          '.kniu_sys_editor_btn:active{background-color:#d9ecff}',
-          '.kniu_sys_editor_btn[aria-pressed="true"]{background-color:#d9ecff;color:#409eff}',
-          '.kniu_sys_editor_btn:disabled{opacity:.5;cursor:not-allowed}',
-          '.kniu_sys_editor_divider{width:1px;height:20px;background-color:#dcdfe6;margin:5px 3px;flex:none}',
-          '.kniu_sys_editor_content{min-height:200px;max-height:400px;padding:10px 14px;outline:0;overflow-y:auto;font:14px/1.7 var(--kniu-font-family);color:#303133;word-break:break-word;cursor:text}',
-          '.kniu_sys_editor_content_wrap{display:flex;min-height:200px;max-height:400px;overflow:hidden;background-color:#fff}',
-          '.kniu_sys_editor_content_wrap .kniu_sys_editor_content{flex:1;min-width:0;max-height:none}',
-          '.kniu_sys_editor_content:empty::before{content:attr(data-placeholder);color:#c0c4cc;pointer-events:none}',
-          '.kniu_sys_editor_content h1{font-size:1.6em;margin:.5em 0}',
-          '.kniu_sys_editor_content h2{font-size:1.4em;margin:.5em 0}',
-          '.kniu_sys_editor_content h3{font-size:1.2em;margin:.5em 0}',
-          '.kniu_sys_editor_content h4{font-size:1.1em;margin:.5em 0}',
-          '.kniu_sys_editor_content h5{font-size:1em;margin:.5em 0}',
-          '.kniu_sys_editor_content h6{font-size:.9em;margin:.5em 0}',
-          '.kniu_sys_editor_content p{margin:.3em 0}',
-          '.kniu_sys_editor_content ul,.kniu_sys_editor_content ol{padding-left:2em;margin:.3em 0}',
-          '.kniu_sys_editor_content blockquote{margin:.5em 0;padding:.5em 1em;border-left:4px solid #dcdfe6;background-color:#f9fafc;color:#606266}',
-          '.kniu_sys_editor_content :not(pre)>code{padding:2px 5px;border-radius:3px;background-color:#f1f5f9;color:#be185d;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.9em}',
-          '.kniu_sys_editor_content pre{margin:.5em 0;padding:.6em 1em;background-color:#f6f8fa;border:1px solid #e5e7eb;border-radius:4px;overflow-x:auto;font-family:var(--kniu-font-family);font-size:.9em;line-height:1.5;white-space:pre}',
-          '.kniu_sys_editor_content pre code{display:block;background-color:transparent;padding:0;font:inherit;color:inherit;white-space:inherit}',
-          '.kniu_sys_editor_content a{color:#409eff;text-decoration:underline}',
-          '.kniu_sys_editor_content img,.kniu_sys_editor_content video{display:block;max-width:100%;height:auto;margin:.5em 0}',
-          '.kniu_sys_editor_content audio{display:block;max-width:100%;margin:.5em 0}',
-          '.kniu_sys_editor_content .kniu_sys_editor_media_selected{outline:0;filter:brightness(.62) sepia(.65) saturate(5) hue-rotate(175deg);transition:filter .15s ease}',
-          '.kniu_sys_editor_source{display:none;min-height:200px;max-height:400px;width:100%;padding:10px 14px;border:0;outline:0;resize:vertical;font:13px/1.6 var(--kniu-font-family);color:#303133;box-sizing:border-box;background-color:#fbfbfc}',
-          '.kniu_sys_editor_source_wrap{display:none;position:relative;min-height:200px;max-height:400px;overflow:hidden;background-color:#fbfbfc}',
-          '.kniu_sys_editor_source_lines{display:none;flex:none;width:48px;padding:14px 8px 14px 0;overflow:hidden;color:#9ca3af;font:14px/1.7 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;text-align:right;user-select:none;box-sizing:border-box;background-color:#f3f4f6;border-right:1px solid #e5e7eb}',
-          '.kniu_sys_editor_source_lines_inner span{display:block;height:1.7em;white-space:nowrap}',
-          '.kniu_sys_editor_line_numbers{display:block;flex:none;width:48px;padding:10px 8px 10px 0;overflow:hidden;color:#9ca3af;font:14px/1.7 var(--kniu-font-family);text-align:right;user-select:none;box-sizing:border-box;background-color:#f3f4f6;border-right:1px solid #e5e7eb}',
-          '.kniu_sys_editor_line_numbers_inner span{display:block;height:1.7em;white-space:nowrap}',
-          '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_content{display:none}',
-          '.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_content{display:none}',
-          '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_content_wrap,.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_content_wrap{display:none}',
-          '.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_source_wrap{display:flex;min-height:260px}',
-          '.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_source_lines{display:block}',
-          '.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_source{display:block;min-height:260px;max-height:none;flex:1;padding:14px;font:14px/1.7 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;white-space:pre-wrap;resize:none}',
-          '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source_wrap{display:flex}',
-          '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source_lines{display:block;padding:10px 8px 10px 0;font:13px/1.6 var(--kniu-font-family)}',
-          '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source_lines_inner span{height:1.6em}',
-          '.kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source{display:block;flex:1}',
-          '.kniu_sys_editor_select{height:28px;max-width:120px;padding:0 8px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:12px;cursor:pointer;flex:none;box-sizing:border-box}',
-          '.kniu_sys_editor_fontname{position:relative;width:36px;padding-right:8px}',
-          '.kniu_sys_editor_fontsize{position:relative;width:36px;padding-right:8px}',
-          '.kniu_sys_editor_heading{position:relative;width:36px;padding-right:8px}',
-          '.kniu_sys_editor_lineheight{position:relative;width:36px;padding-right:8px}',
-          '.kniu_sys_editor_spacing{position:relative;width:36px;padding-right:8px}',
-          '.kniu_sys_editor_color_btn{position:relative;width:36px;padding-right:8px}',
-          '.kniu_sys_editor_font_arrow{position:absolute;right:3px;bottom:3px;min-width:0!important;min-height:0!important;font-size:8px!important;color:#909399}',
-          '.kniu_sys_editor_select:focus{outline:0;border-color:#409eff}',
-          '.kniu_sys_editor_color{width:30px;height:28px;padding:0;border:1px solid #dcdfe6;border-radius:3px;background-color:#fff;cursor:pointer;flex:none;box-sizing:border-box}',
-          '.kniu_sys_editor_color::-webkit-color-swatch-wrapper{padding:2px}',
-          '.kniu_sys_editor_color::-webkit-color-swatch{border:0;border-radius:2px}',
-          '.kniu_sys_editor_content font[size="1"]{font-size:12px}',
-          '.kniu_sys_editor_content font[size="2"]{font-size:14px}',
-          '.kniu_sys_editor_content font[size="3"]{font-size:16px}',
-          '.kniu_sys_editor_content font[size="4"]{font-size:18px}',
-          '.kniu_sys_editor_content font[size="5"]{font-size:22px}',
-          '.kniu_sys_editor_content font[size="6"]{font-size:26px}',
-          '.kniu_sys_editor_content font[size="7"]{font-size:32px}',
-          '.kniu_sys_editor_content table{border-collapse:collapse;width:100%;margin:.5em 0}',
-          '.kniu_sys_editor_content td,.kniu_sys_editor_content th{border:1px solid #dcdfe6;padding:6px 10px;min-width:40px;height:22px}',
-          '.kniu_sys_editor_toolbar{position:static}',
-          '.kniu_sys_editor_popover{position:absolute;top:0;left:0;z-index:30;padding:12px;max-width:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;box-sizing:border-box}',
-          '.kniu_sys_editor_popover[hidden]{display:none}',
-          '.kniu_sys_editor_popover_row{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;color:#606266}',
-          '.kniu_sys_editor_popover_row[hidden]{display:none}',
-          '.kniu_sys_editor_popover_row label{flex:none;width:42px}',
-          '.kniu_sys_editor_popover_row input{width:70px;height:28px;padding:0 6px;border:1px solid #dcdfe6;border-radius:4px;font-size:13px;box-sizing:border-box}',
-          '.kniu_sys_editor_popover_link{width:320px;padding:14px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14)}',
-          '.kniu_sys_editor_popover_media_edit{box-shadow:0 0 0 9999px rgba(0,0,0,.6),0 8px 24px rgba(0,0,0,.22);animation:kniu_editor_media_modal_in .2s ease-out both}',
-          '.kniu_sys_editor_popover_media_edit.kniu_sys_editor_popover_closing{animation:kniu_editor_media_modal_out .18s ease-in both;pointer-events:none}',
-          '@keyframes kniu_editor_media_modal_in{from{opacity:0;scale:.94;box-shadow:0 0 0 9999px rgba(0,0,0,0),0 4px 12px rgba(0,0,0,0)}to{opacity:1;scale:1;box-shadow:0 0 0 9999px rgba(0,0,0,.6),0 8px 24px rgba(0,0,0,.22)}}',
-          '@keyframes kniu_editor_media_modal_out{from{opacity:1;scale:1;box-shadow:0 0 0 9999px rgba(0,0,0,.6),0 8px 24px rgba(0,0,0,.22)}to{opacity:0;scale:.94;box-shadow:0 0 0 9999px rgba(0,0,0,0),0 4px 12px rgba(0,0,0,0)}}',
-          '.kniu_sys_editor_popover_title{margin-bottom:12px;color:#303133;font-size:15px;font-weight:600}',
-          '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row label{width:58px}',
-          '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row input{flex:1;width:auto;min-width:0}',
-          '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row input[type="checkbox"]{appearance:none;flex:none;width:14px;height:14px;margin:0;border:1px solid #dcdfe6;border-radius:2px;outline:0;background-color:#fff;background-position:center;background-repeat:no-repeat;background-size:10px 8px;box-sizing:border-box;cursor:pointer}.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row input[type="checkbox"]:checked{border-color:#409eff;background-color:#409eff;background-image:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 12 10\'%3E%3Cpath d=\'M1 5l3 3 7-7\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'/%3E%3C/svg%3E")}.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row input[type="checkbox"]:focus-visible{outline:2px solid rgba(64,158,255,.3);outline-offset:2px}',
-          '.kniu_sys_editor_popover_link .kniu_sys_editor_popover_row select{flex:1;height:28px;padding:0 8px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:13px;box-sizing:border-box}',
-          '.kniu_sys_editor_popover_actions{display:flex;justify-content:flex-end;gap:8px;margin:2px 0 0}',
-          '.kniu_sys_editor_popover_cancel{height:30px;padding:0 14px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:13px;cursor:pointer}',
-          '.kniu_sys_editor_popover_delete{height:30px;margin-right:auto;padding:0 14px;border:1px solid #f56c6c;border-radius:4px;background-color:#fff;color:#f56c6c;font-size:13px;cursor:pointer}',
-          '.kniu_sys_editor_popover_delete:hover{background-color:#fef0f0}',
-          '.kniu_sys_editor_delete_tip{padding:14px 0 20px;color:#606266;font-size:14px;line-height:1.6}',
-          '.kniu_sys_editor_popover_error{min-height:18px;margin:-4px 0 6px 66px;color:#f56c6c;font-size:12px}',
-          '.kniu_sys_editor_popover_btn{height:30px;padding:0 14px;border:0;border-radius:4px;background-color:#409eff;color:#fff;font-size:13px;cursor:pointer}',
-          '.kniu_sys_editor_popover_btn:hover{background-color:#66b1ff}',
-          '.kniu_sys_editor_popover_grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;max-height:208px;overflow:auto}',
-          '.kniu_sys_editor_font_list{display:flex;flex-direction:column;max-width:100%}',
-          '.kniu_sys_editor_font_item{min-height:32px;color:#303133;font-size:14px}',
-          '.kniu_sys_editor_font_item:hover{background-color:#ecf5ff;color:#409eff}',
-          '.kniu_sys_editor_font_item[aria-checked="true"]::before{content:"✓";width:20px;color:#409eff;font-family:var(--kniu-font-family)}',
-          '.kniu_sys_editor_size_list{display:flex;flex-direction:column;max-width:100%}',
-          '.kniu_sys_editor_size_item{min-height:32px;color:#303133;line-height:1.15}',
-          '.kniu_sys_editor_size_item:hover{background-color:#ecf5ff;color:#409eff}',
-          '.kniu_sys_editor_no_color{display:block;width:100%;height:30px;margin-bottom:8px;border:0;border-radius:4px;background-color:transparent;color:#606266;font-size:13px;cursor:pointer}',
-          '.kniu_sys_editor_no_color:hover{background-color:#ecf5ff;color:#409eff}',
-          '.kniu_sys_editor_swatch_grid{display:grid;grid-template-columns:repeat(6,22px);gap:6px}',
-          '.kniu_sys_editor_swatch{width:22px;height:22px;border:1px solid transparent;border-radius:2px;cursor:pointer;box-sizing:border-box}',
-          '.kniu_sys_editor_swatch:hover{outline:2px solid #409eff;outline-offset:1px}',
-          '.kniu_sys_editor_emoji{display:flex;align-items:center;justify-content:center;height:32px;font-size:18px;border:0;background-color:transparent;border-radius:6px;cursor:pointer}',
-          '.kniu_sys_editor_emoji:hover{background-color:#ecf5ff}',
-          ':host([data-preview="true"]) .kniu_sys_editor_content{background-color:#fafafa;cursor:default}',
-          ':host([data-maximized="true"]){position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;width:auto;height:auto;background-color:#fff}',
-          ':host([data-maximized="true"]) .kniu_sys_editor_group{display:flex;height:100%;flex-direction:column}',
-          ':host([data-maximized="true"]) .kniu_sys_editor_main{flex:1;max-height:none;border-radius:0;display:flex;flex-direction:column}',
-          ':host([data-maximized="true"]) .kniu_sys_editor_content_wrap,:host([data-maximized="true"]) .kniu_sys_editor_source_wrap{flex:1;min-height:0;max-height:none}',
-          ':host([data-maximized="true"]) .kniu_sys_editor_content,:host([data-maximized="true"]) .kniu_sys_editor_source{min-height:0;max-height:none}',
-          ':host([data-maximized="true"]) .kniu_sys_editor_prepend,:host([data-maximized="true"]) .kniu_sys_editor_append{display:none}',
-          ':host([data-invalid="true"]) .kniu_sys_editor_main{border-color:#f56c6c}',
-          '@media (min-width:calc(1280px - 60px)){.kniu_sys_editor_group{display:flex}.kniu_sys_editor_group[data-has-prepend="true"] .kniu_sys_editor_prepend{width:auto;min-width:0;justify-content:center;border:1px solid #dcdfe6;border-right:0;border-radius:4px 0 0 4px}.kniu_sys_editor_group[data-has-prepend="true"] .kniu_sys_editor_main{border-radius:0 4px 4px 4px}}',
-          '</style>',
           '<div class="kniu_sys_editor_group" data-has-prepend="false" data-code-mode="false">',
           '<span class="kniu_sys_editor_affix kniu_sys_editor_prepend"><slot name="prepend"></slot></span>',
           '<div class="kniu_sys_editor_main">',
@@ -5675,6 +5324,7 @@ var KniuUI = (function () {
           '</div>',
           '</div>'
         ].join('');
+        adoptSharedStyle(this.shadowRoot, KNIU_EDITOR_CSS);
         this._editor = this.shadowRoot.querySelector('.kniu_sys_editor_content');
         this._group = this.shadowRoot.querySelector('.kniu_sys_editor_group');
         this._toolbar = this.shadowRoot.querySelector('.kniu_sys_editor_toolbar');
@@ -5682,8 +5332,7 @@ var KniuUI = (function () {
         this._sourceLines = this.shadowRoot.querySelector('.kniu_sys_editor_source_lines_inner');
         this._editorLines = this.shadowRoot.querySelector('.kniu_sys_editor_line_numbers_inner');
         adoptDropdownStyle(this.shadowRoot);
-        adoptSharedStyle(this.shadowRoot, '.kniu_sys_editor_popover_link{border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14)}.kniu_sys_editor_popover_media_edit{box-shadow:0 0 0 9999px rgba(0,0,0,.6),0 8px 24px rgba(0,0,0,.22)}');
-        // 表格渲染态：外层负责横向滚动，表格本身保底 768px（绝对下限，不走设计尺寸换算，故用 appendRawStyle）。
+        adoptSharedStyle(this.shadowRoot, KNIU_EDITOR_OVERRIDE_CSS);
         appendRawStyle(this.shadowRoot, KNIU_CONTENT_TABLE_CSS);
         this._codeMode = false;
         this._markdownMode = false;
@@ -5693,6 +5342,7 @@ var KniuUI = (function () {
         this._preview = false;
         this._popoverAction = null;
         this._lineNumberResizeObserver = null;
+        this._lineNumberKey = '';
 
         var self = this;
         this._buildToolbar(this._resolveToolbarConfig());
@@ -5947,7 +5597,6 @@ var KniuUI = (function () {
       _applyToolbarLang() {
         var lang = this._editorLang();
         var t = function (key, params) { return componentText(lang, key, params); };
-        var self = this;
         this._toolbar.querySelectorAll('.kniu_sys_editor_btn').forEach(function (btn) {
           var token = btn.dataset.cmd || btn.dataset.action || btn.dataset.block;
           if (!token || !KNIU_I18N.cn['editor.' + token]) return;
@@ -6019,13 +5668,11 @@ var KniuUI = (function () {
           this._updateLineNumbers();
         }
       }
-      /** 渲染态 DOM → 保存/源码用的 HTML（剥掉表格包裹层等纯装饰节点）。 */
       _serializedHtml() {
         var clone = this._editor.cloneNode(true);
         stripEditorTableWraps(clone);
         return clone.innerHTML;
       }
-      /** 按需补表格包裹层；光标已在表内时跳过（包裹会把选区挤到编辑器根，失焦时再兜底）。 */
       _syncEditorTables() {
         if (!this._editor) return;
         if (!this._editor.querySelector('table:not(.' + KNIU_TABLE_CLASS + ')')) return;
@@ -6067,35 +5714,114 @@ var KniuUI = (function () {
           node.replaceWith(code);
         });
       }
-      _updateLineNumbers() {
+      _lineNumbersKey() {
+        var sourceMode = this._codeMode || this._markdownMode;
+        var input = sourceMode ? this._source : this._editor;
+        if (!input) return '';
+        return (sourceMode ? 'src:' : 'rich:') + input.scrollHeight + ':' + input.childElementCount;
+      }
+      _updateLineNumbers(force) {
         var sourceMode = this._codeMode || this._markdownMode;
         var input = sourceMode ? this._source : this._editor;
         var lines = sourceMode ? this._sourceLines : this._editorLines;
         if (!input || !lines) return;
-        var text = sourceMode ? this._source.value : this._editor.innerText;
-        var normalizedText = String(text || '').replace(/\r\n?/g, '\n');
-        var lineCount;
+        var key = this._lineNumbersKey();
+        if (force || key !== this._lineNumberKey) {
+          this._lineNumberKey = key;
+          if (sourceMode) {
+            lines.innerHTML = this._buildSourceLineNumbers(input);
+            lines.style.removeProperty('padding-top');
+          } else {
+            var layout = this._buildEditorLineNumbers(input);
+            lines.innerHTML = layout.html;
+            if (layout.lead > 0) lines.style.paddingTop = layout.lead + 'px';
+            else lines.style.removeProperty('padding-top');
+          }
+        }
+        lines.style.transform = 'translateY(-' + input.scrollTop + 'px)';
+      }
+      _editorLineMetrics(input) {
         var style = globalThis.getComputedStyle ? globalThis.getComputedStyle(input) : null;
         var lineHeight = style ? parseFloat(style.lineHeight) : 0;
         if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
-          var fontSize = style ? parseFloat(style.fontSize) : 14;
-          lineHeight = (Number.isFinite(fontSize) ? fontSize : 14) * 1.7;
+          var fontSize = style ? parseFloat(style.fontSize) : 0;
+          lineHeight = (Number.isFinite(fontSize) && fontSize > 0 ? fontSize : 12) * 1.7;
         }
-        var paddingTop = style ? parseFloat(style.paddingTop) || 0 : 0;
-        var paddingBottom = style ? parseFloat(style.paddingBottom) || 0 : 0;
-        if (normalizedText.length) {
-          lineCount = normalizedText.split('\n').length;
-        } else {
-          var availableHeight = Math.max(0, input.clientHeight - paddingTop - paddingBottom);
-          lineCount = Math.max(1, Math.floor(availableHeight / lineHeight));
+        return {
+          lineHeight: lineHeight,
+          paddingTop: style ? parseFloat(style.paddingTop) || 0 : 0,
+          paddingBottom: style ? parseFloat(style.paddingBottom) || 0 : 0,
+        };
+      }
+      _measureEditorRows(input, lineHeight, paddingTop) {
+        var doc = input.ownerDocument || document;
+        var base = input.getBoundingClientRect().top - input.scrollTop + paddingTop;
+        var tops = [];
+        var push = function (top) {
+          var y = top - base;
+          if (Number.isFinite(y)) tops.push(y);
+        };
+        if (doc.createTreeWalker && doc.createRange) {
+          var walker = doc.createTreeWalker(input, 4, null);
+          var node;
+          var guard = 0;
+          while ((node = walker.nextNode())) {
+            if (guard++ > 4000) break;
+            var value = node.nodeValue;
+            if (!value || !value.replace(/[\s\u00a0]+/g, '')) continue;
+            var range = doc.createRange();
+            range.selectNodeContents(node);
+            var rects = range.getClientRects();
+            for (var i = 0; i < rects.length; i++) {
+              push(rects[i].top - Math.max(0, (lineHeight - rects[i].height) / 2));
+            }
+          }
         }
-        var visualRows = Math.ceil(Math.max(0, input.scrollHeight - paddingTop - paddingBottom) / lineHeight);
-        lineCount = Math.max(lineCount, visualRows);
-        lineCount = Math.max(1, lineCount);
+        var children = input.children || [];
+        for (var c = 0; c < children.length; c++) {
+          var child = children[c];
+          if (String(child.textContent || '').replace(/[\s\u00a0]+/g, '')) continue;
+          push(child.getBoundingClientRect().top);
+        }
+        tops.sort(function (a, b) { return a - b; });
+        var rows = [];
+        var tolerance = Math.max(2, lineHeight / 2);
+        for (var t = 0; t < tops.length; t++) {
+          if (!rows.length || tops[t] - rows[rows.length - 1] > tolerance) rows.push(tops[t]);
+        }
+        return rows;
+      }
+      _buildEditorLineNumbers(input) {
+        var metrics = this._editorLineMetrics(input);
+        var rows = this._measureEditorRows(input, metrics.lineHeight, metrics.paddingTop);
+        if (!rows.length) rows.push(0);
+        var contentHeight = Math.max(0, input.scrollHeight - metrics.paddingTop - metrics.paddingBottom);
+        var total = Math.max(rows[rows.length - 1] + metrics.lineHeight, contentHeight);
+        var html = '';
+        for (var i = 0; i < rows.length; i++) {
+          var next = i + 1 < rows.length ? rows[i + 1] : total;
+          var height = Math.round(Math.max(1, next - rows[i]) * 100) / 100;
+          html += '<span style="height:' + height + 'px">' + (i + 1) + '</span>';
+        }
+        return { html: html, lead: Math.max(0, rows[0]) };
+      }
+      _buildSourceLineNumbers(input) {
+        var metrics = this._editorLineMetrics(input);
+        var text = String(input.value || '').replace(/\r\n?/g, '\n');
+        var logicalRows = text.length ? text.split('\n').length : 1;
+        var visibleRows = Math.max(1, Math.ceil(Math.max(0, input.clientHeight - metrics.paddingTop - metrics.paddingBottom) / metrics.lineHeight));
+        var contentRows = logicalRows;
+        var rowHeight = metrics.lineHeight;
+        if (input.scrollHeight > input.clientHeight + 1) {
+          var contentHeight = Math.max(0, input.scrollHeight - metrics.paddingTop - metrics.paddingBottom);
+          contentRows = Math.max(logicalRows, Math.round(contentHeight / metrics.lineHeight));
+          rowHeight = contentHeight / contentRows;
+        }
+        var lineCount = Math.max(1, contentRows, visibleRows);
+        rowHeight = Math.round(rowHeight * 1000) / 1000;
         var numbers = '';
-        for (var index = 1; index <= lineCount; index++) numbers += '<span>' + index + '</span>';
-        lines.innerHTML = numbers;
-        lines.style.transform = 'translateY(-' + input.scrollTop + 'px)';
+        for (var index = 1; index <= lineCount; index++) numbers += '<span style="height:' + rowHeight + 'px">' + index + '</span>';
+        return numbers;
       }
       _scheduleSourceLineNumbers() {
         var self = this;
@@ -6414,7 +6140,7 @@ var KniuUI = (function () {
         try {
           var w = documentRef.defaultView.open('', '_blank');
           if (!w) return;
-          w.document.write('<html><head><meta charset="utf-8"><title>打印</title><style>body{font:14px/1.7 "KniuHei";padding:24px;color:#333}img{max-width:100%}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px 10px}</style></head><body>' + this._editor.innerHTML + '</body></html>');
+          w.document.write('<html><head><meta charset="utf-8"><title>打印</title><style>' + KNIU_EDITOR_PRINT_CSS + '</style></head><body>' + this._editor.innerHTML + '</body></html>');
           w.document.close();
           w.focus();
           w.print();
@@ -6541,7 +6267,6 @@ var KniuUI = (function () {
         });
       }
 
-      /** 给内容里的表格补渲染态包裹层（`.kniu_sys_article_table_wrap`）。 */
       _normalizeTables(skipNode) {
         if (!this._editor) return;
         wrapEditorTables(this._editor, skipNode || null);
@@ -6620,7 +6345,7 @@ var KniuUI = (function () {
       _clearHtml() {
         var tmp = documentRef.createElement('div');
         tmp.innerHTML = this._editor.innerHTML;
-        var text = (tmp.innerText || '').replace(/ /g, ' ');
+        var text = (tmp.innerText || '').replace(/\u00A0/g, ' ');
         var paras = text.split(/\n+/).map(function (s) { return s.trim(); }).filter(Boolean);
         this._editor.innerHTML = paras.length ? '<p>' + paras.join('</p><p>') + '</p>' : '';
         this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
@@ -7355,7 +7080,6 @@ var KniuUI = (function () {
       _insertTable(rows, cols) {
         rows = Math.max(1, Math.min(20, parseInt(rows, 10) || 3));
         cols = Math.max(1, Math.min(20, parseInt(cols, 10) || 3));
-        // 直接带包裹层插入：插入后再包裹会把光标挤到编辑器根节点。
         var html = '<div class="' + KNIU_TABLE_WRAP_CLASS + '"><table class="' + KNIU_TABLE_CLASS + '" style="border-collapse:collapse;width:100%;margin:.5em 0"><tbody>';
         for (var r = 0; r < rows; r++) {
           html += '<tr>';
@@ -7464,7 +7188,6 @@ var KniuUI = (function () {
           this.__kniuLastToolbar = toolbarKey;
           if (this._toolbar) this._buildToolbar(toolbarConfig);
         }
-        // lang 变化时重建工具栏（本地化 title/aria-label），满足运行中动态切换。
         var lang = this._editorLang();
         if (this.__kniuLastLang !== lang) {
           this.__kniuLastLang = lang;
@@ -7515,7 +7238,7 @@ var KniuUI = (function () {
       if (!doc || doc.getElementById('kniu_sys_navbar_placeholder_style')) return;
       const style = doc.createElement('style');
       style.id = 'kniu_sys_navbar_placeholder_style';
-      style.textContent = '.kniu_sys_head_placeholder{z-index:-999;position:relative;display:block;width:100%;height:100%}';
+      style.textContent = KNIU_NAVBAR_PLACEHOLDER_CSS;
       (doc.head || doc.documentElement).appendChild(style);
     }
 
@@ -7525,11 +7248,7 @@ var KniuUI = (function () {
           super();
           attachComponentShadow(this);
           this.shadowRoot.innerHTML = `
-            <style>
-              :host{display:flex;width:100%;min-width:0;flex-direction:column;align-items:stretch;gap:10px;font-family:var(--kniu-font-family);font-size:var(--kniu-navbar-font-size)}
-              ::slotted(kniu-navbar-cell),::slotted(kniu-sub-navbar),::slotted(kniu-user-login){font-size:inherit}
-              @media(min-width:calc(1280px - 60px)){:host{width:auto;flex-direction:row;align-items:center}}
-            </style>
+            <style>${KNIU_NAVBAR_CELLS_CSS}</style>
             <slot></slot>`;
         }
       }
@@ -7543,16 +7262,7 @@ var KniuUI = (function () {
           super();
           attachComponentShadow(this);
           this.shadowRoot.innerHTML = `
-            <style>
-              :host{display:block;width:100%;min-width:0;border-bottom:1px solid #e5e7eb;font-family:var(--kniu-font-family);font-size:var(--kniu-navbar-font-size)}
-              a{display:flex;align-items:center;width:100%;min-height:50px;padding:0 16px 0 calc(16px + var(--kniu-navbar-level,0) * 16px);border-radius:0;box-sizing:border-box;color:#4b5563;text-decoration:none;font:inherit;font-size:inherit;white-space:nowrap;transition:background-color .2s,color .2s}
-              a:hover,:host([active]) a{background-color:#f1f5f9;color:#111827}
-              :host([disabled]){opacity:.45;pointer-events:none}
-              :host([side]){width:100%}
-              :host([side]) a{gap:8px;min-height:50px;width:100%;padding:0 12px;border-radius:11px;box-sizing:border-box;color:#9ca5bf}
-              :host([side]) a:hover,:host([side][active]) a{background-color:#252b42;color:#fff}
-              @media(min-width:calc(1280px - 60px)){:host(:not([side])){width:auto;border-bottom:0}:host(:not([side])) a{width:auto;min-height:44px;padding:0 18px;border-radius:8px}}
-            </style>
+            <style>${KNIU_NAVBAR_CELL_CSS}</style>
             <a part="link"><slot></slot></a>`;
           this._link = this.shadowRoot.querySelector('a');
         }
@@ -7575,21 +7285,11 @@ var KniuUI = (function () {
           super();
           attachComponentShadow(this);
           this.shadowRoot.innerHTML = `
-            <style>
-              :host{position:relative;display:block;width:100%;border-bottom:1px solid #e5e7eb;font-family:var(--kniu-font-family);font-size:var(--kniu-navbar-font-size)}
-              details{position:relative}
-              summary{display:flex;align-items:center;min-height:50px;padding:0 16px 0 calc(16px + (var(--kniu-navbar-level,1) - 1) * 16px);border-radius:0;color:#4b5563;cursor:pointer;list-style:none;font:inherit;font-size:inherit;white-space:nowrap}
-              summary::-webkit-details-marker{display:none}
-              summary::after{content:'⌄';margin-left:auto;padding-left:8px;font-size:12px;transition:transform .2s}
-              details[open]>summary::after{transform:rotate(180deg)}
-              summary:hover,:host([active])>details>summary{background-color:#f1f5f9;color:#111827}
-              .kniu_sys_navbar_cell_panel{position:static;min-width:0;padding:0;border:0;border-radius:0;background-color:#fff;box-shadow:none}
-              @media(min-width:calc(1280px - 60px)){:host{width:auto;border-bottom:0}summary{min-height:44px;padding:0 18px;border-radius:8px}.kniu_sys_navbar_cell_panel{position:absolute;top:100%;left:0;z-index:20;min-width:180px;padding:5px 0}:host([level="2"]) .kniu_sys_navbar_cell_panel,:host([level="3"]) .kniu_sys_navbar_cell_panel{top:0;left:100%}}
-            </style>
+            <style>${KNIU_SUB_NAVBAR_CSS}</style>
             <details><summary><slot name="title">菜单</slot></summary><div class="kniu_sys_navbar_cell_panel kniu_sys_dropdown_panel kniu_sys_dropdown_nav_panel"><slot></slot></div></details>`;
           this._details = this.shadowRoot.querySelector('details');
           adoptDropdownStyle(this.shadowRoot);
-          adoptSharedStyle(this.shadowRoot, '@media(max-width:calc(1280px - 60px)){.kniu_sys_dropdown_nav_panel{border:0;border-radius:0;box-shadow:none}}');
+          adoptSharedStyle(this.shadowRoot, KNIU_SUB_NAVBAR_OVERRIDES_CSS);
         }
         connectedCallback() { this._sync(); }
         attributeChangedCallback() { this._sync(); }
@@ -7609,37 +7309,7 @@ var KniuUI = (function () {
           super();
           attachComponentShadow(this);
           this.shadowRoot.innerHTML = `
-            <style>
-              :host{--kniu-navbar-font-size:max(12px,calc(14 / var(--kniu_vw)));display:flex;justify-content:space-between;align-items:center;width:100%;height:inherit;background-color:#fff;color:#111827;font-family:var(--kniu-font-family);font-size:var(--kniu-navbar-font-size)}
-              :host([fixed]){position:fixed;z-index:2;right:0;left:0}
-              :host([fixed="top"]),:host([fixed=""]){top:0}
-              :host([fixed="bottom"]){bottom:0}
-              .kniu_sys_navbar_bar{position:relative;display:flex;align-items:center;justify-content:space-between;gap:0;margin-right:auto;margin-left:auto;width:calc(100vw - 30 / var(--kniu_vw) * 2);height:inherit;flex-wrap:wrap;box-sizing:border-box}
-              .kniu_sys_navbar_brand{display:flex;align-items:center;overflow:hidden;color:#111827;text-decoration:none;font-size:22px;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}
-              .kniu_sys_navbar_brand_label{display:block}
-              ::slotted([slot="brand"]){display:block;max-width:min(220px,40vw)}
-              .kniu_sys_navbar_toggle{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border:0;border-radius:8px;background-color:transparent;color:#111827;cursor:pointer}
-              .kniu_sys_navbar_toggle_icon{position:relative;display:block;width:24px;height:18px}
-              .kniu_sys_navbar_toggle_icon i{position:absolute;left:0;display:block;width:24px;height:2px;border-radius:2px;background-color:currentColor;transition:top .28s ease,transform .28s ease,opacity .2s ease}
-              .kniu_sys_navbar_toggle_icon i:nth-child(1){top:0}.kniu_sys_navbar_toggle_icon i:nth-child(2){top:8px}.kniu_sys_navbar_toggle_icon i:nth-child(3){top:16px}
-              :host([open]:not([closing])) .kniu_sys_navbar_toggle_icon i:nth-child(1){top:8px;transform:rotate(45deg)}
-              :host([open]:not([closing])) .kniu_sys_navbar_toggle_icon i:nth-child(2){opacity:0;transform:scaleX(0)}
-              :host([open]:not([closing])) .kniu_sys_navbar_toggle_icon i:nth-child(3){top:8px;transform:rotate(-45deg)}
-              .kniu_sys_navbar_menu{display:none;flex:0 0 100%;align-items:stretch;min-width:0;padding:0;font-size:var(--kniu-navbar-font-size)}
-              :host([open]:not([type="side"])) .kniu_sys_navbar_menu{position:fixed;top:var(--kniu-navbar-menu-top,100%);right:0;bottom:0;left:0;z-index:1000;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:0;width:auto;margin:0;padding:0;overflow-y:auto;background-color:#fff;animation:kniu_navbar_mobile_slide_in .28s ease-out both}
-              :host([closing]:not([type="side"])) .kniu_sys_navbar_menu{animation-name:kniu_navbar_mobile_slide_out;animation-timing-function:ease-in}
-              @keyframes kniu_navbar_mobile_slide_in{from{transform:translateX(-100%)}to{transform:translateX(0)}}
-              @keyframes kniu_navbar_mobile_slide_out{from{transform:translateX(0)}to{transform:translateX(-100%)}}
-              :host([type="side"]){color:#eef2ff;background-color:transparent}
-              :host([type="side"]) .kniu_sys_navbar_bar{display:block;max-width:none;min-height:0}
-              :host([type="side"]) .kniu_sys_navbar_brand{gap:10px;padding:0 8px 30px;color:#eef2ff;font-size:20px;font-weight:800}
-              :host([type="side"]) .kniu_sys_navbar_menu{display:grid;grid-template-columns:minmax(0,1fr);width:100%;justify-content:stretch;gap:6px}
-              :host([type="side"]) .kniu_sys_navbar_menu > slot[name="default"],:host([type="side"]) .kniu_sys_navbar_menu > slot:not([name]){display:grid;grid-template-columns:minmax(0,1fr);width:100%;justify-content:stretch;gap:6px}
-              :host([type="side"]) .kniu_sys_navbar_menu > slot[name="default"]::slotted(kniu-navbar-cell),:host([type="side"]) .kniu_sys_navbar_menu > slot[name="default"]::slotted(kniu-navbar-cells),:host([type="side"]) .kniu_sys_navbar_menu > slot:not([name])::slotted(kniu-navbar-cell){display:block;width:100%}
-              :host([type="side"]) .kniu_sys_navbar_toggle{display:none}
-              @media (min-width:calc(1280px - 60px)){.kniu_sys_navbar_bar{gap:24px;width:calc(100vw - 220 / var(--kniu_vw) * 2);min-height:72px;flex-wrap:nowrap}.kniu_sys_navbar_brand{font-size:clamp(22px,3vw,30px)}.kniu_sys_navbar_toggle{display:none}.kniu_sys_navbar_menu{display:flex;flex:initial;align-items:center;justify-content:flex-end;gap:4px;padding:0}slot[name="default"]{display:block;flex:initial}}
-              @media(prefers-reduced-motion:reduce){.kniu_sys_navbar_toggle_icon i{transition:none}:host([open]:not([type="side"])) .kniu_sys_navbar_menu{animation:none}}
-            </style>
+            <style>${KNIU_NAVBAR_CSS}</style>
             <nav class="kniu_sys_navbar_bar" aria-label="主导航">
               <a class="kniu_sys_navbar_brand"><slot name="brand"><span class="kniu_sys_navbar_brand_label"></span></slot></a>
               <button class="kniu_sys_navbar_toggle" type="button" aria-label="展开导航" aria-expanded="false"><span class="kniu_sys_navbar_toggle_icon" aria-hidden="true"><i></i><i></i><i></i></span></button>
@@ -7652,10 +7322,6 @@ var KniuUI = (function () {
           this._defaultSlot = this.shadowRoot.querySelector('slot[name="default"]');
           this._slots = [...this.shadowRoot.querySelectorAll('slot')];
           this._handleHashChange = this._syncActive.bind(this);
-          // 路由切换（hashchange 或 SPA pushState 渲染完成）必须收起移动端菜单：
-          // 菜单展开时锁了 <html> 的 overflow，若切页不关菜单，新页面会带着锁渲染、滚不动。
-          // 旧实现只同步激活态，漏了这一步；navigateTo 走 pushState 不触发 hashchange，
-          // 所以额外监听路由层派发的 kniu-route-rendered。
           this._handleRouteChange = function () {
             this._syncActive();
             if (this.hasAttribute('open') && !this.hasAttribute('closing')) this._closeMenu();
@@ -7890,16 +7556,7 @@ var KniuUI = (function () {
         super();
         attachComponentShadow(this);
         this.shadowRoot.innerHTML = `
-          <style>
-            :host{display:none;position:fixed;z-index:40;right:16px!important;bottom:16px!important}
-            :host([visible]){display:block}
-            /* 尺寸下限 30px：值内保留 var(--kniu_vw)，normalizeComponentCss() 才不会把 30px 也改写掉（否则下限失效） */
-            button{display:grid;place-items:center;width:max(30px,calc(40 / var(--kniu_vw)));height:max(30px,calc(40 / var(--kniu_vw)));border:1px solid #e5e7eb;border-radius:50%;background-color:#fff;color:#374151;cursor:pointer;box-shadow:0 8px 24px rgba(15,23,42,.14);transition:transform .2s,box-shadow .2s}
-            button kniu-icon{width:max(13.5px,calc(18 / var(--kniu_vw)));height:max(13.5px,calc(18 / var(--kniu_vw)));display:block}
-            button:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(15,23,42,.18)}
-            @media(min-width:calc(1280px - 60px)){:host{right:min(var(--right,40px),calc(100vw - 56px))!important;bottom:min(var(--bottom,40px),calc(100vh - 56px))!important}button{width:max(30px,calc(44 / var(--kniu_vw)));height:max(30px,calc(44 / var(--kniu_vw)))}button kniu-icon{width:max(13.5px,calc(20 / var(--kniu_vw)));height:max(13.5px,calc(20 / var(--kniu_vw)))}}
-            @media(prefers-reduced-motion:reduce){button{transition:none}}
-          </style>
+          <style>${KNIU_BACKTOP_CSS}</style>
           <button type="button" aria-label="返回顶部"><kniu-icon icon="toup" aria-hidden="true"></kniu-icon></button>`;
         this._handleScroll = this._syncVisible.bind(this);
         this._handleClick = this._scrollTop.bind(this);
@@ -7973,59 +7630,7 @@ var KniuUI = (function () {
     if (!documentRef) return;
 
     const COMMENT_DEFAULT_EMOJIS = ['😀', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😉', '😊', '😍', '😘', '😎', '🤔', '🤨', '😐', '😴', '😭', '😡', '👍', '👎', '👌', '✌️', '🤝', '👏', '💪', '🙏', '👀', '💡', '🔥', '⭐', '✨', '🎉', '❤️', '💔', '💯', '✅', '❌', '⚠️', '❓', '❗', '💬', '📌', '📝'];
-    const COMMENT_STYLE = `
-      :host{display:block;font-size:14px;color:#333;line-height:1.5}
-      .kniu_sys_comment{background-color:#fff;border-radius:4px}
-      .kniu_sys_comment_input_area{position:relative;margin-bottom:20px}
-      .kniu_sys_comment_textarea_wrap{position:relative;line-height:0}
-      .kniu_sys_comment_textarea{display:block;width:100%;min-height:max(80px,calc(100 / var(--kniu_vw)));padding:10px 12px 28px;border:1px solid #dcdfe6;border-radius:4px;resize:vertical;font:inherit;line-height:1.5;box-sizing:border-box;outline:0}
-      .kniu_sys_comment_textarea:focus{border-color:#409eff}
-      .kniu_sys_comment_toolbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:10px}
-      .kniu_sys_comment_count{position:absolute;right:20px;bottom:7px;z-index:1;color:#909399;font-size:12px;line-height:1.2;white-space:nowrap;pointer-events:none}.kniu_sys_comment_count.kniu_sys_comment_limit{color:#f56c6c}
-      .kniu_sys_comment_emoji_btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:max(28px,calc(45 / var(--kniu_vw)));padding:8px 12px;border:1px solid #dcdfe6;border-radius:4px;background-color:#fff;color:#606266;font-size:14px;line-height:1;cursor:pointer;user-select:none;transition:.1s}
-      .kniu_sys_comment_emoji_btn:hover,.kniu_sys_comment_emoji_btn:focus-visible{border-color:#c6e2ff;background-color:#ecf5ff;color:#409eff}
-      .kniu_sys_comment_emoji_btn:active{filter:brightness(.94)}
-      .kniu_sys_comment_submit{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:max(28px,calc(45 / var(--kniu_vw)));padding:8px 15px;border:1px solid #409eff;border-radius:4px;background-color:#409eff;color:#fff;font:500 14px/1 var(--kniu-font-family);cursor:pointer;user-select:none;transition:.1s}
-      .kniu_sys_comment_submit:hover,.kniu_sys_comment_submit:focus-visible{background-color:#79bbff;border-color:#79bbff}
-      .kniu_sys_comment_submit:active{filter:brightness(.94)}
-      .kniu_sys_comment_submit:disabled{border-color:#e4e7ed;background-color:#a0cfff;color:#fff;cursor:not-allowed;filter:none;opacity:.6}
-      .kniu_sys_comment_emoji_panel{position:absolute;right:0;top:calc(100% + 6px);width:320px;max-width:calc(100vw - 16px);max-height:220px;overflow-y:auto;overflow-x:hidden;background-color:#fff;border:1px solid #e4e7ed;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.1);padding:8px;z-index:10030;display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
-      .kniu_sys_comment_emoji_panel.kniu_sys_comment_above{top:auto;bottom:calc(100% + 6px)}
-      .kniu_sys_comment_emoji_panel.kniu_sys_comment_hidden{display:none}
-      .kniu_sys_comment_emoji_item{background-color:#fff;border:1px solid transparent;border-radius:4px;padding:4px 2px;cursor:pointer;font-size:20px;text-align:center;line-height:1}
-      .kniu_sys_comment_emoji_item:hover{background-color:#f5f7fa;border-color:#dcdfe6}
-      .kniu_sys_comment_list{}
-      .kniu_sys_comment_empty{padding:40px 0;text-align:center;color:#909399;font-size:14px}
-      .kniu_sys_comment_item{display:flex;gap:12px;padding:16px 0;margin:calc(6 / var(--kniu_vw)) 0;border-bottom:1px solid #ebeef5}
-      .kniu_sys_comment_body>.kniu_sys_comment_item{padding:0;border:0}
-      .kniu_sys_comment_item:last-child{border-bottom:0}
-      .kniu_sys_comment_item_own{flex-direction:row;text-align:left}
-      .kniu_sys_comment_item_own .kniu_sys_comment_body{text-align:left}
-      .kniu_sys_comment_item_own .kniu_sys_comment_meta{justify-content:flex-start}
-      .kniu_sys_comment_item_own .kniu_sys_comment_actions{order:initial;margin-left:auto;margin-right:0}
-      .kniu_sys_comment_avatar{width:40px;height:40px;border-radius:50%;overflow:hidden;flex-shrink:0;background-color:#e4e7ed;display:grid;place-items:center;color:#909399;font-size:14px}
-      .kniu_sys_comment_avatar img{width:100%;height:100%;object-fit:cover;display:block}
-      .kniu_sys_comment_body{flex:1;min-width:0}
-      .kniu_sys_comment_meta{display:flex;align-items:center;gap:10px;margin-bottom:4px}
-      .kniu_sys_comment_username{color:#409eff;font-weight:500}
-      .kniu_sys_comment_reply_relation{color:#909399;font-size:12px}
-      .kniu_sys_comment_reply_target{color:#409eff}
-      .kniu_sys_comment_time{color:#909399;font-size:12px}
-      .kniu_sys_comment_content{color:#000;word-break:break-all;border-radius:calc(6 / var(--kniu_vw));display:inline-block;padding:calc(6 / var(--kniu_vw)) calc(12 / var(--kniu_vw));background-color:transparent}
-      .kniu_sys_comment_item_own .kniu_sys_comment_content{background-color:rgba(64,158,255,.2)}
-      .kniu_sys_comment_reply_prefix{color:#909399}
-      .kniu_sys_comment_actions{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:13px;color:#606266}
-      .kniu_sys_comment_action_sep{color:#dcdfe6}
-      .kniu_sys_comment_action_reply,.kniu_sys_comment_action_like,.kniu_sys_comment_action_delete{background-color:transparent;border:0;padding:0;color:#606266;cursor:pointer;font:inherit;display:flex;align-items:center;gap:4px;transition:color .2s,opacity .2s}
-      .kniu_sys_comment_action_reply:hover,.kniu_sys_comment_action_like:hover{color:#409eff}
-      .kniu_sys_comment_action_delete{color:#f56c6c}
-      .kniu_sys_comment_action_delete:hover,.kniu_sys_comment_action_delete:focus-visible{color:#f78989}
-      .kniu_sys_comment_action_like.kniu_sys_comment_liked{color:#f56c6c}
-      .kniu_sys_comment_like_icon{font-size:12px}.kniu_sys_comment_action_like{position:relative;overflow:visible}.kniu_sys_comment_like_feedback{position:absolute;left:50%;top:2px;width:1em;height:1em;margin-left:-.5em;z-index:2;display:block;color:#f56c6c;font-size:18px;font-weight:600;line-height:1;text-align:center;white-space:nowrap;pointer-events:none;transform-origin:50% 50%;animation:kniu_sys_comment_like_heart .9s ease-out forwards}@keyframes kniu_sys_comment_like_heart{0%{opacity:1;transform:translateY(-4px) scale(.85)}30%{opacity:1;transform:translateY(-18px) scale(1)}100%{opacity:0;transform:translateY(-42px) scale(1.08)}}
-      .kniu_sys_comment_reply_hint{padding:6px 10px;margin-bottom:8px;background-color:#f5f7fa;border-radius:4px;color:#606266;font-size:13px;display:flex;justify-content:space-between;align-items:center}
-      .kniu_sys_comment_reply_hint button{background-color:transparent;border:0;color:#909399;cursor:pointer;font-size:16px;line-height:1}
-      .kniu_sys_comment_reply_hint button:hover{color:#f56c6c}
-    `;
+
 
     function commentEscape(text) {
       return String(text == null ? '' : text)
@@ -8067,7 +7672,7 @@ var KniuUI = (function () {
         const currentUserId = Math.max(0, Number.parseInt(options.currentUserId, 10) || 0);
         const maxLength = Math.max(0, Number.parseInt(options.maxLength, 10) || 0);
         const canSubmit = options.canSubmit !== false;
-        const htmlParts = ['<style>' + COMMENT_STYLE + '</style><div class="kniu_sys_comment">'];
+        const htmlParts = ['<style>' + KNIU_COMMENT_CSS + '</style><div class="kniu_sys_comment">'];
         if (canSubmit) {
           htmlParts.push('<div class="kniu_sys_comment_input_area">');
           if (this._replyId) {
@@ -8366,18 +7971,7 @@ var KniuUI = (function () {
         this._plusPlaying = false;
         this.toggleAttribute('data-own', own);
         this.shadowRoot.innerHTML = `
-          <style>
-            :host{display:block;width:100%;margin:0;color:#606266;font:16px/1 var(--kniu-font-family);box-sizing:border-box}
-            button{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:44px;padding:11px 18px;border:1px solid #dcdfe6;border-radius:5px;background-color:#fff;color:inherit;font:inherit;cursor:pointer;overflow:visible;transition:color .15s,border-color .15s,background-color .15s;box-sizing:border-box}
-            button:hover,button:focus-visible{color:#409eff;border-color:#c6e2ff;background-color:#ecf5ff;outline:0}
-            button[aria-pressed="true"]{color:#fff;border-color:#409eff;background-color:#409eff}
-            button:disabled{color:#a8abb2;border-color:#e4e7ed;background-color:#f5f7fa;cursor:not-allowed}
-            kniu-icon{width:24px;height:24px;font-size:24px}
-            .kniu_sys_like_count{white-space:nowrap}
-            .kniu_sys_like_plus{position:absolute;left:50%;top:2px;z-index:2;color:#409eff;font-size:18px;font-weight:600;line-height:1;white-space:nowrap;pointer-events:none;animation:kniu_sys_like_plus .9s ease-out forwards}
-            @keyframes kniu_sys_like_plus{0%{opacity:1;transform:translate(-50%,-4px) scale(.85)}30%{opacity:1;transform:translate(-50%,-18px) scale(1)}100%{opacity:0;transform:translate(-50%,-48px) scale(1.08)}}
-            @media(prefers-reduced-motion:reduce){.kniu_sys_like_plus{animation-duration:.01ms}}
-          </style>
+          <style>${KNIU_LIKE_CSS}</style>
           <button type="button" aria-label="${liked ? '取消点赞' : '点赞'}" aria-pressed="${liked}" ${disabled ? 'disabled' : ''}>
             <kniu-icon icon="like" aria-hidden="true"></kniu-icon>
             <span class="kniu_sys_like_count">(${count})</span>
@@ -8491,26 +8085,7 @@ var KniuUI = (function () {
         this._renderedNickname = nickname;
         this._cleanupMenuPopover();
         this.shadowRoot.innerHTML = `
-          <style>
-            /* 移动端水平内边距必须放内层 .kniu_sys_user_login_user，不能放 :host：
-               视图 CSS 的 *,::before,::after reset（margin:0;padding:0）属于外层树规则，
-               级联上永远压过 shadow 的 :host（无论特异性），放 :host 会被静默清零（#96） */
-            :host{display:flex;align-items:center;width:100%;min-height:50px;padding:0;border-bottom:1px solid #e5e7eb;color:#111827;font-family:var(--kniu-font-family);font-size:var(--kniu-navbar-font-size);box-sizing:border-box}
-            a,button{min-height:44px;border:0;background-color:transparent;color:inherit;font:inherit;font-size:inherit;text-decoration:none;box-sizing:border-box}
-            .kniu_sys_user_login_user{position:relative;display:inline-flex;align-items:center;width:100%;padding:0 16px 0 calc(16px + var(--kniu-navbar-level,0) * 16px);white-space:nowrap}
-            .kniu_sys_user_login_trigger{display:inline-flex;align-items:center;gap:7px;padding:0;cursor:pointer}
-            .kniu_sys_user_login_trigger:focus-visible{outline:2px solid rgba(64,158,255,.35);outline-offset:2px}
-            .kniu_sys_user_login_avatar{display:block;width:30px;height:30px;border-radius:50%;overflow:hidden;flex-shrink:0}
-            .kniu_sys_user_login_avatar kniu-image{display:block;width:100%;height:100%}
-            .kniu_sys_user_login_arrow{width:5px;height:5px;margin:0 3px 3px 1px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(45deg);transition:transform .2s}
-            .kniu_sys_user_login_user[data-open="true"] .kniu_sys_user_login_arrow{margin-bottom:0;transform:rotate(225deg)}
-            .kniu_sys_user_login_menu{position:fixed;z-index:10030;display:none;min-width:112px;padding:5px 0;border:1px solid #e4e7ed;border-radius:4px;background-color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.12)}
-            .kniu_sys_user_login_menu[data-open="true"]{display:block}
-            .kniu_sys_user_login_menu a,.kniu_sys_user_login_menu button{display:flex;align-items:center;width:100%;min-height:32px;padding:0 12px;cursor:pointer;white-space:nowrap}
-            .kniu_sys_user_login_menu a:hover,.kniu_sys_user_login_menu a:focus-visible,.kniu_sys_user_login_menu button:hover,.kniu_sys_user_login_menu button:focus-visible{color:#409eff;background-color:#ecf5ff;outline:0}
-            .kniu_sys_user_login_logout:disabled{color:#c0c4cc;cursor:not-allowed}
-            @media(min-width:calc(1280px - 60px)){:host{display:inline-flex;width:auto;min-height:0;padding:0;border-bottom:0}.kniu_sys_user_login_user{width:auto;padding:0}}
-          </style>
+          <style>${KNIU_USER_LOGIN_CSS}</style>
           <div class="kniu_sys_user_login_user${nickname ? '' : ' kniu_sys_user_login_user_guest'}" data-open="${this._menuOpen}">
             <button class="kniu_sys_user_login_trigger" type="button" aria-haspopup="menu" aria-expanded="${this._menuOpen}">
               <span class="kniu_sys_user_login_avatar" aria-hidden="true"><kniu-image src="${String(identity.avatar || DEFAULT_USER_AVATAR).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" fit="cover" /></span>
@@ -8525,7 +8100,7 @@ var KniuUI = (function () {
             </div>
           </div>`;
         adoptDropdownStyle(this.shadowRoot);
-        appendRawStyle(this.shadowRoot, '.kniu_sys_user_login_menu{min-width:max(112px,calc(112 / var(--kniu_vw)))}.kniu_sys_user_login_menu a.kniu_sys_dropdown_option,.kniu_sys_user_login_menu button.kniu_sys_dropdown_option{height:max(28px,calc(32 / var(--kniu_vw)));min-height:max(28px,calc(32 / var(--kniu_vw)));padding:0 12px}');
+        appendRawStyle(this.shadowRoot, KNIU_USER_LOGIN_OVERRIDES_CSS);
         const hello = this.shadowRoot.querySelector('.kniu_sys_user_login_hello');
         if (hello) hello.textContent = nickname ? t('userLogin.hello') + accountName : t('userLogin.guest');
         this.shadowRoot.querySelector('.kniu_sys_user_login_trigger')?.addEventListener('click', () => {
@@ -8670,7 +8245,7 @@ var KniuUI = (function () {
           return row.article && Number(row.article.id) > 0;
         });
         if (rows.length === 0) {
-          this.shadowRoot.innerHTML = '<style>:host{display:none}</style>';
+          this.shadowRoot.innerHTML = '<style>' + KNIU_ARTICLE_TAB_CSS + '</style>';
           return;
         }
         const escape = function (text) {
@@ -8679,13 +8254,7 @@ var KniuUI = (function () {
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         };
         this.shadowRoot.innerHTML = `
-          <style>
-            :host{display:block;margin:20px 0;color:#4b5563;font:14px/1.7 var(--kniu-font-family)}
-            .kniu_sys_article_tab_tabs{display:flex;flex-direction:column;gap:6px}
-            button{display:block;width:max-content;max-width:100%;padding:0;border:0;background-color:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
-            button:hover,button:focus-visible{color:#409eff;outline:0}
-            .kniu_sys_article_tab_title{overflow-wrap:anywhere}
-          </style>
+          <style>${KNIU_ARTICLE_TAB_RENDER_CSS}</style>
           <nav class="kniu_sys_article_tab_tabs" aria-label="文章翻篇">
             ${rows.map(function (row) {
           const title = row.article.title || '';
@@ -8761,8 +8330,6 @@ var KniuUI = (function () {
         if (typeof value === 'object') return;
         const name = key.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
         element.__kniuOptionAttributes.push(name);
-        // false 与空字符串都表示「不写这个属性」。空串若照写会留下 class="" / id="" 脏属性
-        // （浏览器不会自动回收空属性，见本文件「空属性清理」一节）。
         if (value === false || value === '') element.removeAttribute(name);
         else element.setAttribute(name, value === true ? '' : String(value));
       });
@@ -8838,14 +8405,7 @@ var KniuUI = (function () {
       style.id = 'kniu-markdown-styles';
       target.appendChild(style);
     }
-    style.textContent = '.kniu_sys_markdown_body{line-height:1.7;font-size:max(12px,calc(16 / var(--kniu_vw)))}.kniu_sys_markdown_body>p{margin:0 0 18px}.kniu_sys_markdown_body>h1,.kniu_sys_markdown_body>h2,.kniu_sys_markdown_body>h3,.kniu_sys_markdown_body>h4,.kniu_sys_markdown_body>h5,.kniu_sys_markdown_body>h6{margin:28px 0 16px;line-height:1.4}.kniu_sys_markdown_body>h1{margin-top:0;margin-bottom:20px;font-size:24px}.kniu_sys_markdown_body>h2{font-size:21px}.kniu_sys_markdown_body>h3{font-size:18px}.kniu_sys_markdown_body>ul,.kniu_sys_markdown_body>ol{margin:0 0 18px;padding-left:30px;line-height:1.7}.kniu_sys_markdown_body>blockquote{margin:0 0 28px;padding:11px 16px;border-left:4px solid #2563eb;border-radius:0 6px 6px 0;background:#f1f1f1;line-height:1.7;color:#4b5563}.kniu_sys_markdown_body>blockquote p{margin:0}.kniu_sys_markdown_body>blockquote p+p{margin-top:12px}.kniu_sys_markdown_body>hr{width:100%;margin:20px 0 30px;border:0;border-top:3px solid #e5e7eb}.kniu_sys_markdown_body>table,.kniu_sys_markdown_body>.kniu_sys_article_table_wrap>table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:14px}.kniu_sys_markdown_body>table th,.kniu_sys_markdown_body>table td,.kniu_sys_markdown_body>.kniu_sys_article_table_wrap>table th,.kniu_sys_markdown_body>.kniu_sys_article_table_wrap>table td{padding:10px 12px;border:1px solid #d1d5db;text-align:left;vertical-align:middle}.kniu_sys_markdown_body>table th,.kniu_sys_markdown_body>.kniu_sys_article_table_wrap>table th{background:#f3f4f6}.kniu_sys_markdown_body :not(pre)>code{padding:2px 5px;border-radius:3px;background:#f1f5f9;color:#be185d;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.9em}.kniu_sys_markdown_body .kniu_sys_article_code{margin:20px 0;max-width:100%;overflow-x:auto;padding:16px;border:1px solid #d9dce1;border-radius:6px;background:#f6f8fa;color:#24292f;text-align:left;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}.kniu_sys_markdown_body .kniu_sys_article_code_body{display:block;width:max-content;min-width:100%;white-space:pre}.kniu_sys_markdown_body .kniu_sys_code_token_comment{color:#6a737d}.kniu_sys_markdown_body .kniu_sys_code_token_keyword,.kniu_sys_markdown_body .kniu_sys_code_token_attr{color:#d73a49}.kniu_sys_markdown_body .kniu_sys_code_token_string{color:#032f62}.kniu_sys_markdown_body .kniu_sys_code_token_number,.kniu_sys_markdown_body .kniu_sys_code_token_built-in{color:#005cc5}';
-    style.textContent += '.kniu_sys_markdown_body>ul li{list-style:disc}.kniu_sys_markdown_body>ol li{list-style:decimal}';
-    style.textContent += '.kniu_sys_markdown_body{--border-color:#e0e0e0}';
-    style.textContent += '.kniu_sys_markdown_body>h1,.kniu_sys_markdown_body>h2,.kniu_sys_markdown_body>h3,.kniu_sys_markdown_body>h4,.kniu_sys_markdown_body>h5,.kniu_sys_markdown_body>h6{margin-top:24px;margin-bottom:12px;font-weight:600;line-height:1.3}.kniu_sys_markdown_body>h2{font-size:1.6em;border-bottom:1px solid var(--border-color);padding-bottom:6px}';
-    style.textContent += '.kniu_sys_markdown_body a{color:#2563eb;text-decoration:none}.kniu_sys_markdown_body a:hover{color:#1d4ed8;text-decoration:underline}';
-    style.textContent += '.kniu_sys_markdown_body>p br{display:block;content:""}';
-    // 内容区表格包裹层（与编辑器、富文本正文共用同一套契约）。
-    style.textContent += KNIU_CONTENT_TABLE_DOC_CSS;
+    style.textContent = KNIU_MARKDOWN_CSS + KNIU_CONTENT_TABLE_DOC_CSS;
     if (target !== documentTarget && documentTarget) {
       var documentStyle = documentTarget.querySelector('#kniu-markdown-styles');
       if (!documentStyle) {
@@ -8866,15 +8426,7 @@ var KniuUI = (function () {
       style.id = 'kniu-rich-text-styles';
       target.appendChild(style);
     }
-    style.textContent = [
-      '.kniu_sys_richtext_body{line-height:1.7}',
-      '.kniu_sys_richtext_body>p{margin:0 0 18px}',
-      '.kniu_sys_richtext_body code{padding:2px 5px;border-radius:3px;background-color:#f1f5f9;color:#be185d;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.9em}',
-      '.kniu_sys_richtext_body>pre{margin:20px 0;max-width:100%;overflow-x:auto;padding:16px;border:1px solid #d9dce1;border-radius:6px;background-color:#f6f8fa;color:#24292f;text-align:left;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}',
-      '.kniu_sys_richtext_body>pre>code{display:block;width:max-content;min-width:100%;padding:0;border-radius:0;background-color:transparent;color:inherit;font:inherit;white-space:pre}',
-      // 富文本正文的表格同样走内容区表格契约（外层横向滚动 + 表格 768px 下限 + 外边距由外壳承担）。
-      KNIU_CONTENT_TABLE_DOC_CSS
-    ].join('');
+    style.textContent = KNIU_RICHTEXT_CSS + KNIU_CONTENT_TABLE_DOC_CSS;
     if (target !== documentTarget && documentTarget) {
       var documentStyle = documentTarget.querySelector('#kniu-rich-text-styles');
       if (!documentStyle) {
@@ -8896,7 +8448,6 @@ var KniuUI = (function () {
   return {
     state: state,
     configure: configure,
-    // use 是 configure 的别名，用于全局 UI 配置入口。
     use: configure,
     setLoading: setLoading,
     lockDocumentScroll: lockDocumentScroll,

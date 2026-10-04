@@ -29,7 +29,14 @@ class AdminController extends Base
   // 系统信息。
   public function system(): void
   {
-    $info = $this->getSystemInfo();
+    // 轮询意图：'memory'（秒级刷可用内存）/ 'uptime'（分钟级刷运行时间）/ 'all'（默认，全刷）。
+    // 白名单归一，未知值按 'all' 处理——绝不能因为传了个没见过的 scope 就返回一份没刷新的数据。
+    $scope = (string)$this->input('post.scope/s', 'all');
+    if (!in_array($scope, ['memory', 'uptime'], true)) {
+      $scope = 'all';
+    }
+
+    $info = $this->getSystemInfo($scope);
     $info['username'] = $_SESSION['admin_token']['name'] ?? '';
     $info['role']     = $this->mapRoleName($_SESSION['admin_token']['role'] ?? '');
     $info['role_id'] = (int)($_SESSION['admin_token']['role'] ?? 0);
@@ -52,8 +59,16 @@ class AdminController extends Base
     return $roleMap[$roleId] ?? ((string)($roleId ?: ''));
   }
 
-  // 获取系统信息。
-  private function getSystemInfo(): array
+  /**
+   * 获取系统信息。
+   *
+   * @param string $scope 刷新范围：'memory'（只刷可用内存）/ 'uptime'（只刷运行时间）/ 'all'（全刷）。
+   *                      两条轮询各有各的节奏（秒级 / 分钟级），各自只认自己的 scope，
+   *                      免得高频那条每次都白算一遍分钟级的运行时间、反之亦然。
+   *                      未刷新的字段取自缓存，调用方本就不看它们。
+   * @return array 系统信息。
+   */
+  private function getSystemInfo(string $scope = 'all'): array
   {
     $cacheFile = SystemHelper::getSystemInfoCacheFile();
     $cacheTime = 30;
@@ -61,15 +76,41 @@ class AdminController extends Base
     if (file_exists($cacheFile) && (time() - filemtime($cacheFile)) < $cacheTime) {
       $cachedData = json_decode(file_get_contents($cacheFile), true);
       if ($cachedData && is_array($cachedData)) {
-        $cachedData['currentMemory'] = SystemHelper::getPhpAvailableMemory();
-        $cachedData['currentTime'] = date('Y-m-d H:i:s');
-        $cachedData['UTCTime'] = gmdate('Y-m-d H:i:s');
-        return $cachedData;
+        return $this->refreshDynamicInfo($cachedData, $scope);
       }
     }
+
     $systemInfo = $this->buildSystemInfo();
     file_put_contents($cacheFile, json_encode($systemInfo));
-    return $systemInfo;
+
+    return $this->refreshDynamicInfo($systemInfo, $scope);
+  }
+
+  /**
+   * 按 scope 刷新动态字段。
+   *
+   * @param array $info 基础数据（来自缓存或新构建）。
+   * @param string $scope 刷新范围，取值见 getSystemInfo()。
+   * @return array 刷新后的数据。
+   */
+  private function refreshDynamicInfo(array $info, string $scope): array
+  {
+    if ($scope === 'all' || $scope === 'memory') {
+      $info['currentMemory'] = SystemHelper::getAvailableMemory();
+      $info['memoryRefreshMs'] = SystemHelper::getMemoryRefreshMs();
+    }
+
+    if ($scope === 'all' || $scope === 'uptime') {
+      // 缓存里的 uptime 最多已陈旧 $cacheTime 秒，而它只按分钟显示 ⇒ 现算，
+      // 免得前端每分钟取到的仍是「上上分钟」的值（FFI 通道下这次读取是零成本）。
+      $info['uptime'] = SystemHelper::getSystemUptime();
+      $info['uptimeRefreshMs'] = SystemHelper::getUptimeRefreshMs();
+    }
+
+    $info['currentTime'] = date('Y-m-d H:i:s');
+    $info['UTCTime'] = gmdate('Y-m-d H:i:s');
+
+    return $info;
   }
 
   // 构建系统信息。
@@ -77,10 +118,12 @@ class AdminController extends Base
   {
     $staticInfo = $this->getStaticSystemInfo();
     $dynamicInfo = [
-      'currentMemory' => SystemHelper::getPhpAvailableMemory(),
+      'currentMemory' => SystemHelper::getAvailableMemory(),
+      'memoryRefreshMs' => SystemHelper::getMemoryRefreshMs(),
+      'uptimeRefreshMs' => SystemHelper::getUptimeRefreshMs(),
       'currentTime' => date('Y-m-d H:i:s'),
       'UTCTime' => gmdate('Y-m-d H:i:s'),
-      'uptime' => $this->getSystemUpTime()
+      'uptime' => SystemHelper::getSystemUptime()
     ];
 
     return array_merge($staticInfo, $dynamicInfo);
@@ -101,7 +144,7 @@ class AdminController extends Base
       'ip' => $_SERVER['SERVER_ADDR'] ?? gethostbyname(gethostname()),
       'rootDir' => $_SERVER['DOCUMENT_ROOT'] ?? '',
       'mysqlVer' => $this->getCachedMysqlVersion(),
-      'totalMemory' => SystemHelper::getPhpMemoryLimit()
+      'totalMemory' => SystemHelper::getTotalMemory()
     ];
 
     return $staticCache;
@@ -126,17 +169,5 @@ class AdminController extends Base
     }
 
     return $mysqlVersion;
-  }
-
-  // 获取运行时间。
-  private function getSystemUpTime(): string
-  {
-    if (function_exists('sys_getloadavg')) {
-      $load = sys_getloadavg();
-      return sprintf('Load: %.2f, %.2f, %.2f', $load[0], $load[1], $load[2]);
-    }
-    $requestTime = $_SERVER['REQUEST_TIME_FLOAT'] ?? $_SERVER['REQUEST_TIME'] ?? time();
-    $uptime = microtime(true) - $requestTime;
-    return sprintf('PHP运行: %.2fs', $uptime);
   }
 }

@@ -1,5 +1,5 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import UI from '../../core/kniuui.js';
+import UI from '../../core/kniuui/kniuui.js';
 import { assignModelFields, buildMultipartFormData, formatLocalDateTime, getLocalDateParts, toSingleFileList } from '../../core/kniuutil.mjs';
 
 const { controller } = MVVM;

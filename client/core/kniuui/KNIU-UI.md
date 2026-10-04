@@ -67,6 +67,7 @@ state.commentOptions = Object.assign({}, state.commentOptions, { lang: 'en' }); 
 - **禁止频繁全量重写 innerHTML**：不要反复 `shadowRoot.innerHTML = '...'`（每次销毁旧树、重建节点、重绑事件并触发强制同步布局）。批量渲染先建 Fragment 再一次 `replaceChildren`；复用池 + 事件委托。
 - **缓存 Shadow Root 实例**：高频更新组件提前缓存 `shadowRoot` 引用，避免重复创建/销毁影子树带来的额外开销。
 - **组件样式走共享样式表** `adoptSharedStyle(root, cssText)`：按 cssText 缓存 `CSSStyleSheet`，ShadowRoot 用 `adoptedStyleSheets` 挂载。**不要在 shadowRoot 里 append 逐实例 `<style>`**（同样的 CSS 会被每个实例重复解析）。目标不是 ShadowRoot 时自动退回 `<style>` 元素。调试时设 `globalThis.__KNIU_NO_SHARED_SHEETS = true` 可退回逐实例模式做 A/B。
+- **组件 CSS 放独立文件**（`client/core/kniuui/*.css`，见 SKILL #126）：以「CSS 文本模块」导入——`import X from './kniu-editor.css?module'`，再 `adoptSharedStyle(shadowRoot, X)`。`?module` 是通道标记：dev 由 `kniuserver.mjs` 把它当 JS 模块返回（`export default "…"`），dist 由 `kniubuilder.mjs` 的 `.css` 分支内联为字符串，两侧语义一致。**文件里照原样写 px**——px→vw 换算仍由 `normalizeComponentCss()` 在运行时完成，禁止预写 `calc(N / var(--kniu_vw))`（绝对下限按 #81/#95 的既有写法保留）。**注入顺序就是层叠顺序**：需要压过共享样式（例如 `adoptDropdownStyle()` 注入的 `.kniu_sys_dropdown_panel`）的覆盖必须单独一份文件、留在原调用位置，不能并进主样式表——同特异性下后注入者取胜。
 - **避免强制同步布局**：禁止在 Shadow 内同步读写 `offsetHeight` / `getBoundingClientRect` / `scrollWidth` / `clientWidth` / `offsetWidth`。需要布局指标时用 `getLayoutMetrics()` 缓存，并在 resize / ResizeObserver / 内容变化 / `doLayout` 时失效；周期性刷新（如阴影显隐）用 `scheduleShadowVisibilityUpdate()` 合并到 rAF。
 - **批量渲染先建 Fragment**：表格行、分页页码、下拉项、单选项等一律先构建 `DocumentFragment`，再一次 `replaceChildren`，禁止在循环里逐个 `appendChild`。
 - **行/项节点复用时必须改事件委托**：复用会让监听器闭包持有陈旧数据。监听器挂容器（表格整表挂 tbody 两个），行索引写 `dataset.rowIndex`，事件处理时据此从数据数组取回当前对象。复用池还需校验结构签名（如表格的 `rowPoolColumnSignature`），列结构变化即整池作废。
@@ -74,7 +75,7 @@ state.commentOptions = Object.assign({}, state.commentOptions, { lang: 'en' }); 
 - **内存泄漏兜底**：页面/组件卸载时统一销毁 Shadow 根上的所有事件监听器（含 rAF 句柄、ResizeObserver、复用池、列宽缓存、布局指标缓存），避免残留引用导致内存泄漏。
 - **框架级 diff**：组件库自带 diff 更新能力，自动实现局部更新，避免全量重渲染。
 
-- 模块使用默认导出，业务 Controller 统一命名为 `UI`：`import UI from '../../core/kniuui.js'`。
+- 模块使用默认导出，业务 Controller 统一命名为 `UI`：`import UI from '../../core/kniuui/kniuui.js'`。
 
 ## 消息提示
 
@@ -736,7 +737,7 @@ state.pageOptions = {
 
 ```js
 // pageSize: 15 → 下拉为 15/30/45/60/75/90
-import UI from '../../core/kniuui.js';
+import UI from '../../core/kniuui/kniuui.js';
 const { usePagination } = UI;
 const state = reactive({ pageOptions: { pageSize: 15 } });
 ```
@@ -754,7 +755,7 @@ const state = reactive({ pageOptions: { pageSize: 15 } });
 `usePagination(options)` 返回 `loadList / changePage / changePageSize` 三个方法，负责请求后端、写回响应式 state；上一页和下一页由分页组件转换成 `current-change`，不再提供重复的控制器函数：
 
 ```js
-import UI from '../../core/kniuui.js';
+import UI from '../../core/kniuui/kniuui.js';
 const { usePagination } = UI;
 
 const myController = controller(({ $msg }) => {
@@ -1000,7 +1001,7 @@ box-shadow: 0 2px 12px rgba(0,0,0,.1);
 
 ## 点赞组件 kniu-like
 
-文章点赞组件只通过 `kniu:option` 配置，按钮显示大拇指图标及括号包裹的点赞数，例如“大拇指图标 (360)”。组件始终渲染；`own=true` 时按钮禁用但仍显示点赞数，不能把整个组件隐藏。组件在内容区域水平居中并保留 `24px` 上下间距；按钮最小高度 `44px`，图标 `24px`，文字 `16px`。仅当状态为已点赞且收到新的 `feedback` 标记时向上飘出蓝色 `+1`；取消点赞、旧反馈重渲染和待处理的取消请求都不播放，并遵循 `prefers-reduced-motion`。
+文章点赞组件只通过 `kniu:option` 配置，按钮显示大拇指图标及括号包裹的点赞数，例如“大拇指图标 (360)”。组件始终渲染；`own=true` 时按钮禁用但仍显示点赞数，不能把整个组件隐藏。组件在内容区域水平居中并保留 `24px` 上下间距；按钮最小高度 `44px`（下限挂在**宿主**上），图标 `24px`，文字 `16px`。**尺寸契约**：内层真实按钮填满宿主盒（`height:100%`），因此当外层布局给宿主设定了固定尺寸时，点赞按钮会与同组的 `kniu-btn` 呈现完全一致的长宽——宿主无确定高度时 `height:100%` 回退为 `auto`，按钮高度等于自身内容盒（约 48 设计 px），触控下限由宿主 `min-height:44px` 兜底。仅当状态为已点赞且收到新的 `feedback` 标记时向上飘出蓝色 `+1`；取消点赞、旧反馈重渲染和待处理的取消请求都不播放，并遵循 `prefers-reduced-motion`。
 
 ```html
 <kniu-like kniu:option="{{likeOptions}}" />
@@ -1052,7 +1053,7 @@ state.articleTabOptions = {
 ## 默认导出
 
 ```js
-import UI from '../../core/kniuui.js';
+import UI from '../../core/kniuui/kniuui.js';
 
 UI.msg('消息');
 UI.confirm('确认操作？', '提示');

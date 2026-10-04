@@ -1,5 +1,5 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import UTIL from '../../core/kniuui.js';
+import UTIL from '../../core/kniuui/kniuui.js';
 
 const { controller } = MVVM;
 

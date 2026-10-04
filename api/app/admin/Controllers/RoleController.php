@@ -196,6 +196,8 @@ class RoleController extends Base
         $data['password'] = $this->hashPassword($password);
       }
     }
+    // 本次是否真的改了密码：批量勾选（KNIU_TABLE_EVENT_CHECKALL）只改 is_select 状态，不算改密码。
+    $passwordChanged = $type !== 'KNIU_TABLE_EVENT_CHECKALL' && isset($data['password']);
     if ($type === 'KNIU_TABLE_EVENT_CHECKALL') {
       $selectallResult = array_key_exists('is_selectall', $data)
         ? Db::name('tb_selectall')->where('name', '=', 'role')->update(['is_select' => $data['is_selectall']])
@@ -222,7 +224,90 @@ class RoleController extends Base
       $this->json([], '数据未发生变化', ErrorCode::RULE_REJECTED);
       return;
     }
-    $this->json([], '更新成功', 1);
+    // 密码一旦落库，被改账号的已有登录态立即失效——由后端强制保证，前端只负责跳转。
+    $logoutSelf = $passwordChanged ? $this->forceLogoutAfterPasswordChange((int)$id) : false;
+    $this->json(['logout' => $logoutSelf], '更新成功', 1);
+  }
+
+  /**
+   * 修改密码成功后的强制登出：被改账号的已有后台会话必须立即失效。
+   *
+   * 改的是当前登录账号 → 直接销毁当前会话（返回 true，前端据此跳登录页）；
+   * 管理员改他人密码 → 保留管理员会话，仅删除被改账号在文件会话存储中的会话文件。
+   *
+   * @param int $targetId 被改密码的账号 tb_role.id。
+   * @return bool 当前会话是否已被销毁（true 表示本请求结束后已处于登出态）。
+   */
+  private function forceLogoutAfterPasswordChange(int $targetId): bool
+  {
+    if ($targetId <= 0) {
+      return false;
+    }
+    if ($targetId === $this->currentUserId()) {
+      // 该账号在其它设备上的会话同样必须失效，再销毁当前请求自身的会话。
+      $this->destroySessionsOfUser($targetId);
+      unset($_SESSION['admin_token']);
+      if (session_status() === PHP_SESSION_ACTIVE) {
+        session_destroy();
+      }
+      return true;
+    }
+    $this->destroySessionsOfUser($targetId);
+    return false;
+  }
+
+  /**
+   * 删除指定账号在文件会话存储中的全部会话文件（保留当前请求自身的会话）。
+   *
+   * 会话序列化格式为 php 处理器的 "键|序列化值"，admin_token 是扁平数组，
+   * 故按 "admin_token|a:N:{...}" 截出内部片断再取 id 即可，无需 session_decode
+   * （session_decode 会覆盖当前请求的 $_SESSION）。
+   *
+   * @param int $userId 目标账号 tb_role.id。
+   * @return int 实际删除的会话文件数量。
+   */
+  private function destroySessionsOfUser(int $userId): int
+  {
+    $savePath = (string)session_save_path();
+    // php.ini 支持 "N;/path" 多级目录写法，取分号后的真实路径。
+    $separator = strrpos($savePath, ';');
+    if ($separator !== false) {
+      $savePath = substr($savePath, $separator + 1);
+    }
+    if ($savePath === '' || !is_dir($savePath)) {
+      return 0;
+    }
+    $currentSid = (string)session_id();
+    $files = glob(rtrim($savePath, '/\\') . DIRECTORY_SEPARATOR . 'sess_*');
+    if (!is_array($files)) {
+      return 0;
+    }
+    $removed = 0;
+    foreach ($files as $file) {
+      $sid = substr(basename($file), 5);
+      if ($sid === '' || $sid === $currentSid) {
+        continue;
+      }
+      $content = @file_get_contents($file);
+      if ($content === false || $content === '') {
+        continue;
+      }
+      $tokenSegment = [];
+      if (preg_match('/admin_token\|a:\d+:\{([^{}]*)\}/', $content, $tokenSegment) !== 1) {
+        continue;
+      }
+      $idSegment = [];
+      if (preg_match('/s:2:"id";i:(\d+);/', $tokenSegment[1], $idSegment) !== 1) {
+        continue;
+      }
+      if ((int)$idSegment[1] !== $userId) {
+        continue;
+      }
+      if (@unlink($file)) {
+        $removed++;
+      }
+    }
+    return $removed;
   }
 
   // 查询角色列表。

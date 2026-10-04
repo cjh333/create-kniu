@@ -1,5 +1,5 @@
-import { nextTick, queueJob } from './kniuscheduler.mjs';
-import { isDangerousUrl } from './kniusanitizer.mjs';
+import { nextTick, queueJob } from '../kniuscheduler.mjs';
+import { isDangerousUrl } from '../kniusanitizer.mjs';
 
 var KniuTemplate = (function () {
   const SUBS = Symbol('kniu-subs');

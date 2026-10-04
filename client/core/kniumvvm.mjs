@@ -1,5 +1,5 @@
-import TEMPLATE from './kniutemplate.mjs';
-import UI from './kniuui.js';
+import TEMPLATE from './kniutemplate/kniutemplate.mjs';
+import UI from './kniuui/kniuui.js';
 import REQUEST from './kniurequest.mjs';
 import { nextTick } from './kniuscheduler.mjs';
 
@@ -47,6 +47,17 @@ function createTimerServices(services, timers) {
         timers.delete(timer);
         callback();
       }, delay);
+      timers.add(timer);
+      return timer.id;
+    },
+    // rAF 与定时器同等对待：登记进 timers，卸载时自动取消。
+    // 帧循环是「自己排自己」的（回调里再申请下一帧），漏取消就会在组件销毁后一直跑。
+    requestAnimationFrame(callback) {
+      const timer = { id: null, repeat: false, frame: true };
+      timer.id = globalThis.requestAnimationFrame(function (timestamp) {
+        timers.delete(timer);
+        callback(timestamp);
+      });
       timers.add(timer);
       return timer.id;
     }
@@ -192,7 +203,8 @@ function createViewModel(component, services = {}, root, refs = {}) {
       try { cleanup(); } catch (error) { console.warn('[MVVM] cleanup failed:', error); }
     });
     instance.timers.forEach(function (timer) {
-      if (timer.repeat) globalThis.clearInterval(timer.id);
+      if (timer.frame) globalThis.cancelAnimationFrame(timer.id);
+      else if (timer.repeat) globalThis.clearInterval(timer.id);
       else globalThis.clearTimeout(timer.id);
     });
     instance.timers.clear();

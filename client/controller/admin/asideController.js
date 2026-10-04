@@ -1,5 +1,5 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import UI from '../../core/kniuui.js';
+import UI from '../../core/kniuui/kniuui.js';
 import { getCurrentRoutePath } from '../../core/kniuutil.mjs';
 import { enhanceCodeBlocks, renderMarkdown } from '../../core/kniucode.mjs';
 import AUTH from '../../core/kniuauth.mjs';

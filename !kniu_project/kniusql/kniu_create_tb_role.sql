@@ -8,6 +8,8 @@ CREATE TABLE `tb_role` (
     `identity_token` char(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '身份令牌',
     `password` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '密码哈希',
     `email` varchar(190) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '邮箱',
+    -- 注意：下面两个默认值仅供建表时使用，实际账号一律由接口写入（/role_add 默认传 0，
+    -- role_auth 由 syncRoleAuth() 按 role 派生）。直接 SQL 插入会因默认值 1 造出管理员账号。
     `role` tinyint unsigned NOT NULL DEFAULT 1 COMMENT '角色(1管理员,2普通用户)',
     `role_auth` tinyint unsigned NOT NULL DEFAULT 1 COMMENT '角色权限(1编辑,2查看)',
     `comment_audit` tinyint unsigned NOT NULL DEFAULT 1 COMMENT '评论是否审核(0否,1是)',
