@@ -1,67 +1,85 @@
 @charset "UTF-8";
 
 :host {
+  box-sizing: border-box;
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box;
+  -ms-box-sizing: border-box;
+  -o-box-sizing: border-box;
   display: flex;
   align-items: center;
   -webkit-align-items: center;
   -moz-align-items: center;
   -ms-align-items: center;
   -o-align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 0;
   width: 100%;
   min-height: 50px;
-  padding: 0;
-  border-bottom: 1px solid #e5e7eb;
-  color: #111827;
-  font-family: var(--kniu-font-family);
   font-size: var(--kniu-navbar-font-size);
+  font-family: var(--kniu-font-family);
+  color: #111827;
+}
+
+a,
+button {
   box-sizing: border-box;
   -webkit-box-sizing: border-box;
   -moz-box-sizing: border-box;
   -ms-box-sizing: border-box;
   -o-box-sizing: border-box;
-}
-
-a,
-button {
+  border: none;
   min-height: 44px;
-  border: 0;
-  background-color: transparent;
-  color: inherit;
+  text-decoration: none;
   font: inherit;
   font-size: inherit;
-  text-decoration: none;
-  box-sizing: border-box
+  background-color: transparent;
+  color: inherit;
 }
 
 .kniu_sys_user_login_user {
   position: relative;
   display: inline-flex;
+  display: -webkit-inline-flex;
   align-items: center;
-  width: 100%;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
   padding: 0 16px 0 calc(16px + var(--kniu-navbar-level, 0) * 16px);
-  white-space: nowrap
+  width: 100%;
+  white-space: nowrap;
 }
 
 .kniu_sys_user_login_trigger {
   display: inline-flex;
+  display: -webkit-inline-flex;
   align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
   gap: 7px;
   padding: 0;
-  cursor: pointer
+  cursor: pointer;
 }
 
 .kniu_sys_user_login_trigger:focus-visible {
   outline: 2px solid rgba(64, 158, 255, .35);
-  outline-offset: 2px
+  outline-offset: 2px;
 }
 
 .kniu_sys_user_login_avatar {
+  overflow: hidden;
+  flex-shrink: 0;
   display: block;
+  border-radius: 50%;
+  -webkit-border-radius: 50%;
+  -moz-border-radius: 50%;
+  -ms-border-radius: 50%;
+  -o-border-radius: 50%;
   width: 30px;
   height: 30px;
-  border-radius: 50%;
-  overflow: hidden;
-  flex-shrink: 0
 }
 
 .kniu_sys_user_login_avatar kniu-image {
@@ -71,72 +89,97 @@ button {
 }
 
 .kniu_sys_user_login_arrow {
-  width: 5px;
-  height: 5px;
-  margin: 0 3px 3px 1px;
+  transform: rotate(45deg);
+  -webkit-transform: rotate(45deg);
+  -moz-transform: rotate(45deg);
+  -ms-transform: rotate(45deg);
+  -o-transform: rotate(45deg);
   border-right: 1px solid currentColor;
   border-bottom: 1px solid currentColor;
-  transform: rotate(45deg);
-  transition: transform .2s
+  margin: 0 3px 3px 1px;
+  width: 5px;
+  height: 5px;
+  transition: transform .2s;
+  -webkit-transition: transform .2s;
+  -moz-transition: transform .2s;
+  -ms-transition: transform .2s;
+  -o-transition: transform .2s;
 }
 
 .kniu_sys_user_login_user[data-open="true"] .kniu_sys_user_login_arrow {
+  transform: rotate(225deg);
+  -webkit-transform: rotate(225deg);
+  -moz-transform: rotate(225deg);
+  -ms-transform: rotate(225deg);
+  -o-transform: rotate(225deg);
   margin-bottom: 0;
-  transform: rotate(225deg)
 }
 
 .kniu_sys_user_login_menu {
-  position: fixed;
   z-index: 10030;
+  position: fixed;
   display: none;
-  min-width: 112px;
-  padding: 5px 0;
   border: 1px solid var(--kniu-border-color-light, #e4e7ed);
   border-radius: 4px;
+  -webkit-border-radius: 4px;
+  -moz-border-radius: 4px;
+  -ms-border-radius: 4px;
+  -o-border-radius: 4px;
+  padding: 5px 0;
+  min-width: 112px;
   background-color: #fff;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, .12)
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+  -webkit-box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+  -moz-box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+  -ms-box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+  -o-box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
 }
 
 .kniu_sys_user_login_menu[data-open="true"] {
-  display: block
+  display: block;
 }
 
 .kniu_sys_user_login_menu a,
 .kniu_sys_user_login_menu button {
   display: flex;
+  display: -webkit-flex;
   align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  padding: 0 12px;
   width: 100%;
   min-height: 32px;
-  padding: 0 12px;
+  white-space: nowrap;
   cursor: pointer;
-  white-space: nowrap
 }
 
 .kniu_sys_user_login_menu a:hover,
 .kniu_sys_user_login_menu a:focus-visible,
 .kniu_sys_user_login_menu button:hover,
 .kniu_sys_user_login_menu button:focus-visible {
-  color: var(--kniu-color-primary, #409eff);
+  outline: 0;
   background-color: var(--kniu-color-primary-light, #ecf5ff);
-  outline: 0
+  color: var(--kniu-color-primary, #409eff);
 }
 
 .kniu_sys_user_login_logout:disabled {
   color: #c0c4cc;
-  cursor: not-allowed
+  cursor: not-allowed;
 }
 
-@media(min-width:calc(1280px - 60px)) {
+@media(min-width: calc(1280px - 60px)) {
   :host {
     display: inline-flex;
+    border-bottom: 0;
+    padding: 0;
     width: auto;
     min-height: 0;
-    padding: 0;
-    border-bottom: 0
   }
 
   .kniu_sys_user_login_user {
+    padding: 0;
     width: auto;
-    padding: 0
   }
 }
