@@ -1,0 +1,19 @@
+<nav class="kniu_sys_navbar_bar" aria-label="主导航">
+  <a class="kniu_sys_navbar_brand">
+    <slot name="brand">
+      <span class="kniu_sys_navbar_brand_label"></span>
+    </slot>
+  </a>
+  <button class="kniu_sys_navbar_toggle" aria-label="展开导航" aria-expanded="false" type="button">
+    <span class="kniu_sys_navbar_toggle_icon" aria-hidden="true">
+      <i></i>
+      <i></i>
+      <i></i>
+    </span>
+  </button>
+  <slot name="default"></slot>
+  <div class="kniu_sys_navbar_menu">
+    <slot name="append"></slot>
+    <slot></slot>
+  </div>
+</nav>

@@ -1,0 +1,120 @@
+@charset "UTF-8";
+
+:host {
+  display: block;
+}
+
+/* 分页项全部平铺在 .kniu_sys_page 单行内，DOM 顺序严格等于 layout 声明顺序 */
+.kniu_sys_page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: calc(16 / var(--kniu_vw)) calc(6 / var(--kniu_vw));
+  margin-top: calc(30 / var(--kniu_vw));
+  font-size: 13px;
+  color: var(--kniu-text-color, #606266)
+}
+
+.kniu_sys_page[hidden] {
+  display: none
+}
+
+.kniu_sys_page_pager {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px
+}
+
+.kniu_sys_page_btn {
+  min-width: max(28px, calc(30 / var(--kniu_vw)));
+  height: max(28px, calc(30 / var(--kniu_vw)));
+  padding: 0 8px;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-radius: 4px;
+  background-color: #fff;
+  color: var(--kniu-text-color, #606266);
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  transition: all .2s
+}
+
+.kniu_sys_page_btn:hover:not([disabled]):not(.kniu_sys_page_btn_active) {
+  color: var(--kniu-color-primary, #409eff);
+  border-color: var(--kniu-color-primary-lighter, #c6e2ff)
+}
+
+.kniu_sys_page_btn.kniu_sys_page_btn_active {
+  color: #fff;
+  background-color: var(--kniu-color-primary, #409eff);
+  border-color: var(--kniu-color-primary, #409eff);
+  cursor: default
+}
+
+.kniu_sys_page_btn[disabled] {
+  color: #c0c4cc;
+  cursor: not-allowed;
+  background-color: #fff
+}
+
+.kniu_sys_page_btn[data-background="true"]:not(.kniu_sys_page_btn_active):not([disabled]) {
+  background-color: #f4f4f5
+}
+
+.kniu_sys_page_sizes {
+  width: max-content;
+  min-width: 0;
+  font-size: 13px
+}
+
+.kniu_sys_page_jumper {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap
+}
+
+.kniu_sys_page_jumper_input {
+  width: 46px;
+  height: max(28px, calc(30 / var(--kniu_vw)));
+  padding: 0 6px;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-radius: 4px;
+  outline: 0;
+  color: var(--kniu-text-color, #606266);
+  font: inherit;
+  text-align: center;
+  box-sizing: border-box
+}
+
+.kniu_sys_page_jumper_input {
+  -moz-appearance: textfield;
+}
+
+.kniu_sys_page_jumper_input::-webkit-inner-spin-button,
+.kniu_sys_page_jumper_input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0
+}
+
+.kniu_sys_page_jumper_input:hover {
+  border-color: #c0c4cc
+}
+
+.kniu_sys_page_jumper_input:focus {
+  border-color: var(--kniu-color-primary, #409eff)
+}
+
+@media (min-width:calc(1024px - 60px)) {
+  .kniu_sys_page {
+    margin-top: calc(16 / var(--kniu_vw));
+  }
+}
+
+@media (min-width:calc(1280px - 60px)) {
+  .kniu_sys_page {
+    justify-content: flex-start
+  }
+}

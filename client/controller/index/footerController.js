@@ -1,5 +1,5 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import UI from '../../core/kniuui/kniuui.js';
+import UI from '../../core/kniuui/kniuui.mjs';
 import IDENTITY from '../../core/kniuidentity.mjs';
 
 const { controller } = MVVM;

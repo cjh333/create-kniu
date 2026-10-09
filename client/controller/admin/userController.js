@@ -1,5 +1,5 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import UI from '../../core/kniuui/kniuui.js';
+import UI from '../../core/kniuui/kniuui.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 import { assignOptionFields } from '../../core/kniuutil.mjs';
 
@@ -121,7 +121,6 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
       activeColor: '#13ce66', inactiveColor: '#f56c6c', disabled: !canAdministerUsers
     },
     userPage: {
-      layout: '总数,首页,上一页,页码,下一页,末页,条数',
       currentPage: 1,
       pageSize: 10,
       total: 0,
@@ -146,6 +145,10 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
           ...row,
           role_text: ROLE_TEXT[String(row.role)] || `未知(${row.role})`,
           role_auth_text: Number(row.role_auth) === 1 ? '编辑' : '查看',
+          // 超级账号（role=1）不给「删除」按钮：列内按行条件走 kniu-table 的
+          // condition 机制，作用域是 { scope: { row, $index } }，视图里必须写
+          // `{{scope.row.deletable}}`（写 `{{row.deletable}}` 求值抛错被吞，恒假）。
+          deletable: Number(row.role) !== 1,
           muted: Number(row.comment_ban) === 1,
           nickname_editable: !row.issue_time || new Date(row.issue_time).getTime() <= Date.now() - 365 * 24 * 60 * 60 * 1000,
           can_edit: canAdministerUsers || String(row.name || '') === currentUserName
@@ -180,12 +183,6 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
     state.dialogTitle = canAdministerUsers ? '修改密码' : '修改用户';
     state.showmodal = true;
     return false;
-  }
-
-  function onRoleChange(event) {
-    const role = String(event?.detail ?? event?.target?.value ?? state.userModel.role ?? '');
-    state.userModel.role = role;
-    state.userModel.role_auth = deriveRoleAuth(role);
   }
 
   function closeDialog() { state.showmodal = false; }
@@ -334,7 +331,7 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
     return saved;
   }
 
-  const deleteRow = createRowDeleteHandler({
+  const deleteRowBase = createRowDeleteHandler({
     self,
     state,
     loadList,
@@ -355,6 +352,27 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
     }
   });
 
+  /**
+   * 删除账号入口：拦下 admin 超级账号。
+   *
+   * 视图侧已经用 `kniu:if="{{scope.row.deletable}}"` 让 admin 行**根本不渲染**删除按钮
+   * （列内按行条件走 kniu-table 的 `actions[].condition` 逐行求值，作用域形如
+   * `{ scope: { row, $index } }`，所以必须写 `scope.row.x`，写 `row.x` 会 ReferenceError）。
+   * 这里保留第二道闸门，是因为权限边界必须在后端（`/role_delete`），前端渲染与否不构成安全。
+   *
+   * @param {number} index 行下标。
+   * @param {Array<object>} list 当前页数据。
+   * @return {Promise<boolean>|boolean} 是否继续走删除流程。
+   */
+  function deleteRow(index, list) {
+    const row = (list || [])[index];
+    if (row && Number(row.role) === 1) {
+      self.$msg({ content: 'admin 超级账号不可删除', type: 'error' });
+      return false;
+    }
+    return deleteRowBase(index, list);
+  }
+
   onMounted(function () {
     if (!canAccessUsers(AUTH.getUser())) {
       self.$msg({ content: '权限不足', type: 'error' });
@@ -364,7 +382,7 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
     loadList(1);
   });
 
-  return { state, changePage, changePageSize, searchList, debouncedSearch, addRow, editRow, closeDialog, saveEdit, updateMuted, updateDisabled, updateRoleAuth, updateNickname, updateCommentAudit, deleteRow, onRoleChange };
+  return { state, changePage, changePageSize, searchList, debouncedSearch, addRow, editRow, closeDialog, saveEdit, updateMuted, updateDisabled, updateRoleAuth, updateNickname, updateCommentAudit, deleteRow };
 });
 
 export default userController;

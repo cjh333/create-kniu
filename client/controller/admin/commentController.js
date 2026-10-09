@@ -1,13 +1,13 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import UI from '../../core/kniuui/kniuui.js';
+import UI from '../../core/kniuui/kniuui.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 
 const { controller } = MVVM;
 const { makeSwitchOptions, useListPage } = UI;
 
 function createCommentManagementController(managementType = 'comment') {
-  return controller(({ $msg, eventTo, navigateTo, request, reactive, onMounted }) => {
-    const self = { $msg, navigateTo };
+  return controller(({ $confirm, $msg, eventTo, navigateTo, request, reactive, onMounted }) => {
+    const self = { $confirm, $msg, navigateTo };
     const canEditContent = Number(AUTH.getUser()?.roleId || AUTH.getUser()?.role || 0) === 1 || Number(AUTH.getUser()?.roleAuth || 0) === 1;
     const state = reactive({
       canEditContent,
@@ -27,7 +27,6 @@ function createCommentManagementController(managementType = 'comment') {
         loading: true
       },
       commentPage: {
-        layout: '上一页,首页,页码,末页,下一页,跳转,总数,条数',
         currentPage: 1,
         pageSize: 20,
         total: 0,

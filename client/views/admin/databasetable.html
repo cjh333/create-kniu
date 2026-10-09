@@ -1,0 +1,132 @@
+<style scoped>
+  @import url("@kniu/kniu.min.css");
+  @import url("@style/web.min.css");
+  @import url("@style/admin/admin.min.css");
+  @import url("@style/admin/admin_home.min.css");
+
+  .detail_head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 10px 10px;
+  }
+
+  .detail_head_actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+  }
+
+  .detail_wrap {
+    position: relative;
+    margin-bottom: 16px;
+    background-color: #fff;
+  }
+
+  .db_section_search {
+    flex: 0 0 auto;
+    width: 320px;
+    max-width: 46%;
+    min-width: 160px;
+  }
+</style>
+<section class="index_cells">
+  <div class="admin_content_body index_cell index_cell_2">
+    <div class="detail_head">
+      <kniu-tab :option="{{tabBar}}" />
+      <div class="detail_head_actions">
+        <kniu-btn :option="{{type:'danger'}}" @click="dropTable">删除数据表</kniu-btn>
+        <kniu-btn :option="{{link:true,type:'primary'}}" @click="goTables">返回</kniu-btn>
+      </div>
+    </div>
+    <template :if="{{activeTab === 'data'}}">
+      <div class="detail_head">
+        <span class="db_section_title">数据行 共 {{total}} 行</span>
+        <div class="detail_head_actions">
+          <kniu-btn :option="{{type:'primary'}}" @click="openInsertRow">新增行</kniu-btn>
+          <kniu-input class="db_section_search" :form="{{keyword}}" :option="{{name:'keyword',placeholder:'按任意列模糊检索',clearable:true}}">
+            <template #append label-width="48px">
+              <kniu-btn :option="{{text:true}}" @click="searchRows">
+                <kniu-icon :option="{{icon:'search'}}" />
+              </kniu-btn>
+            </template>
+          </kniu-input>
+        </div>
+      </div>
+      <div class="detail_wrap">
+        <kniu-table :option="{{rowTable}}">
+          <kniu-table-col data-db-action label="操作" width="160" align="center" fixed="right">
+            <template #default>
+              <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="openEditRow">编辑</kniu-btn>
+              <kniu-btn :option="{{type:'danger',size:'small',link:true}}" @click="deleteRow">删除</kniu-btn>
+            </template>
+          </kniu-table-col>
+        </kniu-table>
+        <kniu-page :option="{{rowPage}}" />
+      </div>
+    </template>
+    <template :if="{{activeTab === 'struct'}}">
+      <div class="detail_wrap">
+        <kniu-table :option="{{structTable}}">
+          <kniu-table-col field="name" label="名称" min-width="140" show-overflow-tooltip />
+          <kniu-table-col field="type_text" label="类型" min-width="150" show-overflow-tooltip />
+          <kniu-table-col field="length_text" label="长度" width="120" align="center" show-overflow-tooltip />
+          <kniu-table-col field="comment" label="注释" min-width="130" show-overflow-tooltip />
+          <kniu-table-col field="default_text" label="默认值" min-width="130" align="center" show-overflow-tooltip />
+          <kniu-table-col field="not_null" label="Not Null" width="90" align="center" />
+          <kniu-table-col field="is_primary" label="主键" width="70" align="center" />
+          <kniu-table-col field="is_unique" label="唯一" width="70" align="center" />
+          <kniu-table-col field="is_auto" label="自增" width="70" align="center" />
+          <kniu-table-col field="is_unsigned" label="UNSIGNED" width="100" align="center" />
+          <kniu-table-col field="is_zerofill" label="Zerofill" width="90" align="center" />
+          <kniu-table-col data-db-action label="操作" width="160" align="center" fixed="right">
+            <template #default>
+              <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="openColumnEdit">编辑</kniu-btn>
+              <kniu-btn :option="{{type:'danger',size:'small',link:true}}" @click="dropColumn">删除</kniu-btn>
+            </template>
+          </kniu-table-col>
+        </kniu-table>
+      </div>
+    </template>
+  </div>
+</section>
+
+<kniu-modal style="width:760px;" :option="{{show:(showRowEditor)}}" @close="closeRowEditor">
+  <template #header>
+    <span>{{rowEditorTitle}}</span>
+    <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="closeRowEditor">
+      <kniu-icon :option="{{icon:'close'}}" />
+    </kniu-btn>
+  </template>
+  <template #default>
+    <kniu-form-cell>
+      <kniu-switch :option="{{name:'emptyAsNull',activeValue:true,inactiveValue:false}}">
+        <template #prepend label-width="100px">空值处理</template>
+      </kniu-switch>
+    </kniu-form-cell>
+    <p style="margin:0 0 8px;font-size:12px;color:#909399;">留空按 NULL 写入（关闭则写入空字符串）</p>
+    <div id="rowEditorFields" style="max-height:420px;overflow:auto;"></div>
+  </template>
+  <template #footer>
+    <kniu-btn @click="closeRowEditor">取 消</kniu-btn>
+    <kniu-btn :option="{{type:'primary'}}" @click="submitRow">保 存</kniu-btn>
+  </template>
+</kniu-modal>
+
+<kniu-modal style="width:640px;" :option="{{show:(showColumnEditor)}}" @close="closeColumnEditor">
+  <template #header>
+    <span>{{columnEditorTitle}}</span>
+    <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="closeColumnEditor">
+      <kniu-icon :option="{{icon:'close'}}" />
+    </kniu-btn>
+  </template>
+  <template #default>
+    <div id="columnEditorFields" style="max-height:420px;overflow:auto;"></div>
+    <p style="margin:8px 0 0;font-size:12px;color:#909399;">默认值留空表示清除；输入 NULL 表示默认空值；CURRENT_TIMESTAMP 按时间字面量写入。编辑是全量重定义，ON UPDATE 等未开放属性会被清除。</p>
+  </template>
+  <template #footer>
+    <kniu-btn @click="closeColumnEditor">取 消</kniu-btn>
+    <kniu-btn :option="{{type:'primary'}}" @click="submitColumnEdit">保 存</kniu-btn>
+  </template>
+</kniu-modal>

@@ -1,0 +1,116 @@
+<style scoped>
+  @import url("@kniu/kniu.min.css");
+  @import url("@style/web.min.css");
+  @import url("@style/admin/admin.min.css");
+  @import url("@style/admin/admin_home.min.css");
+
+  .detail_head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 10px 10px;
+  }
+
+  .detail_head_actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+  }
+
+  .detail_wrap {
+    position: relative;
+    margin-bottom: 16px;
+    background-color: #fff;
+  }
+
+  .db_field_row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .db_field_row>label {
+    flex: 0 0 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+    padding: 0 calc(20 / var(--kniu_vw));
+    background-color: #f5f7fa;
+    border: calc(1 / var(--kniu_vw)) solid #dcdfe6;
+    border-radius: calc(4 / var(--kniu_vw));
+    color: #909399;
+    font-size: max(12px, calc(14 / var(--kniu_vw)));
+    text-align: center;
+    white-space: nowrap;
+    box-sizing: border-box;
+  }
+
+  .db_field_row>.db_field_grow {
+    flex: 1;
+    min-width: 0;
+  }
+</style>
+<section class="index_cells">
+  <div class="admin_content_body index_cell index_cell_2">
+    <div class="detail_head">
+      <kniu-btn :option="{{type:'primary'}}" @click="openCreateTable">新建数据表</kniu-btn>
+      <div class="detail_head_actions">
+        <kniu-btn @click="doExport">导出数据库</kniu-btn>
+        <kniu-btn :option="{{link:true,size:'small',type:'primary'}}" @click="goDatabases">返回</kniu-btn>
+      </div>
+    </div>
+
+    <div class="detail_wrap">
+      <kniu-table :option="{{tableTable}}">
+        <kniu-table-col field="name" label="表名" min-width="120" show-overflow-tooltip />
+        <kniu-table-col field="type_text" label="类型" width="120" align="center" />
+        <kniu-table-col field="engine" label="引擎" width="110" align="center" />
+        <kniu-table-col field="rows" label="行数" width="110" align="center" sortable />
+        <kniu-table-col field="size_text" label="体积" width="130" align="center" />
+        <kniu-table-col field="comment" label="注释" min-width="160" show-overflow-tooltip />
+        <kniu-table-col label="操作" width="96" align="center" fixed="right">
+          <template #default>
+            <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="viewTable">查看</kniu-btn>
+          </template>
+        </kniu-table-col>
+      </kniu-table>
+    </div>
+  </div>
+</section>
+
+<kniu-modal style="width:960px;" :option="{{show:(showCreateTable)}}" @close="closeCreateTable">
+  <template #header>
+    <span>新建数据表</span>
+    <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="closeCreateTable">
+      <kniu-icon :option="{{icon:'close'}}" />
+    </kniu-btn>
+  </template>
+  <template #default>
+    <kniu-form-cell>
+      <kniu-input :option="{{value:(database),disabled:true}}">
+        <template #prepend label-width="100px">所属数据库</template>
+      </kniu-input>
+    </kniu-form-cell>
+    <kniu-form-cell>
+      <kniu-input id="newTableName" :option="{{placeholder:'字母/数字/下划线',maxlength:'64'}}">
+        <template #prepend label-width="100px">表名</template>
+      </kniu-input>
+    </kniu-form-cell>
+    <kniu-form-cell>
+      <div class="db_field_row">
+        <label>字段</label>
+        <div class="db_field_grow">
+          <div id="newTableFields"></div>
+          <kniu-btn :option="{{size:'small',link:true,type:'primary'}}" @click="addFieldRow">+ 添加字段</kniu-btn>
+        </div>
+      </div>
+    </kniu-form-cell>
+  </template>
+  <template #footer>
+    <kniu-btn @click="closeCreateTable">取 消</kniu-btn>
+    <kniu-btn :option="{{type:'primary'}}" @click="submitCreateTable">保 存</kniu-btn>
+  </template>
+</kniu-modal>

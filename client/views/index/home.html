@@ -22,7 +22,7 @@
         <div class="kniu_container">
           <div class="index_group_1">
             <article class="index_wrap_11">
-              <template kniu:for="{{dailys}}" kniu:key="id">
+              <template :for="{{dailys}}" :key="id">
                 <div class="index_item_11">
                   <div class="index_daily_group">
                     <p class="index_daily_title">({{today}}) 每日一句：</p>
@@ -31,15 +31,15 @@
                   </div>
                 </div>
               </template>
-              <kniu-input class="kniu_md_mt_15 kniu_md_main" kniu:form="{{keyword}}" kniu:option="{{name:'keyword',placeholder:'请输入文章标题'}}" kniu@keydown.enter="searchList" kniu@input="debouncedSearch">
+              <kniu-input class="kniu_md_mt_15 kniu_md_main" :form="{{keyword}}" :option="{{name:'keyword',placeholder:'请输入文章标题'}}" @keydown.enter="searchList" @input="debouncedSearch">
                 <template #append label-width="48px">
-                  <kniu-btn block aria-label="搜索" kniu:option="{{text:true}}" kniu@click="searchList">
-                    <kniu-icon kniu:option="{{icon:'search'}}" />
+                  <kniu-btn block aria-label="搜索" :option="{{text:true}}" @click="searchList">
+                    <kniu-icon :option="{{icon:'search'}}" />
                   </kniu-btn>
                 </template>
               </kniu-input>
-              <template kniu:for="{{articles}}" kniu:key="id">
-                <a class="kniu_md_mt_15 index_item_11" kniu:option="{{articleId:item.id,onClick:toDetail}}" href="javascript:;">
+              <template :for="{{articles}}" :key="id">
+                <a class="kniu_md_mt_15 index_item_11" :option="{{articleId:item.id,onClick:toDetail}}" href="javascript:;">
                   <div class="index_article_group">
                     <div class="index_article_title_group">
                       <span class="index_article_title">{{item.title}}</span>
@@ -57,7 +57,7 @@
             </article>
             <article class="index_wrap_12">
               <div class="index_item_12">
-                <template kniu:if="{{loggedIn}}">
+                <template :if="{{loggedIn}}">
                   <div class="index_user_group">
                     <div class="index_user_wrap">
                       <div class="index_user_photo_group">
@@ -68,7 +68,7 @@
                   </div>
                 </template>
                 <ul class="index_advertise_group{{!loggedIn ? ' kniu_md_mt_0' : ''}}">
-                  <template kniu:for="{{advertises}}" kniu:key="id">
+                  <template :for="{{advertises}}" :key="id">
                     <li class="index_advertise">
                       <a class="index_advertise_link" href="{{item.url}}" title="{{item.title}}" target="_blank">
                         <kniu-image class="index_advertise_img" src="{{item.img}}" />

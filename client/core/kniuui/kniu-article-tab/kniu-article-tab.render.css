@@ -1,0 +1,41 @@
+@charset "UTF-8";
+
+:host {
+  display: block;
+  margin: 20px 0;
+  font: 14px/1.7 var(--kniu-font-family);
+  color: #4b5563;
+}
+
+.kniu_sys_article_tab_tabs {
+  display: flex;
+  flex-direction: column;
+  -webkit-flex-direction: column;
+  -moz-flex-direction: column;
+  -ms-flex-direction: column;
+  -o-flex-direction: column;
+  gap: 6px;
+}
+
+button {
+  display: block;
+  border: 0;
+  padding: 0;
+  width: max-content;
+  max-width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background-color: transparent;
+  color: inherit;
+}
+
+button:hover,
+button:focus-visible {
+  color: var(--kniu-color-primary, #409eff);
+  outline: 0;
+}
+
+.kniu_sys_article_tab_title {
+  overflow-wrap: anywhere;
+}

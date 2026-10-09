@@ -1,0 +1,59 @@
+@charset "UTF-8";
+
+:host {
+  --kniu-status-color: var(--kniu-color-primary, #409eff);
+  display: inline-flex;
+  vertical-align: middle
+}
+
+:host([type="success"]) {
+  --kniu-status-color: var(--kniu-color-success, #67c23a)
+}
+
+:host([type="warning"]) {
+  --kniu-status-color: var(--kniu-color-warning, #e6a23c)
+}
+
+:host([type="danger"]) {
+  --kniu-status-color: var(--kniu-color-danger, #f56c6c)
+}
+
+:host([type="info"]) {
+  --kniu-status-color: var(--kniu-color-info, #909399)
+}
+
+.kniu_sys_status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--kniu-text-color, #606266);
+  font: 14px/1.5 var(--kniu-font-family);
+  white-space: nowrap
+}
+
+.kniu_sys_status_dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--kniu-status-color);
+  flex: none
+}
+
+:host([size="large"]) .kniu_sys_status {
+  font-size: 16px
+}
+
+:host([size="large"]) .kniu_sys_status_dot {
+  width: 8px;
+  height: 8px
+}
+
+:host([size="small"]) .kniu_sys_status {
+  gap: 5px;
+  font-size: 12px
+}
+
+:host([size="small"]) .kniu_sys_status_dot {
+  width: 5px;
+  height: 5px
+}

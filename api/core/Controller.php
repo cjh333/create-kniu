@@ -198,9 +198,11 @@ class Controller
     // 先提交验证码会话，再生成并输出图片，避免登录请求抢先读取旧值。
     session_write_close();
 
-    $width = $this->input('get.width/d', 90);
-    $height = $this->input('get.height/d', 30);
-    $fontSize = $this->input('get.fontSize/d', 16);
+    // 硬夹取尺寸：/captcha 在免登录白名单内，用户可控的 width/height 无上限时
+    // 一次 imagecreatetruecolor(超大值) 即可吃掉数 GB 内存（未登录 DoS）。
+    $width = min(max($this->input('get.width/d', 90), 60), 400);
+    $height = min(max($this->input('get.height/d', 30), 20), 160);
+    $fontSize = min(max($this->input('get.fontSize/d', 16), 8), 48);
 
     $image = $this->createCaptchaImage($width, $height, $fontSize, $captcha['text']);
     $this->outputCaptchaImage($image);

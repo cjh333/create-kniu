@@ -71,6 +71,28 @@ Router::post('/role_delete', 'RoleController@roleDelete');
 Router::post('/role_update', 'RoleController@roleUpdate');
 Router::post('/role_list', 'RoleController@roleList');
 Router::post('/role_detail', 'RoleController@roleDetail');
+// 数据库管理（仅超级管理员 role=1，闸门在控制器内，绝不进入免登录集合）。
+Router::post('/db_list', 'DatabaseController@dbList');
+Router::post('/db_create', 'DatabaseController@dbCreate');
+Router::post('/db_tables', 'DatabaseController@dbTables');
+Router::post('/db_table_create', 'DatabaseController@dbTableCreate');
+Router::post('/db_table_structure', 'DatabaseController@dbTableStructure');
+Router::post('/db_table_drop', 'DatabaseController@dbTableDrop');
+Router::post('/db_column_edit', 'DatabaseController@dbColumnEdit');
+Router::post('/db_column_drop', 'DatabaseController@dbColumnDrop');
+Router::post('/db_rows', 'DatabaseController@dbRows');
+Router::post('/db_row_save', 'DatabaseController@dbRowSave');
+Router::post('/db_row_delete', 'DatabaseController@dbRowDelete');
+Router::post('/db_export', 'DatabaseController@dbExport');
+Router::post('/db_import', 'DatabaseController@dbImport');
+Router::post('/db_query', 'DatabaseController@dbQuery');
+// 数据库连接档案（「数据库连接」页）。同样仅超级管理员；与上面 12 条的差别是
+// 本组**不接管「当前连接」**——它正是当前连接坏掉时的修复入口，接管了就进不去。
+Router::post('/db_connection_list', 'DatabaseController@dbConnectionList');
+Router::post('/db_connection_save', 'DatabaseController@dbConnectionSave');
+Router::post('/db_connection_delete', 'DatabaseController@dbConnectionDelete');
+Router::post('/db_connection_test', 'DatabaseController@dbConnectionTest');
+Router::post('/db_connection_activate', 'DatabaseController@dbConnectionActivate');
 // 关于我（按账号存储）。
 Router::post('/about_detail', 'AboutController@aboutDetail');
 Router::post('/about_save', 'AboutController@aboutSave');

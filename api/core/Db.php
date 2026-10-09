@@ -5,6 +5,30 @@ namespace Core;
 class Db
 {
   protected static ?\mysqli $connection = null;
+
+  /**
+   * 「被管理」连接：数据库管理模块当前生效的连接档案（见 `Core\DbProfile`）。
+   *
+   * 置值后 `connect()` 一律返回它，于是模块内所有 `Db::query()/execute()/escape()`
+   * 都落到这条连接上。**`escape()` 必须与 SQL 实际执行的那条连接同源**——
+   * 转义口径与连接字符集绑定，两边分开会拼出跨连接的错值。
+   *
+   * 只允许在**鉴权之后**设置（`DatabaseController::guard()`）：系统连接那条线上跑着
+   * `Base::__construct()` 的 `tb_role` 回查，先接管连接会让它去「被切换到的库」里
+   * 找当前管理员账号，找不到就把人锁在门外。置 null 即恢复系统连接。
+   */
+  protected static ?\mysqli $managedConnection = null;
+
+  /**
+   * 接管本请求内 `Db` 的连接（传 null 表示交还系统连接）。
+   *
+   * @param \mysqli|null $connection 目标连接。
+   * @return void
+   */
+  public static function useManaged(?\mysqli $connection): void
+  {
+    self::$managedConnection = $connection;
+  }
   /** @var string 当前操作的数据表名。 */
   protected $name;
   /** @var array 查询构造选项（field / where / order / limit 等）。 */
@@ -22,6 +46,10 @@ class Db
    */
   protected function connect()
   {
+    // 已被「当前连接档案」接管时直接返回它（见 useManaged 的注释）。
+    if (self::$managedConnection) {
+      return self::$managedConnection;
+    }
     if (!self::$connection) {
       $config = require dirname(__DIR__) . '/config/database.php';
       $host = $config['PERSISTENT'] ? 'p:' . $config['HOST'] : $config['HOST'];

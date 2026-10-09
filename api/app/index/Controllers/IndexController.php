@@ -631,8 +631,10 @@ class IndexController extends Controller
         $this->json([], '账号不存在', ErrorCode::NOT_FOUND);
         return;
       }
+      // 查重必须落在 nickname 列：昵称是展示名，与账号 name 是两套取值
+      // （早期误写 name 列，等于拿昵称去比账号名，唯一性形同虚设）。
       $duplicate = Db::name('tb_role')
-        ->where('name', '=', $encodedNickname)
+        ->where('nickname', '=', $encodedNickname)
         ->where('id', '<>', $roleId)
         ->value('id');
       if ($duplicate) {
@@ -778,6 +780,21 @@ class IndexController extends Controller
       $this->json([], '该账号已存在', ErrorCode::CONFLICT);
       return;
     }
+
+    // 昵称：注册时单独采集，仅用于展示。未传（老客户端或直接调接口）时回落为账号名，保持既有行为。
+    $nickname = trim((string)$this->input('post.nickname/s', ''));
+    if ($nickname === '') {
+      $nickname = $username;
+    }
+    if (mb_strlen($nickname, 'UTF-8') > 30) {
+      $this->json([], '昵称不能超过30个字', ErrorCode::PARAM_INVALID);
+      return;
+    }
+    $encodedNickname = htmlspecialchars($nickname, ENT_QUOTES);
+    if (Db::name('tb_role')->where('nickname', '=', $encodedNickname)->value('id')) {
+      $this->json([], '该昵称已存在', ErrorCode::CONFLICT);
+      return;
+    }
     $transactionStarted = false;
     try {
       Db::beginTrans();
@@ -785,7 +802,7 @@ class IndexController extends Controller
       $roleId = (int)Db::name('tb_role')->insert([
         'sid' => 0,
         'name' => $encodedName,
-        'nickname' => $encodedName,
+        'nickname' => $encodedNickname,
         'email' => $email,
         'password' => $this->hashPassword($password),
         'role' => 2,
@@ -824,7 +841,7 @@ class IndexController extends Controller
       'name' => $username,
       'role' => '2',
       'role_auth' => 2,
-      'nickname' => $username
+      'nickname' => $nickname
     ], '注册成功', 1);
   }
 
@@ -899,6 +916,14 @@ class IndexController extends Controller
       return;
     }
 
+    // frontBind 免验证码（个人中心绑定入口，设计如此），但必须防爆破：
+    // 会话级失败锁定（范式同邮箱验证码 fail_count/lock_until）——连续失败 5 次锁 10 分钟。
+    $now = time();
+    if ((int)($_SESSION['front_bind_lock_until'] ?? 0) > $now) {
+      $this->json([], '失败次数过多，请 10 分钟后再试', ErrorCode::CREDENTIAL_INVALID);
+      return;
+    }
+
     $username = $this->normalizeFrontNickname((string)$this->input('post.username/s', ''));
     $password = (string)$this->input('post.password/s', '');
     if ($username === '' || $password === '') {
@@ -911,14 +936,17 @@ class IndexController extends Controller
       ->field(['id', 'name', 'nickname', 'password', 'role', 'role_auth', 'is_show'])
       ->select();
     if (empty($rows)) {
+      $this->registerFrontBindFailure($now);
       $this->json([], '账号不存在', ErrorCode::NOT_FOUND);
       return;
     }
     $account = $rows[0];
     if (!$this->verifyPassword($password, (string)$account['password'])) {
+      $this->registerFrontBindFailure($now);
       $this->json([], '账号或密码错误', ErrorCode::CREDENTIAL_INVALID);
       return;
     }
+    unset($_SESSION['front_bind_fail_count'], $_SESSION['front_bind_lock_until']);
 
     $id = $this->bindFrontUser(hash('sha256', $token), (string)$account['name']);
     $this->createFrontSession((int)$account['id'], $username);
@@ -936,6 +964,20 @@ class IndexController extends Controller
       'role_auth' => (int)($account['role_auth'] ?? 0),
       'nickname' => $this->normalizeFrontNickname(html_entity_decode((string)($account['nickname'] ?? ''), ENT_QUOTES))
     ], '绑定成功', 1);
+  }
+
+  /**
+   * frontBind 失败计数：连续 5 次写 lock_until 锁定 600 秒（范式同 EmailCode 失败锁定）。
+   */
+  private function registerFrontBindFailure(int $now): void
+  {
+    $count = (int)($_SESSION['front_bind_fail_count'] ?? 0) + 1;
+    if ($count >= 5) {
+      $_SESSION['front_bind_fail_count'] = 0;
+      $_SESSION['front_bind_lock_until'] = $now + 600;
+      return;
+    }
+    $_SESSION['front_bind_fail_count'] = $count;
   }
 
   /**

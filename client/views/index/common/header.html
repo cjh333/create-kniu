@@ -23,20 +23,20 @@
   }
 </style>
 <header class="kniu_web_head">
-  <kniu-navbar kniu:option="{{fixed:'top'}}">
+  <kniu-navbar :option="{{fixed:'top'}}">
     <template #brand>
       <a class="logo_wrap" href="#/">
-        <kniu-image class="logo" kniu:option="{{src:(logo)}}" />
+        <kniu-image class="logo" :option="{{src:(logo)}}" />
       </a>
     </template>
     <template #default>
       <kniu-navbar-cells>
-        <kniu-navbar-cell kniu:option="{{route:'/'}}">首页</kniu-navbar-cell>
-        <kniu-navbar-cell kniu:option="{{route:'/about'}}">关于我</kniu-navbar-cell>
-        <kniu-input class="kniu_dd_main index_header_search" kniu:form="{{keyword}}" kniu:option="{{name:'keyword',placeholder:'请输入文章标题'}}" kniu@keydown.enter="searchList" kniu@input="debouncedSearch">
+        <kniu-navbar-cell :option="{{route:'/'}}">首页</kniu-navbar-cell>
+        <kniu-navbar-cell :option="{{route:'/about'}}">关于我</kniu-navbar-cell>
+        <kniu-input class="kniu_dd_main index_header_search" :form="{{keyword}}" :option="{{name:'keyword',placeholder:'请输入文章标题'}}" @keydown.enter="searchList" @input="debouncedSearch">
           <template #append label-width="48px">
-            <kniu-btn block aria-label="搜索" kniu:option="{{text:true}}" kniu@click="searchList">
-              <kniu-icon kniu:option="{{icon:'search'}}" />
+            <kniu-btn block aria-label="搜索" :option="{{text:true}}" @click="searchList">
+              <kniu-icon :option="{{icon:'search'}}" />
             </kniu-btn>
           </template>
         </kniu-input>
@@ -44,9 +44,9 @@
     </template>
     <template #append>
       <kniu-navbar-cells>
-        <kniu-navbar-cell kniu:if="{{!loggedIn}}" kniu:option="{{route:'/login'}}">登录</kniu-navbar-cell>
-        <kniu-navbar-cell kniu:if="{{!loggedIn}}" kniu:option="{{route:'/register'}}">注册</kniu-navbar-cell>
-        <kniu-user-login kniu:if="{{loggedIn}}" />
+        <kniu-navbar-cell :if="{{!loggedIn}}" :option="{{route:'/login'}}">登录</kniu-navbar-cell>
+        <kniu-navbar-cell :if="{{!loggedIn}}" :option="{{route:'/register'}}">注册</kniu-navbar-cell>
+        <kniu-user-login :if="{{loggedIn}}" />
       </kniu-navbar-cells>
     </template>
   </kniu-navbar>

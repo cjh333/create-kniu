@@ -1,5 +1,5 @@
 import TEMPLATE from './kniutemplate/kniutemplate.mjs';
-import UI from './kniuui/kniuui.js';
+import UI from './kniuui/kniuui.mjs';
 import REQUEST from './kniurequest.mjs';
 import { nextTick } from './kniuscheduler.mjs';
 
@@ -169,10 +169,22 @@ function createViewModel(component, services = {}, root, refs = {}) {
     if (parentSignal.aborted) abortFromParent();
   }
 
+  // 钩子（含 async）执行期间临时恢复 activeInstance：否则异步钩子里创建的
+  // computed/watch/watchEffect 的 effect 永不登记 instance.cleanups，组件 dispose 后订阅残留。
+  async function runHook(hook) {
+    const prev = activeInstance;
+    activeInstance = instance;
+    try {
+      return await hook();
+    } finally {
+      activeInstance = prev;
+    }
+  }
+
   async function mount() {
     for (const hook of instance.mounted) {
       if (instance.stopped) break;
-      const cleanup = await hook();
+      const cleanup = await runHook(hook);
       if (instance.stopped) {
         if (typeof cleanup === 'function') cleanup();
         break;
@@ -185,7 +197,7 @@ function createViewModel(component, services = {}, root, refs = {}) {
   async function beforeMount() {
     for (const hook of instance.beforeMounted) {
       if (instance.stopped) break;
-      await hook();
+      await runHook(hook);
       if (instance.stopped) break;
     }
   }

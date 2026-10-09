@@ -46,7 +46,7 @@ KniuSystem/
 1. 从 `client/config/router.js` 加载路由表。
 2. 调用 `createApp()` 创建应用实例和事件总线。
 3. 通过 `app.use(ROUTER)` 注入页面路由。
-4. 通过 `app.useViews({ 'admin/main', 'index/header', ... })` 按目录注入公共布局 Controller。
+4. 通过 `app.useViews({ 'admin/main': 'admin/mainController', 'index/header': 'index/headerController' })` 按目录注入公共布局 Controller——**键是「区域/名称」，值是该控制器的路径（一次调用写完，调用会整体替换而非合并；不接受嵌套对象写法）**。
 5. 调用 `app.mount('#app')` 恢复会话、注册组件并渲染当前 Hash 路由。
 
 ### 视图、路由与组件
@@ -74,6 +74,9 @@ KniuSystem/
 | `/article` | `admin/articleController` | 后台主框架 |
 | `/comment` | `admin/commentController` | 后台主框架 |
 | `/reply` | `admin/replyController` | 后台主框架 |
+| `/database` | `admin/databaseController` | 后台主框架；**仅 `role=1` 超级管理员可见**（类 AdminSQL）。第一层：数据库列表 + 建库/导入/执行 SQL |
+| `/databasetables` | `admin/databaseTablesController` | 第二层：某个库的数据表列表 + 建表/导出（库名由 `navigateTo` 的路由数据带入） |
+| `/databasetable` | `admin/databaseTableController` | 第三层：单表的结构 + 数据行增删改查（库名 + 表名由路由数据带入） |
 | `/about` | `index/aboutController` | 前台独立渲染 |
 | `/profile` | `index/profileController` | 前台独立渲染 |
 
@@ -116,7 +119,7 @@ MVVM 提供 `ref()`、`computed()`、getter/多来源 `watch()` 和 `watchEffect
 | `kniueventer.mjs` | 事件总线、作用域 DOM 工具、模板加载、模板嵌入和路由注册表；业务入口统一命名为 `EVENTER` |
 | `kniuauth.mjs` | `AUTH` 登录状态、用户信息、会话恢复、退出和失效复位 |
 | `kniurequest.mjs` | `/api` 请求封装、响应归一化、并发去重和 401 处理；所有成功接口自动交给状态中心作前后快照比对 |
-| `kniuui.js` | 系统 UI 组件、消息提示与路径别名替换；内含通用列表组合器 `useListPage()`（编排分页、搜索和可选删除，接口、数据表与权限策略由业务 Controller 传入）；业务入口统一命名为 `UI` |
+| `kniuui.mjs` | 系统 UI 组件、消息提示与路径别名替换；内含通用列表组合器 `useListPage()`（编排分页、搜索和可选删除，接口、数据表与权限策略由业务 Controller 传入）；业务入口统一命名为 `UI` |
 | `kniulogger.mjs` | 按环境配置的前端/构建日志；业务入口统一命名为 `LOGGER` |
 | `kniuserver.mjs` | 开发静态服务、模板清单生成和 API 反向代理 |
 | `kniuproxy.mjs` | 服务器端共享基础设施：`/api` 反向代理、请求协议解析与 MIME 映射，供 `kniuserver` 与 `kniupreview` 复用 |
@@ -241,7 +244,7 @@ dist/
 - 当前 `package.json` 提供 `npm run dev`、`npm run preview`、`npm run build` 和 `npm run kill`；没有未实现的 `check` 或 `benchmark` 脚本。
 - 新增页面时，同时添加 `client/views/index/<name>.html`、`client/controller/index/<name>Controller.js`，并以 `index/<name>Controller` 注册到路由表；控制器里**不要写登录守卫**——需要登录的页面由后端接口默认鉴权返回 `1001`，请求层会自动跳登录页并带上回跳目标。
 - 新增后台页面时，同时添加 `client/views/admin/<name>.html`、`client/controller/admin/<name>Controller.js`，并以 `admin/<name>Controller` 注册到路由表；页面控制器需自行保证未登录时的接口请求能触发 401 跳转，后台页面会在 `admin/` 目录判定下自动装配主框架。
-- 新增公共布局时，将模板放入对应区域的 `common/`，将 Controller 放入同名区域目录，并在 `client/client.mjs` 的 `useViews()` 中使用 `区域/名称` 键装配。
+- 新增公共布局时，将模板放入对应区域的 `common/`，将 Controller 放入同名区域目录，并在 `client/client.mjs` 的 `useViews()` 中使用 `区域/名称` 键装配：`{ 'admin/aside': 'admin/asideController' }`。**`useViews()` 只接受这一种扁平写法**——键必须等于组件标识里的 `区域/名称`（`views/admin/common/aside.html` → `admin/aside`），值是控制器路径字符串（惰性 import）或 `controller()` 产物；**它整体替换上一次的注册，不是合并**，所以要在一次调用里写全；写成嵌套对象（`{ admin: { aside: '...' } }`）会在启动期抛 `TypeError`，不会静默降级。
 - 页面和公共布局组件标识包含所在区域，前后台允许使用同名文件且不会相互覆盖。
 - 后端新增接口时，在 `api/config/router.php` 注册，并将控制器放入对应应用的 `Controllers` 目录；部署到区分大小写的环境时必须保持目录名大小写正确。
 - `dist/` 是生成目录，不应直接编辑。

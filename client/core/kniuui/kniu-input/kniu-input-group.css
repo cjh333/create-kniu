@@ -1,0 +1,102 @@
+@charset "UTF-8";
+
+:host {
+  display: block
+}
+
+.kniu_sys_input_group {
+  display: grid;
+  grid-template-columns: var(--kniu-label-width, 80px) minmax(0, 1fr);
+  align-items: stretch;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: #fff
+}
+
+.kniu_sys_input_label {
+  padding: 0 12px;
+  background-color: var(--kniu-fill-color, #f5f7fa);
+  border-right: 1px solid var(--kniu-border-color, #dcdfe6);
+  color: var(--kniu-text-color, #606266);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: right;
+  box-sizing: border-box;
+  min-height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+  display: flex;
+  align-items: center;
+  justify-content: flex-end
+}
+
+.kniu_sys_input_label[data-required="true"]::before {
+  content: "*";
+  margin-right: 4px;
+  color: var(--kniu-color-danger, #f56c6c)
+}
+
+.kniu_sys_input_content {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+  padding: 0 12px;
+  background-color: #fff
+}
+
+.kniu_sys_input_group[data-position="left"] .kniu_sys_input_label {
+  justify-content: flex-start
+}
+
+.kniu_sys_input_group[data-position="right"] .kniu_sys_input_label {
+  justify-content: flex-end
+}
+
+:host([data-template-affix="true"]) .kniu_sys_input_label {
+  justify-content: center;
+  text-align: center
+}
+
+.kniu_sys_input_group[data-position="top"] {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch
+}
+
+.kniu_sys_input_group[data-position="top"] .kniu_sys_input_label {
+  padding: 0 0 8px;
+  min-height: auto;
+  display: block;
+  text-align: left;
+  background-color: transparent;
+  border-right: 0
+}
+
+.kniu_sys_input_group[data-position="top"] .kniu_sys_input_content {
+  padding: 0
+}
+
+.kniu_sys_input_group[data-contains-input="true"] {
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background-color: transparent
+}
+
+.kniu_sys_input_group[data-has-label="false"] {
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background-color: transparent;
+  grid-template-columns: minmax(0, 1fr)
+}
+
+.kniu_sys_input_group[data-has-label="false"] .kniu_sys_input_label {
+  background-color: transparent;
+  border-right: 0
+}
+
+.kniu_sys_input_group[data-contains-input="true"] .kniu_sys_input_content,
+.kniu_sys_input_group[data-has-label="false"] .kniu_sys_input_content {
+  padding: 0;
+  background-color: transparent
+}

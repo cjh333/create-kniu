@@ -4,6 +4,16 @@ namespace Core;
 
 class SystemHelper
 {
+  /**
+   * 子进程兜底通道的硬超时（秒）。
+   *
+   * Windows 上取内存/开机时长要起 PowerShell，而它依赖 WMI（`Get-CimInstance`）。
+   * WMI 在异常机器上会**无限期挂住**，`exec()` 又没有超时能力 ⇒ 一个挂住的调用会把
+   * 这个 PHP 进程一直占住；这类请求攒够「池子大小」个，整站 `/api` 就会全部 504。
+   * 宁可这次拿不到数（显示 Unknown），也不能让一个探针把服务拖垮。
+   */
+  private const SHELL_TIMEOUT_SECONDS = 4;
+
   private static ?string $cacheDir = null;
 
   /**
@@ -239,7 +249,29 @@ class SystemHelper
    */
   public static function getUptimeRefreshMs(): int
   {
-    return self::readUptimeSeconds() < 60 ? 1000 : 60000;
+    return self::uptimeRefreshMsFromSeconds(self::readUptimeSeconds());
+  }
+
+  /**
+   * 由「开机秒数」推导前端轮询间隔（毫秒）。
+   *
+   * **必须把「读取失败」与「刚开机」区分开**：`readUptimeSeconds()` 读不到时返回 0，
+   * 若照 `< 60` 一并当作「开机不足 1 分钟」，故障态就会拿到**最快的**轮询频率（1 秒一次），
+   * 而每次探测又要起一个可能卡死的子进程 —— 请求会以远高于服务速度的速率堆积，
+   * 占满 PHP 进程并长期持住 Session 文件锁，最终整站 `/api` 全部 504。
+   *
+   * 因此定死一条原则：**探测失败绝不能比探测成功更频繁**。失败按最慢档兜底。
+   *
+   * @param int $seconds 开机至今秒数；0 表示读取失败。
+   * @return int 毫秒，取值 1000 / 60000。
+   */
+  private static function uptimeRefreshMsFromSeconds(int $seconds): int
+  {
+    if ($seconds <= 0) {
+      return 60000;
+    }
+
+    return $seconds < 60 ? 1000 : 60000;
   }
 
   /**
@@ -315,23 +347,20 @@ class SystemHelper
       }
     }
 
-    if (!function_exists('exec')) {
+    if (!function_exists('exec') && !function_exists('proc_open')) {
       return 0;
     }
 
     $script = '[int64]((Get-Date)-(Get-CimInstance Win32_OperatingSystem).LastBootUpTime).TotalSeconds';
-    $lines = [];
-    $status = 0;
-    @exec(
-      sprintf('"%s" -NoProfile -NonInteractive -Command "%s"', self::resolveWindowsPowerShell(), $script),
-      $lines,
-      $status
+    $result = self::runBoundedCommand(
+      [self::resolveWindowsPowerShell(), '-NoProfile', '-NonInteractive', '-Command', $script],
+      self::SHELL_TIMEOUT_SECONDS
     );
-    if ($status !== 0 || !$lines) {
+    if ($result['status'] !== 0 || $result['output'] === '') {
       return 0;
     }
 
-    $text = trim((string)end($lines));
+    $text = self::lastLine($result['output']);
 
     return ctype_digit($text) ? (int)$text : 0;
   }
@@ -537,7 +566,7 @@ class SystemHelper
   private static function readWindowsMemoryViaShell(): array
   {
     $empty = ['total' => 0, 'available' => 0];
-    if (!function_exists('exec')) {
+    if (!function_exists('exec') && !function_exists('proc_open')) {
       return $empty;
     }
 
@@ -546,20 +575,15 @@ class SystemHelper
       . 'if(-not $d){$d=([int64]$o.TotalVisibleMemorySize)*1024};'
       // 必须用 PHP 单引号：PowerShell 的 $d / $o 不能被 PHP 插值吃掉。
       . '\'{0},{1}\' -f ([int64]$d),(([int64]$o.FreePhysicalMemory)*1024)';
-    $command = sprintf(
-      '"%s" -NoProfile -NonInteractive -Command "%s"',
-      self::resolveWindowsPowerShell(),
-      $script
+    $result = self::runBoundedCommand(
+      [self::resolveWindowsPowerShell(), '-NoProfile', '-NonInteractive', '-Command', $script],
+      self::SHELL_TIMEOUT_SECONDS
     );
-
-    $lines = [];
-    $status = 0;
-    @exec($command, $lines, $status);
-    if ($status !== 0 || !$lines) {
+    if ($result['status'] !== 0 || $result['output'] === '') {
       return $empty;
     }
 
-    $parts = explode(',', trim((string)end($lines)));
+    $parts = explode(',', self::lastLine($result['output']));
     if (count($parts) !== 2) {
       return $empty;
     }
@@ -591,6 +615,141 @@ class SystemHelper
     $shell = is_file($candidate) ? $candidate : 'powershell';
 
     return $shell;
+  }
+
+  /**
+   * 执行外部命令，并保证在给定时间内返回（超时即杀掉子进程）。
+   *
+   * 命令用**数组形式**传入（PHP 7.4+ 支持）：不经 `cmd.exe` 中转，参数由 PHP 逐项
+   * 加引号，既能正确处理带空格的路径，又让 `proc_terminate()` 直接杀掉目标进程 ——
+   * 走字符串形式时杀掉的只是 `cmd.exe`，真正的 `powershell.exe` 会变成孤儿继续跑。
+   *
+   * @param string|array<int,string> $command 命令与参数。
+   * @param float $timeoutSeconds 硬超时（秒）。
+   * @return array{status:int,output:string} 退出码与标准输出；超时或无法执行时 status 为 -1。
+   */
+  private static function runBoundedCommand(string|array $command, float $timeoutSeconds): array
+  {
+    if (!function_exists('proc_open')) {
+      return self::runUnboundedCommand($command);
+    }
+
+    // 输出走临时文件而不是管道：**Windows 的管道不支持非阻塞读**，
+    // `stream_get_contents()` 会一直阻塞到子进程退出 —— 那样下面的超时判定根本没机会执行
+    // （实测：写 30 秒的命令会真的等满 30 秒，硬超时形同虚设）。
+    $stdoutFile = @tempnam(sys_get_temp_dir(), 'kniu_proc_out_');
+    $stderrFile = @tempnam(sys_get_temp_dir(), 'kniu_proc_err_');
+    if ($stdoutFile === false || $stderrFile === false) {
+      if (is_string($stdoutFile) && $stdoutFile !== '') {
+        @unlink($stdoutFile);
+      }
+      if (is_string($stderrFile) && $stderrFile !== '') {
+        @unlink($stderrFile);
+      }
+      return self::runUnboundedCommand($command);
+    }
+
+    $descriptors = [1 => ['file', $stdoutFile, 'w'], 2 => ['file', $stderrFile, 'w']];
+    $pipes = [];
+    $process = @proc_open($command, $descriptors, $pipes);
+    if (!is_resource($process)) {
+      @unlink($stdoutFile);
+      @unlink($stderrFile);
+      return self::runUnboundedCommand($command);
+    }
+
+    $exitCode = -1;
+    $deadline = microtime(true) + $timeoutSeconds;
+
+    while (true) {
+      $status = proc_get_status($process);
+      if (!$status['running']) {
+        $exitCode = (int)$status['exitcode'];
+        break;
+      }
+
+      if (microtime(true) >= $deadline) {
+        self::terminateProcess($process, $status);
+        break;
+      }
+
+      usleep(20000);
+    }
+
+    @proc_close($process);
+    $output = (string)@file_get_contents($stdoutFile);
+    @unlink($stdoutFile);
+    @unlink($stderrFile);
+
+    if ($exitCode < 0) {
+      return ['status' => -1, 'output' => ''];
+    }
+
+    return ['status' => $exitCode, 'output' => $output];
+  }
+
+  /**
+   * 强杀子进程**树**。
+   *
+   * Windows 上命令经 `cmd.exe` 中转，`proc_terminate()` 只杀得掉最外层那个 `cmd.exe`；
+   * 真正卡在 WMI 里的 `powershell.exe` 会变成孤儿继续常驻 —— 每 15 秒超时一次就积一个，
+   * 所以必须先用 `taskkill /T` 连子树一起杀。
+   *
+   * @param resource $process `proc_open()` 返回的进程资源。
+   * @param array<string,mixed> $status 最近的 `proc_get_status()` 结果。
+   * @return void
+   */
+  private static function terminateProcess($process, array $status): void
+  {
+    if (PHP_OS_FAMILY === 'Windows' && !empty($status['pid']) && function_exists('exec')) {
+      @exec('taskkill /F /T /PID ' . (int)$status['pid'], $killedLines, $killedCode);
+    }
+
+    @proc_terminate($process, 9);
+  }
+
+  /**
+   * 无 `proc_open()` 时的退路：退回 `exec()`（**没有超时能力**，仅在极老环境兜底）。
+   *
+   * @param string|array<int,string> $command 命令与参数。
+   * @return array{status:int,output:string} 退出码与标准输出。
+   */
+  private static function runUnboundedCommand(string|array $command): array
+  {
+    if (!function_exists('exec')) {
+      return ['status' => -1, 'output' => ''];
+    }
+
+    if (is_array($command)) {
+      $parts = [];
+      foreach ($command as $part) {
+        $part = (string)$part;
+        $parts[] = str_contains($part, ' ') ? '"' . $part . '"' : $part;
+      }
+      $command = implode(' ', $parts);
+    }
+
+    $lines = [];
+    $status = 0;
+    @exec($command, $lines, $status);
+
+    return ['status' => $status, 'output' => implode("\n", $lines)];
+  }
+
+  /**
+   * 取多行输出的最后一行（PowerShell 可能有版本横幅等额外输出）。
+   *
+   * @param string $output 完整标准输出。
+   * @return string 最后一行的去空白内容。
+   */
+  private static function lastLine(string $output): string
+  {
+    $lines = preg_split('/\R/', trim($output)) ?: [];
+    $lines = array_values(array_filter($lines, static function (string $line): bool {
+      return trim($line) !== '';
+    }));
+
+    return $lines === [] ? '' : trim((string)end($lines));
   }
 
   /**

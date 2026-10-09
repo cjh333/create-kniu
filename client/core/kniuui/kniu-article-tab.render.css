@@ -1,7 +1,0 @@
-
-            :host{display:block;margin:20px 0;color:#4b5563;font:14px/1.7 var(--kniu-font-family)}
-            .kniu_sys_article_tab_tabs{display:flex;flex-direction:column;gap:6px}
-            button{display:block;width:max-content;max-width:100%;padding:0;border:0;background-color:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
-            button:hover,button:focus-visible{color:#409eff;outline:0}
-            .kniu_sys_article_tab_title{overflow-wrap:anywhere}
-          

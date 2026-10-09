@@ -1,0 +1,111 @@
+@charset "UTF-8";
+
+:host {
+  display: block;
+  width: 100%
+}
+
+.kniu_sys_input_group {
+  display: flex;
+  width: 100%;
+  height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))))
+}
+
+.kniu_sys_input_wrap {
+  position: relative;
+  display: block;
+  flex: 1;
+  min-width: 0
+}
+
+.kniu_sys_input {
+  display: block;
+  width: 100%;
+  height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+  padding: 0 12px;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-radius: var(--kniu-radius, 4px);
+  outline: 0;
+  background-color: #fff;
+  color: var(--kniu-text-color, #606266);
+  font: 14px/40px var(--kniu-font-family);
+  box-sizing: border-box;
+  transition: border-color .2s
+}
+
+.kniu_sys_input::placeholder {
+  color: #c0c4cc
+}
+
+.kniu_sys_input:hover {
+  border-color: #c0c4cc
+}
+
+.kniu_sys_input:focus {
+  position: relative;
+  z-index: 1;
+  border-color: var(--kniu-color-primary, #409eff)
+}
+
+.kniu_sys_input:disabled {
+  background-color: var(--kniu-fill-color, #f5f7fa);
+  color: #c0c4cc;
+  cursor: not-allowed
+}
+
+.kniu_sys_input_affix {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 0 20px;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  background-color: var(--kniu-fill-color, #f5f7fa);
+  color: var(--kniu-color-info, #909399);
+  font-size: 14px;
+  line-height: 38px;
+  text-align: center;
+  white-space: nowrap;
+  box-sizing: border-box
+}
+
+.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input_prepend {
+  display: flex;
+  border-right: 0;
+  border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px)
+}
+
+.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input_append {
+  display: flex;
+  border-left: 0;
+  border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0
+}
+
+.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input {
+  border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0
+}
+
+.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input {
+  border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px)
+}
+
+.kniu_sys_input_group[data-has-prepend="true"][data-has-append="true"] .kniu_sys_input {
+  border-radius: 0
+}
+
+.kniu_sys_input_group[data-has-append-btn="true"] .kniu_sys_input_append,
+.kniu_sys_input_group[data-has-prepend-btn="true"] .kniu_sys_input_prepend {
+  padding: 0;
+  align-items: stretch
+}
+
+.kniu_sys_input_append::slotted(kniu-btn),
+.kniu_sys_input_prepend::slotted(kniu-btn) {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  width: 100%;
+  height: 100%
+}

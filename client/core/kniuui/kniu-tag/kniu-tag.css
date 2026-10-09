@@ -1,0 +1,101 @@
+@charset "UTF-8";
+
+:host {
+  --kniu-tag-color: var(--kniu-color-primary, #409eff);
+  --kniu-tag-bg: var(--kniu-color-primary-light, #ecf5ff);
+  --kniu-tag-border: #d9ecff;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.kniu_sys_tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--kniu-tag-border);
+  border-radius: 4px;
+  background-color: var(--kniu-tag-bg);
+  color: var(--kniu-tag-color);
+  font: 12px/1 var(--kniu-font-family);
+  white-space: nowrap;
+  box-sizing: border-box
+}
+
+:host([type="success"]) {
+  --kniu-tag-color: var(--kniu-color-success, #67c23a);
+  --kniu-tag-bg: #f0f9eb;
+  --kniu-tag-border: #e1f3d8
+}
+
+:host([type="warning"]) {
+  --kniu-tag-color: var(--kniu-color-warning, #e6a23c);
+  --kniu-tag-bg: #fdf6ec;
+  --kniu-tag-border: #faecd8
+}
+
+:host([type="danger"]) {
+  --kniu-tag-color: var(--kniu-color-danger, #f56c6c);
+  --kniu-tag-bg: #fef0f0;
+  --kniu-tag-border: #fde2e2
+}
+
+:host([type="info"]) {
+  --kniu-tag-color: var(--kniu-color-info, #909399);
+  --kniu-tag-bg: #f4f4f5;
+  --kniu-tag-border: var(--kniu-fill-color-dark, #e9e9eb)
+}
+
+:host([effect="dark"]) {
+  --kniu-tag-bg: var(--kniu-tag-color);
+  --kniu-tag-border: var(--kniu-tag-color)
+}
+
+:host([effect="dark"]) .kniu_sys_tag {
+  color: #fff
+}
+
+:host([effect="plain"]) {
+  --kniu-tag-bg: #fff
+}
+
+:host([size="large"]) .kniu_sys_tag {
+  height: 28px;
+  padding: 0 11px;
+  font-size: 13px
+}
+
+:host([size="small"]) .kniu_sys_tag {
+  height: 20px;
+  padding: 0 7px
+}
+
+:host([round]) .kniu_sys_tag {
+  border-radius: 999px
+}
+
+:host([disabled]) {
+  opacity: .55;
+  pointer-events: none
+}
+
+.kniu_sys_tag_close {
+  display: none;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background-color: transparent;
+  color: inherit;
+  font: 14px/12px var(--kniu-font-family);
+  cursor: pointer
+}
+
+:host([closable]) .kniu_sys_tag_close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center
+}

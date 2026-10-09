@@ -154,26 +154,26 @@
             <div class="profile_stat"><span class="profile_stat_value">{{commentCount}}</span><span class="profile_stat_label">评论数</span></div>
             <div class="profile_stat"><span class="profile_stat_value">{{favorites.length}}</span><span class="profile_stat_label">收藏文章</span></div>
           </div>
-          <div class="profile_signin" kniu:if="{{nickname === ''}}">
-            <kniu-btn kniu:option="{{type:'primary'}}" kniu@click="toSignin">登录 / 注册</kniu-btn>
+          <div class="profile_signin" :if="{{nickname === ''}}">
+            <kniu-btn :option="{{type:'primary'}}" @click="toSignin">登录 / 注册</kniu-btn>
           </div>
           <h2 class="profile_section_title">收藏的文章</h2>
           <div class="profile_favorites">
-            <template kniu:for="{{favorites}}" kniu:key="id">
-              <button type="button" class="profile_favorite" kniu:[article-id]="{{item.id}}" kniu@click="toFavorite">
+            <template :for="{{favorites}}" :key="id">
+              <button type="button" class="profile_favorite" :[article-id]="{{item.id}}" @click="toFavorite">
                 <span>{{item.title}}</span><span class="profile_favorite_time">{{item.create_time}}</span>
               </button>
             </template>
-            <div class="profile_empty" kniu:if="{{favorites.length === 0}}">暂无收藏文章</div>
+            <div class="profile_empty" :if="{{favorites.length === 0}}">暂无收藏文章</div>
           </div>
           <h2 class="profile_section_title">浏览历史</h2>
           <div class="profile_favorites">
-            <template kniu:for="{{history}}" kniu:key="id">
-              <button type="button" class="profile_favorite" kniu:[article-id]="{{item.id}}" kniu@click="toFavorite">
+            <template :for="{{history}}" :key="id">
+              <button type="button" class="profile_favorite" :[article-id]="{{item.id}}" @click="toFavorite">
                 <span>{{item.title}}</span><span class="profile_favorite_time">{{item.last_view_time}}</span>
               </button>
             </template>
-            <div class="profile_empty" kniu:if="{{history.length === 0}}">暂无浏览记录</div>
+            <div class="profile_empty" :if="{{history.length === 0}}">暂无浏览记录</div>
           </div>
         </div>
       </div>

@@ -1,0 +1,61 @@
+<span class="kniu_sys_date_picker_group" data-has-prepend="false" data-has-append="false">
+  <span class="kniu_sys_date_picker_affix kniu_sys_date_picker_prepend">
+    <slot name="prepend"></slot>
+  </span>
+  <span class="kniu_sys_date_picker_input_wrap">
+    <input class="kniu_sys_date_picker_input" placeholder="请选择日期时间" readonly type="text">
+    <span class="kniu_sys_date_picker_calendar_icon">
+      <kniu-icon icon="date" />
+    </span>
+  </span>
+  <span class="kniu_sys_date_picker_affix kniu_sys_date_picker_append">
+    <slot name="append"></slot>
+  </span>
+</span>
+<section class="kniu_sys_date_picker_panel" hidden>
+  <div class="kniu_sys_date_picker_head">
+    <button data-action="prev-year" type="button">«</button>
+    <button data-action="prev-month" type="button">‹</button>
+    <div class="kniu_sys_date_picker_title">
+      <button data-action="choose-year" type="button"></button>
+      <button data-action="choose-month" type="button"></button>
+    </div>
+    <button data-action="next-month" type="button">›</button>
+    <button data-action="next-year" type="button">»</button>
+  </div>
+  <div class="kniu_sys_date_picker_week">
+    <span>日</span>
+    <span>一</span>
+    <span>二</span>
+    <span>三</span>
+    <span>四</span>
+    <span>五</span>
+    <span>六</span>
+  </div>
+  <div class="kniu_sys_date_picker_days"></div>
+  <div class="kniu_sys_date_picker_chooser" hidden></div>
+  <div class="kniu_sys_date_picker_time">
+    <span class="kniu_sys_date_picker_time_field" data-time-field="hour">
+      <button class="kniu_sys_date_picker_time_value" aria-label="小时" type="button"></button>
+      <span class="kniu_sys_date_picker_time_options" hidden></span>
+    </span>
+    <span data-time-separator="minute">:</span>
+    <span class="kniu_sys_date_picker_time_field" data-time-field="minute">
+      <button class="kniu_sys_date_picker_time_value" aria-label="分钟" type="button"></button>
+      <span class="kniu_sys_date_picker_time_options" hidden></span>
+    </span>
+    <span data-time-separator="second">:</span>
+    <span class="kniu_sys_date_picker_time_field" data-time-field="second">
+      <button class="kniu_sys_date_picker_time_value" aria-label="秒" type="button"></button>
+      <span class="kniu_sys_date_picker_time_options" hidden></span>
+    </span>
+  </div>
+  <div class="kniu_sys_date_picker_footer">
+    <span class="kniu_sys_date_picker_date_preview"></span>
+    <div>
+      <button class="kniu_sys_date_picker_action" data-action="reset" type="button">重置</button>
+      <button class="kniu_sys_date_picker_action" data-action="today" type="button">现在</button>
+      <button class="kniu_sys_date_picker_action" data-action="confirm" type="button">确定</button>
+    </div>
+  </div>
+</section>

@@ -6,31 +6,31 @@
 </style>
 <section class="seo_cells">
   <div class="admin_content_body index_cell index_cell_2">
-    <kniu-form ref="form" kniu:option="{{...(models)}}" kniu@submit.prevent="onSubmit">
+    <kniu-form ref="form" :option="{{...(models)}}" @submit.prevent="onSubmit">
       <kniu-form-cell>
         <kniu-input>
           <template #prepend label-width="120px">头像</template>
           <template #append label-width="120px">
-            <kniu-upload ref="upload" kniu:form="{{files}}" kniu:option="{{accept:'image/jpeg,image/png,image/gif',note:'暂无头像'}}">选择头像</kniu-upload>
+            <kniu-upload ref="upload" :form="{{files}}" :option="{{accept:'image/jpeg,image/png,image/gif',note:'暂无头像'}}">选择头像</kniu-upload>
           </template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
-        <kniu-input kniu:form="{{models.summary}}" kniu:option="{{name:'summary',placeholder:'请输入首页关于我的简述',type:'textarea'}}">
+        <kniu-input :form="{{models.summary}}" :option="{{name:'summary',placeholder:'请输入首页关于我的简述',type:'textarea'}}">
           <template #prepend label-width="120px">简述</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
-        <kniu-editor kniu:form="{{models.content}}" kniu:option="{{name:'content',placeholder:'请输入关于我的内容'}}">
+        <kniu-editor :form="{{models.content}}" :option="{{name:'content',placeholder:'请输入关于我的内容'}}">
           <template #prepend label-width="120px">关于我</template>
         </kniu-editor>
       </kniu-form-cell>
       <kniu-form-cell>
-        <kniu-btn style="margin-left: 120px;" kniu:option="{{disabled:(isSubmitting),nativeType:'submit'}}">
-          <template kniu:if="{{isSubmitting}}">
-            <kniu-icon kniu:option="{{icon:'loading'}}" />
+        <kniu-btn style="margin-left: 120px;" :option="{{disabled:(isSubmitting),nativeType:'submit'}}">
+          <template :if="{{isSubmitting}}">
+            <kniu-icon :option="{{icon:'loading'}}" />
           </template>
-          <template kniu:else>提 交</template>
+          <template :else>提 交</template>
         </kniu-btn>
       </kniu-form-cell>
     </kniu-form>

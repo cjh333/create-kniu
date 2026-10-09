@@ -32,6 +32,12 @@ var KniuTemplate = (function () {
     if (obj != null) obj[parts[parts.length - 1]] = value;
   }
 
+  // 模板表达式作用域的危险键：拦截原型链逃逸（constructor.constructor('…')() ⇒ 任意代码执行）
+  const DANGEROUS_SCOPE_KEYS = new Set([
+    'constructor', '__proto__', 'prototype', '__defineGetter__', '__defineSetter__',
+    '__lookupGetter__', '__lookupSetter__',
+  ]);
+
   function makeScope(base, extra) {
     const accessed = [];
     const wrap = function (obj, prefix) {
@@ -46,6 +52,9 @@ var KniuTemplate = (function () {
         get(_, key) {
           if (key === Symbol.unscopables) return undefined;
           if (typeof key !== 'string') return obj[key];
+          // 原型链逃逸防护：{{ constructor.constructor('...')() }} 可从模板字符串构造任意代码，
+          // 模板表达式输入源含非完全可信内容时即为 RCE/XSS——危险键一律返回 undefined。
+          if (DANGEROUS_SCOPE_KEYS.has(key)) return undefined;
           if (prefix === '' && extra && key in extra) {
             accessed.push(key);
             return extra[key];
@@ -53,7 +62,12 @@ var KniuTemplate = (function () {
           const full = prefix ? prefix + '.' + key : key;
           accessed.push(full);
           const v = obj[key];
-          if (v === undefined) return globalThis[key];
+          if (v === undefined) {
+            const g = globalThis[key];
+            // globalThis 兜底同样挡住危险键（如 globalThis.constructor），并只放行自有属性
+            if (g === undefined || DANGEROUS_SCOPE_KEYS.has(key) || !Object.prototype.hasOwnProperty.call(globalThis, key)) return undefined;
+            return g;
+          }
           if (v === null || typeof v !== 'object') return v;
           if (v instanceof Date || v instanceof Node || Array.isArray(v)) return v;
           return wrap(v, full);
@@ -80,8 +94,6 @@ var KniuTemplate = (function () {
     return m ? m[1].trim() : String(raw).trim();
   }
 
-  // kniu-form 的 options 字段对象：{ value, condition, message }。
-  // 判定必须保守（value 只能是标量），否则业务对象（数组、File、DOM 节点）会被误判成字段。
   function isFormFieldObject(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
     if (!('value' in value)) return false;
@@ -199,7 +211,6 @@ var KniuTemplate = (function () {
     progress: ['progress'],
   };
 
-  // Events without a meaningful browser default action can be prevented safely.
   const DEFAULT_PREVENT_EVENTS = new Set([
     'mouseenter', 'mouseleave', 'mouseover', 'mouseout', 'mousemove',
     'pointerenter', 'pointerleave', 'pointerover', 'pointerout', 'pointermove',
@@ -259,9 +270,6 @@ var KniuTemplate = (function () {
     return out;
   }
 
-  // sanitizeHtml 结果缓存：同一个富文本内容（如评论、文章正文）在多个文本节点中重复出现时，
-  // 每次都走 createElement('template') + innerHTML + querySelectorAll('*') 是纯浪费。
-  // 用 Map<string, string> 按输入缓存清洗结果，LRU 上限避免内存泄漏。
   const SANITIZE_CACHE = new Map();
   const SANITIZE_CACHE_LIMIT = 200;
 
@@ -275,7 +283,10 @@ var KniuTemplate = (function () {
         tpl.innerHTML = html;
         sanitizeNode(tpl.content);
         const result = tpl.innerHTML;
-        if (SANITIZE_CACHE.size >= SANITIZE_CACHE_LIMIT) SANITIZE_CACHE.clear();
+        if (SANITIZE_CACHE.size >= SANITIZE_CACHE_LIMIT) {
+          // FIFO 淘汰最旧一项，而非全量 clear——高频不同 HTML 时保留热缓存
+          SANITIZE_CACHE.delete(SANITIZE_CACHE.keys().next().value);
+        }
         SANITIZE_CACHE.set(key, result);
         return result;
       } catch {
@@ -285,7 +296,6 @@ var KniuTemplate = (function () {
     return sanitizeHtmlRegex(html);
   }
 
-  // 空字符串在语义上有效的属性：即便值为空也保留（与 kniuui.js 的空属性约定一致）。
   const SEMANTIC_EMPTY_ATTRS = new Set(['alt', 'title', 'placeholder', 'name', 'label']);
 
   function setAttr(node, name, value, isBool) {
@@ -301,9 +311,6 @@ var KniuTemplate = (function () {
       } else if (node.getAttribute('value') !== String(next)) node.setAttribute('value', String(next));
       return;
     }
-    // 空值（null / false / 空字符串）一律**不写属性**：浏览器不会回收空属性，
-    // `kniu:class="[[空值]]"` 会留下 `class=""`，切页/重渲染后越积越多（见 kniuui.js 空属性清理）。
-    // 用 trim 判定，`" "` 这类纯空白同样视为空。
     if (value == null || value === false
       || (typeof value === 'string' && value.trim() === '' && !SEMANTIC_EMPTY_ATTRS.has(name))) {
       if (node.hasAttribute(name)) node.removeAttribute(name);
@@ -318,9 +325,6 @@ var KniuTemplate = (function () {
     if (node.getAttribute(name) !== next) node.setAttribute(name, next);
   }
 
-  // kniu:style 支持 CSS 字符串及对象两种形式。对象属性使用 JS 常见的 camelCase
-  // 写法，例如 { marginTop: 'calc(15/var(--kniu_vw))' }；不能把对象转成
-  // "[object Object]" 写回 style attribute。
   function stylePropertyName(name) {
     const raw = String(name || '');
     if (raw.startsWith('--')) return raw;
@@ -411,8 +415,10 @@ var KniuTemplate = (function () {
     let value;
     try {
       value = fn(proxy);
-    } catch {
+    } catch (e) {
       value = '';
+      // 开发模式不静默：拼错的字段名/运行时 TypeError 直接在控制台给出表达式原文与错误
+      if (globalThis.__KNIU_DEV__) warn('表达式求值失败 [' + e.slice(0, 120) + ']：' + (e && e.message ? e.message : 'unknown'));
     }
     return { value, paths: accessed };
   }
@@ -465,8 +471,6 @@ var KniuTemplate = (function () {
 
   function reactive(target) {
     if (!isObject(target)) return target;
-    // File/Blob 等浏览器原生对象依赖内部槽，不能被 Proxy 包装；否则
-    // URL.createObjectURL、FormData 以及文件身份比较都会失效。
     if (target instanceof Date
       || (typeof Node !== 'undefined' && target instanceof Node)
       || (typeof Blob !== 'undefined' && target instanceof Blob)) return target;
@@ -492,14 +496,6 @@ var KniuTemplate = (function () {
         if (key === SUBS) return subscribers;
         if (key === IS_REACTIVE) return true;
         const val = obj[key];
-        // 惰性代理（get handler 内的 reactive）：绝不触发 auto-bind。
-        // auto-bind 只保留给用户显式调用 reactive()（如 setup 的 state）。
-        // 否则 execute 同步段内（currentScope 非 null）首次访问任意嵌套对象
-        // （如 AUTH.getUser() 的 user、state.articleTable）都会以该对象为 base
-        // 对整棵视图树重新 applyBindings——防御虽挡了 options 写入，但会无条件
-        // 移除 kniu:option / kniu:form 属性，后续正确的 state 绑定无从处理
-        // （2026-09-01 修复：无 kniu_user 时 /system 响应后 setUser 才写入 user，
-        // setup 首访撞上 currentScope，articledetail 表格 options 变 {}）。
         return isObject(val) ? lazyReactive(val) : val;
       },
       set(obj, key, value) {
@@ -601,7 +597,6 @@ var KniuTemplate = (function () {
     currentCollector = null;
   }
 
-  // kniu:loading 指令所需的遮罩样式（含 spinner 动画），全局注入一次
   let _kniuLoadingStyleInjected = false;
   function ensureLoadingStyle() {
     if (_kniuLoadingStyleInjected) return;
@@ -663,12 +658,24 @@ var KniuTemplate = (function () {
       }
     };
 
-    // 控制流祖先判定在热路径上（每个文本节点、每个收集到的绑定节点、每个属性节点各一次），
-    // 旧实现用 JS 循环逐层 parentElement.matches(逗号选择器列表)，层数×节点数的方法调用很可观。
-    // closest() 把「向上遍历 + 选择器匹配」整体交给引擎原生实现，语义完全一致（都不含节点自身）。
-    const hasAncestor = function (node, selector) {
-      const parent = node.parentElement;
-      return Boolean(parent && parent.closest(selector));
+    var DIRECTIVE_ATTRS = ['kniu:for', ':for', 'kniu:if', ':if', 'kniu:elseif', ':elseif', 'kniu:else', ':else'];
+    var hasDirectiveAncestor = function (node) {
+      var p = node.parentElement;
+      while (p) {
+        for (var i = 0; i < DIRECTIVE_ATTRS.length; i++) {
+          if (p.hasAttribute(DIRECTIVE_ATTRS[i])) return true;
+        }
+        p = p.parentElement;
+      }
+      return false;
+    };
+    var queryDirectives = function (root, attrs) {
+      return Array.prototype.filter.call(root.querySelectorAll('*'), function (n) {
+        for (var i = 0; i < attrs.length; i++) {
+          if (n.hasAttribute(attrs[i])) return true;
+        }
+        return false;
+      });
     };
 
     const applyBindings = function (root, base, extra, bucket, refs) {
@@ -677,10 +684,6 @@ var KniuTemplate = (function () {
         evalExpr(key, base, extra).paths.forEach(function (p) { return subscribePath(base, p, fn, bucket); });
       };
       const write = function (key, value) { return setPath(base, key, value); };
-      // 同一次 applyBindings 内，事件/ref 循环与属性循环各调一次本函数（两处收集点）。两次之间
-      // 只写属性、挂监听，不增删元素（唯一例外是 kniu:loading 遮罩，它没有 {{ }} 属性，属性循环
-      // 本就跳过），故同一 container 的收集结果可复用——省掉一次全树 querySelectorAll('*') +
-      // 模板内容展开。注意 memo 只在这个 applyBindings 调用的作用域内有效，不会跨渲染残留。
       const bindingNodeCache = new Map();
       const collectBindingNodes = function (container) {
         const cached = bindingNodeCache.get(container);
@@ -690,8 +693,10 @@ var KniuTemplate = (function () {
         for (let index = 0; index < elements.length; index += 1) {
           const element = elements[index];
           if (element.tagName !== 'TEMPLATE') continue;
-          if (element.hasAttribute('kniu:for') || element.hasAttribute('kniu:if')
-            || element.hasAttribute('kniu:elseif') || element.hasAttribute('kniu:else')) continue;
+          if (element.hasAttribute('kniu:for') || element.hasAttribute(':for')
+            || element.hasAttribute('kniu:if') || element.hasAttribute(':if')
+            || element.hasAttribute('kniu:elseif') || element.hasAttribute(':elseif')
+            || element.hasAttribute('kniu:else') || element.hasAttribute(':else')) continue;
           const tableColumn = element.closest('kniu-table-col');
           [...element.content.querySelectorAll('*')].forEach(function (inner) {
             if (tableColumn) inner.__kniuTableColumn = tableColumn;
@@ -709,7 +714,7 @@ var KniuTemplate = (function () {
       let _tn;
       while ((_tn = walk.nextNode())) {
         const textNode = _tn;
-        if (hasAncestor(textNode, '[kniu\\:for],[kniu\\:if],[kniu\\:elseif],[kniu\\:else]')) continue;
+        if (hasDirectiveAncestor(textNode)) continue;
         const text = textNode.nodeValue;
         if (!text.includes('{{')) continue;
         const segments = [];
@@ -783,33 +788,24 @@ var KniuTemplate = (function () {
         const nodes = collectBindingNodes(root);
         nodes.forEach(function (node) {
           if (node.nodeType !== 1) return;
-          if (node.hasAttribute('kniu:for') || node.hasAttribute('kniu:if') || node.hasAttribute('kniu:elseif') || node.hasAttribute('kniu:else')) {
-            // 表格列模板（<kniu-table-col><template #default>）内的节点带 kniu:if 时，
-            // 显示由 kniu-table 的 condition 机制按行求值（resolveTableRowTemplate，作用域仅
-            // scope.row / $index），kniu:if 属性不会被 setupIf 处理（content 在 DocumentFragment）。
-            // 但这类节点的事件绑定（kniu-btn 的 kniu@click、kniu-switch 的 kniu@change）仍需在此
-            // 绑定，否则列内条件按钮永远无 handler。非列模板的普通控制流节点仍整体跳过，
-            // 交给 setupIf / setupFor 渲染。
+          if (node.hasAttribute('kniu:for') || node.hasAttribute(':for')
+            || node.hasAttribute('kniu:if') || node.hasAttribute(':if')
+            || node.hasAttribute('kniu:elseif') || node.hasAttribute(':elseif')
+            || node.hasAttribute('kniu:else') || node.hasAttribute(':else')) {
             if (!node.__kniuTableColumn) return;
           }
-          if (hasAncestor(node, '[kniu\\:for],[kniu\\:if],[kniu\\:elseif],[kniu\\:else]')) return;
+          if (hasDirectiveAncestor(node)) return;
 
           const refAttr = node.hasAttribute('kniu:ref') ? 'kniu:ref' : (node.hasAttribute('ref') ? 'ref' : '');
-          // ref 收集只发生在「显式 bind」（controller mount 传入 refs）时：
-          // reactive() auto-bind（setup/脚本阶段的 bind(currentScope, proxy)）不带 refs，
-          // 若在此收集会把 ref 写进一次性对象并移除 DOM 属性，导致后续显式 bind 永远收不到。
           if (refAttr && refs) {
             const refName = node.getAttribute(refAttr);
             if (refName) refs[refName] = node;
             node.removeAttribute(refAttr);
           }
 
-          if (node.hasAttribute('kniu:form')) {
-            const rawPath = stripBraces(node.getAttribute('kniu:form'));
+          if (node.hasAttribute('kniu:form') || node.hasAttribute(':form')) {
+            const rawPath = stripBraces(node.getAttribute('kniu:form') || node.getAttribute(':form'));
             const isBool = node.type === 'checkbox' || node.type === 'radio';
-            // kniu:form 指向 kniu-form options 的字段对象（{ value, condition, message }）时，
-            // 双向绑定落到字段的 value 上：控件显示值、回写值，options 结构本身不动。
-            // 例：kniu:form="{{userFormOptions.name}}" === kniu:form="{{userFormOptions.name.value}}"
             const fieldObject = isFormFieldObject(resolve(rawPath));
             const path = fieldObject ? `${rawPath}.value` : rawPath;
             const render = function () {
@@ -824,23 +820,18 @@ var KniuTemplate = (function () {
             };
             render();
             subscribe(path, render);
-            // 字段对象被整体替换（options.name = {...}）时 rawPath 层也会通知，此处一并订阅保证刷新
             if (fieldObject) subscribe(rawPath, render);
             const onInput = function () { return write(path, isBool ? node.checked : node.value); };
             const evt = isBool ? 'change' : 'input';
             node.addEventListener(evt, onInput);
             listeners.push([node, evt, onInput]);
-            node.removeAttribute('kniu:form');
+            if (node.hasAttribute('kniu:form')) node.removeAttribute('kniu:form');
+            if (node.hasAttribute(':form')) node.removeAttribute(':form');
             if (fieldObject) node.__kniuModelPath = rawPath;
           }
 
-          if (node.hasAttribute('kniu:option')) {
-            const expr = stripBraces(node.getAttribute('kniu:option'));
-            // 自定义元素可能尚未升级：列模板 content 内的节点（如 <kniu-table-col><template>
-            // 里的 kniu-switch）从未插入文档，customElements 自动升级与手动 upgrade 均不生效
-            // （Chrome 对 disconnected 节点 upgrade 静默无效），'options' in node 为 false。
-            // 已定义组件但未升级时，把 options 值存到 expando（__kniuOptionsValue），
-            // kniu-table 的 _readColumns 读取列内 switch 快照时回退读取；已升级节点走 property。
+          if (node.hasAttribute('kniu:option') || node.hasAttribute(':option')) {
+            const expr = stripBraces(node.getAttribute('kniu:option') || node.getAttribute(':option'));
             const tag = node.tagName.toLowerCase();
             const componentCtor = tag.includes('-') && typeof customElements !== 'undefined'
               ? customElements.get(tag) : null;
@@ -849,20 +840,12 @@ var KniuTemplate = (function () {
             const nativeOptionEvents = new Map();
             const renderOptions = function () {
               const value = resolve(expr);
-              // 只有解析出真实对象才写入；解析不到（undefined/null/非对象）时保持原值，
-              // 防止重复/伪绑定（如异步间隙里用数据对象当 state 的 auto-bind）把
-              // 已写入的 expando 覆盖成 {}（2026-09-01 修复）。
               if (value && typeof value === 'object') {
-                // UI 默认项由应用在启动期配置；模板中的同名字段始终优先。
                 const componentDefaults = globalThis.__KNIU_UI_DEFAULTS__?.[tag] || {};
                 const mergedValue = tag.includes('-') ? { ...componentDefaults, ...value } : value;
-                // 仅自定义组件使用 options property；原生 <select>.options 等浏览器
-                // 内建字段不能误写成业务配置对象，原生标签统一走下方通用映射。
                 const usesComponentOptions = tag.includes('-') && 'options' in node;
                 if (usesComponentOptions) node.options = mergedValue;
                 else if (isUnupgradedComponent) node.__kniuOptionsValue = mergedValue;
-                // `on*` 事件字段无论目标是原生标签还是 kniu 组件都绑定到宿主事件；
-                // 组件仍会同时收到完整 options，用于其自身的回调型配置协议。
                 const usesNativeOptionMapping = !usesComponentOptions && !isUnupgradedComponent;
                 if (usesNativeOptionMapping) {
                   nativeOptionAttributes.forEach(function (name) { node.removeAttribute(name); });
@@ -873,93 +856,91 @@ var KniuTemplate = (function () {
                 });
                 nativeOptionEvents.clear();
                 Object.entries(mergedValue).forEach(function ([name, item]) {
-                    const eventDescriptor = typeof item === 'function' ? optionEventDescriptor(name) : null;
-                    if (eventDescriptor) {
-                      const eventName = eventDescriptor.eventName;
-                      const modifiers = eventDescriptor.modifiers;
-                      const unknownModifiers = modifiers.filter(function (modifier) {
-                        return !EVENT_OPTION_MODIFIERS.has(modifier) && !EVENT_BEHAVIOR_MODIFIERS.has(modifier);
-                      });
-                      if (unknownModifiers.length || (modifiers.includes('passive') && modifiers.includes('prevent'))) {
-                        warn(`<${tag}> 的 kniu:option 事件 "${name}" 修饰符无效，已跳过绑定。`);
-                        return;
+                  const eventDescriptor = typeof item === 'function' ? optionEventDescriptor(name) : null;
+                  if (eventDescriptor) {
+                    const eventName = eventDescriptor.eventName;
+                    const modifiers = eventDescriptor.modifiers;
+                    const unknownModifiers = modifiers.filter(function (modifier) {
+                      return !EVENT_OPTION_MODIFIERS.has(modifier) && !EVENT_BEHAVIOR_MODIFIERS.has(modifier);
+                    });
+                    if (unknownModifiers.length || (modifiers.includes('passive') && modifiers.includes('prevent'))) {
+                      warn(`<${tag}> 的 kniu:option 事件 "${name}" 修饰符无效，已跳过绑定。`);
+                      return;
+                    }
+                    const handler = function (event) {
+                      if ((DEFAULT_PREVENT_EVENTS.has(eventName) || eventName === 'click')
+                        && !modifiers.includes('native') && !modifiers.includes('passive') && !event.defaultPrevented) {
+                        event.preventDefault();
                       }
-                      const handler = function (event) {
-                        if ((DEFAULT_PREVENT_EVENTS.has(eventName) || eventName === 'click')
-                          && !modifiers.includes('native') && !modifiers.includes('passive') && !event.defaultPrevented) {
-                          event.preventDefault();
+                      const isKeyboardEvent = event.type.startsWith('key');
+                      const keyModifiers = isKeyboardEvent
+                        ? modifiers.filter(function (modifier) { return Object.prototype.hasOwnProperty.call(KEY_MODIFIER_VALUES, modifier); })
+                        : [];
+                      if (keyModifiers.length && !keyModifiers.some(function (modifier) { return KEY_MODIFIER_VALUES[modifier].includes(event.key); })) return;
+                      const requiredSystemKeys = new Set(modifiers.filter(function (modifier) {
+                        return ['ctrl', 'shift', 'alt', 'meta'].includes(modifier);
+                      }));
+                      for (const modifier of modifiers) {
+                        if (EVENT_OPTION_MODIFIERS.has(modifier) || keyModifiers.includes(modifier)) continue;
+                        if (modifier === 'self' && event.target !== event.currentTarget) return;
+                        if (modifier === 'ctrl' && !event.ctrlKey) return;
+                        if (modifier === 'shift' && !event.shiftKey) return;
+                        if (modifier === 'alt' && !event.altKey) return;
+                        if (modifier === 'meta' && !event.metaKey) return;
+                        if (modifier === 'exact' && (
+                          event.ctrlKey !== requiredSystemKeys.has('ctrl') || event.shiftKey !== requiredSystemKeys.has('shift') ||
+                          event.altKey !== requiredSystemKeys.has('alt') || event.metaKey !== requiredSystemKeys.has('meta')
+                        )) return;
+                        if (!isKeyboardEvent) {
+                          if (modifier === 'left' && event.button !== 0) return;
+                          if (modifier === 'middle' && event.button !== 1) return;
+                          if (modifier === 'right' && event.button !== 2) return;
                         }
-                        const isKeyboardEvent = event.type.startsWith('key');
-                        const keyModifiers = isKeyboardEvent
-                          ? modifiers.filter(function (modifier) { return Object.prototype.hasOwnProperty.call(KEY_MODIFIER_VALUES, modifier); })
-                          : [];
-                        if (keyModifiers.length && !keyModifiers.some(function (modifier) { return KEY_MODIFIER_VALUES[modifier].includes(event.key); })) return;
-                        const requiredSystemKeys = new Set(modifiers.filter(function (modifier) {
-                          return ['ctrl', 'shift', 'alt', 'meta'].includes(modifier);
-                        }));
-                        for (const modifier of modifiers) {
-                          if (EVENT_OPTION_MODIFIERS.has(modifier) || keyModifiers.includes(modifier)) continue;
-                          if (modifier === 'self' && event.target !== event.currentTarget) return;
-                          if (modifier === 'ctrl' && !event.ctrlKey) return;
-                          if (modifier === 'shift' && !event.shiftKey) return;
-                          if (modifier === 'alt' && !event.altKey) return;
-                          if (modifier === 'meta' && !event.metaKey) return;
-                          if (modifier === 'exact' && (
-                            event.ctrlKey !== requiredSystemKeys.has('ctrl') || event.shiftKey !== requiredSystemKeys.has('shift') ||
-                            event.altKey !== requiredSystemKeys.has('alt') || event.metaKey !== requiredSystemKeys.has('meta')
-                          )) return;
-                          if (!isKeyboardEvent) {
-                            if (modifier === 'left' && event.button !== 0) return;
-                            if (modifier === 'middle' && event.button !== 1) return;
-                            if (modifier === 'right' && event.button !== 2) return;
-                          }
-                          if (modifier === 'stop') event.stopPropagation();
-                          if (modifier === 'prevent') event.preventDefault();
-                        }
-                        return item.call(base, event);
-                      };
-                      const listenerOptions = {
-                        capture: modifiers.includes('capture'), once: modifiers.includes('once'), passive: modifiers.includes('passive')
-                      };
-                      node.addEventListener(eventName, handler, listenerOptions);
-                      nativeOptionEvents.set(eventName, { handler: handler, options: listenerOptions });
-                      listeners.push([node, eventName, handler, listenerOptions]);
-                      return;
-                    }
-                    if (typeof item === 'function') {
-                      if (usesNativeOptionMapping) warn(`<${tag}> 的 kniu:option 事件字段必须以 on 开头（如 onClick），已跳过 "${name}"。`);
-                      return;
-                    }
-                    if (!usesNativeOptionMapping) return;
-                    const attrName = isValidForTag(name, tag) ? name : optionAttributeName(name);
-                    const bool = isBooleanAttr(attrName);
-                    setAttr(node, attrName, item, bool);
-                    if (item != null && item !== false) nativeOptionAttributes.add(attrName);
+                        if (modifier === 'stop') event.stopPropagation();
+                        if (modifier === 'prevent') event.preventDefault();
+                      }
+                      return item.call(base, event);
+                    };
+                    const listenerOptions = {
+                      capture: modifiers.includes('capture'), once: modifiers.includes('once'), passive: modifiers.includes('passive')
+                    };
+                    node.addEventListener(eventName, handler, listenerOptions);
+                    nativeOptionEvents.set(eventName, { handler: handler, options: listenerOptions });
+                    listeners.push([node, eventName, handler, listenerOptions]);
+                    return;
+                  }
+                  if (typeof item === 'function') {
+                    if (usesNativeOptionMapping) warn(`<${tag}> 的 kniu:option 事件字段必须以 on 开头（如 onClick），已跳过 "${name}"。`);
+                    return;
+                  }
+                  if (!usesNativeOptionMapping) return;
+                  const attrName = isValidForTag(name, tag) ? name : optionAttributeName(name);
+                  const bool = isBooleanAttr(attrName);
+                  setAttr(node, attrName, item, bool);
+                  if (item != null && item !== false) nativeOptionAttributes.add(attrName);
                 });
               }
             };
             renderOptions();
             subscribe(expr, renderOptions);
-            // 列模板内节点（__kniuTableColumn）刻意保留 kniu:option 属性：kniu:if / kniu:for
-            // 克隆列时 expando 不随 cloneNode 复制，保留属性让克隆列在递归 applyBindings 中
-            // 重新解析并写入 expando（与 kniu@change 同策略，见本文件事件绑定处注释）；
-            // 普通节点直接移除属性，避免二次绑定重复订阅。
-            if (!node.__kniuTableColumn) node.removeAttribute('kniu:option');
+            if (!node.__kniuTableColumn) {
+              if (node.hasAttribute('kniu:option')) node.removeAttribute('kniu:option');
+              if (node.hasAttribute(':option')) node.removeAttribute(':option');
+            }
           }
 
-          // kniu:rules 已随 kniu-form 的 options 化重构作废（2026-09-01）：
-          // 字段验证统一写在 kniu:option 里——字段对象带 condition 即需验证，message 为提示。
-          if (node.hasAttribute('kniu:rules')) {
+          if (node.hasAttribute('kniu:rules') || node.hasAttribute(':rules')) {
             warn('kniu:rules 已作废，请改用 kniu:option，在字段上声明 value / condition / message。');
             node.removeAttribute('kniu:rules');
+            node.removeAttribute(':rules');
           }
 
-          if (node.hasAttribute('kniu:style')) {
-            const expr = stripBraces(node.getAttribute('kniu:style'));
+          if (node.hasAttribute('kniu:style') || node.hasAttribute(':style')) {
+            const styleAttrName = node.hasAttribute('kniu:style') ? 'kniu:style' : ':style';
+            const expr = stripBraces(node.getAttribute(styleAttrName));
             const managedProperties = new Set();
             const renderStyle = function () {
               const value = resolve(expr);
-              // 只回收该指令曾写入的属性，保留原有静态 style 与 class 样式。
               managedProperties.forEach(function (name) { node.style.removeProperty(name); });
               managedProperties.clear();
               normalizeStyleValue(node, value).forEach(function ([name, item]) {
@@ -969,36 +950,30 @@ var KniuTemplate = (function () {
                 node.style.setProperty(name, cssValue);
                 managedProperties.add(name);
               });
-              // 托管声明被全部收回后 style 可能变空，浏览器不会自动移除空属性，
-              // 需显式删掉，避免残留 `style=""`。
               if (!node.getAttribute('style')) node.removeAttribute('style');
             };
             renderStyle();
             subscribe(expr, renderStyle);
             node.removeAttribute('kniu:style');
+            node.removeAttribute(':style');
           }
 
-          // kniu:loading 指令：区域 / 全屏加载遮罩。
-          // 用法：
-          //   kniu:loading="{{loading}}"        遮罩作为绑定元素子节点（区域加载，元素需为定位上下文）
-          //   kniu:loading.body="{{loading}}"  遮罩插入 document.body（全屏加载）
-          //   可选 kniu:loading-text="{{tip}}"  遮罩文案
           const loadingAttr = [...node.attributes].find(function (a) {
-            return a.name === 'kniu:loading' || a.name === 'kniu:loading.body';
+            return a.name === 'kniu:loading' || a.name === 'kniu:loading.body' ||
+              a.name === ':loading' || a.name === ':loading.body';
           });
           if (loadingAttr) {
-            const body = loadingAttr.name === 'kniu:loading.body';
+            const body = loadingAttr.name === 'kniu:loading.body' || loadingAttr.name === ':loading.body';
             const loadingExpr = stripBraces(loadingAttr.value);
-            const hasText = node.hasAttribute('kniu:loading-text');
-            const textExpr = hasText ? stripBraces(node.getAttribute('kniu:loading-text')) : '';
-            if (hasText) node.removeAttribute('kniu:loading-text');
+            const hasText = node.hasAttribute('kniu:loading-text') || node.hasAttribute(':loading-text');
+            const textExpr = hasText ? stripBraces(node.getAttribute(hasText ? 'kniu:loading-text' : ':loading-text')) : '';
+            if (hasText) {
+              node.removeAttribute(hasText ? 'kniu:loading-text' : ':loading-text');
+            }
             node.removeAttribute('kniu:loading');
             node.removeAttribute('kniu:loading.body');
-
-            // 委托检测：绑定元素是自带 loading 的 Shadow DOM 自定义组件（如 kniu-table）时，
-            // 不再往光层塞遮罩（光层子节点无 <slot> 不会渲染），而是直接驱动组件内置遮罩，
-            // 由组件自身管理遮罩，避免光层节点无法显示。
-            // 仅「区域加载」(kniu:loading) 委托；kniu:loading.body 仍走全屏遮罩。
+            node.removeAttribute(':loading');
+            node.removeAttribute(':loading.body');
             const delegate = !body && node.shadowRoot
               && typeof node.tagName === 'string'
               && node.tagName.toLowerCase().indexOf('kniu-') === 0
@@ -1012,7 +987,6 @@ var KniuTemplate = (function () {
               render();
               subscribe(loadingExpr, render);
               if (textExpr) subscribe(textExpr, render);
-              // 组件自管理遮罩，无需 disposer
             } else {
               ensureLoadingStyle();
               const mask = document.createElement('div');
@@ -1059,12 +1033,11 @@ var KniuTemplate = (function () {
               render();
               subscribe(loadingExpr, render);
               if (textExpr) subscribe(textExpr, render);
-              // 卸载时清理遮罩，避免 body 挂载泄漏
               listDisposers.push(unmount);
             }
           }
 
-          const DATA_ATTR_RE = /^kniu:\[([a-z][a-z0-9-]*)\]$/i;
+          const DATA_ATTR_RE = /^(?:kniu:|):\[([a-z][a-z0-9-]*)\]$/i;
           [...node.attributes].forEach(function (attr) {
             const match = attr.name.match(DATA_ATTR_RE);
             if (!match) return;
@@ -1080,7 +1053,6 @@ var KniuTemplate = (function () {
               if (bindsComponentProperty) {
                 if (!Object.is(node[propertyName], value)) node[propertyName] = value;
               } else if (value == null || value === false || String(value).trim() === '') {
-                // 空值不写属性（含空字符串），避免残留 `data-xxx=""`。
                 if (node.hasAttribute(dataAttrName)) node.removeAttribute(dataAttrName);
               } else {
                 const next = String(value);
@@ -1094,8 +1066,10 @@ var KniuTemplate = (function () {
 
           [...node.attributes].forEach(function (attr) {
             const full = attr.name;
-            if (!full.startsWith('kniu:')) return;
-            const key = full.slice(5);
+            if (!full.startsWith('kniu:') && !full.startsWith(':')) return;
+            const key = full.startsWith('kniu:')
+              ? (full.slice(5).startsWith(':') ? full.slice(6) : full.slice(5))
+              : full.slice(1);
             if (SPECIAL_KNIU.has(key)) return;
             const attrName = key;
             const tag = node.tagName.toLowerCase();
@@ -1115,7 +1089,7 @@ var KniuTemplate = (function () {
             node.removeAttribute(full);
           });
 
-          const EVENT_RE = /^kniu@([a-z][a-z0-9-]*)(?:\.([a-z0-9.]+))?$/i;
+          const EVENT_RE = /^(?:kniu@|@)([a-z][a-z0-9-]*)(?:\.([a-z0-9.]+))?$/i;
           const eventState = new WeakMap();
           [...node.attributes].forEach(function (attr) {
             const evMatch = attr.name.match(EVENT_RE);
@@ -1166,20 +1140,11 @@ var KniuTemplate = (function () {
               const renderScopedHandler = function () {
                 const { value } = evalExpr(handlerName, base, extra);
                 const fn = typeof value === 'function' ? value.bind(base) : null;
-                // 只在解析到真实函数时才写入。applyBindings 会随嵌套组件 / 重渲染递归执行，
-                // 表格内 kniu-switch / kniu-btn 的 kniu@change / kniu@click 节点可能被「非控制器作用域」
-                // 的那一轮重复处理，此时 handlerName 在 base 上解析不到（返回 undefined），fn 为 null。
-                // 若无条件写入会把上一轮已绑好的提交函数覆盖成 null，导致点击开关 / 按钮不再发请求。
-                // 仅当 fn 为函数时落盘，可保证最后存活的是正确的业务提交函数。
                 if (fn) {
                   node.__kniuTableScopedHandler = fn;
                   if (columnEl) columnEl.__kniuTableScopedSwitchHandler = fn;
                 }
-                // kniu:if / kniu:for 会 clone 列节点，expando 随 cloneNode 丢失；而 _readColumns 直接读取
-                // 克隆后的列宿主 / 模板内 switch，因此这里【不移除】kniu@change / kniu@click 属性，
-                // 让克隆后的列在 applyBindings 时重新解析并绑定到克隆节点自身，从而保证提交函数随列存活。
                 if (node.matches('kniu-switch')) {
-                  // 解析 disabled 绑定（控制器作用域）：避免把 {{...}} 字面量当作属性，导致开关始终禁用
                   const disabledRaw = node.getAttribute('disabled');
                   if (disabledRaw && disabledRaw.includes('{{')) {
                     const { value: dv } = evalExpr(disabledRaw.replace(/^\{\{|\}\}$/g, '').trim(), base, extra);
@@ -1189,8 +1154,6 @@ var KniuTemplate = (function () {
               };
               renderScopedHandler();
               subscribe(handlerName, renderScopedHandler);
-              // 注意：此处刻意不 removeAttribute，理由见上。kniu@change / kniu@click 不在
-              // _readColumns 的 switch.attributes 白名单内，不会被复制到行内真实 switch / button。
               return;
             }
             const handlers = eventState.get(node) || new Map();
@@ -1274,14 +1237,11 @@ var KniuTemplate = (function () {
         const nodes = collectBindingNodes(root);
         nodes.forEach(function (node) {
           if (node.nodeType !== 1) return;
-          if (node.hasAttribute('kniu:for') || node.hasAttribute('kniu:if') || node.hasAttribute('kniu:elseif') || node.hasAttribute('kniu:else')) return;
-          if (hasAncestor(node, '[kniu\\:for],[kniu\\:if],[kniu\\:elseif],[kniu\\:else]')) return;
-          // 表格列模板（<kniu-table-col><template #default> 内的元素）的属性插值必须交给
-          // kniu-table 逐行解析（resolveTableRowTemplate 用 scope.row 求值）。若在此用控制器
-          // 作用域提前求值，scope.row 不存在会把 {{ }} 解析成空值并移除属性（如 type），导致
-          // type="{{scope.row.role_text == '管理员' ? 'success' : 'primary'}}" 这类按行绑定失效。
-          // __kniuTableColumn 由 collectBindingNodes 深入列模板时标记，且不含列元素自身，
-          // 故只跳过列模板内部元素，保留列元素自身的 on-change / editable / data 等绑定。
+          if (node.hasAttribute('kniu:for') || node.hasAttribute(':for')
+            || node.hasAttribute('kniu:if') || node.hasAttribute(':if')
+            || node.hasAttribute('kniu:elseif') || node.hasAttribute(':elseif')
+            || node.hasAttribute('kniu:else') || node.hasAttribute(':else')) return;
+          if (hasDirectiveAncestor(node)) return;
           if (node.__kniuTableColumn) return;
           [...node.attributes].forEach(function (attr) {
             const name = attr.name;
@@ -1300,7 +1260,6 @@ var KniuTemplate = (function () {
             if (last < template.length) segments.push({ t: 'text', v: template.slice(last) });
             const isBool = isBooleanAttr(name);
             const pureExpr = segments.length === 1 && segments[0].t === 'key';
-            // 组件 property 透传：自定义元素上存在同名 property 时，直接写入 property（支持对象/数组/函数），与 kniu:[name] 行为一致
             const propertyName = name.replace(/-([a-z0-9])/g, function (_, char) {
               return char.toUpperCase();
             });
@@ -1339,27 +1298,33 @@ var KniuTemplate = (function () {
     }
 
     const setupFor = function (block, parentExtra, bucket = null) {
-      const forAttr = block.getAttribute('kniu:for');
+      const forAttr = block.getAttribute('kniu:for') || block.getAttribute(':for');
       const forMatch = forAttr.match(/\{\{([\s\S]*?)\}\}/);
       const arrayExpr = (forMatch ? forMatch[1] : forAttr).trim();
-      const idxName = block.getAttribute('kniu:for-index') || 'index';
-      const itemName = block.getAttribute('kniu:for-item') || 'item';
-      const keyExpr = block.getAttribute('kniu:key');
+      const idxName = block.getAttribute('kniu:for-index') || block.getAttribute(':for-index') || 'index';
+      const itemName = block.getAttribute('kniu:for-item') || block.getAttribute(':for-item') || 'item';
+      const keyExpr = block.getAttribute('kniu:key') || block.getAttribute(':key');
       const useKeyed = !!keyExpr;
       const isTpl = block.tagName === 'TEMPLATE';
       const tpl = isTpl ? block.content : block.cloneNode(true);
       if (!isTpl) {
         tpl.removeAttribute('kniu:for');
+        tpl.removeAttribute(':for');
         tpl.removeAttribute('kniu:for-index');
+        tpl.removeAttribute(':for-index');
         tpl.removeAttribute('kniu:for-item');
+        tpl.removeAttribute(':for-item');
         tpl.removeAttribute('kniu:key');
+        tpl.removeAttribute(':key');
       }
       const anchor = document.createComment('kniu:for');
       block.replaceWith(anchor);
       let rendered = [];
       let prevViews = [];
       let subCleanups = [];
-      const bc = bucket || subCleanups;
+      // 订阅只注册到自身 subCleanups（每次 render 执行后清空，语义=「最近重渲染边界」）；
+      // 最终 disposer 才上交 bucket——否则嵌套块每次父级重渲染都会向顶层 listDisposers 累积泄漏。
+      const bc = subCleanups;
 
       const keyFor = function (item) {
         return keyExpr === '*this' ? item : (function () {
@@ -1381,8 +1346,8 @@ var KniuTemplate = (function () {
             roots = isTpl ? [...frag.childNodes] : [frag];
             roots.forEach(function (node) {
               if (node.nodeType === 1) {
-                node.querySelectorAll('[kniu\\:for]').forEach(function (n) { return setupFor(n, extra, nb); });
-                node.querySelectorAll('[kniu\\:if]').forEach(function (n) { return setupIf(n, extra, nb); });
+                queryDirectives(node, ['kniu:for', ':for']).forEach(function (n) { return setupFor(n, extra, nb); });
+                queryDirectives(node, ['kniu:if', ':if']).forEach(function (n) { return setupIf(n, extra, nb); });
               }
               applyBindings(node, state, extra, nb, refs);
             });
@@ -1395,6 +1360,8 @@ var KniuTemplate = (function () {
       };
 
       const render = function () {
+        if (!anchor.parentNode) return; // 所属分支已随父级 if 重渲染移除：过期渲染自 disarm，防对 null insertBefore 抛错
+        subCleanups.forEach(function (c) { return c(); });
         subCleanups.length = 0;
         const { value: arr, paths } = evalExpr(arrayExpr, state, parentExtra);
         paths.forEach(function (p) { return subscribePath(state, p, render, bc); });
@@ -1463,8 +1430,9 @@ var KniuTemplate = (function () {
       };
 
       render();
-      listDisposers.push(function () {
+      (bucket || listDisposers).push(function () {
         subCleanups.forEach(function (c) { return c(); });
+        subCleanups.length = 0;
         rendered.forEach(function (n) { return n.remove(); });
         prevViews.forEach(function (v) {
           v.viewCleanups.forEach(function (c) { return c(); });
@@ -1482,12 +1450,12 @@ var KniuTemplate = (function () {
           continue;
         }
         if (sib.nodeType === 1) {
-          if (sib.hasAttribute('kniu:elseif')) {
+          if (sib.hasAttribute('kniu:elseif') || sib.hasAttribute(':elseif')) {
             chain.push({ node: sib, type: 'elseif' });
             sib = sib.nextSibling;
             continue;
           }
-          if (sib.hasAttribute('kniu:else')) {
+          if (sib.hasAttribute('kniu:else') || sib.hasAttribute(':else')) {
             chain.push({ node: sib, type: 'else' });
             break;
           }
@@ -1498,15 +1466,15 @@ var KniuTemplate = (function () {
       const branches = chain.map(function ({ node, type }) {
         const tpl = node.cloneNode(true);
         if (type === 'if' || type === 'elseif') {
-          const attrName = type === 'if' ? 'kniu:if' : 'kniu:elseif';
-          const raw = node.getAttribute(attrName);
+          const names = type === 'if' ? ['kniu:if', ':if'] : ['kniu:elseif', ':elseif'];
+          const attrName = names.find(function (n) { return node.hasAttribute(n); }) || names[0];
+          const raw = node.getAttribute(attrName) ?? '';
           const m = raw.match(/\{\{([\s\S]*?)\}\}/);
           const expr = (m ? m[1] : raw).trim();
-          tpl.removeAttribute('kniu:if');
-          tpl.removeAttribute('kniu:elseif');
+          names.forEach(function (n) { tpl.removeAttribute(n); });
           return { type, expr, tpl, value: false };
         }
-        tpl.removeAttribute('kniu:else');
+        ['kniu:else', ':else'].forEach(function (n) { tpl.removeAttribute(n); });
         return { type: 'else', expr: null, tpl, value: false };
       });
 
@@ -1516,9 +1484,13 @@ var KniuTemplate = (function () {
 
       let rendered = [];
       const cleanups = [];
-      const bc = bucket || cleanups;
+      // 订阅只注册到自身 cleanups（每次 render 执行后清空）；最终 disposer 才上交 bucket，
+      // 防止嵌套块随父级分支切换向顶层 listDisposers 无限累积（内存泄漏 + 过期渲染崩溃）。
+      const bc = cleanups;
 
       const render = function () {
+        if (!anchor.parentNode) return; // 本分支已随父级重渲染移除：过期渲染自 disarm
+        cleanups.forEach(function (c) { return c(); });
         cleanups.length = 0;
         rendered.forEach(function (n) { return n.remove(); });
         rendered = [];
@@ -1539,17 +1511,12 @@ var KniuTemplate = (function () {
           const frag = isTpl
             ? chosen.tpl.content.cloneNode(true)
             : chosen.tpl.cloneNode(true);
-          // 模板元素插入其顶层子节点；普通元素则插入元素自身（不能丢 wrapper）。
           const nodes = isTpl ? [...frag.childNodes] : [frag];
           nodes.forEach(function (node) {
             if (node.nodeType === 1) {
-              node.querySelectorAll('[kniu\\:for]').forEach(function (n) { return setupFor(n, parentExtra, bc); });
-              node.querySelectorAll('[kniu\\:if]').forEach(function (n) { return setupIf(n, parentExtra, bc); });
+              queryDirectives(node, ['kniu:for', ':for']).forEach(function (n) { return setupFor(n, parentExtra, bc); });
+              queryDirectives(node, ['kniu:if', ':if']).forEach(function (n) { return setupIf(n, parentExtra, bc); });
             }
-            // 必须先插入文档再 applyBindings：kniu:if / kniu:for 分支内渲染的 kniu-table /
-            // kniu-page 等自定义元素在 insertBefore 之前尚未连接升级，此时处理 kniu:option
-            // 会因 'options' in node 为 false 把值存进 __kniuOptionsValue expando 而非实例
-            // _config，连接后也永不回填，导致组件 options 恒空（表无行、页无数据）。
             anchor.parentNode.insertBefore(node, anchor);
             applyBindings(node, state, parentExtra, bc, refs);
             rendered.push(node);
@@ -1558,23 +1525,24 @@ var KniuTemplate = (function () {
       };
 
       render();
-      listDisposers.push(function () {
+      (bucket || listDisposers).push(function () {
         cleanups.forEach(function (c) { return c(); });
+        cleanups.length = 0;
         rendered.forEach(function (n) { return n.remove(); });
       });
     };
 
     applyBindings(scope, state, {}, subscriptions, refs);
 
-    [...scope.querySelectorAll('[kniu\\:for]')]
-      .filter(function (b) { return !hasAncestor(b, '[kniu\\:for]'); })
+    [...queryDirectives(scope, ['kniu:for', ':for'])]
+      .filter(function (b) { return !hasDirectiveAncestor(b); })
       .forEach(function (b) { return setupFor(b, {}); });
 
     let guard = 0;
     let ifBlock;
     while (
-      (ifBlock = scope.querySelector('[kniu\\:if]')) &&
-      !hasAncestor(ifBlock, '[kniu\\:for]') &&
+      (ifBlock = queryDirectives(scope, ['kniu:if', ':if'])[0]) &&
+      !hasDirectiveAncestor(ifBlock) &&
       guard++ < 1000
     ) {
       setupIf(ifBlock, {});
@@ -1582,6 +1550,7 @@ var KniuTemplate = (function () {
 
     const orphanDirectives = [
       'kniu:elseif', 'kniu:else', 'kniu:key', 'kniu:for-index', 'kniu:for-item',
+      ':elseif', ':else', ':key', ':for-index', ':for-item',
     ];
     orphanDirectives.forEach(function (name) {
       scope.querySelectorAll(`[${name.replace(':', '\\:')}]`).forEach(function (node) {

@@ -719,6 +719,14 @@ async function createBrowserBundle(entryPath = 'client/client.mjs') {
       modules.set(id, `__exports.default=${escapeInvisibleForLiteral(JSON.stringify(css))};`);
       return id;
     }
+    // HTML 文本模块：组件 shadow 模板骨架（组件目录化三件套，见规则 #177）。
+    // 与 dev 侧 kniuserver 的 `.html?module` 通道同语义：读盘导出字符串，不做 JS 语法改写、
+    // 不过 compactJavaScript（HTML 的空白是 shadow DOM 结构的一部分，保持原样）。
+    if (absolutePath.endsWith('.html')) {
+      const html = await readFile(absolutePath, 'utf8');
+      modules.set(id, `__exports.default=${escapeInvisibleForLiteral(JSON.stringify(html))};`);
+      return id;
+    }
     const source = await readFile(absolutePath, 'utf8');
     const transformed = await transformBrowserModule(source, absolutePath, visit);
     // 每个模块的源码在这里就地压掉注释与冗余空白，字符串/正则/模板内容与 ASI 语义不变。

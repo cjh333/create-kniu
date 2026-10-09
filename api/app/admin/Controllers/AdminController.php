@@ -29,6 +29,17 @@ class AdminController extends Base
   // 系统信息。
   public function system(): void
   {
+    // 先提交并**释放会话文件锁**，再做系统探针。
+    //
+    // 原因：PHP 文件会话在一次请求期间持排他锁，而后台轮询与同浏览器的前台请求**共用一个会话**
+    // ⇒ 一个慢 `/system`（无 FFI 的 Windows 上要起 PowerShell，硬超时最坏约 4s）会把前台请求
+    // 全部堵在锁上（现象：静态资源正常、`/api/*` 全部挂起）。
+    // 鉴权与 `admin_token` 的字段补全已在 `Base::__construct()` 完成并写回，本方法之后只读
+    // `$_SESSION`（读不受影响），所以这里提前关会话是安全的。
+    if (session_status() === PHP_SESSION_ACTIVE) {
+      session_write_close();
+    }
+
     // 轮询意图：'memory'（秒级刷可用内存）/ 'uptime'（分钟级刷运行时间）/ 'all'（默认，全刷）。
     // 白名单归一，未知值按 'all' 处理——绝不能因为传了个没见过的 scope 就返回一份没刷新的数据。
     $scope = (string)$this->input('post.scope/s', 'all');
@@ -102,7 +113,10 @@ class AdminController extends Base
 
     if ($scope === 'all' || $scope === 'uptime') {
       // 缓存里的 uptime 最多已陈旧 $cacheTime 秒，而它只按分钟显示 ⇒ 现算，
-      // 免得前端每分钟取到的仍是「上上分钟」的值（FFI 通道下这次读取是零成本）。
+      // 免得前端每分钟取到的仍是「上上分钟」的值。
+      // 注意：**没有 FFI 的 Windows 上这次读要起 PowerShell（含硬超时最坏约 4s）**，
+      // 所以配套下发的 `uptimeRefreshMs` 必须 fail-closed（读不到 → 60s，绝不能落到 1s 档）：
+      // 「慢探针 + 快轮询」会把 PHP 进程与 Session 文件锁持续占满，导致整站 504。
       $info['uptime'] = SystemHelper::getSystemUptime();
       $info['uptimeRefreshMs'] = SystemHelper::getUptimeRefreshMs();
     }

@@ -1,0 +1,38 @@
+@charset "UTF-8";
+
+.kniu_sys_input_group {
+  height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+}
+
+.kniu_sys_input {
+  height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+  min-height: 28px;
+  line-height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+}
+
+.kniu_sys_input_affix {
+  line-height: max(26px, calc(38 / var(--kniu_vw)));
+}
+
+.kniu_sys_input_password,
+.kniu_sys_input_clear {
+  height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+  line-height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+}
+
+.kniu_sys_input_group[data-upload-append="true"] {
+  height: auto;
+}
+
+.kniu_sys_input_group[data-upload-append="true"] .kniu_sys_input_prepend {
+  height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+}
+
+.kniu_sys_input_group[data-is-textarea="true"] {
+  height: auto;
+  min-height: 28px;
+}
+
+.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend {
+  height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+}

@@ -14,6 +14,10 @@ ROUTER.add('daily', 'admin/dailyController');
 ROUTER.add('article', 'admin/articleController');
 ROUTER.add('comment', 'admin/commentController');
 ROUTER.add('reply', 'admin/replyController');
+ROUTER.add('dbconnect', 'admin/dbConnectController');
+ROUTER.add('database', 'admin/databaseController');
+ROUTER.add('databasetables', 'admin/databaseTablesController');
+ROUTER.add('databasetable', 'admin/databaseTableController');
 ROUTER.add('about', 'index/aboutController');
 ROUTER.add('profile', 'index/profileController');
 

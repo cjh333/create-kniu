@@ -1,11 +1,11 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import UI from '../../core/kniuui/kniuui.js';
+import UI from '../../core/kniuui/kniuui.mjs';
 import { assignModelFields, buildMultipartFormData, formatLocalDateTime, getLocalDateParts, toSingleFileList } from '../../core/kniuutil.mjs';
 
 const { controller } = MVVM;
 const { makeSwitchOptions, useListPage } = UI;
-const articleController = controller(({ $msg, $refs, navigateTo, request, reactive, onMounted }) => {
-  const self = { $msg, $refs, navigateTo };
+const articleController = controller(({ $confirm, $msg, $refs, navigateTo, request, reactive, onMounted }) => {
+  const self = { $confirm, $msg, $refs, navigateTo };
   const canEditContent = true;
   const today = getLocalDateParts();
   const state = reactive({
@@ -39,7 +39,6 @@ const articleController = controller(({ $msg, $refs, navigateTo, request, reacti
       loading: true
     },
     articlePage: {
-      layout: '总数,首页,上一页,页码,下一页,末页,条数',
       currentPage: 1,
       pageSize: 10,
       total: 0,

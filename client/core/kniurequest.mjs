@@ -1,5 +1,5 @@
 import AUTH from './kniuauth.mjs';
-import UI from './kniuui/kniuui.js';
+import UI from './kniuui/kniuui.mjs';
 import { createStateStore } from './kniustore.mjs';
 
 const STATUS_SUCCESS = 1;

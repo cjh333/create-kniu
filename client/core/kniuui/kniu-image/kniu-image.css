@@ -1,0 +1,104 @@
+@charset "UTF-8";
+
+:host {
+  display: inline-block;
+  vertical-align: middle;
+  overflow: hidden;
+  flex-shrink: 0;
+  background-color: var(--kniu-fill-color, #f5f7fa)
+}
+
+.kniu_sys_image_group {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: stretch
+}
+
+.kniu_sys_image_content {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 12px;
+  background-color: #fff;
+  box-sizing: border-box;
+  overflow: hidden
+}
+
+.kniu_sys_image_affix {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 0 20px;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  background-color: var(--kniu-fill-color, #f5f7fa);
+  color: var(--kniu-color-info, #909399);
+  font-size: 14px;
+  line-height: 38px;
+  text-align: center;
+  white-space: nowrap;
+  box-sizing: border-box
+}
+
+.kniu_sys_image_group[data-affix="true"] .kniu_sys_image_content {
+  border: 1px solid var(--kniu-border-color, #dcdfe6)
+}
+
+.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_prepend {
+  display: flex;
+  border-right: 0;
+  border-radius: 4px 0 0 4px
+}
+
+.kniu_sys_image_group[data-has-prepend="true"] .kniu_sys_image_content {
+  border-radius: 0 4px 4px 0
+}
+
+.kniu_sys_image_group[data-has-append="true"] .kniu_sys_image_append {
+  display: flex;
+  border-left: 0;
+  border-radius: 0 4px 4px 0
+}
+
+.kniu_sys_image_group[data-affix="true"] {
+  height: 40px
+}
+
+.kniu_sys_image_group:not([data-affix="true"]) .kniu_sys_image_content {
+  padding: 0;
+  background-color: transparent
+}
+
+.kniu_sys_image_wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: inherit
+}
+
+.kniu_sys_image {
+  display: block;
+  width: 100%;
+  height: 100%
+}
+
+.kniu_sys_image_status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: inherit;
+  color: var(--kniu-color-info, #909399);
+  font-size: 12px
+}
+
+.kniu_sys_image_status[data-hidden="true"] {
+  display: none
+}

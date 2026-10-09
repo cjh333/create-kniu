@@ -1,0 +1,85 @@
+@charset "UTF-8";
+
+:host {
+  z-index: 40;
+  position: fixed;
+  right: calc(16 / var(--kniu_vw));
+  bottom: calc(16 / var(--kniu_vw));
+  display: none;
+}
+
+:host([visible]) {
+  display: block;
+}
+
+button {
+  display: grid;
+  place-items: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 50%;
+  -webkit-border-radius: 50%;
+  -moz-border-radius: 50%;
+  -ms-border-radius: 50%;
+  -o-border-radius: 50%;
+  width: max(30px, calc(40 / var(--kniu_vw)));
+  height: max(30px, calc(40 / var(--kniu_vw)));
+  background-color: #fff;
+  color: #374151;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .14);
+  -webkit-box-shadow: 0 8px 24px rgba(15, 23, 42, .14);
+  -moz-box-shadow: 0 8px 24px rgba(15, 23, 42, .14);
+  -ms-box-shadow: 0 8px 24px rgba(15, 23, 42, .14);
+  -o-box-shadow: 0 8px 24px rgba(15, 23, 42, .14);
+  transition: transform .2s, box-shadow .2s;
+  -webkit-transition: transform .2s, box-shadow .2s;
+  -moz-transition: transform .2s, box-shadow .2s;
+  -ms-transition: transform .2s, box-shadow .2s;
+  -o-transition: transform .2s, box-shadow .2s;
+}
+
+button kniu-icon {
+  display: block;
+  width: max(13.5px, calc(18 / var(--kniu_vw)));
+  height: max(13.5px, calc(18 / var(--kniu_vw)));
+}
+
+button:hover {
+  transform: translateY(-2px);
+  -webkit-transform: translateY(-2px);
+  -moz-transform: translateY(-2px);
+  -ms-transform: translateY(-2px);
+  -o-transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, .18);
+  -webkit-box-shadow: 0 12px 28px rgba(15, 23, 42, .18);
+  -moz-box-shadow: 0 12px 28px rgba(15, 23, 42, .18);
+  -ms-box-shadow: 0 12px 28px rgba(15, 23, 42, .18);
+  -o-box-shadow: 0 12px 28px rgba(15, 23, 42, .18);
+}
+
+@media(min-width:calc(1280px - 60px)) {
+  :host {
+    right: min(var(--right, 40px), calc(100vw - 56px)) !important;
+    bottom: min(var(--bottom, 40px), calc(100vh - 56px)) !important;
+  }
+
+  button {
+    width: max(30px, calc(44 / var(--kniu_vw)));
+    height: max(30px, calc(44 / var(--kniu_vw)));
+  }
+
+  button kniu-icon {
+    width: max(13.5px, calc(20 / var(--kniu_vw)));
+    height: max(13.5px, calc(20 / var(--kniu_vw)));
+  }
+}
+
+@media(prefers-reduced-motion:reduce) {
+  button {
+    transition: none;
+    -webkit-transition: none;
+    -moz-transition: none;
+    -ms-transition: none;
+    -o-transition: none;
+  }
+}

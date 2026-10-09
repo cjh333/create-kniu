@@ -1,0 +1,45 @@
+@charset "UTF-8";
+
+.kniu_sys_button_icon {
+  display: inline-flex;
+  display: -webkit-inline-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+}
+
+.kniu_sys_button_icon kniu-icon {
+  display: block;
+  width: 1em;
+  height: 1em;
+  overflow: visible;
+}
+
+:host([block]) {
+  height: 100%;
+}
+
+:host([block]) .kniu_sys_button {
+  width: 100%;
+  height: 100%;
+}
+
+slot::slotted(kniu-icon) {
+  font-size: var(--kniu-button-icon-size, 1em);
+}
+
+:host([append-borderless]) .kniu_sys_button {
+  border: none;
+  border-radius: 0;
+  -webkit-border-radius: 0;
+  -moz-border-radius: 0;
+  -ms-border-radius: 0;
+  -o-border-radius: 0;
+}

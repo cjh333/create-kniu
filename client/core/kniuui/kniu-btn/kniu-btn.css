@@ -1,0 +1,296 @@
+@charset "UTF-8";
+
+:host {
+  display: inline-flex;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+:host([block]) {
+  display: flex;
+  width: 100%;
+}
+
+.kniu_sys_button {
+  /* 颜色一律走全局变量（client.mjs UI.use theme 统一配置），fallback 仅兜底 */
+  --kniu-button-color: var(--kniu-text-color, #606266);
+  --kniu-button-bg: #fff;
+  --kniu-button-border: var(--kniu-border-color, #dcdfe6);
+  --kniu-button-hover-color: var(--kniu-color-primary, #409eff);
+  --kniu-button-hover-bg: var(--kniu-color-primary-light, #ecf5ff);
+  --kniu-button-hover-border: var(--kniu-color-primary-lighter, #c6e2ff);
+  --kniu-button-active-bg: var(--kniu-color-primary-light, #ecf5ff);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  min-height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+  margin: 0;
+  padding: 8px 15px;
+  border: 1px solid var(--kniu-button-border);
+  border-radius: var(--kniu-radius, 4px);
+  outline: 0;
+  background-color: var(--kniu-button-bg);
+  color: var(--kniu-button-color);
+  font: 500 14px/1 var(--kniu-font-family);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: .1s;
+  -webkit-transition: .1s;
+  -moz-transition: .1s;
+  -ms-transition: .1s;
+  -o-transition: .1s;
+}
+
+.kniu_sys_button:hover,
+.kniu_sys_button:focus-visible {
+  border-color: var(--kniu-button-hover-border);
+  background-color: var(--kniu-button-hover-bg);
+  color: var(--kniu-button-hover-color);
+}
+
+.kniu_sys_button:active {
+  background-color: var(--kniu-button-active-bg);
+  filter: brightness(.94);
+  -webkit-filter: brightness(.94);
+  -moz-filter: brightness(.94);
+  -ms-filter: brightness(.94);
+  -o-filter: brightness(.94);
+}
+
+.kniu_sys_button[data-type="primary"] {
+  --kniu-button-color: #fff;
+  --kniu-button-bg: var(--kniu-color-primary, #409eff);
+  --kniu-button-border: var(--kniu-color-primary, #409eff);
+  --kniu-button-hover-color: #fff;
+  --kniu-button-hover-bg: var(--kniu-color-primary-hover, #79bbff);
+  --kniu-button-hover-border: var(--kniu-color-primary-hover, #79bbff);
+}
+
+.kniu_sys_button[data-type="success"] {
+  --kniu-button-color: #fff;
+  --kniu-button-bg: var(--kniu-color-success, #67c23a);
+  --kniu-button-border: var(--kniu-color-success, #67c23a);
+  --kniu-button-hover-color: #fff;
+  --kniu-button-hover-bg: var(--kniu-color-success-hover, #95d475);
+  --kniu-button-hover-border: var(--kniu-color-success-hover, #95d475);
+}
+
+.kniu_sys_button[data-type="warning"] {
+  --kniu-button-color: #fff;
+  --kniu-button-bg: var(--kniu-color-warning, #e6a23c);
+  --kniu-button-border: var(--kniu-color-warning, #e6a23c);
+  --kniu-button-hover-color: #fff;
+  --kniu-button-hover-bg: var(--kniu-color-warning-hover, #eebe77);
+  --kniu-button-hover-border: var(--kniu-color-warning-hover, #eebe77);
+}
+
+.kniu_sys_button[data-type="danger"] {
+  --kniu-button-color: #fff;
+  --kniu-button-bg: var(--kniu-color-danger, #f56c6c);
+  --kniu-button-border: var(--kniu-color-danger, #f56c6c);
+  --kniu-button-hover-color: #fff;
+  --kniu-button-hover-bg: var(--kniu-color-danger-hover, #f89898);
+  --kniu-button-hover-border: var(--kniu-color-danger-hover, #f89898);
+}
+
+.kniu_sys_button[data-type="info"] {
+  --kniu-button-color: #fff;
+  --kniu-button-bg: var(--kniu-color-info, #909399);
+  --kniu-button-border: var(--kniu-color-info, #909399);
+  --kniu-button-hover-color: #fff;
+  --kniu-button-hover-bg: var(--kniu-color-info-hover, #b1b3b8);
+  --kniu-button-hover-border: var(--kniu-color-info-hover, #b1b3b8);
+}
+
+.kniu_sys_button[data-plain="true"] {
+  --kniu-button-color: var(--kniu-button-border);
+  --kniu-button-bg: color-mix(in srgb, var(--kniu-button-border) 10%, #fff);
+  --kniu-button-hover-color: #fff;
+  --kniu-button-hover-bg: var(--kniu-button-border);
+  --kniu-button-hover-border: var(--kniu-button-border);
+}
+
+.kniu_sys_button[data-type="default"][data-plain="true"] {
+  --kniu-button-color: var(--kniu-text-color, #606266);
+  --kniu-button-bg: #fff;
+  --kniu-button-border: var(--kniu-border-color, #dcdfe6);
+  --kniu-button-hover-color: var(--kniu-color-primary, #409eff);
+  --kniu-button-hover-bg: var(--kniu-color-primary-light, #ecf5ff);
+  --kniu-button-hover-border: var(--kniu-color-primary-lighter, #c6e2ff);
+}
+
+.kniu_sys_button[data-text="true"],
+.kniu_sys_button[data-link="true"] {
+  border-color: transparent;
+  background-color: transparent;
+  color: var(--kniu-button-border);
+}
+
+.kniu_sys_button[data-type="default"][data-text="true"],
+.kniu_sys_button[data-type="default"][data-link="true"] {
+  color: var(--kniu-text-color, #606266);
+}
+
+.kniu_sys_button[data-text="true"]:hover {
+  border-color: transparent;
+  background-color: var(--kniu-fill-color, #f5f7fa);
+}
+
+.kniu_sys_button[data-text="true"][data-bg="true"] {
+  background-color: var(--kniu-fill-color, #f5f7fa);
+}
+
+.kniu_sys_button[data-text="true"][data-bg="true"]:hover {
+  background-color: var(--kniu-fill-color-dark, #e9e9eb);
+}
+
+.kniu_sys_button[data-unstyled="true"] {
+  border: 0;
+  background-color: transparent;
+  padding: 0;
+  margin: 0;
+  min-height: 0;
+  width: 100%;
+  justify-content: flex-start;
+  color: inherit;
+  font: inherit;
+  border-radius: 0;
+  -webkit-border-radius: 0;
+  -moz-border-radius: 0;
+  -ms-border-radius: 0;
+  -o-border-radius: 0;
+}
+
+.kniu_sys_button[data-link="true"] {
+  height: auto;
+  min-height: 0;
+  padding: 2px;
+}
+
+.kniu_sys_button[data-link="true"]:hover,
+.kniu_sys_button[data-link="true"]:focus-visible {
+  border-color: transparent;
+  background-color: transparent;
+  filter: brightness(.8);
+  -webkit-filter: brightness(.8);
+  -moz-filter: brightness(.8);
+  -ms-filter: brightness(.8);
+  -o-filter: brightness(.8);
+}
+
+.kniu_sys_button[data-size="large"] {
+  min-height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+  padding: 12px 19px;
+  font-size: 14px;
+}
+
+.kniu_sys_button[data-size="small"] {
+  min-height: var(--kniu-control-height-small, max(28px, calc(28 / var(--kniu_vw))));
+  padding: 5px 11px;
+  font-size: 12px;
+}
+
+.kniu_sys_button[data-round="true"] {
+  border-radius: 999px;
+  -webkit-border-radius: 999px;
+  -moz-border-radius: 999px;
+  -ms-border-radius: 999px;
+  -o-border-radius: 999px;
+}
+
+.kniu_sys_button[data-circle="true"] {
+  width: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+  height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+  padding: 0;
+  border-radius: 50%;
+  -webkit-border-radius: 50%;
+  -moz-border-radius: 50%;
+  -ms-border-radius: 50%;
+  -o-border-radius: 50%;
+}
+
+.kniu_sys_button[data-circle="true"][data-size="large"] {
+  width: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+  height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+}
+
+.kniu_sys_button[data-circle="true"][data-size="small"] {
+  width: var(--kniu-control-height-small, max(28px, calc(28 / var(--kniu_vw))));
+  height: var(--kniu-control-height-small, max(28px, calc(28 / var(--kniu_vw))));
+}
+
+.kniu_sys_button:disabled {
+  border-color: var(--kniu-border-color-light, #e4e7ed);
+  background-color: #fff;
+  color: var(--kniu-text-color-disabled, #a8abb2);
+  cursor: not-allowed;
+  filter: none;
+  opacity: .6;
+}
+
+.kniu_sys_button[data-block="true"] {
+  width: 100%;
+}
+
+.kniu_sys_button_icon:empty {
+  display: none;
+}
+
+.kniu_sys_button_loading {
+  display: none;
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  -webkit-border-radius: 50%;
+  -moz-border-radius: 50%;
+  -ms-border-radius: 50%;
+  -o-border-radius: 50%;
+  animation: kniu_sys_button_spin .8s linear infinite;
+  -webkit-animation: kniu_sys_button_spin .8s linear infinite;
+}
+
+.kniu_sys_button_loading[class]:not([class="kniu_sys_button_loading"]) {
+  border: 0;
+  animation: none;
+  -webkit-animation: none;
+}
+
+.kniu_sys_button[data-loading="true"] .kniu_sys_button_loading {
+  display: inline-block;
+}
+
+.kniu_sys_button_label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kniu_sys_button_label[data-auto-space="true"] {
+  letter-spacing: .25em;
+  margin-right: -.25em;
+}
+
+@keyframes kniu_sys_button_spin {
+  to {
+    transform: rotate(360deg);
+    -webkit-transform: rotate(360deg);
+    -moz-transform: rotate(360deg);
+    -ms-transform: rotate(360deg);
+    -o-transform: rotate(360deg);
+  }
+}
+
+@media(prefers-reduced-motion:reduce) {
+  .kniu_sys_button_loading {
+    animation: none;
+    -webkit-animation: none;
+  }
+}

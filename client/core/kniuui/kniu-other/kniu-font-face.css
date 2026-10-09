@@ -1,0 +1,57 @@
+@charset "UTF-8";
+
+@font-face {
+  font-family: KniuHei_Bold;
+  src: url("/public/static/font/KniuHei-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: KniuHei_BoldSemi;
+  src: url("/public/static/font/KniuHei-BoldSemi.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: KniuHei_Heavy;
+  src: url("/public/static/font/KniuHei-Heavy.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: KniuHei_Light;
+  src: url("/public/static/font/KniuHei-Light.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: KniuHei_LightExtra;
+  src: url("/public/static/font/KniuHei-LightExtra.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 200;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: KniuHei_Medium;
+  src: url("/public/static/font/KniuHei-Medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: KniuHei_Regular;
+  src: url("/public/static/font/KniuHei-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}

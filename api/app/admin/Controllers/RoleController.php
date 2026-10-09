@@ -43,6 +43,11 @@ class RoleController extends Base
       $this->denyPermission();
       return;
     }
+    // 全系统只允许存在一个 admin 超级账号（既有那个），新增账号一律为普通用户。
+    if ((int)($this->input('post.role') ?? 0) === 1) {
+      $this->json([], '系统仅有一个 admin 超级账号，不能新增管理员账号', ErrorCode::RULE_REJECTED);
+      return;
+    }
     $data = [
       'sid' => $this->input('post.sid') ?? 0,
       'name' => $this->input('post.name') ?? '',
@@ -68,7 +73,19 @@ class RoleController extends Base
     }
     $id = $this->input('post.id') ?? '';
     $roleId = (int)$id;
-    if ($roleId <= 0 || $roleId === $this->currentUserId()) {
+    if ($roleId <= 0) {
+      $this->json([], '不能删除当前登录账号', ErrorCode::FORBIDDEN);
+      return;
+    }
+    // admin 超级账号不可删除：与「唯一 admin」「不可降级」共同构成闭环，
+    // 否则可先降级再删除，把系统锁在无管理员的状态。
+    // 该判定排在「不能删除自己」之前：唯一 admin 删除自己时更该看到这条不变式说明。
+    $targetRole = (int)(Db::name('tb_role')->where('id', '=', $roleId)->value('role') ?? 0);
+    if ($targetRole === 1) {
+      $this->json([], 'admin 超级账号不可删除', ErrorCode::FORBIDDEN);
+      return;
+    }
+    if ($roleId === $this->currentUserId()) {
       $this->json([], '不能删除当前登录账号', ErrorCode::FORBIDDEN);
       return;
     }
@@ -178,6 +195,18 @@ class RoleController extends Base
       $data['issue_time'] = date('Y-m-d H:i:s');
     }
     if (array_key_exists('role', $data)) {
+      // 「唯一 admin」的两端都要锁死：既不能把别人提权成第二个 admin，
+      // 也不能把现有 admin 降级（否则「不可删除」可被绕道突破）。
+      $nextRole = (int)$data['role'];
+      $currentRole = (int)(Db::name('tb_role')->where('id', '=', $id)->value('role') ?? 0);
+      if ($nextRole === 1 && $currentRole !== 1) {
+        $this->json([], '系统仅有一个 admin 超级账号，不能把其它账号设为管理员', ErrorCode::RULE_REJECTED);
+        return;
+      }
+      if ($nextRole !== 1 && $currentRole === 1) {
+        $this->json([], 'admin 超级账号不可降级为普通用户', ErrorCode::RULE_REJECTED);
+        return;
+      }
       $data['role_auth'] = $this->syncRoleAuth($data['role']);
     }
     if (empty($data)) {

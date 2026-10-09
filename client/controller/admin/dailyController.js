@@ -1,13 +1,13 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import UI from '../../core/kniuui/kniuui.js';
+import UI from '../../core/kniuui/kniuui.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 import { assignModelFields, updateListRecord } from '../../core/kniuutil.mjs';
 
 const { controller } = MVVM;
 const { makeSwitchOptions, useListPage } = UI;
 
-const dailyController = controller(({ $msg, navigateTo, request, reactive, onMounted }) => {
-  const self = { $msg, navigateTo };
+const dailyController = controller(({ $confirm, $msg, navigateTo, request, reactive, onMounted }) => {
+  const self = { $confirm, $msg, navigateTo };
   const canEditContent = Number(AUTH.getUser()?.roleId || AUTH.getUser()?.role || 0) === 1 || Number(AUTH.getUser()?.roleAuth || 0) === 1;
   const state = reactive({
     canEditContent,
@@ -32,7 +32,6 @@ const dailyController = controller(({ $msg, navigateTo, request, reactive, onMou
       loading: true,
     },
     dailyPage: {
-      layout: '上一页,首页,页码,末页,下一页,跳转,总数,条数',
       currentPage: 1,
       pageSize: 20,
       total: 0,

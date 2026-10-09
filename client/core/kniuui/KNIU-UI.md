@@ -1,6 +1,6 @@
 # kniuui 技术说明
 
-`kniuui.js` 是 KniuSystem 的系统 UI 模块，负责注册通用 Web Components，并提供消息框、确认框等全局 UI API。
+`kniuui.mjs` 是 KniuSystem 的系统 UI 模块，负责注册通用 Web Components，并提供消息框、确认框等全局 UI API。
 
 ## 约定
 
@@ -28,10 +28,10 @@
 
 ### 全局默认项与主题
 
-应用入口可用 `UI.configure()` 配置组件默认项和主题变量。默认项仅减少重复书写，页面的 `kniu:option` 同名字段优先；核心库不包含任何项目业务默认项。
+应用入口用 `UI.use()` 配置组件默认项和主题变量。默认项仅减少重复书写，页面的 `kniu:option` 同名字段优先；核心库不包含任何项目业务默认项。
 
 ```js
-UI.configure({
+UI.use({
   components: { btn: { size: 'small' }, page: { layout: 'total,prev,pager,next' } },
   theme: { '--kniu-color-primary': '#409eff', '--kniu-radius': '4px' }
 });
@@ -75,7 +75,70 @@ state.commentOptions = Object.assign({}, state.commentOptions, { lang: 'en' }); 
 - **内存泄漏兜底**：页面/组件卸载时统一销毁 Shadow 根上的所有事件监听器（含 rAF 句柄、ResizeObserver、复用池、列宽缓存、布局指标缓存），避免残留引用导致内存泄漏。
 - **框架级 diff**：组件库自带 diff 更新能力，自动实现局部更新，避免全量重渲染。
 
-- 模块使用默认导出，业务 Controller 统一命名为 `UI`：`import UI from '../../core/kniuui/kniuui.js'`。
+- 模块使用默认导出，业务 Controller 统一命名为 `UI`：`import UI from '../../core/kniuui/kniuui.mjs'`。
+
+## 挂载自定义组件（扩展）
+
+当内置 `kniu-*` 组件都不满足需求时，开发者可自行编写组件并挂载进项目，成为与内置组件平起平坐的一等公民。
+
+自定义组件**必须挂载才能使用**：组件文件本身是惰性的，只有被应用入口 `import` 一次（副作用调用挂载 API）才会注册生效；未挂载的 tag 在模板里不会渲染。
+
+### 推荐写法：`UI.useComponent(spec)`（声明式封装，MVVM 形态）
+
+公共写法已提炼成一个声明式 spec，对齐项目 `controller(setup)` 与生命周期钩子体系（`onBeforeMount`/`onMounted`/`onUnmounted`，项目无 `onRender`）。**无渲染函数**：state 经模板引擎响应式绑定到模板，改 state 即自动更新视图：
+
+```js
+import UI from '../../core/kniuui/kniuui.mjs';
+import APP_RATING_TEMPLATE from './app-rating.html?module';   // 布局外置 <名>.html（支持 kniu: 指令与 {{ }} 绑定）
+import APP_RATING_CSS from './app-rating.css?module';         // 样式外置 <名>.css（shadow 内 @import 相对路径以文档为基准，dist 会破，故用 ?module）
+
+UI.useComponent({
+  tag: 'app-rating',                                  // 必填：小写含连字符，kniu- 前缀保留给内置
+  style: APP_RATING_CSS,                              // 可选：shadow 样式字符串（自动包 <style>）
+  template: APP_RATING_TEMPLATE,                      // 可选：shadow 模板 HTML
+  setup: function (ctx) {                             // 必填：对齐 controller(setup)，返回 { state, ...actions }
+    const state = ctx.reactive({ value: 0, readonly: false });
+    ctx.onMounted(function (host) {                   // 生命周期钩子：onBeforeMount / onMounted / onUnmounted
+      host.shadowRoot.addEventListener('click', function (e) {
+        const btn = e.target.closest('button[data-v]');
+        if (!btn || state.readonly) return;
+        state.value = Number(btn.dataset.v);          // 改 state → 视图自动更新（响应式绑定）
+        host.emit('change', { value: state.value });  // 派发跨 Shadow 事件（composed 冒泡）
+      });
+    });
+    return { state };
+  }
+});
+```
+
+- 生命周期（对齐 kniumvvm）：`onBeforeMount(host)`（挂载前、绑定前）→ `TEMPLATE.bind` 响应式绑定 → `onMounted(host)`；元素移除时 `onUnmounted(host)`，随后自动 `dispose` 绑定订阅。
+- 组件内改 `state.*` 即自动更新 DOM；宿主经 `kniu:option` 赋值 → options setter 合并进响应式 state。
+- `ctx` 能力：`reactive`/`nextTick`（模板引擎）、`emit(name, detail)`（= `host.emit`）、`host`；需要完整响应式体系（`computed`/`watch` 等）时直接用 `kniumvvm` 的 `controller()`。
+- 完整可运行示例见 `client/custom/app-rating/` 三件套（`.mjs` 纯逻辑 / `.html` 纯布局 / `.css` 纯样式）。
+- **内置系统组件同遵守三件套分离**：`kniu-<名>/` 目录下 `.css` 纯样式、静态模板骨架外置 `.html`（mjs 里 `import ... from './kniu-<名>.html?module'`，渲染时拼 `'<style>' + CSS + '</style>' + TEMPLATE`）、`.mjs` 纯逻辑；模板含 `${...}` 动态插值或程序化 DOM 的（如 editor/comment/table/tab/like/user-login）保持内嵌。json 仅在确有需要时加。
+
+### 挂载步骤
+
+组件文件放在 **`client/custom/<名>/`** 下（核心库 `client/core/` 只放框架代码，自定义组件不进核心库；仅被显式 import 才进入 bundle，不参与自动打包）。在应用入口 `UI.use(...)` 附近**导入一次**即完成挂载：
+
+```js
+import '../../custom/app-rating/app-rating.mjs';   // 副作用导入：模块顶层已调用 UI.useComponent
+// 页面模板里直接用：<app-rating kniu:option="{{ ratingOptions }}"></app-rating>
+```
+
+### 高级写法：`UI.defineComponent(tag, registerFn)`
+
+需要完整控制类定义时（复用 confirm/msg/REQUEST 等共享能力），仍可用低级 API：`registerFn(context)` 接收与内置组件相同的共享 context，自行 `class extends HTMLElement` + `attachComponentShadow` + `customElements.define`。
+
+### 约束与能力
+
+- **tag 命名**：必须小写且含连字符（如 `app-rating`、`x-foo`）；`kniu-` 前缀为内置组件保留，`defineComponent`/`useComponent` 会直接拒绝，避免覆盖/混淆系统组件。重复 tag 自动跳过（幂等），不会抛错。
+- **共享 context**（仅低级 API）：`context` 与内置组件完全相同，包含 `attachComponentShadow`、`adoptSharedStyle`、`appendRawStyle`、`flushPendingAdoptedSheets`、`KNIU_I18N`、`TEMPLATE`、`REQUEST`、`IDENTITY`、`confirm`、`msg`、`componentDefaults`、`installOptionsOnlyProtocol`、各组件 CSS 常量等——可直接复用框架 Shadow DOM、共享样式表、主题变量、全局弹窗与请求层。
+- **选项协议（可选，仅低级 API）**：若希望接入与 `kniu-*` 完全一致的 `options` 协议（`componentDefaults` 合并、`onXxx` 回调绑定、`_sync()`/`_render()` 驱动、属性反射、非允许属性自清），在 `customElements.define` 之后调用 `context.installOptionsOnlyProtocol(['app-rating'])`；其会读取你类上的 `options` 描述符并链式合并。`useComponent` 封装已内置简版 options 协议（赋值合并进响应式 state）。
+- **样式/字体**：一律经框架 Shadow 初始化，尺寸用 `max(下限px, calc(N/var(--kniu_vw)))`，颜色优先 `--kniu-*` 主题变量（见渲染与样式约定）；字体使用内置 `KniuHei`。
+- **事件**：跨 Shadow 边界通信用 `composed: true` 的 `CustomEvent`（组件内 `host.emit(name, detail)` 派发），页面通过 `kniu@change` 或 `addEventListener('change', ...)` 接收。
+
+回归探针见 `test/probe_define_component.mjs`（dev 6987）。
 
 ## 消息提示
 
@@ -318,6 +381,30 @@ const exampleController = controller(({ $confirm }) => {
 - `type` 支持 `primary`（默认）、`success`、`warning`、`danger` 和 `info`。
 - `size` 支持 `large`、默认尺寸和 `small`，会同步调整文字与圆点尺寸。
 - 表格默认插槽中的动态 `type="{{scope.row...}}"` 会按当前行计算，标签内容读取列 `field` 对应的当前行值。
+
+## 页签 kniu-tab
+
+```html
+<kniu-tab kniu:option="{{tabBar}}"></kniu-tab>
+```
+
+```javascript
+// 控制器侧
+const tabBar = {
+  items: [
+    { name: 'data', label: '数据' },
+    { name: 'struct', label: '属性' },
+  ],
+  active: 'data',
+  onChange: (detail) => onTabChange(detail),
+};
+```
+
+- 胶囊式页签：浅灰底 `#f5f7fa` 圆角容器 + 白底高亮当前项（`color:#409eff`、字重 600、投影）。
+- `items`：`{name, label}` 数组；`active`：当前 `name`。两者都通过 `kniu:option` 整体替换（options-only 协议：原地改子属性不触发刷新）。
+- 点击行为：组件内部**先行迁移高亮**（整体替换 `_options.active` 后自渲染），再向宿主派发 `CustomEvent('change', { detail: { name }, bubbles: true, composed: true })`；同名重复点击不派发。
+- `onChange` 回调的 detail 存在**双口径**（引擎对协议组件的 options 回调与原生事件绑定并存）：一条传 `{name}`，一条传原生 `Event`。消费端必须兼容：`const raw = detail.name != null ? detail : (detail.detail || {})`。
+- 内容区互斥由消费方用 `<template kniu:if="{{activeTab === 'xxx'}}">` 实现（销毁重建语义）；切回时程序化追加的动态列必须重放。
 
 ## Form 和 InputGroup
 
@@ -720,7 +807,7 @@ state.pageOptions = {
 | `pageSize` | 每页条数的唯一初始配置源；`usePagination` 会据此初始化并维护内部 `state.pageRows` | `10` |
 | `currentPage` | 当前页码（绑定 `state.currentPage`） | `1` |
 | `background` | 页码按钮是否带背景色 | `false` |
-| `layout` | 分页条布局。中文支持 `总数,首页,上一页,页码,下一页,末页,条数,跳转`；英文支持不区分大小写的 `First,Prev,Page,Next,Last,Total,Rows,Jumper`。`跳转/Jumper` 显示“去 [页码] 页”，Enter 或 change 后跳转 | `total,prev,pager,next,sizes` |
+| `layout` | 分页条布局。中文支持 `总数,首页,上一页,页码,下一页,末页,条数,跳转`；英文支持不区分大小写的 `First,Prev,Page,Next,Last,Total,Rows,Jumper`。`跳转/Jumper` 显示“去 [页码] 页”，Enter 或 change 后跳转。**渲染为单行，所有分页项的 DOM 顺序严格等于 layout 声明顺序**（默认值继承全局 `UI.use({ components: { page: { layout } } })`，实例单独传 `layout` 时以内联配置为准） | `total,prev,pager,next,sizes` |
 | `firstText` / `prevText` / `nextText` / `lastText` | 首/上/下/末页按钮自定义文字（覆盖 `layout` 中的中文别名） | — |
 | `sizes` | 自定义每页条数下拉候选项（默认由基数派生，见下） | — |
 
@@ -737,7 +824,7 @@ state.pageOptions = {
 
 ```js
 // pageSize: 15 → 下拉为 15/30/45/60/75/90
-import UI from '../../core/kniuui/kniuui.js';
+import UI from '../../core/kniuui/kniuui.mjs';
 const { usePagination } = UI;
 const state = reactive({ pageOptions: { pageSize: 15 } });
 ```
@@ -755,7 +842,7 @@ const state = reactive({ pageOptions: { pageSize: 15 } });
 `usePagination(options)` 返回 `loadList / changePage / changePageSize` 三个方法，负责请求后端、写回响应式 state；上一页和下一页由分页组件转换成 `current-change`，不再提供重复的控制器函数：
 
 ```js
-import UI from '../../core/kniuui/kniuui.js';
+import UI from '../../core/kniuui/kniuui.mjs';
 const { usePagination } = UI;
 
 const myController = controller(({ $msg }) => {
@@ -1050,10 +1137,22 @@ state.articleTabOptions = {
 
 组件按上下两行排列，标题允许换行；缺少上一篇或下一篇时不渲染对应项，两项都缺少时隐藏整个组件。点击派发 `change`，负载为 `{direction:'previous'|'next', id:number}`。
 
+### 组件目录化三件套（2026-10-08 起）
+
+`kniu-article-tab` 是第一个按「Vue SFC / 微信小程序自定义组件」形态拆分的组件，文件位于 `kniu-article-tab/` 子目录：
+
+| 文件 | 职责 |
+| --- | --- |
+| `kniu-article-tab.html` | shadow 模板静态骨架（动态行由 `.mjs` 填入） |
+| `kniu-article-tab.css` / `kniu-article-tab.render.css` | 组件样式（空态 / 渲染态） |
+| `kniu-article-tab.mjs` | 组件类 + `registerArticleTab(context)` 注册函数 |
+
+约束：①组件模块不反向 import `kniuui.mjs`（避免循环依赖），共享闭包工具由 `kniuui.mjs` 的 `KNIU_COMPONENT_CONTEXT` 注入（当前暴露 `attachComponentShadow`，后续组件迁出时按需追加）；②`.html`/`.css` 经 `?module` 文本模块通道同步拿到（dev 侧 `kniuserver.mjs`、dist 侧 `kniubuilder.mjs` 两侧同语义，均支持 `.css?module` 与 `.html?module`）；③注册后 `installOptionsOnlyProtocol` 照常生效（`kniuui.mjs` 末尾 tag 列表不变），options 默认值合并与回调绑定行为与内联实现完全一致；④shadow 模板缓存 key 因此从「含动态按钮行」变为恒定骨架，命中率更高。后续组件逐个迁出时沿用此形态。
+
 ## 默认导出
 
 ```js
-import UI from '../../core/kniuui/kniuui.js';
+import UI from '../../core/kniuui/kniuui.mjs';
 
 UI.msg('消息');
 UI.confirm('确认操作？', '提示');

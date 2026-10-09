@@ -1,0 +1,60 @@
+@charset "UTF-8";
+
+:host {
+  display: inline-flex;
+  vertical-align: middle;
+  line-height: 0;
+  flex-shrink: 0;
+}
+
+:host([hidden]) {
+  display: none;
+}
+
+.kniu_sys_tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--kniu-fill-color, #f5f7fa);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.kniu_sys_tab_item {
+  appearance: none;
+  border: 0;
+  background-color: transparent;
+  color: var(--kniu-text-color, #606266);
+  font-size: 14px;
+  line-height: 22px;
+  padding: 6px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color .2s, color .2s, box-shadow .2s;
+  white-space: nowrap;
+}
+
+.kniu_sys_tab_item:hover {
+  color: var(--kniu-color-primary, #409eff);
+}
+
+.kniu_sys_tab_item[data-active="true"] {
+  background-color: #fff;
+  color: var(--kniu-color-primary, #409eff);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
+  -webkit-box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
+  -moz-box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
+  -ms-box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
+  -o-box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
+}
+
+.kniu_sys_tab_item:focus-visible {
+  outline: 2px solid var(--kniu-color-primary, #409eff);
+  outline-offset: 1px;
+}
+
+.kniu_sys_tab_item[data-active="true"]:focus-visible {
+  outline-offset: -2px;
+}

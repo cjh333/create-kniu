@@ -1,0 +1,12 @@
+@charset "UTF-8";
+
+.kniu_sys_user_login_menu {
+  min-width: max(112px, calc(112 / var(--kniu_vw)));
+}
+
+.kniu_sys_user_login_menu a.kniu_sys_dropdown_option,
+.kniu_sys_user_login_menu button.kniu_sys_dropdown_option {
+  height: max(28px, calc(32 / var(--kniu_vw)));
+  min-height: max(28px, calc(32 / var(--kniu_vw)));
+  padding: 0 12px;
+}

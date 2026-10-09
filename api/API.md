@@ -126,10 +126,10 @@ npm run build   # = cross-env PROCESS_ENV=production node client/core/kniubuilde
 | `/likeArticle` | `article_id`、`liked`（bool）、`identity_token` | 登录账号按“账号 + 文章 + 服务器日期”记录状态；`true` 点赞、`false` 取消，返回最新 `{likes,liked}`；作者不能给自己的文章点赞 |
 | `/favoriteArticle` | `article_id`、`favorited`、`identity_token` | 当前前台用户收藏或取消收藏文章；未登录时拒绝 |
 | `/frontProfile` | `identity_token`、需登录 | 返回当前账号的 `{id,name,nickname,is_show,comment_ban,canEditNickname,articleLikeCount,commentLikeCount,commentCount,favorites,history}`；`id` 是 `tb_role.id`，`name` 是账号名，`nickname` 仅用于展示 |
-| `/frontProfileSave` | `identity_token`、`nickname`、需登录 | 修改本人昵称：昵称唯一（查重排除自己），未变更直接返回「昵称未变更」，变更间隔一年；昵称仅用于展示，账号唯一标识为 `tb_role.id`，业务关联不依赖昵称。**不再承担建号**——账号创建统一走 `/frontRegister` |
+| `/frontProfileSave` | `identity_token`、`nickname`、需登录 | 修改本人昵称：昵称唯一（**查重落在 `nickname` 列**，排除自己），未变更直接返回「昵称未变更」，变更间隔一年；昵称仅用于展示，账号唯一标识为 `tb_role.id`，业务关联不依赖昵称。**不再承担建号**——账号创建统一走 `/frontRegister` |
 | `/frontProfileClear` | `identity_token` | 统一退出前后台：销毁 `front_token`、`admin_token` 和 Session；不删除数据库账号、不释放昵称 |
 | `/frontSessionSync` | `identity_token` | 根据仍有效的后台会话恢复前台身份；资料异常时返回空头像，不应返回 HTML 500 |
-| `/frontRegister` | `username,password,confirm,email,email_code,gvcode,identity_token` | 校验算术验证码和邮箱验证码后注册普通账号并绑定前台身份；账号名必须唯一，邮箱允许重复，失败仍返回统一 JSON |
+| `/frontRegister` | `username,nickname,password,confirm,email,email_code,gvcode,identity_token` | 校验算术验证码和邮箱验证码后注册普通账号并绑定前台身份；账号名必须唯一，邮箱允许重复，失败仍返回统一 JSON。`nickname` 为**可选**展示名：不传或为空时**回落为 `username`**（兼容老客户端/直接调接口）；传了则校验 ≤30 字且**全局唯一**（撞名返回 3002），落库写入 `tb_role.nickname`，响应 `data.nickname` 回显该昵称 |
 | `/frontLogin` | `username,password,gvcode,identity_token` | 校验算术验证码后登录并绑定前台身份；`is_show=0` 的禁用账号拒绝登录 |
 | `/frontBind` | `username,password,identity_token` | 绑定已有账号；切换账号时先解除令牌旧绑定，再写入新账号 |
 
@@ -163,6 +163,31 @@ npm run build   # = cross-env PROCESS_ENV=production node client/core/kniubuilde
 
 前台 `/getAbout` 需要登录，仅返回当前账号（后台会话账号或身份绑定账号）的 `tb_about.content`；网站 SEO 设置不再保存“关于我”内容。未登录不再回退任何内容，由全局鉴权闸门直接拒绝。
 
+### 数据库管理接口（后台，POST，**仅超级管理员 `role=1`**）
+
+对应后台「数据库管理」栏目（**三层独立页面**：`#/database` 库列表 → `#/databasetables` 数据表 → `#/databasetable` 单表结构与数据，逐层用「操作」列的「查看」跳转，库名/表名通过 `navigateTo` 的路由数据传递）。**权限口径与其它后台接口不同**：本项目后台其它页面允许 `role_auth=1` 的编辑账号操作，但本模块可执行任意 SQL、可建库删表，因此判据收窄为 **`tb_role.role === 1`**，`role=2`（含 `role_auth=1`）调用全部 12 个接口一律 **HTTP 403 + 业务码 1002**；侧栏只有超管能看到入口，普通用户直连上述三个路由任一都会被前端弹回 `#/admin`（前端只是提示层，服务端才是边界）。
+
+| 端点 | 入参 | 说明 |
+| --- | --- | --- |
+| `/db_list` | `database`（可选，标记「当前」） | 库列表：`name`、`table_count`、`total_bytes`、`current` |
+| `/db_create` | `name` | 新建数据库；重名 **3002** |
+| `/db_tables` | `database` | 表/视图列表：`name`、`type`(`BASE TABLE`/`VIEW`)、`engine`、`rows`、`data_length`、`index_length`、`comment` |
+| `/db_table_create` | `database`、`table`、`fields[]`(`name,type,length,nullable,primary,default,comment`) | 建表；字段名/类型均走白名单；至少一个主键 |
+| `/db_table_structure` | `database`、`table` | 列定义（`name,type,length,null,key,default,extra,comment`）+ `primary_key` + `writable`(有无主键) + `indexes`；`length` 取 `information_schema.CHARACTER_MAXIMUM_LENGTH`（数值/时间列为 `null`，界面显示为空） |
+| `/db_column_edit` | `database`、`table`、`column`(旧名)、`definition{}`（`name/type/length/unsigned/zerofill/notNull/default/autoInc/comment`） | 编辑列定义（`ALTER TABLE ... CHANGE`）；`type` 必须在白名单（enum/set 不支持）；`default` 空串=清除默认值、`NULL`/`CURRENT_TIMESTAMP`/数字=字面量、其它按字符串转义；全量重定义，未开放属性（如 `ON UPDATE`）会被清除 |
+| `/db_column_drop` | `database`、`table`、`column` | 删除列；**主键列硬禁删**（先在 SQL 控制台移除主键约束） |
+| `/db_table_drop` | `database`、`table` | 删表 |
+| `/db_rows` | `database`、`table`、分页 `page_current`/`page_rows`、`keyword`（任意列模糊）、`field`/`sort` | 数据行；每行带 `primary_value` 与 `cells[]`，`columns` 为列名数组 |
+| `/db_row_save` | `database`、`table`、`values{}`、`id`（编辑时） | 新增/更新单行；**空串按 NULL 写入**；无主键表 **2002** 拒写 |
+| `/db_row_delete` | `database`、`table`、`id` | 按主键删单行；无主键表 **2002** |
+| `/db_export` | `database` | 返回 `text/plain` 的 `.sql` 脚本（建表 + INSERT，超限截断并标注） |
+| `/db_import` | `sql`（≤8MB） | 按分号逐条执行、遇错即停；返回 `{executed,failed}` |
+| `/db_query` | `sql` | SQL 控制台；逐条执行并回显 `{index,ok,kind,affected,message,rows}`，单条失败不中断 |
+
+**安全约定**：① 库名/表名/列名一律 `/^[A-Za-z0-9_]{1,64}$/` 白名单后再拼反引号（MySQL 不支持参数化标识符），注入尝试返回 **2001** 且不触达 SQL；② 字段类型走枚举白名单；③ 导入与 SQL 控制台的语句切分必须用状态机跳过字符串字面量与 `--`/`#`/`/* */` 注释内的分号；④ 写操作与导出/导入/查询**均落审计日志**——因此 `/db_export` 虽只读数据，前端也**不得**标 `mutation:false`（见 `test/core-state-sync.mjs` 的已审计只读白名单）。
+
+后台「数据库管理」三层页面（`client/views/admin/{database,databasetables,databasetable}.html` + `client/controller/admin/{databaseController,databaseTablesController,databaseTableController}.js`，共用工具 `client/controller/admin/databaseShared.js`）的「数据行」表格列随所选表动态重建；**操作列必须静态声明**，程序化 append 的 `kniu-table-col` 不会经过模板绑定 ⇒ 按钮点得动但无任何行为。
+
 ## 权限与数据归属（2026-09-02 多账号重构）
 
 系统由单一管理员扩展为多账号按角色隔离数据：
@@ -173,7 +198,13 @@ npm run build   # = cross-env PROCESS_ENV=production node client/core/kniubuilde
 - 普通用户：文章列表/详情按 `role_id` 过滤，增改删只能操作自己的文章；角色列表只见自己；评论列表只见自己的评论（行内附 `is_own`），只能删除自己的评论；批量删除仅管理员可用。
 - “关于我”：后台 `/about_detail` 读本人 `tb_about` 的 `avatar`、`summary`、`content`，`/about_save` 保存三者（存在更新、不存在插入）；`tb_about` 使用 `create_time` / `issue_time` 记录创建和发布时间；首页 `/getInfo` 在浏览器持有合法 `identity_token` 且账号已绑定（`role_id>0`）时使用本人的头像和简介，否则回退默认值，并返回公开 SEO 的 `title`、`logo`、`copyright`、`icp`；前台 `/getAbout` 需要登录，返回关于页内容（未登录被全局鉴权闸门拒绝）。
 - 身份绑定：`POST /frontBind`（入参账号密码与 `identity_token`）校验账号密码后绑定前台身份并建立前台会话（个人中心入口，无需验证码）；前台会话 `front_token` 与后台 `admin_token` 完全独立。令牌从旧账号切换到新账号时必须先以 SQL `NULL` 解除旧绑定。
-- 前台注册：`POST /frontRegister` 校验 `username`、`password`、`confirm`、`email`、`email_code`、`identity_token` 及算术验证码后，在 `tb_role` 创建普通账号并按 `tb_role.id` 绑定前台身份；邮箱统一转小写但允许重复，账号名必须唯一；异常统一返回 JSON，不输出 HTML 500。
+- 前台注册：`POST /frontRegister` 校验 `username`、`nickname`、`password`、`confirm`、`email`、`email_code`、`identity_token` 及算术验证码后，在 `tb_role` 创建普通账号并按 `tb_role.id` 绑定前台身份；邮箱统一转小写但允许重复，账号名必须唯一；`nickname` 可选（缺省回落账号名）、≤30 字且全局唯一；异常统一返回 JSON，不输出 HTML 500。
+- **唯一 admin 超级账号（2026-10-05）**：全系统只允许存在一个 `role=1` 的超级账号，且它不可被删除。四条硬约束全在后端，前端只是提示层：
+  - `POST /role_add` 传 `role=1` → `2002`「系统仅有一个 admin 超级账号，不能新增管理员账号」；
+  - `POST /role_update` 把**他人** `role` 改成 1 → `2002`「…不能把其它账号设为管理员」；
+  - `POST /role_update` 把**admin 自己** `role` 改成 2 → `2002`「admin 超级账号不可降级为普通用户」（**这条是删除保护的前置条件**：否则可先降级再删除，把系统锁死成无管理员）；
+  - `POST /role_delete` 目标 `role=1` → `1002`「admin 超级账号不可删除」。该判定排在「不能删除当前登录账号」之前，因此 admin 删自己时看到的是这条不变式说明。
+  - 账号管理页「添加用户」弹窗**不再提供角色选择**（新增账号固定为普通用户），`onRoleChange` 随之删除。**「删除」按钮仍会渲染**——列模板里的 `kniu:if` 是按列求值一次、作用域无 `row`，按行隐藏按钮在当前表格实现里做不到；改由 `userController.deleteRow` 处理器闸门拦下（只弹提示、不发请求），权限边界仍在后端。
 - 当前数据库建表与初始化数据基线统一位于 `!kniu_project/kniusql/`；历史迁移脚本不属于当前仓库基线，恢复数据前应先备份并按部署记录执行迁移。
 - 改密码即失效（2026-10-03）：`POST /role_update` 只要密码成功落库，被改账号的**全部后台会话立即作废**，由后端强制保证、前端不参与判定。改的是当前登录账号时，后端先删除该账号在其它设备上的会话文件、再销毁当前请求的会话，响应 `data.logout=true`（前端据此跳 `#/login`）；管理员改他人密码时管理员会话保留、仅被改账号的会话文件被删除，响应 `data.logout=false`。只改昵称/角色/启用状态等非密码字段（以及批量勾选 `KNIU_TABLE_EVENT_CHECKALL`）不触发登出。会话为项目文件存储（`api/runtime/session`），删除判据是该文件里 `admin_token` 段的 `id` 与目标账号一致。
 

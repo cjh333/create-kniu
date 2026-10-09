@@ -140,7 +140,16 @@ class AuthController extends Controller
       session_start();
     }
     unset($_SESSION['admin_token']);
-    session_destroy();
+    if (session_status() === PHP_SESSION_ACTIVE) {
+      $_SESSION = [];
+      // session_destroy 只销毁服务端数据，浏览器仍持有旧 Cookie——须同步过期，
+      // 否则配合未初始化会话存在会话 ID 复用窗口（对齐 frontProfileClear 的写法）。
+      if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+      }
+      session_destroy();
+    }
     $this->json([], '退出登录成功', 1);
   }
 

@@ -101,7 +101,7 @@ const form = createForm({ name: required('请输入名称'), email: email() }, {
 
 ### 通用列表组合
 
-`kniuui.js` 的 `useListPage()` 组合分页、搜索与可选删除。它不内置接口、数据表或权限，业务页面仍明确传入 `url`、`deleteUrl` 和删除策略。
+`kniuui.mjs` 的 `useListPage()` 组合分页、搜索与可选删除。它不内置接口、数据表或权限，业务页面仍明确传入 `url`、`deleteUrl` 和删除策略。
 
 路由通过 `ROUTER.add(path, controller)` 将页面与控制器装配起来（视图按文件名约定解析为 `kniu-system-<filename>` 自定义元素）：
 
@@ -146,6 +146,12 @@ app.useViews({
 });
 app.mount('#app');
 ```
+
+**`useViews()` 的键就是「区域/名称」**——`client/views/admin/common/aside.html` 的组件标识为 `kniu-system-admin-common-aside`，查找键为 `admin/aside`，因此注册时必须逐字写成 `'admin/aside'`。三点硬约束：
+
+1. **键是扁平字符串**（`'区域/名称'`），值只能是控制器路径字符串（惰性 `import`）、控制器函数、`controller()` 产物或 `null`；写成嵌套对象（`{ admin: { aside: 'admin/asideController' } }`）会在启动期抛 `TypeError`——嵌套的键是 `admin`，而查找键恒为 `admin/aside`，查不到就只能静默降级为「无控制器」。
+2. **调用是整体替换而非合并**，一次 `useViews()` 写全；连写两次会让前一次的注册全部失效。
+3. **控制器缺失不会报错**：模板里 `{{userName}}` 之类取值变空，而 `kniu:if` 在表达式求值失败时**按真渲染**（fail-open）——表现是「本该互斥的两个分支同时出现」（如前台顶栏的「登录/注册」与用户菜单并存）。回归闸门：`node test/probe_useviews.mjs`。
 
 微应用内跳转与外部打开：
 
@@ -442,6 +448,9 @@ state.tableOptions = { ...state.tableOptions, data: state.list };
 - 已升级的组件走 `options` property；**未升级的自定义元素**（如列模板 `template.content` 内从未插入文档的 `<kniu-switch>`，Chrome 对 disconnected 节点不自动升级、`customElements.upgrade()` 也静默无效）回退写入 `__kniuOptionsValue` expando，消费方（如 kniu-table `_readColumns`）读 property 失败时回退读取。
 - 列模板内节点（`__kniuTableColumn`）**刻意保留 `kniu:option` 属性**：`kniu:if` / `kniu:for` 克隆列时 expando 不随 `cloneNode` 复制，保留属性让克隆列在递归 `applyBindings` 中重新解析并写入 expando（与 `kniu@change` 同策略）。
 - 绑定只在解析出**真实对象**时写入；解析不到（undefined / null / 非对象）保持原值，防止异步间隙里用数据对象当 state 的重复绑定把已写入的 expando 覆盖成空对象。
+- ⚠ 两个配套陷阱（2026-10-08 daily 页「显示」开关全灭事故，article/comment/reply 同构列一并修复）：
+  ① 通用属性循环的 key 剥离必须按真实前缀（`kniu:` 剥 5 字符、`:` 剥 1 字符）。旧写法一律 `slice(5)`，对 `:option` 算出 key=`'on'`（`:op|tion` 被拦腰截断）→ 误判「元素不支持属性 on」→ **把 `:option` 一并删除**，上一条的保留策略随之失效。
+  ② 消费方读取 expando 的时机：`kniu-table` 的 `_readColumns` 在数据加载时对列配置做**一次性快照**，此刻绑定轮次可能尚未写入 expando ⇒ `switch.options` 被定格为 `null`（行内开关全显示「关」且点击不发请求）。列配置里的组件 options **必须惰性求值（getter，每次行渲染现查）**，与 `onChange` 的「调用时再查 handler」同一策略。回归探针：`test/probe_daily_switch.mjs`。
 
 ### 6.7 组件标签写法（kebab-case / PascalCase）
 

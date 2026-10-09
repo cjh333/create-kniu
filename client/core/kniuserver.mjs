@@ -34,14 +34,16 @@ const server = createServer(async function (request, response) {
       await sendStaticBody(request, response, headers, Buffer.from(body));
       return;
     }
-    // CSS 文本模块通道：`/client/core/kniuui/*.css?module` → `export default "<CSS 文本>"`。
-    // 浏览器里要让组件「同步」拿到 CSS 文本（样式必须随组件挂载同步生效，不能异步 fetch），
-    // 只能把 .css 当 JS 模块来 import；`?module` 是这条通道的显式标记，普通 .css 请求不受影响。
-    // dist 侧由 kniubuilder 的 .css 分支产出同语义模块（见 SKILL #126），两侧必须一致。
-    if (parsedUrl.searchParams.has('module') && extname(PATH_NAME) === '.css') {
-      const cssFile = normalize(join(ROOT, PATH_NAME));
-      if (!cssFile.startsWith(ROOT)) throw new Error('Invalid path');
-      const body = `export default ${JSON.stringify(await readFile(cssFile, 'utf8'))};`;
+    // 文本模块通道：`/client/**/*.css?module`、`/client/**/*.html?module` → `export default "<文本>"`。
+    // 浏览器里要让组件「同步」拿到文本（样式必须随组件挂载同步生效，不能异步 fetch），
+    // 只能把它们当 JS 模块来 import；`?module` 是这条通道的显式标记，普通 .css/.html 请求不受影响。
+    // .css 供组件样式（adoptSharedStyle 会做 px→vw 改写，见 SKILL #126），
+    // .html 供组件 shadow 模板骨架（组件目录化三件套，见规则 #177）。
+    // dist 侧由 kniubuilder 的 .css/.html 分支产出同语义模块，两侧必须一致。
+    if (parsedUrl.searchParams.has('module') && (extname(PATH_NAME) === '.css' || extname(PATH_NAME) === '.html')) {
+      const textFile = normalize(join(ROOT, PATH_NAME));
+      if (!textFile.startsWith(ROOT)) throw new Error('Invalid path');
+      const body = `export default ${JSON.stringify(await readFile(textFile, 'utf8'))};`;
       await sendStaticBody(request, response, { 'Content-Type': 'text/javascript; charset=utf-8', ...NO_CACHE }, Buffer.from(body));
       return;
     }

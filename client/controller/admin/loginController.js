@@ -1,7 +1,7 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 import IDENTITY from '../../core/kniuidentity.mjs';
-import UI from '../../core/kniuui/kniuui.js';
+import UI from '../../core/kniuui/kniuui.mjs';
 import { optionsToValues } from '../../core/kniuutil.mjs';
 
 const { controller } = MVVM;
@@ -47,6 +47,11 @@ const loginController = controller(({ navigateTo, getRouteData, request, reactiv
         value: '',
         condition: /^[\u4e00-\u9fa5A-Za-z0-9_-]{2,30}$/,
         message: '账号为2-30位中文、字母、数字、下划线或短横线'
+      },
+      nickname: {
+        value: '',
+        condition: /^[\u4e00-\u9fa5A-Za-z0-9_\- ]{1,30}$/,
+        message: '昵称为1-30位中文、字母、数字、下划线、短横线或空格'
       },
       password: {
         value: '',
@@ -287,6 +292,7 @@ const loginController = controller(({ navigateTo, getRouteData, request, reactiv
     };
     if (isRegister) {
       data.confirm = form.confirm;
+      data.nickname = String(form.nickname || '').trim();
       data.email = form.email;
       data.email_code = form.email_code;
     }

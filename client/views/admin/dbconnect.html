@@ -1,0 +1,117 @@
+<style scoped>
+  @import url("@kniu/kniu.min.css");
+  @import url("@style/web.min.css");
+  @import url("@style/admin/admin.min.css");
+  @import url("@style/admin/admin_home.min.css");
+
+  .detail_head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 10px 10px;
+  }
+
+  .detail_head_actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+  }
+
+  .detail_wrap {
+    position: relative;
+    background-color: #fff;
+  }
+</style>
+<section class="index_cells">
+  <div class="admin_content_body index_cell index_cell_2">
+    <div class="detail_head">
+      <kniu-btn :option="{{type:'primary'}}" @click="openCreate">新建连接</kniu-btn>
+      <div class="detail_head_actions">
+        <kniu-btn :option="{{link:true,type:'primary'}}" @click="goBack">返回</kniu-btn>
+      </div>
+    </div>
+    <template :if="{{connectTable.data.length > 0}}">
+      <div class="detail_wrap">
+        <kniu-table :option="{{connectTable}}">
+          <kniu-table-col field="name" label="连接名称" min-width="180" fixed show-overflow-tooltip />
+          <kniu-table-col field="host" label="主机" min-width="160" show-overflow-tooltip />
+          <kniu-table-col field="port" label="端口" width="80" align="center" />
+          <kniu-table-col field="username" label="用户名" min-width="120" show-overflow-tooltip />
+          <kniu-table-col field="database" label="默认库" min-width="140" show-overflow-tooltip />
+          <kniu-table-col field="password_text" label="密码" width="90" align="center" />
+          <kniu-table-col field="status_text" label="状态" width="110" align="center">
+            <template #default>
+              <kniu-status type="{{scope.row.status_type}}" />
+            </template>
+          </kniu-table-col>
+          <kniu-table-col label="操作" width="300" align="center" fixed="right">
+            <template #default>
+              <kniu-btn :if="{{scope.row.can_activate}}" :option="{{type:'primary',size:'small',link:true}}" @click="activateConnection">设为当前</kniu-btn>
+              <kniu-btn :option="{{size:'small',link:true}}" @click="testConnection">测试</kniu-btn>
+              <kniu-btn :option="{{size:'small',link:true}}" @click="editConnection">编辑</kniu-btn>
+              <kniu-btn :option="{{size:'small',link:true}}" @click="viewConnection">查看</kniu-btn>
+              <kniu-btn :option="{{type:'danger',size:'small',link:true}}" @click="deleteConnection">删除</kniu-btn>
+            </template>
+          </kniu-table-col>
+        </kniu-table>
+      </div>
+    </template>
+    <template :else>
+      <kniu-empty :option="{{note:'还没有保存任何连接'}}" />
+    </template>
+  </div>
+</section>
+
+<kniu-modal style="width:560px;" :option="{{show:(showForm)}}" @close="closeForm">
+  <template #header>
+    <span>{{formTitle}}</span>
+    <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="closeForm">
+      <kniu-icon :option="{{icon:'close'}}" />
+    </kniu-btn>
+  </template>
+  <template #default>
+    <kniu-form ref="connectForm" :option="{{connectModel}}">
+      <kniu-form-cell>
+        <kniu-input :form="{{connectModel.name}}" :option="{{name:'name',placeholder:'给这个连接起个名字',maxlength:64}}">
+          <template #prepend label-width="100px">连接名称</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input :form="{{connectModel.host}}" :option="{{name:'host',placeholder:'主机地址，如 127.0.0.1'}}">
+          <template #prepend label-width="100px">主机</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input :form="{{connectModel.port}}" :option="{{name:'port',placeholder:'端口，默认 3306'}}">
+          <template #prepend label-width="100px">端口</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input :form="{{connectModel.username}}" :option="{{name:'username',placeholder:'用户名'}}">
+          <template #prepend label-width="100px">用户名</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input :form="{{connectModel.password}}" :option="{{name:'password',type:'password',placeholder:'密码（编辑时留空表示不修改）'}}">
+          <template #prepend label-width="100px">密码</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input :form="{{connectModel.database}}" :option="{{name:'database',placeholder:'默认数据库，可留空'}}">
+          <template #prepend label-width="100px">默认库</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell>
+        <kniu-input :form="{{connectModel.charset}}" :option="{{name:'charset',placeholder:'字符集，默认 utf8mb4'}}">
+          <template #prepend label-width="100px">字符集</template>
+        </kniu-input>
+      </kniu-form-cell>
+    </kniu-form>
+  </template>
+  <template #footer>
+    <kniu-btn @click="testFormConnection">测试连接</kniu-btn>
+    <kniu-btn @click="closeForm">取 消</kniu-btn>
+    <kniu-btn :option="{{type:'primary'}}" @click="submitForm">保 存</kniu-btn>
+  </template>
+</kniu-modal>

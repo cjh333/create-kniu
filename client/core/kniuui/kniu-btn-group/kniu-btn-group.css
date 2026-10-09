@@ -1,0 +1,12 @@
+@charset "UTF-8";
+
+:host {
+  display: inline-flex;
+  display: -webkit-inline-flex;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  gap: 10px;
+}

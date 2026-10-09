@@ -1,5 +1,5 @@
 import EVENTER from './kniueventer.mjs';
-import UTIL from './kniuui/kniuui.js';
+import UTIL from './kniuui/kniuui.mjs';
 import AUTH from './kniuauth.mjs';
 import MVVM from './kniumvvm.mjs';
 import SERVER from '../config/server.js';
@@ -273,12 +273,20 @@ var KniuBase = (function () {
       useViews(controllers) {
         state.commonControllers = Object.fromEntries(
           Object.entries(controllers || {}).map(function ([viewName, controller]) {
-            return [
-              viewName,
-              typeof controller === 'string'
-                ? function loadViewController() { return loadController(controller); }
-                : controller
-            ];
+            if (typeof controller === 'string') {
+              return [viewName, function loadViewController() { return loadController(controller); }];
+            }
+            if (controller === null || controller === undefined || typeof controller === 'function') {
+              return [viewName, controller];
+            }
+            if (typeof controller === 'object' && controller.__kniuComponent === true) {
+              return [viewName, controller];
+            }
+            throw new TypeError(
+              '[kniubase] useViews 的值只能是控制器路径字符串、控制器函数或 controller() 产物，'
+              + `收到「${viewName}」→ ${Array.isArray(controller) ? 'array' : typeof controller}。`
+              + '键必须写成「区域/名称」，例如 { \'admin/aside\': \'admin/asideController\' }；不支持嵌套对象写法。'
+            );
           })
         );
         return this;

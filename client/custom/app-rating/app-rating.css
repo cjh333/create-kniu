@@ -1,0 +1,21 @@
+@charset "UTF-8";
+
+:host {
+  display: inline-flex;
+  gap: max(4px, calc(6/var(--kniu_vw)));
+  font-size: max(28px, calc(40/var(--kniu_vw)));
+}
+
+button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  color: var(--kniu-warning, #f7ba2a);
+  font-size: inherit;
+}
+
+:host([readonly]) button {
+  cursor: default;
+}
