@@ -4,7 +4,7 @@
 
 ### 查看状态
 ```bash
-git status --short
+git status
 git diff --check
 ```
 
@@ -18,17 +18,17 @@ git add .
 git commit -m "XXX"
 ```
 
-### 拉取远程 main
+### 拉取远程分支
 ```bash
-git pull --rebase origin main
+git pull origin master
 ```
 
-### 合并其它分支
+### 合并到本地分支
 ```bash
 git merge main
 ```
 
-### 推送当前 main
+### 推送到远程分支
 ```bash
-git push origin main
+git push origin main:master
 ```
