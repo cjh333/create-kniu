@@ -1,20 +1,9 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import AUTH from '../../core/kniuauth.mjs';
-// ⚠ import 必须写成**单行**：`kniubuilder.mjs` 的 import 正则带 `m` 不跨行
-// （`/^import\s+(.+?)\s+from\s+['"]([^'"]+)['"];?\s*$/gm`），多行写法在 dev（原生 ESM）正常、
-// 但**构建时匹配不到、会被原样留进产物** ⇒ dist 里 `import` 出现在非 module 脚本中、
-// 整站 `Cannot use import statement outside a module`（有常驻闸门 `test/check_single_line_imports.mjs`）。
 import { IDENTIFIER_PATTERN, formatBytes, formatCell, rowAt, CONNECT_REDIRECT_FLAG } from './databaseShared.js';
 
 const { controller } = MVVM;
 
-/**
- * 「数据库管理」第一层：数据库列表（`#/database`）。
- *
- * 本页只做**库级**动作（新建库 / 导入 / 执行 SQL），库内的事务全部交给下一层页面：
- * 「查看」走 `navigateTo('/databasetables', { database })` 真正换页，不再同页切数据。
- * 三层页面的分工与「为什么必须有三个控制器文件」见 `./databaseShared.js` 顶部注释。
- */
 const databaseController = controller(({ $confirm, $msg, $refs, navigateTo, request, reactive, onMounted }) => {
   const self = { $confirm, $msg, $refs, navigateTo };
   const isSuperAdmin = Number(AUTH.getUser()?.roleId || AUTH.getUser()?.role || 0) === 1;
@@ -52,8 +41,6 @@ const databaseController = controller(({ $confirm, $msg, $refs, navigateTo, requ
     showCreateDatabase: false,
     showImport: false,
     showSql: false,
-    // ⚠ **不要**给这里的表格加 `maxHeight`（原因同 `databaseTablesController.js`：
-    // 写死高度会让几行的表格也长出滚动条、并把末行切掉半行）。行多时由页面滚动容器出滚动条。
     dbTable: {
       data: [],
       rowKey: 'name',
@@ -62,14 +49,6 @@ const databaseController = controller(({ $confirm, $msg, $refs, navigateTo, requ
     }
   });
 
-  /* ────────────────────────── 数据加载 ────────────────────────── */
-
-  /**
-   * 读取库列表。
-   *
-   * @return {Promise<{ok: boolean, empty: boolean}>} `ok=false` 表示**连不上**（后端 4002）
-   *   或读取失败；`empty=true` 表示连得上但一个用户库都没有。
-   */
   async function loadDatabases() {
     const res = await request({ url: '/db_list', type: 'POST', mutation: false, data: {} });
     if (res.status !== 1) {
@@ -85,8 +64,6 @@ const databaseController = controller(({ $confirm, $msg, $refs, navigateTo, requ
     };
     return { ok: true, empty: list.length === 0 };
   }
-
-  /* ────────────────────────── 弹窗动作 ────────────────────────── */
 
   function openCreateDatabase() {
     state.createDatabaseModel = {
@@ -203,24 +180,9 @@ const databaseController = controller(({ $confirm, $msg, $refs, navigateTo, requ
     });
     state.sqlResultText = lines.join('\n');
     self.$msg({ content: res.msg || '执行完成', type: data.failed > 0 ? 'warning' : 'success' });
-    // SQL 可能建库 / 删库 ⇒ 列表必须重拉（不能沿用页内缓存）。
     await loadDatabases();
   }
 
-  /* ─────────────────────── 进入下一层（换页） ─────────────────────── */
-
-  /**
-   * 「数据库」列表操作列：查看 → 进入该库的数据表页面。
-   *
-   * **只有这一个入口**：表格没有绑 `kniu@row-click`，点行不跳转——行点击在
-   * 「列表里想选中/复制内容」时太容易误触发换页。
-   *
-   * 列模板内的 `kniu@click` 走表格的私有约定，回调签名是 `(rowIndex, rows)`。
-   *
-   * @param {number} index 行下标。
-   * @param {Array<Object>} list 当前页数据。
-   * @return {boolean} 恒 false，阻止按钮的默认行为（与其它行内按钮一致）。
-   */
   function viewDatabase(index, list) {
     const row = rowAt(index, list);
     if (!row || !row.name) return false;
@@ -228,18 +190,10 @@ const databaseController = controller(({ $confirm, $msg, $refs, navigateTo, requ
     return false;
   }
 
-  function goBack() {
-    self.navigateTo('/admin');
+  function goDbConnect() {
+    self.navigateTo('/dbconnect');
   }
 
-  /**
-   * 去「数据库连接」页，管理连接档案与当前连接。
-   *
-   * 有库的用户平时不会自动落到那一页（只有库为空/连不上时才自动跳），
-   * 所以这里必须给一个常驻入口，否则他们没法换服务器。
-   *
-   * @return {void}
-   */
   function goConnections() {
     self.navigateTo('/dbconnect');
   }
@@ -250,16 +204,14 @@ const databaseController = controller(({ $confirm, $msg, $refs, navigateTo, requ
       self.navigateTo('/admin');
       return;
     }
-    // 默认显示连接管理页面；但用户从连接页点「进入数据库管理」时
-    // 会带 CONNECT_REDIRECT_FLAG 标记，此时不跳转、正常加载数据库列表。
     let hasFlag = false;
     try {
       hasFlag = !!globalThis.sessionStorage?.getItem(CONNECT_REDIRECT_FLAG);
     } catch (e) {
-      // 隐私模式 sessionStorage 不可用
+
     }
     if (hasFlag) {
-      try { globalThis.sessionStorage?.removeItem(CONNECT_REDIRECT_FLAG); } catch (e) {}
+      try { globalThis.sessionStorage?.removeItem(CONNECT_REDIRECT_FLAG); } catch (e) { }
       await loadDatabases();
     } else {
       self.navigateTo('/dbconnect');
@@ -280,7 +232,7 @@ const databaseController = controller(({ $confirm, $msg, $refs, navigateTo, requ
     submitSql,
     viewDatabase,
     goConnections,
-    goBack
+    goDbConnect
   };
 });
 

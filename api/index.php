@@ -44,16 +44,19 @@ $loggerConfig = require __DIR__ . '/config/log.php';
 // 设置时区。
 date_default_timezone_set($appConfig['TIMEZONE']);
 
-// 添加 CORS 头。
+// 同源 API 默认不需要 CORS。仅接受与当前请求协议、主机（含端口）完全一致的 Origin，
+// 防止同站点其他端口或 Host 头混淆绕过写操作的来源校验。
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-// 反向代理与 TLS 终结会改变协议，同源校验只比对主机名，忽略 http/https 与端口差异。
-$originHost = ($origin === '') ? '' : strtolower((string) parse_url($origin, PHP_URL_HOST));
-$serverHost = strtolower((string) preg_replace('/:\d+$/', '', $host));
-$isTrustedOrigin = ($origin === '' || ($originHost !== '' && $originHost === $serverHost));
-if ($isTrustedOrigin) header('Access-Control-Allow-Origin: ' . ($origin ?: ('http://' . $host)));
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+$scheme = $isSecureRequest ? 'https' : 'http';
+$expectedOrigin = $scheme . '://' . $host;
+$isTrustedOrigin = ($origin === '' || hash_equals(strtolower($expectedOrigin), strtolower($origin)));
+if ($origin !== '' && $isTrustedOrigin) {
+  header('Access-Control-Allow-Origin: ' . $expectedOrigin);
+  header('Vary: Origin');
+  header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+  header('Access-Control-Allow-Headers: Content-Type');
+}
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Referrer-Policy: strict-origin-when-cross-origin');
@@ -65,6 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET' && !$isTrustedOrigin) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+  http_response_code($isTrustedOrigin ? 204 : 403);
   exit;
 }
 

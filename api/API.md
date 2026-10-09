@@ -133,7 +133,7 @@ npm run build   # = cross-env PROCESS_ENV=production node client/core/kniubuilde
 | `/frontLogin` | `username,password,gvcode,identity_token` | 校验算术验证码后登录并绑定前台身份；`is_show=0` 的禁用账号拒绝登录 |
 | `/frontBind` | `username,password,identity_token` | 绑定已有账号；切换账号时先解除令牌旧绑定，再写入新账号 |
 
-`/getDetail` 除文章字段外还返回 `previous` 和 `next`，有相邻已显示文章时为 `{id,title}`，没有时为 `null`。相邻顺序按文章 `id`，并过滤 `is_show=1`。成功读取文章时服务端原子增加 `hits`，响应返回递增后的最新值。
+`/getDetail` 除文章字段外还返回 `publisher_role_id`、`previous` 和 `next`，有相邻已显示文章时为 `{id,title}`，没有时为 `null`。相邻顺序按文章 `id`，并过滤 `is_show=1`。成功读取文章时服务端原子增加 `hits`，响应返回递增后的最新值。
 
 账号的 `is_show=0` 在用户管理中表示禁用，禁止登录；`comment_ban=1` 表示禁言，不影响登录、个人中心或发表文章，仅禁止评论和回复提交。
 

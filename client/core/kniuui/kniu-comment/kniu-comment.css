@@ -33,6 +33,7 @@
   -ms-box-sizing: border-box;
   -o-box-sizing: border-box;
   display: block;
+  resize: vertical;
   border: 1px solid var(--kniu-border-color, #dcdfe6);
   border-radius: 4px;
   -webkit-border-radius: 4px;
@@ -40,16 +41,18 @@
   -ms-border-radius: 4px;
   -o-border-radius: 4px;
   outline: 0;
+  padding: 10px 12px 28px;
   width: 100%;
   min-height: max(80px, calc(100 / var(--kniu_vw)));
-  padding: 10px 12px 28px;
-  line-height: 1.5;
-  font: inherit;
-  resize: vertical;
+  font: 14px/1.5 var(--kniu-font-family);
 }
 
 .kniu_sys_comment_textarea:focus {
   border-color: var(--kniu-color-primary, #409eff);
+}
+
+.kniu_sys_comment_textarea::placeholder {
+  line-height: 1.5;
 }
 
 .kniu_sys_comment_toolbar {
@@ -203,6 +206,7 @@
   border-color: var(--kniu-border-color-light, #e4e7ed);
   background-color: #a0cfff;
   color: #fff;
+  pointer-events: none;
   cursor: not-allowed;
   filter: none;
   -webkit-filter: none;

@@ -32,7 +32,6 @@
     <template #default>
       <kniu-navbar-cells>
         <kniu-navbar-cell :option="{{route:'/'}}">首页</kniu-navbar-cell>
-        <kniu-navbar-cell :option="{{route:'/about'}}">关于我</kniu-navbar-cell>
         <kniu-input class="kniu_dd_main index_header_search" :form="{{keyword}}" :option="{{name:'keyword',placeholder:'请输入文章标题'}}" @keydown.enter="searchList" @input="debouncedSearch">
           <template #append label-width="48px">
             <kniu-btn block aria-label="搜索" :option="{{text:true}}" @click="searchList">
@@ -44,8 +43,9 @@
     </template>
     <template #append>
       <kniu-navbar-cells>
-        <kniu-navbar-cell :if="{{!loggedIn}}" :option="{{route:'/login'}}">登录</kniu-navbar-cell>
+        <kniu-navbar-cell :option="{{route:'/login'}}">写文章</kniu-navbar-cell>
         <kniu-navbar-cell :if="{{!loggedIn}}" :option="{{route:'/register'}}">注册</kniu-navbar-cell>
+        <kniu-navbar-cell :if="{{!loggedIn}}" :option="{{route:'/login'}}">登录</kniu-navbar-cell>
         <kniu-user-login :if="{{loggedIn}}" />
       </kniu-navbar-cells>
     </template>

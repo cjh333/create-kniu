@@ -1,5 +1,5 @@
 import { nextTick, queueJob } from '../kniuscheduler.mjs';
-import { isDangerousUrl } from '../kniusanitizer.mjs';
+import { isDangerousUrl, isDangerousSrcset } from '../kniusanitizer.mjs';
 
 var KniuTemplate = (function () {
   const SUBS = Symbol('kniu-subs');
@@ -251,7 +251,7 @@ var KniuTemplate = (function () {
         const n = a.name.toLowerCase();
         if (n.startsWith('on')) {
           el.removeAttribute(a.name);
-        } else if (URL_ATTRS.has(n) && isDangerousUrl(a.value)) {
+        } else if (URL_ATTRS.has(n) && (isDangerousUrl(a.value) || (n === 'srcset' && isDangerousSrcset(a.value)))) {
           el.removeAttribute(a.name);
         } else if (n === 'srcdoc' || n === 'formaction') {
           el.removeAttribute(a.name);
@@ -316,7 +316,7 @@ var KniuTemplate = (function () {
       if (node.hasAttribute(name)) node.removeAttribute(name);
       return;
     }
-    if (URL_ATTRS.has(name) && isDangerousUrl(String(value))) {
+    if (URL_ATTRS.has(name) && (isDangerousUrl(String(value)) || (name === 'srcset' && isDangerousSrcset(value)))) {
       warn(`kniu:${name} 的 URL 含危险协议（${value}），已拒绝写入以防 XSS`);
       node.removeAttribute(name);
       return;
@@ -344,6 +344,16 @@ var KniuTemplate = (function () {
     const probe = documentRef.createElement('span');
     probe.style.cssText = value;
     return Array.from(probe.style).map(function (name) { return [name, probe.style.getPropertyValue(name)]; });
+  }
+
+  function isSafeStyleValue(value) {
+    const raw = String(value || '').trim();
+    if (/expression\s*\(/i.test(raw)) return false;
+    const urls = raw.match(/url\(\s*(['"]?)(.*?)\1\s*\)/gi) || [];
+    return urls.every(function (token) {
+      const url = token.replace(/^url\(\s*['"]?|['"]?\s*\)$/gi, '');
+      return !isDangerousUrl(url);
+    });
   }
 
   function optionAttributeName(name) {
@@ -670,12 +680,17 @@ var KniuTemplate = (function () {
       return false;
     };
     var queryDirectives = function (root, attrs) {
-      return Array.prototype.filter.call(root.querySelectorAll('*'), function (n) {
+      var matches = function (n) {
         for (var i = 0; i < attrs.length; i++) {
           if (n.hasAttribute(attrs[i])) return true;
         }
         return false;
-      });
+      };
+      var result = [];
+      // querySelectorAll('*') 不包含 root 本身；循环克隆后的列表项可能正是
+      // `:if` 宿主，漏掉它会让条件永远不参与渲染。
+      if (root && root.nodeType === 1 && matches(root)) result.push(root);
+      return result.concat(Array.prototype.filter.call(root.querySelectorAll('*'), matches));
     };
 
     const applyBindings = function (root, base, extra, bucket, refs) {
@@ -946,7 +961,7 @@ var KniuTemplate = (function () {
               normalizeStyleValue(node, value).forEach(function ([name, item]) {
                 if (!name || item == null || item === false) return;
                 const cssValue = String(item).trim();
-                if (!cssValue) return;
+                if (!cssValue || !isSafeStyleValue(cssValue)) return;
                 node.style.setProperty(name, cssValue);
                 managedProperties.add(name);
               });
@@ -1344,12 +1359,15 @@ var KniuTemplate = (function () {
           if (!initialized) {
             const frag = tpl.cloneNode(true);
             roots = isTpl ? [...frag.childNodes] : [frag];
-            roots.forEach(function (node) {
+            roots = roots.map(function (node) {
               if (node.nodeType === 1) {
                 queryDirectives(node, ['kniu:for', ':for']).forEach(function (n) { return setupFor(n, extra, nb); });
+                const rootIf = queryDirectives(node, ['kniu:if', ':if']).find(function (n) { return n === node; });
+                if (rootIf) return setupIf(rootIf, extra, nb) || node;
                 queryDirectives(node, ['kniu:if', ':if']).forEach(function (n) { return setupIf(n, extra, nb); });
               }
               applyBindings(node, state, extra, nb, refs);
+              return node;
             });
             initialized = true;
           } else {
@@ -1388,6 +1406,11 @@ var KniuTemplate = (function () {
             }
             view.getNodes().forEach(function (node) {
               anchor.parentNode.insertBefore(node, anchor);
+              if (node.__kniuDeferredIfRender) {
+                const deferred = node.__kniuDeferredIfRender;
+                delete node.__kniuDeferredIfRender;
+                deferred();
+              }
               rendered.push(node);
             });
           });
@@ -1425,11 +1448,26 @@ var KniuTemplate = (function () {
         const frag = document.createDocumentFragment();
         nextViews.forEach(function (v) { return v.getNodes().forEach(function (n) { return frag.appendChild(n); }); });
         anchor.parentNode.insertBefore(frag, anchor);
+        // keyed 列表首次创建的根 :if 会先留下 comment anchor，待本批
+        // DocumentFragment 进入真实 DOM 后才可渲染。此前仅非 keyed 分支
+        // 激活了该回调，故带 :key 的广告项永远不显示。
+        nextViews.forEach(function (v) {
+          v.getNodes().forEach(function (node) {
+            if (!node.__kniuDeferredIfRender) return;
+            const deferred = node.__kniuDeferredIfRender;
+            delete node.__kniuDeferredIfRender;
+            deferred();
+          });
+        });
         prevViews = nextViews;
         rendered = [];
       };
 
-      render();
+      // DocumentFragment 是临时克隆容器，提前渲染会把结果插入即将被丢弃的
+      // fragment，外层只会保留 comment anchor，最终页面看不到条件节点。
+      // 必须等 anchor 插入真实 DOM 后再执行首次 render。
+      if (!anchor.parentNode || anchor.parentNode.nodeType === 11) anchor.__kniuDeferredIfRender = render;
+      else render();
       (bucket || listDisposers).push(function () {
         subCleanups.forEach(function (c) { return c(); });
         subCleanups.length = 0;
@@ -1518,18 +1556,25 @@ var KniuTemplate = (function () {
               queryDirectives(node, ['kniu:if', ':if']).forEach(function (n) { return setupIf(n, parentExtra, bc); });
             }
             anchor.parentNode.insertBefore(node, anchor);
+            if (node.__kniuDeferredIfRender) {
+              const deferred = node.__kniuDeferredIfRender;
+              delete node.__kniuDeferredIfRender;
+              deferred();
+            }
             applyBindings(node, state, parentExtra, bc, refs);
             rendered.push(node);
           });
         }
       };
 
-      render();
+      if (!anchor.parentNode || anchor.parentNode.nodeType === 11) anchor.__kniuDeferredIfRender = render;
+      else render();
       (bucket || listDisposers).push(function () {
         cleanups.forEach(function (c) { return c(); });
         cleanups.length = 0;
         rendered.forEach(function (n) { return n.remove(); });
       });
+      return anchor;
     };
 
     applyBindings(scope, state, {}, subscriptions, refs);

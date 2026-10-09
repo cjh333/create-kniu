@@ -9,6 +9,8 @@ let replyNotificationCompletedAt = 0;
 const REPLY_NOTIFICATION_DEDUPE_MS = 3000;
 
 function requestReplyNotificationState(request) {
+  // 公共头部可能在路由切换时先于页面销毁/鉴权跳转挂载；匿名状态绝不探测受保护接口。
+  if (!AUTH.isLoggedIn()) return Promise.resolve(null);
   const now = Date.now();
   if (replyNotificationRequest) return replyNotificationRequest;
   if (now - replyNotificationCompletedAt < REPLY_NOTIFICATION_DEDUPE_MS) {
@@ -148,6 +150,10 @@ const headerController = controller(({ eventTo, getRouteData, navigateTo, onRout
   }
 
   async function loadReplyNotification() {
+    if (!AUTH.isLoggedIn()) {
+      syncNotificationBadge(false, 0);
+      return;
+    }
     const result = await requestReplyNotificationState(request);
     if (!result) return;
     if (result.status !== 1) return;

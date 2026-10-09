@@ -18,6 +18,7 @@ Router::post('/email_code', 'IndexController@emailCode');
 Router::post('/password_reset', 'IndexController@passwordReset');
 // 需要登录鉴权的前台接口（默认即需要登录，此处列出便于对照）。
 Router::post('/getAbout', 'IndexController@getAbout');
+Router::post('/getPublisherAbout', 'IndexController@getPublisherAbout');
 Router::post('/submitComment', 'IndexController@submitComment');
 Router::post('/likeComment', 'IndexController@likeComment');
 Router::post('/deleteComment', 'IndexController@deleteComment');

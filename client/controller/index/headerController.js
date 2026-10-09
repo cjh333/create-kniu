@@ -6,13 +6,16 @@ const { controller } = MVVM;
 
 const headerController = controller(({ eventTo, navigateTo, request, reactive, onMounted }) => {
   const initialKeyword = getTransientSearchKeyword();
+
   const state = reactive({
     ready: true,
     logo: '',
     loggedIn: Boolean(IDENTITY.getIdentity().nickname),
     keyword: initialKeyword
   });
+
   const sync = () => { state.loggedIn = Boolean(IDENTITY.getIdentity().nickname); };
+
   async function loadSeoLogo() {
     try {
       const result = await request({
@@ -26,15 +29,19 @@ const headerController = controller(({ eventTo, navigateTo, request, reactive, o
       state.logo = String(info?.logo || '').trim() || '/public/static/img/logo1.png';
     } catch { }
   }
+
   function dispatchSearch() {
     setTransientSearchKeyword(state.keyword);
     eventTo?.emit('home:search', { keyword: getTransientSearchKeyword() });
   }
+
   const debouncedSearch = debounce(dispatchSearch, 250);
+
   function searchList() {
     setTransientSearchKeyword(state.keyword);
     navigateTo('/');
   }
+
   onMounted(() => {
     const stopIdentity = IDENTITY.subscribe(sync);
     const stopSearch = eventTo?.on('home:search', syncSearch);
@@ -44,12 +51,11 @@ const headerController = controller(({ eventTo, navigateTo, request, reactive, o
       stopSearch?.();
     };
   });
-  // eventTo.emit 派发的是裸载荷对象（{ keyword }），不是 DOM CustomEvent，
-  // 因此这里只能读 payload.keyword；写成 payload.detail.keyword 会得到 undefined，
-  // 被 setTransientSearchKeyword 归一成 '' 回写 state.keyword，输入框随即被清空。
+
   const syncSearch = function (payload) {
     state.keyword = setTransientSearchKeyword(payload?.keyword);
   };
+
   return { state, loadSeoLogo, searchList, debouncedSearch };
 });
 

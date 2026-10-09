@@ -89,7 +89,7 @@ export function registerUpload(context) {
     }
     _notice(content, type) {
       if (typeof this.$msg === 'function') this.$msg({ content: content, type: type });
-      else KniuUI.msg({ content: content, type: type });
+      else if (typeof msg === 'function') msg({ content: content, type: type });
     }
     _revokeFileUrl(file) {
       const url = this._objectUrls.get(file);

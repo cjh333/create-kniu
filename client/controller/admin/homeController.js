@@ -47,13 +47,6 @@ const homeController = controller(({ formatTime, getTimeInZone, navigateTo, requ
     state.uptimeRefreshMs = Number(systemInfo.uptimeRefreshMs) || 0;
   }
 
-  /**
-   * 刷新「可用内存」。返回 Promise 是必需的：调度器据此判断上一轮是否落地，
-   * 保证同一任务同时在途的请求永远只有 1 个；失败则 reject 触发退避。
-   *
-   * 轮询请求一律 `redirectOnUnauthorized: false`：会话过期由首屏那次 `/system` 统一处理，
-   * 探测请求再跳一次登录只会和它抢着改 hash。
-   */
   function refreshMemory() {
     return request({
       url: '/system',
@@ -74,12 +67,6 @@ const homeController = controller(({ formatTime, getTimeInZone, navigateTo, requ
     });
   }
 
-  /**
-   * 刷新「运行时间」。同 `refreshMemory()`：返回 Promise + 失败 reject。
-   *
-   * 必须采纳响应里的 `uptimeRefreshMs`：后端在「开机不足 1 分钟」时会下调到 1000ms，
-   * 跨过 1 分钟后要回到 60000ms —— 前端若不回写，就会把 1 秒档一直粘到页面关闭。
-   */
   function refreshUptime() {
     return request({
       url: '/system',
@@ -105,6 +92,11 @@ const homeController = controller(({ formatTime, getTimeInZone, navigateTo, requ
   }
 
   async function loadSystemInfo() {
+    if (!AUTH.isLoggedIn()) {
+      state.loading = false;
+      navigateTo('/login');
+      return;
+    }
     await request({
       url: '/system',
       type: 'POST',

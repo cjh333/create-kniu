@@ -32,11 +32,25 @@ export function isDangerousUrl(value) {
   return false;
 }
 
+/**
+ * srcset 是逗号分隔的多个 URL；只检查整体开头会遗漏后续候选项中的危险协议。
+ * 此处按协议 token 扫描，data: 仍复用图片白名单，避免把 SVG 作为图片候选绕过。
+ */
+export function isDangerousSrcset(value) {
+  const source = String(value).replace(/[\s\x00-\x1f]+/g, '');
+  if (/(?:^|,)(?:javascript|vbscript):/i.test(source)) return true;
+  const dataUrls = source.match(/(?:^|,)data:[^,\s]+/gi) || [];
+  return dataUrls.some(function (entry) {
+    return !SAFE_DATA_IMAGE_RE.test(entry.replace(/^,/, ''));
+  });
+}
+
 function isDangerousAttribute(node, attr) {
   const name = attr.name.toLowerCase();
   const value = attr.value.trim();
   if (name.startsWith('on') || name === 'srcdoc' || name === 'formaction') return true;
   if (URL_ATTRIBUTES.indexOf(name) >= 0 && isDangerousUrl(value)) return true;
+  if (name === 'srcset' && isDangerousSrcset(value)) return true;
   return false;
 }
 

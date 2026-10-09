@@ -1,12 +1,12 @@
 import ROUTER from './config/router.js';
-import CREATEAPP from './core/kniubase.mjs';
+import CLIENT from './core/kniubase.mjs';
 import IDENTITY from './core/kniuidentity.mjs';
 import { authRedirect } from './core/kniurequest.mjs';
 import UI from './core/kniuui/kniuui.mjs';
 
-const app = CREATEAPP();
-app.use(ROUTER);
-app.useViews({
+const client = CLIENT();
+client.use(ROUTER);
+client.useViews({
   'admin/main': 'admin/mainController',
   'admin/aside': 'admin/asideController',
   'admin/header': 'admin/headerController',
@@ -15,8 +15,12 @@ app.useViews({
 });
 UI.use({
   components: {
-    btn: { size: 'default' },
-    page: { layout: '条数,上一页,页码,下一页,总数' }
+    btn: {
+      size: 'default'
+    },
+    page: {
+      layout: '条数,上一页,页码,下一页,总数'
+    }
   },
   theme: {
     '--kniu-color-primary': '#409eff',
@@ -42,16 +46,16 @@ UI.use({
     '--kniu-control-height-small': 'max(28px,calc(28/var(--kniu_vw)))'
   }
 });
-authRedirect(function () {
-  const hashPath = String(globalThis.location?.hash || '').replace(/^#/, '');
-  const routePath = hashPath.split('?')[0].split('#')[0] || '/';
-  if (routePath === '/login' || routePath === '/register') return;
-  const routeData = app.getRouteData();
+authRedirect(function (route) {
+  if (route === '/login' || route === '/register') {
+    return;
+  }
+  const routeData = client.getRouteData();
   const payload = routeData && typeof routeData === 'object' ? { ...routeData } : {};
   payload.tab = IDENTITY.hasAccount() ? 'login' : 'register';
-  payload.redirect = routePath;
-  app.navigateTo('/login', payload);
+  payload.redirect = route;
+  client.navigateTo('/login', payload);
 });
-app.mount('#app').catch(function (err) {
+client.mount('#client').catch(function (err) {
   console.error('[kniubase] 应用挂载失败：', err);
 });

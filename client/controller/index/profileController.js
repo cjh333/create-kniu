@@ -23,7 +23,6 @@ const profileController = controller(({ navigateTo, request, reactive, onMounted
 
   function toBack() { navigateTo('/'); }
 
-  // 页面内的「去登录」入口：仅在用户主动点击时跳转，不是页面级鉴权判断。
   function toSignin() {
     navigateTo('/login', { tab: IDENTITY.hasAccount() ? 'login' : 'register', redirect: '/profile' });
   }
@@ -35,8 +34,6 @@ const profileController = controller(({ navigateTo, request, reactive, onMounted
 
   let profileRequest = null;
 
-  // 不做页面级登录鉴权：/frontProfile 需要登录，未登录时接口返回业务码 1001，
-  // 由请求层统一跳转登录页并携带回跳目标（策略见 client/client.mjs）。
   async function loadProfile() {
     if (profileRequest) return profileRequest;
     const run = request({
@@ -45,21 +42,21 @@ const profileController = controller(({ navigateTo, request, reactive, onMounted
       mutation: false,
       data: { identity_token: state.identityToken }
     }).then(function (result) {
-    if (result.status !== 1) return;
-    state.articleLikeCount = Number(result.data?.articleLikeCount) || 0;
-    state.commentLikeCount = Number(result.data?.commentLikeCount) || 0;
-    state.commentCount = Number(result.data?.commentCount) || 0;
-    state.favorites = Array.isArray(result.data?.favorites) ? result.data.favorites : [];
-    state.history = Array.isArray(result.data?.history) ? result.data.history : [];
-    state.canEditNickname = result.data?.canEditNickname === true;
-    if (result.data?.nickname) {
-      state.nickname = result.data.nickname;
-      state.nicknameDraft = state.nickname;
-      state.avatarText = Array.from(state.nickname)[0] || '访';
-      IDENTITY.setIdentity({ token: state.identityToken, nickname: state.nickname });
-      return;
-    }
-    state.profileHint = '登录后即可评论、点赞与收藏文章';
+      if (result.status !== 1) return;
+      state.articleLikeCount = Number(result.data?.articleLikeCount) || 0;
+      state.commentLikeCount = Number(result.data?.commentLikeCount) || 0;
+      state.commentCount = Number(result.data?.commentCount) || 0;
+      state.favorites = Array.isArray(result.data?.favorites) ? result.data.favorites : [];
+      state.history = Array.isArray(result.data?.history) ? result.data.history : [];
+      state.canEditNickname = result.data?.canEditNickname === true;
+      if (result.data?.nickname) {
+        state.nickname = result.data.nickname;
+        state.nicknameDraft = state.nickname;
+        state.avatarText = Array.from(state.nickname)[0] || '访';
+        IDENTITY.setIdentity({ token: state.identityToken, nickname: state.nickname });
+        return;
+      }
+      state.profileHint = '登录后即可评论、点赞与收藏文章';
     }).finally(function () {
       profileRequest = null;
     });

@@ -109,10 +109,10 @@ Role 表的 `role` / `role_auth` 建表默认值（均为 `1`）**仅供建表�
 | 路径 | 请求字段 | 成功 `data` / 行为 |
 | --- | --- | --- |
 | `/getDaily` | 无 | 当前每日一句列表或当前项，字段含 `id,cn,en,is_show` |
-| `/getArticle` | 可选分页/排序 | 已显示文章列表；每项含文章字段、`publisher`（昵称）和点赞数 |
+| `/getArticle` | 可选 `page_current`、`page_rows` | 已显示文章分页数据 `{data,page_current,page_rows,page_total,total}`；每项含文章字段、`publisher`（昵称）和点赞数 |
 | `/getInfo` | 可选 `identity_token` | 首页资料。返回键**固定为** `today,title,logo,copyright,icp,photo,note`：`today` 是当天在一年中的序号（1~366）；`title`/`logo`/`copyright`/`icp` 取自公开 SEO；`photo` 是当前账号 `tb_about.avatar`（无资料时为内置默认头像）、`note` 是 `tb_about.summary`（为空时为“这家伙很懒，什么都没留下！”）。**键名是 `photo`/`note`，不是 `avatar`/`summary`**；已识别到账号时不得回退到其他账号的资料 |
 | `/getAbout` | `identity_token` | **需登录**（不在免登录清单内，未登录一律拒绝且不回退任何内容）。返回当前账号的 `tb_about.content`；不读取 SEO 内容 |
-| `/getDetail` | `id`、可选 `identity_token` | 文章详情、`publisher,isOwn,favorited,previous,next,hits,likes`；成功读取时原子增加文章 `hits` 并返回最新值；记录登录账号浏览历史 |
+| `/getDetail` | `id`、可选 `identity_token` | 文章详情、`publisher,publisher_role_id,isOwn,favorited,previous,next,hits,likes`；成功读取时原子增加文章 `hits` 并返回最新值；记录登录账号浏览历史 |
 | `/getComments` | `article_id`，可选 `identity_token` | 只返回 `is_show=1` 的评论和回复，按 `id` 升序；行字段：`id,userId,isOwn,parentId,replyTo,username,avatar,time,content,likes,liked`。`userId` 为兼容字段，值必须是作者的 `tb_role.id`；`username` 为实时昵称，不能用于归属判断 |
 | `/submitComment` | `article_id,parent_id=0,identity_token,message` | 登录且未禁言才可提交；回复必须属于同一文章；免审立即可见并返回成功，待审仅返回成功 ID；昵称从 `tb_role.nickname` 读取，客户端不得提交账号归属字段 |
 | `/deleteComment` | `comment_id,identity_token` | 仅本人可删；删除顶层评论时连同其回复删除 |

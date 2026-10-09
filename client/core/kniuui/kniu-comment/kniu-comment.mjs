@@ -58,7 +58,7 @@ export function registerComment(context) {
         htmlParts.push('</div>');
         htmlParts.push('<div class="kniu_sys_comment_toolbar">');
         htmlParts.push('<button type="button" class="kniu_sys_comment_emoji_btn" title="' + t('comment.emoji') + '">😊</button>');
-        htmlParts.push('<button type="button" class="kniu_sys_comment_submit" type="button">' + commentEscape(submitText) + '</button>');
+        htmlParts.push('<button type="button" class="kniu_sys_comment_submit" disabled>' + commentEscape(submitText) + '</button>');
         htmlParts.push('</div>');
         htmlParts.push('<div class="kniu_sys_comment_emoji_panel kniu_sys_dropdown_panel' + (this._showEmoji ? '' : ' kniu_sys_comment_hidden') + '">');
         emojis.forEach(function (emoji) {
@@ -190,14 +190,18 @@ export function registerComment(context) {
       const countEl = root.querySelector('.kniu_sys_comment_count');
       const maxLength = Math.max(0, Number.parseInt(this._options?.maxLength, 10) || 0);
       const syncCount = function () {
-        if (!textarea || !countEl || !maxLength) return;
+        if (!textarea) return;
         const characters = Array.from(textarea.value);
-        if (characters.length > maxLength) textarea.value = characters.slice(0, maxLength).join('');
+        if (maxLength && characters.length > maxLength) textarea.value = characters.slice(0, maxLength).join('');
         const length = Array.from(textarea.value).length;
-        countEl.textContent = length + '/' + maxLength;
-        countEl.classList.toggle('kniu_sys_comment_limit', length >= maxLength);
+        if (countEl && maxLength) {
+          countEl.textContent = length + '/' + maxLength;
+          countEl.classList.toggle('kniu_sys_comment_limit', length >= maxLength);
+        }
+        if (submitBtn) submitBtn.disabled = String(textarea.value || '').trim().length === 0;
       };
       textarea?.addEventListener('input', syncCount);
+      syncCount();
 
       if (emojiBtn && emojiPanel) {
         emojiBtn.addEventListener('click', function (e) {

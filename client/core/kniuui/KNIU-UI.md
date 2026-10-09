@@ -6,7 +6,7 @@
 
 - 系统 UI 自定义元素使用 `kniu-` 前缀。
 - 组件内部 DOM 类名使用 `kniu_sys_` 前缀；页面与设计系统仍用 `kniu_*` 工具类族（`kniu_container`、`kniu_web_*`、`kniu_md_*` 等）。组件源码内的类名由 `node test/audit_component_classes.mjs` 守护，退出码非 0 即存在不合规类名。
-- 所有 `kniu-*` 组件的功能配置统一通过 `kniu:option` 对象接收；旧的组件配置 attribute 不再读取或兼容。
+- 所有 `kniu-*` 组件的功能配置统一通过 `kniu:option` 对象接收；同时支持简写 `:option`，两者完全等价。旧的组件配置 attribute 不再读取或兼容。
 - 组件使用 Shadow DOM 隔离内部结构与样式。
 - 所有 `kniu-*` 组件和项目页面统一只使用 `public/static/font/` 内现有的 `KniuHei` 字体文件，并按 ExtraLight(200)、Light(300)、Regular(400)、Normal(450)、Medium(500)、Bold(700)、Heavy(900) 映射实际 `font-weight`；正文和代码区域均使用 `KniuHei`，斜体使用浏览器合成样式；禁止引入 Noto/思源、微软雅黑、宋体、黑体、Arial、Georgia、Consolas、Robot 或其他系统字体作为默认字体，图标使用内置 SVG，不使用图标字体。
 - `kniu-editor` 的字体菜单只提供项目 `KniuHei` 和“无”两项；清除字体时恢复继承，不再提供旧字体或通用字体族选项。
@@ -14,13 +14,18 @@
 
 ## 统一 options 协议（强制）
 
-组件标签只保留模板引擎接口：`ref`、`kniu:form`、条件/循环/样式指令、插槽以及 `kniu@...`。其他配置全部放入 `kniu:option`；对象字面量直接写在 `{{...}}` 中；组件自身产生的回调优先使用 `onXxx`，如 `onChange`、`onCurrentChange`、`onSizeChange`。
+组件标签只保留模板引擎接口：`ref`、`kniu:form`、条件/循环/样式指令、插槽以及 `kniu@...`。其他配置全部放入 `kniu:option` 或其简写 `:option`；对象字面量直接写在 `{{...}}` 中；组件自身产生的回调优先使用 `onXxx`，如 `onChange`、`onCurrentChange`、`onSizeChange`。
 
 ```html
 <kniu-table ref="table" kniu:option="{{userTable}}"></kniu-table>
 <kniu-input kniu:form="{{form.name}}" kniu:option="{{nameInput}}"></kniu-input>
 <kniu-page kniu:option="{{userPage}}"></kniu-page>
+<kniu-page-more :option="{{text:'查看更多',noMore:'没有更多了',block:true,count:10,loading:(loadingMore),disabled:(noMore)}}" @click="loadMore" />
 ```
+
+`:option="{{...}}"` 与 `kniu:option="{{...}}"` 进入同一个 options 协议；同一组件不要同时声明两者，避免配置覆盖歧义。
+
+`kniu-page-more` 的 `count` 表示每次请求最多追加的列表数量：列表总数小于等于 `count` 时组件隐藏；总数大于 `count` 时显示。加载请求返回空数据或已到最后一页后，组件保持显示并展示 `noMore` 文案，同时禁用按钮；`loading` 控制加载状态，点击事件使用标准 `@click` 或 options 回调。
 
 两个及以上按钮统一使用 `<kniu-btn-group>` 包裹，组件内置 `display:inline-flex; align-items:center; gap:10px`，页面不得再用零散 margin 拼按钮间距。
 

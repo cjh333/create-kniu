@@ -113,7 +113,8 @@ const loginController = controller(({ navigateTo, getRouteData, request, reactiv
         condition: function (v) { return v.value === v.password; },
         message: '两次输入的密码不一致'
       }
-    }
+    },
+    currentYear: new Date().getFullYear()
   });
   let captchaObjectUrl = '';
   let codeTimer = null;

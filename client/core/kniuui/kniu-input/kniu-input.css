@@ -86,17 +86,29 @@
 }
 
 .kniu_sys_input_group[data-has-append="true"] .kniu_sys_input {
-  border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px)
+  border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -webkit-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -moz-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -ms-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -o-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
 }
 
 .kniu_sys_input_group[data-has-prepend="true"][data-has-append="true"] .kniu_sys_input {
-  border-radius: 0
+  border-radius: 0;
+  -webkit-border-radius: 0;
+  -moz-border-radius: 0;
+  -ms-border-radius: 0;
+  -o-border-radius: 0;
 }
 
 .kniu_sys_input_group[data-has-append-btn="true"] .kniu_sys_input_append,
 .kniu_sys_input_group[data-has-prepend-btn="true"] .kniu_sys_input_prepend {
   padding: 0;
-  align-items: stretch
+  align-items: stretch;
+  -webkit-align-items: stretch;
+  -moz-align-items: stretch;
+  -ms-align-items: stretch;
+  -o-align-items: stretch;
 }
 
 .kniu_sys_input_append::slotted(kniu-btn),

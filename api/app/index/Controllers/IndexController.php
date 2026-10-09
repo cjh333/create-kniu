@@ -21,14 +21,18 @@ class IndexController extends Controller
 
   public function getArticle(): void
   {
-    $result = Db::name('tb_article')
+    $page = max(1, (int)$this->input('post.page_current/d', 1));
+    $rows = min(50, max(1, (int)$this->input('post.page_rows/d', 8)));
+    $query = Db::name('tb_article')
       ->field(['id', 'role_id', 'is_show', 'title', 'summary', 'create_time', 'hits', 'likes'])
       ->where('is_show', '=', 1)
-      ->select();
-    $result = $this->decodeFields($result, ['title', 'summary']);
+      ->order('id', 'desc');
+    $result = $query->page($page, $rows);
+    $articles = $result['data'];
+    $articles = $this->decodeFields($articles, ['title', 'summary']);
     $roleIds = array_values(array_unique(array_filter(array_map(function (array $row) {
       return (int)($row['role_id'] ?? 0);
-    }, $result))));
+    }, $articles))));
     $roleNicknames = [];
     if ($roleIds) {
       foreach (Db::name('tb_role')->whereIn('id', $roleIds)->field(['id', 'nickname'])->select() as $role) {
@@ -37,10 +41,12 @@ class IndexController extends Controller
         );
       }
     }
-    foreach ($result as &$article) {
+    foreach ($articles as &$article) {
       $article['publisher'] = $roleNicknames[(int)($article['role_id'] ?? 0)] ?? '';
+      $article['publisher_role_id'] = (int)($article['role_id'] ?? 0);
     }
     unset($article);
+    $result['data'] = $articles;
     $this->json($result);
   }
 
@@ -104,6 +110,15 @@ class IndexController extends Controller
     }
   }
 
+  public function getPublisherAbout(): void
+  {
+    $roleId = (int)$this->input('post.role_id/d', 0);
+    if ($roleId <= 0) { $this->json(['content' => ''], '用户参数错误', ErrorCode::PARAM_INVALID); return; }
+    $about = Db::name('tb_about')->field(['content'])->where('role_id', '=', $roleId)->find();
+    $about = $this->decodeFields($about, ['content']);
+    $this->json(['content' => (string)($about['content'] ?? '')]);
+  }
+
   public function getDetail(): void
   {
     $id = $this->input('post.id/d', 1);
@@ -134,6 +149,7 @@ class IndexController extends Controller
       $result[0]['publisher'] = $this->normalizeFrontNickname(
         html_entity_decode((string)($publisherRole['nickname'] ?? ''), ENT_QUOTES)
       );
+      $result[0]['publisher_role_id'] = (int)($result[0]['role_id'] ?? 0);
       $frontUser = $this->roleByIdentityToken($identityToken);
       $result[0]['isOwn'] = $this->isOwnedByCurrentUser((int)($result[0]['role_id'] ?? 0), $frontUser);
       $likeRoleId = (int)($frontUser['role_id'] ?? 0);

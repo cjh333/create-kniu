@@ -15,6 +15,7 @@ $config = [
     'getInfo',
     'getDetail',
     'getComments',
+    'getPublisherAbout',
     // 前台账号：注册、登录、绑定、退出与会话探测都在未登录态调用。
     'frontRegister',
     'frontLogin',

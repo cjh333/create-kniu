@@ -130,7 +130,8 @@ var KniuRequest = (function () {
       if (hash.startsWith('#/login') || hash.startsWith('#/register')) return;
       sessionStorage.removeItem('kniu_authed');
       AUTH.markLoggedOut();
-      if (authRedirectHandler) authRedirectHandler();
+      const routePath = hash.replace(/^#/, '').split('?')[0].split('#')[0] || '/';
+      if (authRedirectHandler) authRedirectHandler(routePath);
       else if (typeof location !== 'undefined') location.hash = '/login';
     } catch (e) {
 

@@ -59,20 +59,19 @@ var KniuAuth = (function () {
    * @return {Promise}
    */
   function logout() {
+    // 先同步本地认证状态，再发起网络退出。否则路由卸载/公共区域重挂载的间隙会把
+    // 已失效会话当作已登录，并额外请求受保护接口，造成无意义的 401。
+    markLoggedOut();
+    IDENTITY.clearIdentity();
+    try {
+      localStorage.setItem('kniu_auth_logout_at', String(Date.now()));
+    } catch (e) { }
     return REQUEST({
       url: '/logout',
       type: 'POST',
+      redirectOnUnauthorized: false,
       complete() {
-        state.loggedIn = false;
-        state.user = null;
-        resetAllStateStores();
-        IDENTITY.clearIdentity();
-        try {
-          sessionStorage.removeItem('kniu_authed');
-          sessionStorage.removeItem('kniu_user');
-          localStorage.setItem('kniu_auth_logout_at', String(Date.now()));
-        } catch (e) { }
-        notify();
+        // 本地状态已在请求前复位；此处仅保留退出请求的完成语义。
       }
     });
   }

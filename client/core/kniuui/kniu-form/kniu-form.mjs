@@ -96,7 +96,7 @@ export function registerForm(context) {
       if (firstInvalid) {
         if (typeof firstInvalid.focus === 'function') firstInvalid.focus();
         if (typeof this.$msg === 'function') this.$msg({ content: firstMessage, type: 'error' });
-        else KniuUI.msg({ content: firstMessage, type: 'error' });
+        else if (typeof msg === 'function') msg({ content: firstMessage, type: 'error' });
       }
       return valid;
     }

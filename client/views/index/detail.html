@@ -2,12 +2,16 @@
   @import url("@kniu/kniu.min.css");
   @import url("@style/web.min.css");
   @import url("@style/index/detail.min.css");
+
+  .detail_article_link:hover {
+    color: #333;
+  }
 </style>
 <div class="kniu_web">
   <include src="./common/header.html" />
   <!-- 2.内容 -->
   <main class="kniu_web_body">
-    <section class="detail_cells">
+    <section class="detail_cells" :if="{{!loading}}">
       <div class="detail_cell detail_cell_1">
         <div class="kniu_container">
           <div class="detail_group_1">
@@ -16,7 +20,7 @@
               <h4 class="detail_subtitle_1">{{subtitle}}</h4>
             </div>
             <div class="detail_article_info">
-              <span>发布人：{{publisher}}</span>
+              <a class="detail_article_link" :option="{{roleId:publisher_role_id,onClick:toAbout}}" href="javascript:;">发布人：{{publisher}}</a>
               <span>发布于：{{create_time}}</span>
               <span>浏览次数：{{hits}}次</span>
               <span>点赞数：{{likeOptions.count}}</span>
@@ -40,7 +44,7 @@
       <div class="detail_cell detail_cell_2">
         <div class="kniu_container">
           <div class="kniu_btn_group detail_btn_group">
-            <a class="kniu_btn detail_btn" @click="toBack" href="#/">返回</a>
+            <kniu-btn class="kniu_md_w_120" @click="toBack">返回</kniu-btn>
           </div>
         </div>
       </div>

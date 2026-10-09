@@ -5,14 +5,18 @@
   vertical-align: middle;
   overflow: hidden;
   flex-shrink: 0;
-  background-color: var(--kniu-fill-color, #f5f7fa)
+  background-color: var(--kniu-fill-color, #f5f7fa);
 }
 
 .kniu_sys_image_group {
   display: flex;
+  align-items: stretch;
+  -webkit-align-items: stretch;
+  -moz-align-items: stretch;
+  -ms-align-items: stretch;
+  -o-align-items: stretch;
   width: 100%;
   height: 100%;
-  align-items: stretch
 }
 
 .kniu_sys_image_content {

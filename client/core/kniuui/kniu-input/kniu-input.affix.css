@@ -2,15 +2,19 @@
 
 .kniu_sys_input_append::slotted(kniu-btn),
 .kniu_sys_input_prepend::slotted(kniu-btn) {
-  align-self: stretch;
-  height: calc(100% + 2px);
-  min-height: 28px;
-  margin-top: -1px;
-  margin-bottom: -1px;
-  vertical-align: top;
   box-sizing: border-box;
   -webkit-box-sizing: border-box;
   -moz-box-sizing: border-box;
   -ms-box-sizing: border-box;
   -o-box-sizing: border-box;
+  align-self: stretch;
+  -webkit-align-self: stretch;
+  -moz-align-self: stretch;
+  -ms-align-self: stretch;
+  -o-align-self: stretch;
+  vertical-align: top;
+  margin-top: -1px;
+  margin-bottom: -1px;
+  min-height: 28px;
+  height: calc(100% + 2px);
 }

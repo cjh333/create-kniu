@@ -12,7 +12,6 @@
 }
 
 .kniu_sys_button {
-  /* 颜色一律走全局变量（client.mjs UI.use theme 统一配置），fallback 仅兜底 */
   --kniu-button-color: var(--kniu-text-color, #606266);
   --kniu-button-bg: #fff;
   --kniu-button-border: var(--kniu-border-color, #dcdfe6);
@@ -20,24 +19,46 @@
   --kniu-button-hover-bg: var(--kniu-color-primary-light, #ecf5ff);
   --kniu-button-hover-border: var(--kniu-color-primary-lighter, #c6e2ff);
   --kniu-button-active-bg: var(--kniu-color-primary-light, #ecf5ff);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
   box-sizing: border-box;
-  min-height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
-  margin: 0;
-  padding: 8px 15px;
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box;
+  -ms-box-sizing: border-box;
+  -o-box-sizing: border-box;
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
   border: 1px solid var(--kniu-button-border);
   border-radius: var(--kniu-radius, 4px);
+  -webkit-border-radius: var(--kniu-radius, 4px);
+  -moz-border-radius: var(--kniu-radius, 4px);
+  -ms-border-radius: var(--kniu-radius, 4px);
+  -o-border-radius: var(--kniu-radius, 4px);
   outline: 0;
-  background-color: var(--kniu-button-bg);
-  color: var(--kniu-button-color);
-  font: 500 14px/1 var(--kniu-font-family);
+  margin: 0;
+  padding: 8px 15px;
+  gap: 6px;
+  width: 100%;
+  min-height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
   text-decoration: none;
   white-space: nowrap;
-  cursor: pointer;
+  font: 500 14px/1 var(--kniu-font-family);
   user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -o-user-select: none;
+  background-color: var(--kniu-button-bg);
+  color: var(--kniu-button-color);
+  cursor: pointer;
   transition: .1s;
   -webkit-transition: .1s;
   -moz-transition: .1s;

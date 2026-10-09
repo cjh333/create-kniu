@@ -351,7 +351,7 @@ export function registerInput(context) {
       _syncSiblingMargin() {
         const next = this.nextElementSibling;
         const hasGroupNext = !!(next && (next.tagName === 'KNIU-INPUT-GROUP' || next.tagName === 'KNIU-FORM-CELL'));
-        this.style.marginBottom = hasGroupNext ? '20px' : '';
+        this.style.marginBottom = hasGroupNext ? 'calc(20/var(--kniu_vw))' : '';
       }
     }
     customElements.define('kniu-input-group', KniuSysInputGroup);

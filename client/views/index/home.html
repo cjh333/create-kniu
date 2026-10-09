@@ -7,6 +7,10 @@
     background-color: transparent;
   }
 
+  .index_article_link:hover {
+    color: #333;
+  }
+
   @media (min-width: calc(1280px - 60px)) {
     .kniu_web_body .kniu_container {
       width: calc(100vw - 320 / var(--kniu_vw) * 2);
@@ -23,7 +27,7 @@
           <div class="index_group_1">
             <article class="index_wrap_11">
               <template :for="{{dailys}}" :key="id">
-                <div class="index_item_11">
+                <div class="index_item_11" style="background-color:rgba(0,0,0,.03);">
                   <div class="index_daily_group">
                     <p class="index_daily_title">({{today}}) 每日一句：</p>
                     <p class="index_daily_cn">{{item.cn}}</p>
@@ -39,21 +43,26 @@
                 </template>
               </kniu-input>
               <template :for="{{articles}}" :key="id">
-                <a class="kniu_md_mt_15 index_item_11" :option="{{articleId:item.id,onClick:toDetail}}" href="javascript:;">
+                <div class="kniu_md_mt_15 index_item_11">
                   <div class="index_article_group">
-                    <div class="index_article_title_group">
+                    <a class="kniu_md_diy_underline index_article_title_group" :option="{{articleId:item.id,onClick:toDetail}}" href="javascript:;">
                       <span class="index_article_title">{{item.title}}</span>
+                    </a>
+                    <div class="index_article_summary" :if="{{item.summary}}">
+                      <a class="kniu_md_diy_underline" :option="{{articleId:item.id,onClick:toDetail}}" href="javascript:;">{{item.summary}}</a>
                     </div>
-                    <p class="index_article_summary">{{item.summary}}</p>
-                    <div class="index_article_info_group">
-                      <p class="index_article_info">发布人：{{item.publisher}}</p>
-                      <p class="index_article_info">发布于：{{item.create_time}}</p>
-                      <p class="index_article_info">浏览次数：{{item.hits}}次</p>
-                      <p class="index_article_info">点赞数：{{item.likes}}</p>
-                    </div>
+                    <dl class="index_article_info_group">
+                      <dd class="index_article_info">
+                        <a class="index_article_link" :option="{{roleId:item.publisher_role_id,onClick:toAbout}}" href="javascript:;">发布人：{{item.publisher}}</a>
+                      </dd>
+                      <dd class="index_article_info">发布于：{{item.create_time}}</dd>
+                      <dd class="index_article_info">浏览次数：{{item.hits}}次</dd>
+                      <dd class="index_article_info">点赞数：{{item.likes}}</dd>
+                    </dl>
                   </div>
-                </a>
+                </div>
               </template>
+              <kniu-page-more class="kniu_md_mt_15" :option="{{pageMore}}" />
             </article>
             <article class="index_wrap_12">
               <div class="index_item_12">
@@ -69,11 +78,13 @@
                 </template>
                 <ul class="index_advertise_group{{!loggedIn ? ' kniu_md_mt_0' : ''}}">
                   <template :for="{{advertises}}" :key="id">
-                    <li class="index_advertise">
-                      <a class="index_advertise_link" href="{{item.url}}" title="{{item.title}}" target="_blank">
-                        <kniu-image class="index_advertise_img" src="{{item.img}}" />
-                      </a>
-                    </li>
+                    <template :if="{{item.isShow == 1}}">
+                      <li class="index_advertise">
+                        <a class="index_advertise_link" href="{{item.url}}" target="_blank">
+                          <kniu-image class="index_advertise_img" src="{{item.img}}" />
+                        </a>
+                      </li>
+                    </template>
                   </template>
                 </ul>
               </div>

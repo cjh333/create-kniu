@@ -16,6 +16,7 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     content: '',
     content_mode: 'rich',
     publisher: '',
+    publisher_role_id: 0,
     create_time: '',
     hits: 0,
     loading: true,
@@ -157,7 +158,6 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     }
   }
 
-  // 收藏：同点赞，登录态完全交给服务端判定。
   async function toggleFavorite() {
     if (favoriteRequestActive) return;
     const favorited = !state.favorited;
@@ -335,6 +335,7 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
       return;
     }
     detailRequestActive = true;
+    state.loading = true;
     try {
       const id = getRouteArticleId();
       if (!Number.isInteger(id) || id <= 0) {
@@ -366,6 +367,7 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
         state.content = wrapContentTables(sanitizeRichHtml(result.data.content || ''));
       }
       state.publisher = result.data.publisher || '';
+      state.publisher_role_id = Number(result.data.publisher_role_id || result.data.role_id) || 0;
       state.create_time = result.data.create_time || '';
       state.hits = Number(result.data.hits) || 0;
       state.isOwn = Boolean(result.data.isOwn);
@@ -396,6 +398,11 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     navigateTo('/');
   }
 
+  function toAbout(event) {
+    const roleId = Number(event?.currentTarget?.dataset?.roleId);
+    if (Number.isInteger(roleId) && roleId > 0) navigateTo('/about', { role_id: roleId });
+  }
+
   state.commentOptions.onSubmit = onSubmitComment;
   state.commentOptions.onLike = onLikeComment;
   state.commentOptions.onDelete = onDeleteComment;
@@ -409,7 +416,7 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
 
   onBeforeMount(scrollArticleToTop);
   onMounted(loadDetail);
-  return { state, loadDetail, toBack, toggleFavorite };
+  return { state, loadDetail, toBack, toAbout, toggleFavorite };
 });
 
 export default detailController;

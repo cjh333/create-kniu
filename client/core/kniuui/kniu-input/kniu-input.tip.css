@@ -16,26 +16,30 @@
   text-align: left;
   white-space: normal;
   box-shadow: 0 2px 12px rgba(0, 0, 0, .1);
-  box-sizing: border-box
+  box-sizing: border-box;
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box;
+  -ms-box-sizing: border-box;
+  -o-box-sizing: border-box;
 }
 
 .kniu_sys_input_tip[data-open="true"] {
-  display: block
+  display: block;
 }
 
 .kniu_sys_input_tip ul {
   margin: 0;
   padding: 0;
-  list-style: none
+  list-style: none;
 }
 
 .kniu_sys_input_tip li {
   margin: 0;
-  padding: 4px 14px
+  padding: 4px 14px;
 }
 
 .kniu_sys_input_tip--single {
   padding: 8px 14px;
+  white-space: pre-line;
   color: var(--kniu-color-info, #909399);
-  white-space: pre-line
 }

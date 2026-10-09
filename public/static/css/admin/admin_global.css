@@ -149,6 +149,7 @@ kniu-system-index-detail {
   -moz-align-items: center;
   -ms-align-items: center;
   -o-align-items: center;
+  padding: 0 calc(12 / var(--kniu_vw));
   width: 100%;
   text-align: left;
   background-color: transparent;

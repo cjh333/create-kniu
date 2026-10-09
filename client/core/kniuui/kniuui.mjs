@@ -71,6 +71,7 @@ import { registerMsg } from './kniu-msg/kniu-msg.mjs';
 import { registerSelect } from './kniu-select/kniu-select.mjs';
 import { registerRadioGroup } from './kniu-radio-group/kniu-radio-group.mjs';
 import { registerPage } from './kniu-page/kniu-page.mjs';
+import { registerPageMore } from './kniu-page-more/kniu-page-more.mjs';
 import { registerImage } from './kniu-image/kniu-image.mjs';
 import { registerInput } from './kniu-input/kniu-input.mjs';
 import { registerDatePicker } from './kniu-date-picker/kniu-date-picker.mjs';
@@ -2523,6 +2524,7 @@ var KniuUI = (function () {
   registerSelect(KNIU_COMPONENT_CONTEXT);
   registerRadioGroup(KNIU_COMPONENT_CONTEXT);
   registerPage(KNIU_COMPONENT_CONTEXT);
+  registerPageMore(KNIU_COMPONENT_CONTEXT);
   registerImage(KNIU_COMPONENT_CONTEXT);
   registerInput(KNIU_COMPONENT_CONTEXT);
   registerDatePicker(KNIU_COMPONENT_CONTEXT);
@@ -2621,17 +2623,6 @@ var KniuUI = (function () {
     registerFn(KNIU_COMPONENT_CONTEXT);
   }
 
-  // 简化封装（MVVM 形态，对齐项目 controller(setup) 与生命周期钩子）：一口完成
-  // 「Shadow 初始化 + options 协议 + 响应式绑定 + 事件派发」，无需手写类、无渲染函数。
-  // spec = { tag, style?, template?, setup(ctx) }
-  //   - style:    shadow 样式字符串（自动包 <style>；可内联，可 '@import "./x.css";' 外置）
-  //   - template: shadow 模板 HTML（建议外置 <名>.html 经 ?module 导入；支持 kniu: 指令与 {{ }} 绑定）
-  //   - setup(ctx): 必填，对齐 kniumvvm controller(setup)——返回 { state, ...actions }；
-  //     ctx 提供 reactive/nextTick（来自模板引擎）+ emit(name, detail)（派发 composed 事件）
-  //     + host + 生命周期钩子 onBeforeMount/onMounted/onUnmounted（项目钩子体系，无 render）。
-  //   - state 变更由模板引擎响应式驱动视图（TEMPLATE.bind），组件内改 state 即更新 DOM；
-  //     宿主经 kniu:option 赋值 → options setter 合并进响应式 state。
-  // 挂载语义：组件文件本身不生效，必须被应用入口 import（副作用调用本函数）完成挂载后才可使用。
   function useComponent(spec) {
     const tag = spec && spec.tag;
     if (!assertCustomTag(tag, 'useComponent')) return;
@@ -2644,7 +2635,7 @@ var KniuUI = (function () {
     class KniuCustomComponent extends HTMLElement {
       constructor() {
         super();
-        attachComponentShadow(this); // 框架统一 Shadow DOM 初始化（contain:layout + 共享字体样式）
+        attachComponentShadow(this);
         if (style) {
           const styleNode = document.createElement('style');
           styleNode.textContent = style;
@@ -2652,7 +2643,7 @@ var KniuUI = (function () {
         }
         if (template) {
           const root = document.createElement('div');
-          root.innerHTML = template; // 模板含 kniu: 指令与 {{ }} 绑定，connected 后经 TEMPLATE.bind 激活
+          root.innerHTML = template;
           this.shadowRoot.appendChild(root);
           this._root = root;
         } else {
@@ -2691,8 +2682,8 @@ var KniuUI = (function () {
         }
         if (this._pending && typeof this._pending === 'object') Object.assign(state, this._pending);
         this._syncReadonly(state);
-        runHooks('beforeMount'); // 挂载前（规则 #47 语义）
-        this._binding = TEMPLATE.bind(this._root, state); // 响应式绑定：state 变更自动驱动视图
+        runHooks('beforeMount');
+        this._binding = TEMPLATE.bind(this._root, state);
         runHooks('mounted');
       }
       disconnectedCallback() {
@@ -2700,10 +2691,9 @@ var KniuUI = (function () {
         this._hooks.unmounted.forEach(function (fn) { fn.call(this, this); }, this);
         if (this._binding && typeof this._binding.dispose === 'function') this._binding.dispose();
         this._binding = null;
-        this._built = false; // 重新接入时重放（kniu:if 销毁重建语义，#171）
+        this._built = false;
       }
       emit(name, detail) {
-        // 派发跨 Shadow 边界事件（composed 冒泡），setup 内经 ctx.emit、外部经 host.emit 调用
         this.dispatchEvent(new CustomEvent(name, { detail: detail, bubbles: true, composed: true }));
       }
       get options() {
@@ -2712,7 +2702,7 @@ var KniuUI = (function () {
       set options(value) {
         const o = value && typeof value === 'object' ? value : {};
         if (this._binding) {
-          Object.assign(this._binding.state, o); // 响应式 state → 视图自动更新
+          Object.assign(this._binding.state, o);
         } else {
           this._pending = Object.assign({}, this._pending, o);
         }
@@ -2722,7 +2712,7 @@ var KniuUI = (function () {
         this.toggleAttribute('readonly', state.readonly === true);
       }
     }
-    customElements.define(tag, KniuCustomComponent); // 注册的 tag 必须与 spec.tag 一致
+    customElements.define(tag, KniuCustomComponent);
   }
 
   return {

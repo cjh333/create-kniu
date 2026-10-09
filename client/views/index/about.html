@@ -2,7 +2,6 @@
   @import url("@kniu/kniu.min.css");
   @import url("@style/web.min.css");
   @import url("@style/index/about.min.css");
-
   @media (min-width: calc(1280px - 60px)) {
     .kniu_web_body .kniu_container {
       width: calc(100vw - 320 / var(--kniu_vw) * 2);
@@ -17,7 +16,7 @@
       <div class="about_cell about_cell_1">
         <div class="kniu_container">
           <div class="about_group_1">
-            <div :if="{{content}}" class="about_content">{{@ content}}</div>
+            <div :if="{{content}}" class="about_content">{{@content}}</div>
             <kniu-empty :elseif="{{!loading}}" :option="{{note:'暂无数据'}}" />
           </div>
         </div>
@@ -25,7 +24,7 @@
       <div class="about_cell about_cell_2">
         <div class="kniu_container">
           <div class="kniu_btn_group about_btn_group">
-            <a class="kniu_btn about_btn" @click="toBack" href="#/">返回</a>
+            <kniu-btn class="kniu_md_w_120" @click="toBack">返回</kniu-btn>
           </div>
         </div>
       </div>
