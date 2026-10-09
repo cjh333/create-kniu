@@ -12,7 +12,8 @@ logs/
 dist/
 test/
 tmp/
-api/ssl/*.pem
+api/ssl/
+api/cert/
 .env
 .env.local
 .env.development.local
