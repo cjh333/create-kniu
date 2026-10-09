@@ -7,14 +7,17 @@
 git status --short
 git diff --check
 ```
+
 ### 添加
 ```bash
 git add .
 ```
+
 ### 备注
 ```bash
 git commit -m "XXX"
 ```
+
 ### 拉取远程 main
 ```bash
 git pull --rebase origin main
@@ -22,12 +25,10 @@ git pull --rebase origin main
 
 ### 合并其它分支
 ```bash
-git merge <branch-name>
+git merge main
 ```
 
 ### 推送当前 main
 ```bash
 git push origin main
 ```
-
-除非明确确认远程历史和覆盖范围，否则不要使用强制推送。
