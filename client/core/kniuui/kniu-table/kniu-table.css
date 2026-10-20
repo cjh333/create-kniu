@@ -13,7 +13,6 @@
   background-color: #fff;
   color: var(--kniu-text-color, #606266);
   font-size: 14px;
-  box-sizing: border-box
 }
 
 .kniu_sys_table_viewport {
@@ -21,7 +20,6 @@
   max-width: 100%;
   overflow-x: auto;
   overflow-y: auto;
-  box-sizing: border-box
 }
 
 @supports(overflow-y:overlay) {
@@ -36,7 +34,6 @@
   width: 100%;
   table-layout: fixed;
   background-color: #fff;
-  box-sizing: border-box
 }
 
 .kniu_sys_table th,
@@ -44,7 +41,6 @@
   border-bottom: 1px solid #ebeef5;
   padding: 5px 10px;
   height: max(38px, calc(48 / var(--kniu_vw)));
-  box-sizing: border-box;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
@@ -63,7 +59,6 @@
 
 .kniu_sys_table_group[data-empty="true"] thead {
   pointer-events: none;
-  user-select: none
 }
 
 .kniu_sys_table_group[data-empty="true"] thead th {
@@ -104,13 +99,13 @@
 
 .kniu_sys_table_group[data-size="large"] th,
 .kniu_sys_table_group[data-size="large"] td {
-  height: 52px;
+  height: max(52px, calc(52 / var(--kniu_vw)));
   padding: 0 12px
 }
 
 .kniu_sys_table_group[data-size="small"] th,
 .kniu_sys_table_group[data-size="small"] td {
-  height: 40px;
+  height: max(40px, calc(40 / var(--kniu_vw)));
   padding: 0 8px;
   font-size: 12px
 }
@@ -206,7 +201,6 @@
   border: 1px solid var(--kniu-color-primary, #409eff);
   border-radius: 3px;
   outline: 0;
-  box-sizing: border-box;
   color: var(--kniu-text-color, #606266);
   font: inherit
 }
@@ -266,7 +260,6 @@
   appearance: none;
   width: max(12px, calc(14 / var(--kniu_vw)));
   height: max(12px, calc(14 / var(--kniu_vw)));
-  margin: 0;
   border: 1px solid var(--kniu-border-color, #dcdfe6);
   border-radius: 2px;
   outline: 0;
@@ -274,7 +267,6 @@
   background-position: center;
   background-repeat: no-repeat;
   background-size: 10px 8px;
-  box-sizing: border-box;
   cursor: pointer;
   transition: border-color .2s, background-color .2s
 }
@@ -376,7 +368,6 @@
 .kniu_sys_table_loading_spinner {
   width: 34px;
   height: 34px;
-  box-sizing: border-box;
   border: 3px solid rgba(64, 158, 255, .25);
   border-top-color: var(--kniu-color-primary, #409eff);
   border-radius: 50%;

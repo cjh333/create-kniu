@@ -28,11 +28,6 @@
   --kniu-button-hover-bg: var(--kniu-color-primary-light, #ecf5ff);
   --kniu-button-hover-border: var(--kniu-color-primary-lighter, #c6e2ff);
   --kniu-button-active-bg: var(--kniu-color-primary-light, #ecf5ff);
-  box-sizing: border-box;
-  -webkit-box-sizing: border-box;
-  -moz-box-sizing: border-box;
-  -ms-box-sizing: border-box;
-  -o-box-sizing: border-box;
   display: flex;
   display: -webkit-flex;
   justify-content: center;
@@ -52,7 +47,6 @@
   -ms-border-radius: var(--kniu-radius, calc(4 / var(--kniu_vw)));
   -o-border-radius: var(--kniu-radius, calc(4 / var(--kniu_vw)));
   outline: 0;
-  margin: 0;
   padding: 8px 15px;
   gap: 6px;
   width: 100%;
@@ -60,11 +54,6 @@
   text-decoration: none;
   white-space: nowrap;
   font: 500 14px/1 var(--kniu-font-family);
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  -o-user-select: none;
   background-color: var(--kniu-button-bg);
   color: var(--kniu-button-color);
   cursor: pointer;

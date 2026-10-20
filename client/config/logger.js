@@ -8,7 +8,7 @@ const LOGGER_MAP = {
   LEVEL: PROCESS_ENV === 'development' ? 'debug' : 'info',
   // 日志文件路径。
   FILE_PATH: 'client/runtime/logs/app.log',
-  // 日志文件大小限制（5MB）。
+  // 日志文件大小限制 5MB。
   MAX_FILE_SIZE: 1024 * 1024 * 5,
   // 日志文件最大数量。
   MAX_FILES: 3

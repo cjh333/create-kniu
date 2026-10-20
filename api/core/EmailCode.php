@@ -4,16 +4,6 @@ namespace Core;
 
 use Core\Db;
 
-/**
- * 邮箱验证码服务（注册 / 找回密码共用）。
- *
- * 约定：
- * - 邮箱统一小写去空格后参与比较与存储；
- * - 验证码只以 sha256 摘要入库，明文仅出现在邮件正文里；
- * - 同一 (邮箱, 场景) 只保留最新一条有效验证码，旧码立即作废；
- * - verify() 只校验不消费，业务成功后由 consume() 落库标记已用，
- *   避免后续步骤失败导致验证码被白白烧掉。
- */
 class EmailCode
 {
   public const SCENE_REGISTER = 'register';
@@ -113,7 +103,7 @@ class EmailCode
       'code_hash' => hash('sha256', $code),
       'expire_time' => $expireAt,
       'used' => 0,
-      'ip' => substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
+      'ip' => substr(\Core\Controller::clientIp(), 0, 45),
       'create_time' => date('Y-m-d H:i:s', $now)
     ]);
 
@@ -128,6 +118,11 @@ class EmailCode
 
     $sent = Mailer::send($email, $subject, $body);
     if (!$sent['status']) {
+      // 发送失败回滚本次插入的码行：旧码已在签发时全部作废，若残留这条收不到的码，
+      // 用户会被卡满重发限频窗口且没有任何可用验证码。
+      if ($id > 0) {
+        Db::name('tb_email_code')->where('id', '=', $id)->delete();
+      }
       return [
         'status' => false,
         'msg' => $sent['msg'] ?: '验证码发送失败，请稍后重试',

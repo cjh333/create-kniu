@@ -15,7 +15,7 @@
 button {
   display: grid;
   place-items: center;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--kniu-border-color-light, #e4e7ed);
   border-radius: 50%;
   -webkit-border-radius: 50%;
   -moz-border-radius: 50%;
@@ -23,7 +23,7 @@ button {
   -o-border-radius: 50%;
   width: max(30px, calc(40 / var(--kniu_vw)));
   height: max(30px, calc(40 / var(--kniu_vw)));
-  background-color: #fff;
+  background-color: var(--kniu-surface-color, #fff);
   color: #374151;
   cursor: pointer;
   box-shadow: 0 8px 24px rgba(15, 23, 42, .14);

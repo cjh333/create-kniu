@@ -1,6 +1,7 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import UI from '../../core/kniuui/kniuui.mjs';
 import { getCurrentRoutePath } from '../../core/kniuutil.mjs';
+import { applyNavFlags } from './adminShared.js';
 import { enhanceCodeBlocks, renderMarkdown } from '../../core/kniucode.mjs';
 import AUTH from '../../core/kniuauth.mjs';
 
@@ -15,20 +16,10 @@ function resolveHelpDocSource() {
   return key && typeof docs[key] === 'string' ? docs[key] : '';
 }
 
-/**
- * 把「当前路径」映射到**侧栏菜单项**的路径。
- *
- * `kniu-navbar._syncActive()` 是拿 `active` 属性（本控制器下发的 `activeNavigationPath`）
- * 与每个 `kniu-navbar-cell` 的 `route` 做**字符串相等**判断的，不认识层级关系。
- * 「数据库管理」是三层独立页面，若原样下钻，进到第二/第三层后侧栏高亮会整个消失 ⇒
- * 子页面统一归到菜单项 `/database`。
- *
- * @param {string} path 当前路由路径。
- * @return {string} 侧栏应高亮的菜单路径。
- */
 const MENU_ROOT_BY_PATH = {
-  '/databasetables': '/database',
-  '/databasetable': '/database'
+  '/database': '/dbconnect',
+  '/databasetables': '/dbconnect',
+  '/databasetable': '/dbconnect'
 };
 
 function getActiveNavigationPath(path) {
@@ -58,12 +49,7 @@ const asideController = controller(({ $msg, eventTo, navigateTo, onRouteChange, 
     state.userName = info.name || '—';
     state.userAvatar = info.avatar || (info.name ? info.name.charAt(0) : '·');
     state.userRole = info.role || '管理员';
-    state.showWebsiteInfo = Number(info.roleId || info.role || 0) === 1 || Number(info.roleAuth || 0) === 1;
-    state.showDaily = state.showWebsiteInfo;
-    state.showUserManagement = !!String(info.name || '').trim();
-    // 数据库管理只对超级管理员开放：必须严格 role=1，不能沿用 showWebsiteInfo 的
-    // 「role=1 或 role_auth=1」宽松口径（后端 /db_* 同样只认 role=1）。
-    state.showDatabaseAdmin = Number(info.roleId || info.role || 0) === 1;
+    applyNavFlags(state, info);
   }
 
   async function handleLogout() {
@@ -76,8 +62,6 @@ const asideController = controller(({ $msg, eventTo, navigateTo, onRouteChange, 
     navigateTo('/login');
   }
 
-  // 帮助手册：读取构建期注入的 Markdown 原文 → 渲染 → 打开预览弹窗。
-  // 开发环境若 __VIEW_DOCS__ 未注入（进程未重启），回退为按路径直接 fetch。
   async function loadHelpMarkdown() {
     let source = resolveHelpDocSource();
     if (!source) {

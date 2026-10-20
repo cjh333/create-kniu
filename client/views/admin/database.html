@@ -1,62 +1,14 @@
 <style scoped>
   @import url("@kniu/kniu.min.css");
   @import url("@style/web.min.css");
-  @import url("@style/admin/admin.min.css");
-  @import url("@style/admin/admin_home.min.css");
-
-  .detail_head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 5px 10px 10px;
-  }
-
-  .detail_head_actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-left: auto;
-  }
-
-  .detail_wrap {
-    position: relative;
-    background-color: #fff;
-  }
-
-  .db_field_row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-
-  .db_field_row>label {
-    flex: 0 0 100px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
-    padding: 0 calc(20 / var(--kniu_vw));
-    background-color: #f5f7fa;
-    border: calc(1 / var(--kniu_vw)) solid #dcdfe6;
-    border-radius: calc(4 / var(--kniu_vw));
-    color: #909399;
-    font-size: max(12px, calc(14 / var(--kniu_vw)));
-    text-align: center;
-    white-space: nowrap;
-    box-sizing: border-box;
-  }
-
-  .db_field_row>.db_field_grow {
-    flex: 1;
-    min-width: 0;
-  }
+  @import url("@style/admin/admin_all.min.css");
 
   .db_sql_result {
-    max-height: 320px;
-    margin-top: 10px;
     overflow: auto;
     border: 1px solid #ebeef5;
+    margin-top: 10px;
+    margin-left: 100px;
+    min-height: 30px;
   }
 
   .db_sql_result pre {
@@ -67,11 +19,6 @@
     white-space: pre-wrap;
     word-break: break-all;
   }
-
-  .db_file_input {
-    font-size: 13px;
-    color: #606266;
-  }
 </style>
 <section class="index_cells">
   <div class="admin_content_body index_cell index_cell_2">
@@ -79,7 +26,6 @@
       <kniu-btn :option="{{type:'primary'}}" @click="openCreateDatabase">新建数据库</kniu-btn>
       <div class="detail_head_actions">
         <kniu-btn @click="openImport">导入数据库</kniu-btn>
-        <kniu-btn @click="openSqlConsole">执行 SQL</kniu-btn>
         <kniu-btn :option="{{link:true,size:'small',type:'primary'}}" @click="goDbConnect">返回</kniu-btn>
       </div>
     </div>
@@ -87,12 +33,16 @@
     <div class="detail_wrap">
       <template :if="{{dbTable.data.length > 0}}">
         <kniu-table :option="{{dbTable}}">
-          <kniu-table-col field="name" label="库名" min-width="240" show-overflow-tooltip />
-          <kniu-table-col field="table_count" label="表数量" width="120" align="center" sortable />
-          <kniu-table-col field="size_text" label="体积" width="140" align="center" />
-          <kniu-table-col label="操作" width="96" align="center" fixed="right">
+          <kniu-table-col :option="{{width:60,align:'center',fixed:'left',type:'checkbox'}}" />
+          <kniu-table-col :option="{{field:'sid',label:'排序',width:90,align:'center',editable:'number',sortable:true,onChange:(updateSort)}}" />
+          <kniu-table-col :option="{{field:'id',label:'ID',width:90,align:'center',fixed:'left',sortable:true}}" />
+          <kniu-table-col :option="{{field:'name',label:'库名',align:'center',showOverflowTooltip:true}}" />
+          <kniu-table-col :option="{{field:'table_count',label:'表数量',width:100,align:'center',sortable:true}}" />
+          <kniu-table-col :option="{{field:'size_text',label:'体积',align:'center',showOverflowTooltip:true}}" />
+          <kniu-table-col :option="{{label:'操作',width:200,align:'center',fixed:'right'}}">
             <template #default>
-              <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="viewDatabase">查看</kniu-btn>
+              <kniu-btn :option="{{type:'danger',size:'small',link:true}}" @click="deleteRow">删除</kniu-btn>
+              <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="viewRow">查看</kniu-btn>
             </template>
           </kniu-table-col>
         </kniu-table>
@@ -104,74 +54,45 @@
   </div>
 </section>
 
-<kniu-modal style="width:420px;" :option="{{show:(showCreateDatabase)}}" @close="closeCreateDatabase">
+<kniu-modal :option="{{show:(showCreateDatabase),onClose:(closeCreateDatabase),style:'width:30vw;'}}">
   <template #header>
     <span>新建数据库</span>
-    <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="closeCreateDatabase">
-      <kniu-icon :option="{{icon:'close'}}" />
-    </kniu-btn>
-  </template>
-  <template #default>
-    <kniu-form ref="createDatabaseForm" :option="{{createDatabaseModel}}">
-      <kniu-form-cell>
-        <kniu-input :form="{{createDatabaseModel.name}}" :option="{{name:'name',placeholder:'字母/数字/下划线',maxlength:'64'}}">
-          <template #prepend label-width="100px">库名</template>
-        </kniu-input>
-      </kniu-form-cell>
-    </kniu-form>
-  </template>
-  <template #footer>
-    <kniu-btn @click="closeCreateDatabase">取 消</kniu-btn>
-    <kniu-btn :option="{{type:'primary'}}" @click="submitCreateDatabase">保 存</kniu-btn>
-  </template>
-</kniu-modal>
-
-<kniu-modal style="width:720px;" :option="{{show:(showImport)}}" @close="closeImport">
-  <template #header>
-    <span>导入数据库</span>
-    <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="closeImport">
-      <kniu-icon :option="{{icon:'close'}}" />
-    </kniu-btn>
   </template>
   <template #default>
     <kniu-form-cell>
-      <kniu-input :form="{{importModel.sql}}" :option="{{name:'sql',type:'textarea',rows:12,placeholder:'粘贴 .sql 脚本内容，或在下方选择文件'}}">
-        <template #prepend label-width="100px">SQL 脚本</template>
+      <kniu-input :form="{{sqlModel.sql}}" :option="{{name:'sql',rows:8,placeholder:'CREATE DATABASE IF NOT EXISTS xxx DEFAULT CHARACTER SET = utf8mb4;',type:'textarea'}}">
+        <template #prepend :option="{{labelWidth:'100px'}}">sql 命令</template>
       </kniu-input>
     </kniu-form-cell>
-    <div class="db_field_row">
-      <label>选择文件</label>
-      <div class="db_field_grow">
-        <input type="file" accept=".sql" class="db_file_input" @change="onImportFile" />
-      </div>
-    </div>
-    <p style="margin-top:8px;font-size:12px;color:#909399;">导入会按分号逐条执行，遇错即停。上限 8MB。</p>
-  </template>
-  <template #footer>
-    <kniu-btn @click="closeImport">取 消</kniu-btn>
-    <kniu-btn :option="{type:'primary'}" @click="submitImport">开 始 导 入</kniu-btn>
-  </template>
-</kniu-modal>
-
-<kniu-modal style="width:860px;" :option="{{show:(showSql)}}" @close="closeSql">
-  <template #header>
-    <span>执行 SQL 命令</span>
-    <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="closeSql">
-      <kniu-icon :option="{{icon:'close'}}" />
-    </kniu-btn>
-  </template>
-  <template #default>
-    <kniu-form-cell>
-      <kniu-input :form="{{sqlModel.sql}}" :option="{{name:'sql',type:'textarea',rows:10,placeholder:'SELECT * FROM tb_role LIMIT 10;'}}">
-        <template #prepend label-width="100px">SQL 命令</template>
-      </kniu-input>
-    </kniu-form-cell>
-    <div class="db_sql_result">
+    <div :if="{{sqlResultText}}" class="db_sql_result">
       <pre>{{sqlResultText}}</pre>
     </div>
   </template>
   <template #footer>
-    <kniu-btn @click="closeSql">关 闭</kniu-btn>
-    <kniu-btn :option="{{type:'primary'}}" @click="submitSql">执 行</kniu-btn>
+    <kniu-btn @click="closeCreateDatabase">关 闭</kniu-btn>
+    <kniu-btn :option="{{type:'primary'}}" @click="submitCreateDatabase">执 行</kniu-btn>
+  </template>
+</kniu-modal>
+
+<kniu-modal :option="{{show:(showImport),onClose:(closeImport),style:'width:720px;'}}">
+  <template #header>
+    <span>导入数据库</span>
+  </template>
+  <template #default>
+    <kniu-form-cell>
+      <kniu-input>
+        <template #prepend :option="{{labelWidth:'100px'}}">上传 sql 文件</template>
+        <template #append :option="{{labelWidth:'100px'}}">
+          <kniu-upload ref="upload" :form="{{files}}" :option="{{name:'file',disabled:(!canEditContent),maxSize:5,accept:'.sql'}}">选择文件</kniu-upload>
+        </template>
+      </kniu-input>
+    </kniu-form-cell>
+    <kniu-form-cell>
+      <p style="margin-left:100px;font-size:12px;color:#909399;">注：导入会按分号逐条执行，遇错即停。单个 .sql 文件上限 5MB。</p>
+    </kniu-form-cell>
+  </template>
+  <template #footer>
+    <kniu-btn @click="closeImport">取 消</kniu-btn>
+    <kniu-btn :option="{{type:'primary'}}" @click="submitImport">开始导入</kniu-btn>
   </template>
 </kniu-modal>

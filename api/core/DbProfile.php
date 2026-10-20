@@ -2,61 +2,67 @@
 
 namespace Core;
 
-/**
- * 数据库连接档案：数据库管理模块的「当前连接」。
- *
- * ── 存储位置为什么是**项目根** `runtime/db-connections.json` ──
- * 本机后端以 `cd api && php -S localhost:9900 -t .` 启动，**docroot 是 `api/` 且没有
- * 路由脚本**；PHP 内置服务器会把 docroot 下真实存在的文件**直接当静态资源发出去**
- * （实测 `GET /runtime/log/db_admin.log` → 200 / 31KB，`runtime/session/sess_*` 同理）。
- * 档案里是**明文密码**，放进 `api/runtime/` 等于对外公开，因此放在 `api/` 之外的
- * `<项目根>/runtime/`（`.gitignore` 已忽略项目根的 `runtime/`）。
- * ⚠ 这条只挡住 PHP 这一侧：Node 本地前端服务（`kniuserver.mjs`）把**整个项目根**当静态根，
- * 项目根的 `runtime/` 在 dev 下仍可被读到（连 `.env` 都是）。生产只暴露 PHP，
- * 故以「落在 PHP docroot 之外」为准。
- *
- * ── 与「系统连接」的关系（本模块最重要的安全属性） ──
- * `Db::connect()` 那条系统连接（`.env` → `api/config/database.php`）**永不改变**：
- * 鉴权、会话回填、其它业务模块都在它上面跑。档案只通过 `Db::useManaged()` 接管
- * **数据库管理模块自己**发出的 SQL。若让切换档案去改系统连接，`Base::__construct()`
- * 会按会话里的 name 去「被切换到的库」回查 `tb_role` —— 切到一个没有该账号的服务器
- * 就会把当前管理员直接锁在门外。
- *
- * ── 档案是**可选覆盖** ──
- * 没有任何档案时，模块行为与本功能上线前完全一致（走 `.env` 那条连接）。
- * 因此 `read()` 对「文件缺失/损坏」一律静默降级为空结构，绝不抛错 ——
- * 它可能在任意一次数据库管理请求里被读到，不能成为新的崩溃点。
- */
 class DbProfile
 {
-  /** 档案文件名（位于项目根 `runtime/` 下）。 */
-  private const FILE = 'db-connections.json';
-
-  /** 允许的字符集（交给 mysqli_set_charset 前白名单校验）。 */
+  private const TABLE = 'tb_database_profile';
   private const CHARSETS = ['utf8mb4', 'utf8', 'latin1', 'gbk', 'big5'];
-
-  /** 连接名称长度上限（字符数）。 */
   private const MAX_NAME = 64;
-
-  /** 主机名长度上限。 */
   private const MAX_HOST = 190;
-
-  /** 用户名长度上限。 */
   private const MAX_USER = 64;
-
-  /** 密码长度上限。 */
   private const MAX_PASS = 190;
 
   /**
-   * 取档案文件的绝对路径。
+   * 在系统连接上执行档案读写。
    *
-   * `__DIR__` = `api/core` ⇒ 上溯两级即项目根。
+   * 档案表存系统库：即使当前连接已被某档案接管（可能指向外部服务器），
+   * 档案管理自身必须仍可达——先保存接管现场，切回系统库执行 `$fn`，finally 还原。
+   * 与 `tb_database_sort` 等排序表的系统库口径一致。
    *
-   * @return string 绝对路径。
+   * @param \Closure $fn 在系统连接上执行的读写体。
+   * @return mixed `$fn` 的返回值。
    */
-  private static function path(): string
+  private static function onSystem(\Closure $fn)
   {
-    return dirname(__DIR__, 2) . '/runtime/' . self::FILE;
+    $managed = Db::managedConnection();
+    Db::useManaged(null);
+    try {
+      return $fn();
+    } finally {
+      Db::useManaged($managed);
+    }
+  }
+
+  /**
+   * 表行 → 档案结构（字段与原 JSON 档案一一对应）。
+   *
+   * @param array<string, mixed> $row 表行。
+   * @return array<string, mixed> 档案。
+   */
+  private static function rowToProfile(array $row): array
+  {
+    return [
+      'id' => (string)$row['id'],
+      'name' => (string)$row['name'],
+      'host' => (string)$row['host'],
+      'port' => (int)$row['port'],
+      'username' => (string)$row['username'],
+      'password' => (string)$row['password'],
+      'database' => (string)$row['database'],
+      'charset' => (string)$row['charset'],
+      'created_at' => (string)$row['created_at'],
+      'updated_at' => (string)$row['updated_at'],
+    ];
+  }
+
+  /**
+   * 表缺失容错判定：与原 JSON「文件不存在 = 空档案库」口径一致。
+   *
+   * @param \Exception $e 表操作异常。
+   * @return bool 是否为表缺失类错误。
+   */
+  private static function isMissingTable(\Exception $e): bool
+  {
+    return strpos($e->getMessage(), "doesn't exist") !== false;
   }
 
   /**
@@ -68,75 +74,6 @@ class DbProfile
   private static function len(string $value): int
   {
     return function_exists('mb_strlen') ? (int)mb_strlen($value, 'UTF-8') : strlen($value);
-  }
-
-  /**
-   * 读取档案库。
-   *
-   * @return array{active: string, profiles: array<int, array<string, mixed>>} 档案库结构。
-   */
-  private static function read(): array
-  {
-    $empty = ['active' => '', 'profiles' => []];
-    $path = self::path();
-    if (!is_file($path)) {
-      return $empty;
-    }
-    $raw = @file_get_contents($path);
-    if ($raw === false || $raw === '') {
-      return $empty;
-    }
-    $decoded = json_decode($raw, true);
-    if (!is_array($decoded)) {
-      return $empty;
-    }
-    $profiles = (isset($decoded['profiles']) && is_array($decoded['profiles'])) ? $decoded['profiles'] : [];
-    // 用 foreach 而不是 array_filter 闭包：闭包参数要么标 `array`（JSON 里可能混进标量，
-    // 标了就会 TypeError），要么标 `mixed`（则 `$item['id']` 触发 offsetAccess 报错）。
-    // 见项目类型规范「闭包内数组偏移访问」。
-    $clean = [];
-    foreach ($profiles as $item) {
-      if (is_array($item) && isset($item['id'])) {
-        $clean[] = $item;
-      }
-    }
-    return [
-      'active' => isset($decoded['active']) ? (string)$decoded['active'] : '',
-      'profiles' => $clean,
-    ];
-  }
-
-  /**
-   * 写回档案库。
-   *
-   * 「临时文件 + rename」保证原子性（避免进程被杀时留下半截 JSON，
-   * 下次 `read()` 直接降级成空库、用户看不到自己刚存的连接）；文件权限收到 0600。
-   *
-   * @param array<string, mixed> $data 完整档案库结构。
-   * @return void
-   * @throws \RuntimeException 目录不可创建、序列化失败或写入失败。
-   */
-  private static function write(array $data): void
-  {
-    $path = self::path();
-    $dir = dirname($path);
-    if (!is_dir($dir) && !@mkdir($dir, 0700, true) && !is_dir($dir)) {
-      throw new \RuntimeException('无法创建连接档案目录');
-    }
-    $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    if ($json === false) {
-      throw new \RuntimeException('连接档案序列化失败');
-    }
-    $tmp = $path . '.' . bin2hex(random_bytes(4)) . '.tmp';
-    if (@file_put_contents($tmp, $json, LOCK_EX) === false) {
-      @unlink($tmp);
-      throw new \RuntimeException('连接档案写入失败');
-    }
-    @chmod($tmp, 0600);
-    if (!@rename($tmp, $path)) {
-      @unlink($tmp);
-      throw new \RuntimeException('连接档案保存失败');
-    }
   }
 
   /**
@@ -196,29 +133,44 @@ class DbProfile
   }
 
   /**
-   * 全部档案（按保存顺序）。
+   * 全部档案（按 id 序）。
    *
-   * @return array<int, array<string, mixed>> 档案列表。
+   * @return array<int, array<string, mixed>> 档案列表；表缺失按空列表（与原 JSON 文件缺失口径一致）。
    */
   public static function all(): array
   {
-    return self::read()['profiles'];
+    return self::onSystem(function () {
+      try {
+        $rows = Db::query('SELECT * FROM `' . self::TABLE . '` ORDER BY `id` ASC');
+      } catch (\Exception $e) {
+        if (self::isMissingTable($e)) {
+          return [];
+        }
+        throw $e;
+      }
+      return array_map([self::class, 'rowToProfile'], $rows);
+    });
   }
 
   /**
    * 按 id 取一条档案。
    *
    * @param string $id 档案 id。
-   * @return array<string, mixed>|null 命中的档案，无则 null。
+   * @return array<string, mixed>|null 命中的档案，无则 null（表缺失同 null）。
    */
   public static function find(string $id): ?array
   {
-    foreach (self::read()['profiles'] as $item) {
-      if ((string)$item['id'] === $id) {
-        return $item;
+    return self::onSystem(function () use ($id) {
+      try {
+        $rows = Db::query("SELECT * FROM `" . self::TABLE . "` WHERE `id` = '" . Db::escape($id) . "' LIMIT 1");
+      } catch (\Exception $e) {
+        if (self::isMissingTable($e)) {
+          return null;
+        }
+        throw $e;
       }
-    }
-    return null;
+      return $rows === [] ? null : self::rowToProfile($rows[0]);
+    });
   }
 
   /**
@@ -228,16 +180,17 @@ class DbProfile
    */
   public static function active(): ?array
   {
-    $data = self::read();
-    if ($data['active'] === '') {
-      return null;
-    }
-    foreach ($data['profiles'] as $item) {
-      if ((string)$item['id'] === $data['active']) {
-        return $item;
+    return self::onSystem(function () {
+      try {
+        $rows = Db::query('SELECT * FROM `' . self::TABLE . '` WHERE `is_active` = 1 ORDER BY `id` ASC LIMIT 1');
+      } catch (\Exception $e) {
+        if (self::isMissingTable($e)) {
+          return null;
+        }
+        throw $e;
       }
-    }
-    return null;
+      return $rows === [] ? null : self::rowToProfile($rows[0]);
+    });
   }
 
   /**
@@ -247,13 +200,15 @@ class DbProfile
    */
   public static function activeId(): string
   {
-    return self::read()['active'];
+    $active = self::active();
+    return $active === null ? '' : (string)$active['id'];
   }
 
   /**
    * 指定「当前连接」。
    *
    * 传空串表示**取消档案接管**，回到 `.env` 的系统连接。
+   * 表版 `is_active` 全表至多一行 =1；删除当前档案时该行随之消失，等价于原 JSON 版清空 active。
    *
    * @param string $id 档案 id，空串表示取消。
    * @return void
@@ -261,17 +216,16 @@ class DbProfile
    */
   public static function setActive(string $id): void
   {
-    $data = self::read();
-    if ($id === '') {
-      $data['active'] = '';
-      self::write($data);
-      return;
-    }
-    if (self::find($id) === null) {
-      throw new \InvalidArgumentException('连接不存在');
-    }
-    $data['active'] = $id;
-    self::write($data);
+    self::onSystem(function () use ($id) {
+      if ($id !== '' && self::find($id) === null) {
+        throw new \InvalidArgumentException('连接不存在');
+      }
+      Db::execute('UPDATE `' . self::TABLE . '` SET `is_active` = 0 WHERE `is_active` = 1');
+      if ($id !== '') {
+        Db::execute("UPDATE `" . self::TABLE . "` SET `is_active` = 1 WHERE `id` = '" . Db::escape($id) . "'");
+      }
+      return null;
+    });
   }
 
   /**
@@ -284,44 +238,52 @@ class DbProfile
    */
   public static function save(array $input, string $id = ''): array
   {
-    $data = self::read();
-    $existing = null;
-    if ($id !== '') {
-      $existing = self::find($id);
-      if ($existing === null) {
-        throw new \InvalidArgumentException('连接不存在');
-      }
-    }
-    $profile = self::normalize($input, $existing);
-    // 同名去重：同一条服务器存两份会让「当前连接」指向两条分不清的档案。
-    foreach ($data['profiles'] as $item) {
-      if ((string)$item['id'] !== $id && (string)$item['name'] === $profile['name']) {
-        throw new \InvalidArgumentException('已存在同名连接');
-      }
-    }
-    $now = date('Y-m-d H:i:s');
-    if ($existing === null) {
-      $profile['id'] = 'c_' . bin2hex(random_bytes(6));
-      $profile['created_at'] = $now;
-      $profile['updated_at'] = $now;
-      $data['profiles'][] = $profile;
-    } else {
-      $profile['id'] = (string)$existing['id'];
-      $profile['created_at'] = (string)($existing['created_at'] ?? $now);
-      $profile['updated_at'] = $now;
-      foreach ($data['profiles'] as $index => $item) {
-        if ((string)$item['id'] === $id) {
-          $data['profiles'][$index] = $profile;
+    return self::onSystem(function () use ($input, $id) {
+      $existing = null;
+      if ($id !== '') {
+        $existing = self::find($id);
+        if ($existing === null) {
+          throw new \InvalidArgumentException('连接不存在');
         }
       }
-    }
-    // 第一条档案自动成为「当前连接」：首次配置少点一次「设为当前」。
-    // 只补空位，不动用户已选定的值（改别的档案不会把当前连接带跑）。
-    if ($data['active'] === '') {
-      $data['active'] = (string)$profile['id'];
-    }
-    self::write($data);
-    return $profile;
+      $profile = self::normalize($input, $existing);
+      // 同名去重：同一条服务器存两份会让「当前连接」指向两条分不清的档案。
+      $dup = Db::query("SELECT `id` FROM `" . self::TABLE . "` WHERE `name` = '" . Db::escape($profile['name']) . "'"
+        . ($id !== '' ? " AND `id` <> '" . Db::escape($id) . "'" : '')
+        . ' LIMIT 1');
+      if ($dup !== []) {
+        throw new \InvalidArgumentException('已存在同名连接');
+      }
+      $now = date('Y-m-d H:i:s');
+      if ($existing === null) {
+        $profile['id'] = 'c_' . bin2hex(random_bytes(6));
+        $profile['created_at'] = $now;
+      } else {
+        $profile['id'] = (string)$existing['id'];
+        $profile['created_at'] = (string)($existing['created_at'] ?? $now);
+      }
+      $profile['updated_at'] = $now;
+      // 同名检查已拦住 name 撞击，REPLACE 只会命中主键 id（更新场景）。
+      Db::execute("REPLACE INTO `" . self::TABLE . "`"
+        . " (`id`, `name`, `host`, `port`, `username`, `password`, `database`, `charset`, `created_at`, `updated_at`) VALUES ("
+        . "'" . Db::escape($profile['id']) . "', "
+        . "'" . Db::escape($profile['name']) . "', "
+        . "'" . Db::escape($profile['host']) . "', "
+        . (int)$profile['port'] . ", "
+        . "'" . Db::escape($profile['username']) . "', "
+        . "'" . Db::escape($profile['password']) . "', "
+        . "'" . Db::escape($profile['database']) . "', "
+        . "'" . Db::escape($profile['charset']) . "', "
+        . "'" . $profile['created_at'] . "', "
+        . "'" . $now . "')");
+      // 第一条档案自动成为「当前连接」：首次配置少点一次「设为当前」。
+      // 只补空位，不动用户已选定的值（改别的档案不会把当前连接带跑）。
+      $hasActive = Db::query('SELECT `id` FROM `' . self::TABLE . '` WHERE `is_active` = 1 LIMIT 1');
+      if ($hasActive === []) {
+        Db::execute("UPDATE `" . self::TABLE . "` SET `is_active` = 1 WHERE `id` = '" . Db::escape($profile['id']) . "'");
+      }
+      return $profile;
+    });
   }
 
   /**
@@ -335,25 +297,17 @@ class DbProfile
    */
   public static function remove(string $id): bool
   {
-    $data = self::read();
-    $kept = [];
-    $removed = false;
-    foreach ($data['profiles'] as $item) {
-      if ((string)$item['id'] === $id) {
-        $removed = true;
-        continue;
+    return self::onSystem(function () use ($id) {
+      try {
+        $affected = Db::execute("DELETE FROM `" . self::TABLE . "` WHERE `id` = '" . Db::escape($id) . "'");
+      } catch (\Exception $e) {
+        if (self::isMissingTable($e)) {
+          return false;
+        }
+        throw $e;
       }
-      $kept[] = $item;
-    }
-    if (!$removed) {
-      return false;
-    }
-    $data['profiles'] = $kept;
-    if ($data['active'] === $id) {
-      $data['active'] = '';
-    }
-    self::write($data);
-    return true;
+      return $affected > 0;
+    });
   }
 
   /**
@@ -376,7 +330,7 @@ class DbProfile
         $status = '异常';
       }
     }
-    
+
     return [
       'id' => (string)$profile['id'],
       'name' => (string)($profile['name'] ?? ''),
@@ -408,13 +362,24 @@ class DbProfile
   public static function connect(array $profile): \mysqli
   {
     $database = (string)($profile['database'] ?? '');
-    $link = @mysqli_connect(
-      (string)$profile['host'],
-      (string)$profile['username'],
-      (string)$profile['password'],
-      $database === '' ? null : $database,
-      (int)$profile['port']
-    );
+    // 连接超时 2 秒：probe 会对列表里每条档案建真实连接，目标主机不可达时
+    // 不设超时会被系统默认值（可达数十秒）逐条串行阻塞，档案列表页整体挂起。
+    $link = @mysqli_init();
+    if ($link instanceof \mysqli) {
+      @mysqli_options($link, MYSQLI_OPT_CONNECT_TIMEOUT, 2);
+      $connected = @mysqli_real_connect(
+        $link,
+        (string)$profile['host'],
+        (string)$profile['username'],
+        (string)$profile['password'],
+        $database === '' ? null : $database,
+        (int)$profile['port']
+      );
+      if (!$connected) {
+        @mysqli_close($link);
+        $link = false;
+      }
+    }
     if ($link === false) {
       throw new \RuntimeException('连接失败：' . (string)(mysqli_connect_error() ?: '未知错误'));
     }

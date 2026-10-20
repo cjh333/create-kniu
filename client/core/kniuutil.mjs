@@ -40,11 +40,6 @@ export function getRouteContext(getRouteData, keys) {
   return out;
 }
 
-export function isPageReload(performanceRef = globalThis.performance) {
-  const entry = performanceRef?.getEntriesByType?.('navigation')?.[0];
-  return entry?.type === 'reload' || performanceRef?.navigation?.type === 1;
-}
-
 let transientSearchKeyword = '';
 
 export function getTransientSearchKeyword() {
@@ -105,7 +100,7 @@ export function getResponseRecords(payload) {
   return [];
 }
 
-export function getFirstResponseRecord(payload) {
+function getFirstResponseRecord(payload) {
   return getResponseRecords(payload)[0] || null;
 }
 
@@ -153,18 +148,6 @@ export function required(message = '此项不能为空', value = '') {
   return field(value, true, message);
 }
 
-export function pattern(expression, message = '格式不正确', value = '') {
-  return field(value, expression instanceof RegExp ? expression : new RegExp(String(expression || '')), message);
-}
-
-export function email(message = '请输入正确邮箱', value = '') {
-  return pattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, message, value);
-}
-
-export function createForm(fields = {}, layout = {}) {
-  return Object.assign({}, layout, fields);
-}
-
 export function toSingleFileList(value) {
   return value ? [value] : [];
 }
@@ -173,13 +156,6 @@ export function updateListRecord(list, changes, key = 'id') {
   if (!Array.isArray(list) || !changes) return Array.isArray(list) ? list : [];
   return list.map(function (item) {
     return item && item[key] === changes[key] ? Object.assign({}, item, changes) : item;
-  });
-}
-
-export function removeListRecord(list, record, key = 'id') {
-  if (!Array.isArray(list) || !record) return Array.isArray(list) ? list : [];
-  return list.filter(function (item) {
-    return !item || item[key] !== record[key];
   });
 }
 
@@ -192,26 +168,5 @@ export function debounce(fn, wait = 200) {
       timer = 0;
       fn.apply(this, args);
     }, wait);
-  };
-}
-
-export function throttle(fn, wait = 120) {
-  if (typeof fn !== 'function') return fn;
-  let last = 0;
-  let timer = 0;
-  return function (...args) {
-    const now = Date.now();
-    const remain = wait - (now - last);
-    if (remain <= 0) {
-      if (timer) { clearTimeout(timer); timer = 0; }
-      last = now;
-      fn.apply(this, args);
-    } else if (!timer) {
-      timer = setTimeout(function () {
-        last = Date.now();
-        timer = 0;
-        fn.apply(this, args);
-      }, remain);
-    }
   };
 }

@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node client/core/kniubuilder.mjs --env=production",
     "dev": "node client/core/kniuserver.mjs --env=development",
-    "kill": "taskkill /F /IM node.exe",
+    "kill": "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 6173,6174,9900 -State Listen -ErrorAction SilentlyContinue | Select-Object -Unique OwningProcess | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\"",
     "preview": "node client/core/kniupreview.mjs --env=development"
   },
   "devDependencies": {},

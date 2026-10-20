@@ -23,7 +23,7 @@ VALUES (
         '基于原生 JavaScript 的单页面多应用框架 KniuSystem',
         'KniuSystem, 原生多应用工作台, 多应用框架, SPA 单页面应用',
         'KniuSystem Team',
-        'Copyright 2018-2026 ©KniuSystem 版权所有',
+        '©KniuSystem 版权所有',
         '沪ICP备18019110号',
         'cjh333@qq.com',
         '2020-03-18 18:30:00',

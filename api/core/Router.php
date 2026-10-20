@@ -477,10 +477,11 @@ class Router
   private function sendRouteNotFoundError($url, $method)
   {
     $errorMsg = "Route not found: " . $url;
+    // 不携带全量 registered_routes（D-L19）：404 免登录可达，洪水请求会把
+    // 整张路由表逐条写进 error_log 撑爆日志；url/method 已足够定位。
     $this->sendErrorResponse(404, $errorMsg, [
       'url' => $url,
-      'method' => $method,
-      'registered_routes' => self::$routes
+      'method' => $method
     ]);
   }
 

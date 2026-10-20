@@ -1,54 +1,349 @@
+import KNIU_TAB_CSS from './kniu-tab.css?module';
+import KNIU_TAB_TEMPLATE from './kniu-tab.html?module';
+
 export function registerTab(context) {
-  const { BOOLEAN_ATTRIBUTES, IDENTITY, KNIU_BACKTOP_CSS, KNIU_BADGE_CSS, KNIU_BASE_CONTAIN_CSS, KNIU_BASE_FONT_CSS, KNIU_BTN_CSS, KNIU_BTN_GROUP_CSS, KNIU_BTN_METRICS_CSS, KNIU_BTN_OVERRIDES_CSS, KNIU_COMMENT_CSS, KNIU_CONTAIN_EXCLUDE_TAGS, KNIU_CONTENT_TABLE_CSS, KNIU_CONTENT_TABLE_DOC_CSS, KNIU_DATE_PICKER_CSS, KNIU_DATE_PICKER_OVERRIDES_CSS, KNIU_DROPDOWN_CSS, KNIU_DROPDOWN_OPTION_CSS, KNIU_EDITOR_CSS, KNIU_EDITOR_OVERRIDE_CSS, KNIU_EDITOR_PRINT_CSS, KNIU_EMPTY_CSS, KNIU_FONT_FACE_CSS, KNIU_FONT_FAMILY, KNIU_FONT_MONO_FAMILY, KNIU_FONT_SERIF_FAMILY, KNIU_I18N, KNIU_ICON_CSS, KNIU_ICON_FONT_NAMES, KNIU_ICON_NAMES, KNIU_ICON_SVG, KNIU_IMAGE_CSS, KNIU_IMAGE_OVERRIDES_CSS, KNIU_INPUT_AFFIX_CSS, KNIU_INPUT_CSS, KNIU_INPUT_GROUP_CSS, KNIU_INPUT_METRICS_CSS, KNIU_INPUT_PASSWORD_ACTIONS_CSS, KNIU_INPUT_PASSWORD_CSS, KNIU_INPUT_STATES_CSS, KNIU_INPUT_TEXTAREA_CSS, KNIU_INPUT_TIP_CSS, KNIU_LIKE_CSS, KNIU_LOADING_CSS, KNIU_MARKDOWN_CSS, KNIU_MODAL_CONFIRM_CSS, KNIU_MODAL_CSS, KNIU_MSG_CSS, KNIU_NAVBAR_CELLS_CSS, KNIU_NAVBAR_CELL_CSS, KNIU_NAVBAR_CSS, KNIU_NAVBAR_PLACEHOLDER_CSS, KNIU_PAGE_CSS, KNIU_RADIO_GROUP_CSS, KNIU_RICHTEXT_CSS, KNIU_SELECT_CSS, KNIU_STATUS_CSS, KNIU_SUB_NAVBAR_CSS, KNIU_SUB_NAVBAR_OVERRIDES_CSS, KNIU_SWITCH_CSS, KNIU_TABLE_CLASS, KNIU_TABLE_COL_CSS, KNIU_TABLE_CSS, KNIU_TABLE_WRAP_CLASS, KNIU_TAB_CSS, KNIU_TAG_CSS, KNIU_UPLOAD_CSS, KNIU_USER_LOGIN_CSS, KNIU_USER_LOGIN_OVERRIDES_CSS, PRUNABLE_ATTRIBUTE_NAMES, REQUEST, RICH_TEXT_LITERAL_TAG_RE, SCROLL_LOCK_FLAG, SEMANTIC_EMPTY_ATTRIBUTES, SHADOW_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_RE, TEMPLATE, adoptDropdownStyle, adoptSharedStyle, adoptedSheetsFlushScheduled, appendRawStyle, applyScrollLock, attachComponentShadow, buildIconElement, buildPageList, compileTableRowTemplate, componentDefaults, componentLang, componentText, computePopoverLayout, confirm, createRowDeleteHandler, createSearchActions, createTable, debounce, flushPendingAdoptedSheets, getResponseRecords, getShadowInnerHTMLDescriptor, getSharedStyleSheet, hasRichTextLiteralTag, installMarkdownStyles, installOptionsOnlyProtocol, installRichTextStyles, isEmptyAttributeValue, lockDocumentScroll, makeSwitchOptions, mountAffixSlots, mountPopoverPortal, msg, normalizeComponentCss, normalizedCssCache, pendingAdoptedSheets, pruneEmptyAttribute, pruneEmptyAttributeTree, pruneEmptyAttributes, pruneEmptyRootAttributes, readScrollLockOriginals, reconcileDocumentScrollLock, releaseScrollLock, replaceChildrenWithFragment, resolveIconName, resolveTableRowTemplate, sanitizeRichHtml, sanitizeRichHtmlAsync, scheduleAdoptedSheetsFlush, scrollLockNodes, scrollLockOriginals, scrollLockOwners, setLoading, shadowInnerHTMLDescriptor, shadowStyleSheetCache, shadowTemplateCache, shouldContainHost, state, supportsAdoptedStyleSheets, tableTemplateCache, toastInstance, toastTimer, trackPopoverPosition, unlockDocumentScroll, unwrapTablesIn, use, useListPage, usePagination, wrapTablesIn, writeScrollLockOriginals } = context;
-  if (typeof customElements === 'undefined' || customElements.get('kniu-tab')) return;
+  const { attachComponentShadow } = context;
+  if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
+
+  function tabPanels(root) {
+    return Array.prototype.filter.call(root.children, function (child) {
+      return child.tagName === 'KNIU-TAB-PANEL';
+    });
+  }
+
+  function panelName(panel, index) {
+    return panel.getAttribute('name') || String(index);
+  }
+
+  function escapeHtml(text) {
+    return String(text == null ? '' : text)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // tablist 一次性成行：DocumentFragment + replaceChildren，
+  // 不重插 <style>、不逐个绑事件（点击委托挂在 .kniu_sys_tab 上）。
+  function fillTablist(host, buttonsHtml) {
+    const bar = host.shadowRoot.querySelector('.kniu_sys_tab');
+    if (!bar) return;
+    const template = (host.ownerDocument || document).createElement('template');
+    template.innerHTML = buttonsHtml;
+    bar.replaceChildren(template.content);
+  }
+
   class KniuSysTab extends HTMLElement {
+    static get observedAttributes() { return ['active']; }
+
     constructor() {
       super();
       attachComponentShadow(this);
       this._options = {};
+      this._observer = null;
     }
-    connectedCallback() { this._render(); }
+
+    connectedCallback() {
+      this._buildShell();
+      this._renderHead();
+      this._sync();
+      this._observe();
+    }
+
+    disconnectedCallback() {
+      if (this._observer) { this._observer.disconnect(); this._observer = null; }
+    }
+
+    attributeChangedCallback() { this._sync(); }
+
     set options(value) {
       this._options = value && typeof value === 'object' ? value : {};
-      this._render();
+      this._sync();
     }
+
     get options() { return this._options; }
-    _render() {
-      const options = this._options || {};
-      const items = Array.isArray(options.items) ? options.items : [];
-      const active = String(options.active == null ? '' : options.active);
-      if (!items.length) {
-        this.shadowRoot.innerHTML = '<style>' + KNIU_TAB_CSS + '</style>';
-        return;
-      }
-      const escape = function (text) {
-        return String(text == null ? '' : text)
-          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-      };
-      this.shadowRoot.innerHTML = `
-          <style>${KNIU_TAB_CSS}</style>
-          <div class="kniu_sys_tab" role="tablist">
-            ${items.map(function (item) {
-        const name = String(item.name == null ? '' : item.name);
-        return '<button type="button" class="kniu_sys_tab_item" role="tab" data-name="' + escape(name) + '" data-active="' + (name === active ? 'true' : 'false') + '">' + escape(item.label || name) + '</button>';
-      }).join('')}
-          </div>`;
+
+    _observe() {
+      if (this._observer) return;
       const component = this;
+      this._observer = new MutationObserver(function () {
+        component._renderHead();
+        component._sync();
+      });
+      this._observer.observe(this, { childList: true, subtree: true, attributes: true, attributeFilter: ['name', 'label'] });
+    }
+
+    _buildShell() {
+      if (this._shellBuilt) return;
+      this._shellBuilt = true;
+      this.shadowRoot.innerHTML = '<style>' + KNIU_TAB_CSS + '</style>' + KNIU_TAB_TEMPLATE;
+      this.shadowRoot.querySelector('.kniu_sys_tab').addEventListener('click', function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const button = target && typeof target.closest === 'function' ? target.closest('.kniu_sys_tab_item') : null;
+        if (button) this.activate(button.dataset.name || '');
+      }.bind(this));
+    }
+
+    _renderHead() {
+      const buttons = tabPanels(this).map(function (panel, index) {
+        const name = panelName(panel, index);
+        const label = panel.getAttribute('label') || name;
+        return '<button type="button" class="kniu_sys_tab_item" role="tab" data-name="' + escapeHtml(name) + '">' + escapeHtml(label) + '</button>';
+      }).join('');
+      fillTablist(this, buttons);
+    }
+
+    _activeName() {
+      const panels = tabPanels(this);
+      if (!panels.length) return '';
+      const controlled = this._options && this._options.active != null && this._options.active !== '' ? String(this._options.active) : '';
+      const local = this.getAttribute('active') || '';
+      const wanted = controlled || local;
+      for (let i = 0; i < panels.length; i += 1) {
+        if (panelName(panels[i], i) === wanted) return wanted;
+      }
+      return panelName(panels[0], 0);
+    }
+
+    _sync() {
+      if (!this.shadowRoot.querySelector('.kniu_sys_tab')) this._renderHead();
+      const active = this._activeName();
+      tabPanels(this).forEach(function (panel, index) {
+        if (panelName(panel, index) === active) panel.removeAttribute('hidden');
+        else panel.setAttribute('hidden', '');
+      });
       this.shadowRoot.querySelectorAll('.kniu_sys_tab_item').forEach(function (button) {
-        button.addEventListener('click', function () {
-          const name = button.dataset.name || '';
-          if (name === '' || name === String((component._options || {}).active || '')) return;
-          component._options = Object.assign({}, component._options, { active: name });
-          component._render();
-          component.dispatchEvent(new CustomEvent('change', {
-            detail: { name: name },
-            bubbles: true,
-            composed: true
-          }));
-        });
+        if ((button.dataset.name || '') === active) button.setAttribute('data-active', 'true');
+        else button.removeAttribute('data-active');
       });
     }
+
+    activate(name) {
+      if (!name || name === this._activeName()) return;
+      this.setAttribute('active', name);
+      this.dispatchEvent(new CustomEvent('change', { detail: { name: name }, bubbles: true, composed: true }));
+      const onChange = (this._options || {}).onChange;
+      if (typeof onChange === 'function') onChange({ name: name });
+    }
   }
-  customElements.define('kniu-tab', KniuSysTab);
+
+  class KniuSysTabBody extends HTMLElement {
+    static get observedAttributes() { return ['active']; }
+
+    constructor() {
+      super();
+      this._options = {};
+    }
+
+    connectedCallback() { this._sync(); }
+
+    attributeChangedCallback() { this._sync(); }
+
+    set options(value) {
+      this._options = value && typeof value === 'object' ? value : {};
+      this._applyOptions();
+      this._sync();
+    }
+
+    get options() { return this._options; }
+
+    _applyOptions() {
+      const options = this._options;
+      if (options.id != null && String(options.id) !== (this.getAttribute('id') || '')) this.setAttribute('id', String(options.id));
+      if (options.active != null && String(options.active) !== (this.getAttribute('active') || '')) this.setAttribute('active', String(options.active));
+    }
+
+    _activeName() {
+      const panels = tabPanels(this);
+      if (!panels.length) return '';
+      const wanted = this.getAttribute('active') || '';
+      for (let i = 0; i < panels.length; i += 1) {
+        if (panelName(panels[i], i) === wanted) return wanted;
+      }
+      return panelName(panels[0], 0);
+    }
+
+    _sync() {
+      const active = this._activeName();
+      tabPanels(this).forEach(function (panel, index) {
+        if (panelName(panel, index) === active) panel.removeAttribute('hidden');
+        else panel.setAttribute('hidden', '');
+      });
+    }
+
+    activate(name) {
+      if (!name || name === this._activeName()) return;
+      this.setAttribute('active', name);
+      this.dispatchEvent(new CustomEvent('change', { detail: { name: name }, bubbles: true, composed: true }));
+      const onChange = (this._options || {}).onChange;
+      if (typeof onChange === 'function') onChange({ name: name });
+    }
+  }
+
+  class KniuSysTabHead extends HTMLElement {
+    static get observedAttributes() { return ['for']; }
+
+    constructor() {
+      super();
+      attachComponentShadow(this);
+      this._options = {};
+      this._body = null;
+      this._observer = null;
+      this._frame = 0;
+      this.shadowRoot.innerHTML = '<style>' + KNIU_TAB_CSS + '</style>'
+        + '<style>:host{display:inline-flex}</style>'
+        + '<div class="kniu_sys_tab" role="tablist"></div>';
+      this.shadowRoot.querySelector('.kniu_sys_tab').addEventListener('click', function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const button = target && typeof target.closest === 'function' ? target.closest('.kniu_sys_tab_item') : null;
+        if (button && this._body) this._selectItem(this._body, button);
+      }.bind(this));
+    }
+
+    connectedCallback() { this._resolveBody(); }
+
+    disconnectedCallback() {
+      if (this._frame) { cancelAnimationFrame(this._frame); this._frame = 0; }
+      this._detachBody();
+    }
+
+    attributeChangedCallback(name) {
+      if (name === 'for') this._resolveBody();
+    }
+
+    set options(value) {
+      this._options = value && typeof value === 'object' ? value : {};
+      const target = this._options.for == null ? '' : String(this._options.for);
+      if (target && target !== (this.getAttribute('for') || '')) this.setAttribute('for', target);
+      else if (this._body) {
+        this._pushActive(this._body);
+        this._body._sync();
+        this._renderBody(this._body);
+      }
+    }
+
+    get options() { return this._options; }
+
+    _configItems() {
+      const data = (this._options || {}).data;
+      return Array.isArray(data) && data.length ? data : null;
+    }
+
+    _pushActive(body) {
+      const items = this._configItems();
+      const active = (this._options || {}).active == null ? '' : String(this._options.active);
+      if (!items || !active) return;
+      let index = -1;
+      for (let i = 0; i < items.length; i += 1) {
+        if (String(items[i] && items[i].name) === active) { index = i; break; }
+      }
+      if (index < 0) return;
+      const panels = tabPanels(body);
+      const target = panels[index] ? panelName(panels[index], index) : '';
+      if (target && target !== (body.getAttribute('active') || '')) body.setAttribute('active', target);
+    }
+
+    _resolveBody() {
+      const component = this;
+      if (this._frame) { cancelAnimationFrame(this._frame); this._frame = 0; }
+      this._detachBody();
+      const find = function () {
+        if (!component.isConnected) return;
+        const id = component.getAttribute('for') || '';
+        const root = component.getRootNode();
+        const body = id && root && root.getElementById ? root.getElementById(id) : null;
+        if (body && body.tagName === 'KNIU-TAB-BODY') {
+          component._attachBody(body);
+          return;
+        }
+        component._frame = requestAnimationFrame(find);
+      };
+      find();
+    }
+
+    _detachBody() {
+      if (this._observer) { this._observer.disconnect(); this._observer = null; }
+      this._body = null;
+      this.shadowRoot.querySelector('.kniu_sys_tab').replaceChildren();
+    }
+
+    _attachBody(body) {
+      const component = this;
+      this._body = body;
+      this._pushActive(body);
+      body._sync();
+      this._renderBody(body);
+      this._frame = 0;
+      this._observer = new MutationObserver(function () {
+        if (!component._body) return;
+        component._pushActive(component._body);
+        component._body._sync();
+        component._renderBody(component._body);
+      });
+      this._observer.observe(body, { childList: true, subtree: true, attributes: true, attributeFilter: ['name', 'label', 'active'] });
+    }
+
+    _renderBody(body) {
+      if (!body || !body.isConnected) return;
+      const items = this._configItems();
+      const panels = tabPanels(body);
+      const active = body._activeName();
+      let buttons = '';
+      if (items) {
+        buttons = items.map(function (item, index) {
+          const name = item && item.name != null ? String(item.name) : String(index);
+          const label = item && item.label != null ? String(item.label) : name;
+          return '<button type="button" class="kniu_sys_tab_item" role="tab" data-name="' + escapeHtml(name) + '" data-index="' + index + '">' + escapeHtml(label) + '</button>';
+        }).join('');
+      } else {
+        buttons = panels.map(function (panel, index) {
+          const name = panelName(panel, index);
+          const label = panel.getAttribute('label') || name;
+          return '<button type="button" class="kniu_sys_tab_item" role="tab" data-name="' + escapeHtml(name) + '">' + escapeHtml(label) + '</button>';
+        }).join('');
+      }
+      let activeIndex = -1;
+      for (let i = 0; i < panels.length; i += 1) {
+        if (panelName(panels[i], i) === active) { activeIndex = i; break; }
+      }
+      fillTablist(this, buttons);
+      this.shadowRoot.querySelectorAll('.kniu_sys_tab_item').forEach(function (button) {
+        const hit = items
+          ? Number(button.dataset.index) === activeIndex
+          : (button.dataset.name || '') === active;
+        if (hit) button.setAttribute('data-active', 'true');
+      });
+    }
+
+    _selectItem(body, button) {
+      const items = this._configItems();
+      const panels = tabPanels(body);
+      let target = '';
+      let name = '';
+      if (items) {
+        const index = Number(button.dataset.index);
+        target = panels[index] ? panelName(panels[index], index) : '';
+        name = button.dataset.name || String(index);
+      } else {
+        target = button.dataset.name || '';
+        name = target;
+      }
+      if (!target) return;
+      if (name === String((this._options || {}).active == null ? '' : this._options.active)) return;
+      this._options = Object.assign({}, this._options, { active: name });
+      if (target !== (body.getAttribute('active') || '')) body.setAttribute('active', target);
+      this.shadowRoot.querySelectorAll('.kniu_sys_tab_item').forEach(function (item) {
+        if (item === button) item.setAttribute('data-active', 'true');
+        else item.removeAttribute('data-active');
+      });
+      this.dispatchEvent(new CustomEvent('change', { detail: { name: name }, bubbles: true, composed: true }));
+      const onChange = (this._options || {}).onChange;
+      if (typeof onChange === 'function') onChange({ name: name });
+    }
+  }
+
+  class KniuSysTabPanel extends HTMLElement { }
+
+  if (!customElements.get('kniu-tab')) customElements.define('kniu-tab', KniuSysTab);
+  if (!customElements.get('kniu-tab-body')) customElements.define('kniu-tab-body', KniuSysTabBody);
+  if (!customElements.get('kniu-tab-head')) customElements.define('kniu-tab-head', KniuSysTabHead);
+  if (!customElements.get('kniu-tab-panel')) customElements.define('kniu-tab-panel', KniuSysTabPanel);
 }

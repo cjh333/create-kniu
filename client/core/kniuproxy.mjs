@@ -25,13 +25,13 @@ export const MIME_TYPES = {
 function getApiTarget() {
   const proxy = SERVER.PROXY || {};
   for (const [prefix, cfg] of Object.entries(proxy)) {
-    if (prefix === '/api' && cfg.URL) {
-      const u = new URL(cfg.URL);
+    if (prefix === '/api' && cfg.url) {
+      const u = new URL(cfg.url);
       return {
         host: u.hostname,
         port: u.port || (u.protocol === 'https:' ? 443 : 80),
         origin: u.origin,
-        changeOrigin: cfg.CHANGE_ORIGIN === true
+        changeOrigin: cfg.change_origin === true
       };
     }
   }

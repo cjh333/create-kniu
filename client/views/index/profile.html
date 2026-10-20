@@ -1,154 +1,22 @@
 <style scoped>
   @import url("@kniu/kniu.min.css");
   @import url("@style/web.min.css");
-
-  .profile_cells {
-    padding: 16px;
-  }
-
-  .profile_card {
-    max-width: 760px;
-    margin: 0 auto;
-    padding: 20px;
-    border: 1px solid #ebeef5;
-    border-radius: 8px;
-    background-color: #fff;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, .06);
-  }
-
-  .profile_stats {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    margin: 22px 0;
-    border: 1px solid #ebeef5;
-    border-radius: 6px
-  }
-
-  .profile_stat {
-    padding: 16px;
-    text-align: center
-  }
-
-  .profile_stat+.profile_stat {
-    border-top: 1px solid #ebeef5
-  }
-
-  .profile_stat_value {
-    display: block;
-    color: #303133;
-    font-size: 22px;
-    font-weight: 600
-  }
-
-  .profile_stat_label {
-    display: block;
-    margin-top: 6px;
-    color: #909399;
-    font-size: 13px
-  }
-
-  .profile_section_title {
-    margin: 26px 0 14px;
-    color: #303133;
-    font-size: 16px
-  }
-
-  .profile_favorites {
-    border-top: 1px solid #ebeef5
-  }
-
-  .profile_favorite {
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
-    width: 100%;
-    padding: 13px 4px;
-    border: 0;
-    border-bottom: 1px solid #ebeef5;
-    background-color: transparent;
-    color: #606266;
-    text-align: left;
-    cursor: pointer
-  }
-
-  .profile_favorite:hover {
-    color: #409eff
-  }
-
-  .profile_favorite_time {
-    flex-shrink: 0;
-    color: #909399;
-    font-size: 12px
-  }
-
-  .profile_empty {
-    padding: 22px 0;
-    color: #909399;
-    text-align: center
-  }
-
-  .profile_field {
-    display: flex;
-    align-items: stretch;
-    flex-direction: column;
-    gap: 12px
-  }
-
-  .profile_field_label {
-    flex: auto;
-    color: #606266
-  }
-
-  .profile_field_value {
-    color: #303133
-  }
-
-  .profile_signin {
-    margin-top: 18px
-  }
-
-  .profile_back {
-    margin-top: 28px;
-    text-align: center
-  }
-
-  @media(min-width:601px) {
-    .profile_cells {
-      padding: 32px 0
-    }
-
-    .profile_card {
-      padding: 28px
-    }
-
-    .profile_field {
-      align-items: center;
-      flex-direction: row;
-      gap: 12px
-    }
-
-    .profile_field_label {
-      flex: 0 0 72px
-    }
-
-    .profile_stats {
-      grid-template-columns: repeat(4, 1fr)
-    }
-
-    .profile_stat+.profile_stat {
-      border-top: 0;
-      border-left: 1px solid #ebeef5
-    }
-  }
+  @import url("@style/index/profile.min.css");
 </style>
 <div class="kniu_web">
   <include src="./common/header.html" />
+  <!-- 2.内容 -->
   <main class="kniu_web_body">
     <section class="profile_cells">
       <div class="kniu_container">
         <div class="profile_card">
-          <h2 class="profile_section_title kniu_md_mtb_0">个人中心</h2>
+          <div class="profile_user_head kniu_md_mt_0">
+            <img :if="{{avatar}}" class="profile_user_avatar" src="{{avatar}}" alt="头像">
+            <div :elseif="{{avatarText}}" class="profile_user_avatar profile_user_avatar_default">{{avatarText}}</div>
+            <div class="profile_user_name">{{nickname}}</div>
+          </div>
           <div class="profile_stats">
+            <div class="profile_stat"><span class="profile_stat_value">{{articleCount}}</span><span class="profile_stat_label">发表文章</span></div>
             <div class="profile_stat"><span class="profile_stat_value">{{articleLikeCount}}</span><span class="profile_stat_label">文章获赞数</span></div>
             <div class="profile_stat"><span class="profile_stat_value">{{commentLikeCount}}</span><span class="profile_stat_label">评论获赞数</span></div>
             <div class="profile_stat"><span class="profile_stat_value">{{commentCount}}</span><span class="profile_stat_label">评论数</span></div>
@@ -156,6 +24,32 @@
           </div>
           <div class="profile_signin" :if="{{nickname === ''}}">
             <kniu-btn :option="{{type:'primary'}}" @click="toSignin">登录 / 注册</kniu-btn>
+          </div>
+          <h2 class="profile_section_title">我的关注</h2>
+          <div class="profile_favorites">
+            <template :for="{{follows}}" :key="roleId">
+              <div class="profile_follow">
+                <div class="profile_follow_head">
+                  <template :if="{{item.avatar}}">
+                    <img class="profile_follow_avatar" :option="{{roleId:item.roleId,onClick:toFollowAbout}}" src="{{item.avatar}}">
+                  </template>
+                  <template :elseif="{{item.avatarText}}">
+                    <div class="profile_follow_avatar profile_follow_avatar_default" :option="{{roleId:item.roleId,onClick:toFollowAbout}}">{{item.avatarText}}</div>
+                  </template>
+                  <div class="profile_follow_info">
+                    <div class="profile_follow_name_wrap">
+                      <span class="profile_follow_name" :option="{{roleId:item.roleId}}" @click="toFollowAbout">{{item.nickname}}</span>
+                    </div>
+                    <div class="profile_follow_meta">发表了 {{item.articleCount}} 篇文章，被 {{item.followerCount}} 人关注，获得了 {{item.likeCount}} 个点赞</div>
+                  </div>
+                  <kniu-btn class="profile_follow_btn" :option="{{type:'primary',roleId:item.roleId}}" @click="toUnfollow">已关注</kniu-btn>
+                </div>
+                <template :if="{{item.summary}}">
+                  <div class="profile_follow_summary">{{item.summary}}</div>
+                </template>
+              </div>
+            </template>
+            <div class="profile_empty" :if="{{follows.length === 0}}">暂无关注的账号</div>
           </div>
           <h2 class="profile_section_title">收藏的文章</h2>
           <div class="profile_favorites">
@@ -175,7 +69,52 @@
             </template>
             <div class="profile_empty" :if="{{history.length === 0}}">暂无浏览记录</div>
           </div>
+          <h2 class="profile_section_title">我的反馈</h2>
+          <div class="profile_favorites">
+            <template :for="{{feedbacks}}" :key="id">
+              <button type="button" class="profile_favorite" :[feedback-id]="{{item.id}}" @click="toFeedbackDetail">
+                <span>{{item.title}}</span><span class="profile_favorite_time">{{item.create_time}}</span>
+              </button>
+            </template>
+            <div class="profile_empty" :if="{{feedbacks.length === 0}}">暂无反馈记录</div>
+          </div>
         </div>
+        <kniu-modal :option="{{show:(feedbackModalShow),onClose:(closeFeedbackDialog),style:'width:min(560px,92vw)'}}">
+          <template #header>
+            <span>反馈详情</span>
+          </template>
+          <template #default>
+            <div class="profile_feedback_detail">
+              <div class="profile_feedback_detail_item">
+                <p class="profile_feedback_detail_label">问题标题</p>
+                <p class="profile_feedback_detail_value">{{feedbackDetail.title}}</p>
+              </div>
+              <div class="profile_feedback_detail_item">
+                <p class="profile_feedback_detail_label">提交时间</p>
+                <p class="profile_feedback_detail_value">{{feedbackDetail.create_time}}</p>
+              </div>
+              <div class="profile_feedback_detail_item">
+                <p class="profile_feedback_detail_label">问题简述</p>
+                <p class="profile_feedback_detail_value profile_feedback_detail_text">{{feedbackDetail.content}}</p>
+              </div>
+              <template :if="{{feedbackDetail.imageList.length > 0}}">
+                <div class="profile_feedback_detail_item">
+                  <p class="profile_feedback_detail_label">问题图片</p>
+                  <div class="profile_feedback_detail_value">
+                    <img :for="{{feedbackDetail.imageList}}" :for-item="img" :key="*this" class="profile_feedback_detail_image" src="{{img}}">
+                  </div>
+                </div>
+              </template>
+              <div class="profile_feedback_detail_item" :if="{{feedbackDetail.result}}">
+                <p class="profile_feedback_detail_label">反馈结果</p>
+                <p class="profile_feedback_detail_value profile_feedback_detail_text profile_feedback_result">{{feedbackDetail.result}}</p>
+              </div>
+            </div>
+          </template>
+          <template #footer>
+            <kniu-btn :option="{{type:'primary'}}" @click="closeFeedbackDialog">关 闭</kniu-btn>
+          </template>
+        </kniu-modal>
       </div>
     </section>
   </main>

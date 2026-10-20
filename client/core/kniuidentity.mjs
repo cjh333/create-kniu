@@ -1,7 +1,7 @@
 import { resetAllStateStores } from './kniustore.mjs';
 
-const STORAGE_KEY = 'kniu_front_identity';
-const LOGOUT_SIGNAL_KEY = 'kniu_auth_logout_at';
+const STORAGE_KEY = 'KNIU_SYSTEM_FRONT_IDENTITY';
+const LOGOUT_SIGNAL_KEY = 'KNIU_SYSTEM_AUTH_LOGOUT_TIME';
 const listeners = new Set();
 
 function normalizeNickname(value) {
@@ -47,8 +47,6 @@ function getIdentity() {
     nickname: normalizeNickname(value?.nickname),
     name: String(value?.name || '').trim(),
     avatar: String(value?.avatar || '').trim(),
-    // account：本机是否注册过前台账号。退出登录不清零——设备「有账号」这件事不会因登出而改变，
-    // 用于区分「初次访客（引导注册）」与「已有账号（直接登录）」。
     account: value?.account ? 1 : 0
   };
   persist(identity);
@@ -82,8 +80,6 @@ function clearIdentity() {
   return identity;
 }
 
-// 前台与后台位于同源的不同标签页时，storage 事件不会在写入页触发，
-// 但会在其它页面触发；统一转成组件已订阅的身份变更事件。
 if (typeof globalThis !== 'undefined' && typeof globalThis.addEventListener === 'function') {
   globalThis.addEventListener('storage', function (event) {
     if (event.key === STORAGE_KEY) {
@@ -95,7 +91,6 @@ if (typeof globalThis !== 'undefined' && typeof globalThis.addEventListener === 
   });
 }
 
-// 本机是否注册过前台账号：决定被拦截的评论该引导去「登录」还是「注册」。
 function hasAccount() {
   return getIdentity().account === 1;
 }

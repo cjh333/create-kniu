@@ -340,7 +340,7 @@ hr {
 /* 字体图标 */
 @font-face {
   font-family: KniuHei_Bold;
-  src: url("../../font/KniuHei-Bold.woff2") format("woff2");
+  src: url("../../font/KniuHei/KniuHei-Bold.woff2") format("woff2");
   font-style: normal;
   font-weight: 700;
   font-display: swap;
@@ -348,7 +348,7 @@ hr {
 
 @font-face {
   font-family: KniuHei_BoldSemi;
-  src: url("../../font/KniuHei-BoldSemi.woff2") format("woff2");
+  src: url("../../font/KniuHei/KniuHei-BoldSemi.woff2") format("woff2");
   font-style: normal;
   font-weight: 600;
   font-display: swap;
@@ -356,7 +356,7 @@ hr {
 
 @font-face {
   font-family: KniuHei_Heavy;
-  src: url("../../font/KniuHei-Heavy.woff2") format("woff2");
+  src: url("../../font/KniuHei/KniuHei-Heavy.woff2") format("woff2");
   font-style: normal;
   font-weight: 900;
   font-display: swap;
@@ -364,7 +364,7 @@ hr {
 
 @font-face {
   font-family: KniuHei_Light;
-  src: url("../../font/KniuHei-Light.woff2") format("woff2");
+  src: url("../../font/KniuHei/KniuHei-Light.woff2") format("woff2");
   font-style: normal;
   font-weight: 300;
   font-display: swap;
@@ -372,7 +372,7 @@ hr {
 
 @font-face {
   font-family: KniuHei_LightExtra;
-  src: url("../../font/KniuHei-LightExtra.woff2") format("woff2");
+  src: url("../../font/KniuHei/KniuHei-LightExtra.woff2") format("woff2");
   font-style: normal;
   font-weight: 200;
   font-display: swap;
@@ -380,7 +380,7 @@ hr {
 
 @font-face {
   font-family: KniuHei_Medium;
-  src: url("../../font/KniuHei-Medium.woff2") format("woff2");
+  src: url("../../font/KniuHei/KniuHei-Medium.woff2") format("woff2");
   font-style: normal;
   font-weight: 500;
   font-display: swap;
@@ -388,7 +388,7 @@ hr {
 
 @font-face {
   font-family: KniuHei_Regular;
-  src: url("../../font/KniuHei-Regular.woff2") format("woff2");
+  src: url("../../font/KniuHei/KniuHei-Regular.woff2") format("woff2");
   font-style: normal;
   font-weight: 400;
   font-display: swap;

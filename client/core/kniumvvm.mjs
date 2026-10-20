@@ -1,7 +1,7 @@
 import TEMPLATE from './kniutemplate/kniutemplate.mjs';
 import UI from './kniuui/kniuui.mjs';
 import REQUEST from './kniurequest.mjs';
-import { nextTick } from './kniuscheduler.mjs';
+import { nextTick, queueJob } from './kniuscheduler.mjs';
 
 const { collectReactiveReads, observe, reactive } = TEMPLATE;
 
@@ -19,6 +19,27 @@ function loadController(name) {
   return import(`../controller/${controllerPath}.js`).then(function (module) {
     const controller = module[controllerName] || module.default;
     if (!controller) throw new Error(`[MVVM] Controller export not found: ${controllerName}`);
+    return controller;
+  });
+}
+
+/**
+ * 按真实文件路径加载控制器（viewer.js 静态页面映射专用）。
+ * 入参为相对 client/controller/ 基目录的路径（控制器强制存放在该目录，基目录不写入），
+ * 如 'admin/mainController.js'——对应文件 client/controller/admin/mainController.js；
+ * 不做后缀补全与目录猜测。
+ * @param {String} filePath 相对 client/controller/ 的 .js 文件路径。
+ * @returns {Promise<Function>} 控制器（具名导出优先，default 兜底）。
+ */
+function loadControllerFile(filePath) {
+  const normalized = String(filePath || '').trim().replaceAll('\\', '/').replace(/^\/+|\/+$/g, '');
+  if (!normalized.includes('/') || normalized.includes('..') || !/^[\w./-]+$/.test(normalized) || !normalized.endsWith('.js')) {
+    throw new TypeError('[MVVM] controller file path must be a real .js path under client/controller/, e.g. admin/mainController.js');
+  }
+  const exportName = normalized.split('/').pop().replace(/\.js$/, '');
+  return import(`../controller/${normalized}`).then(function (module) {
+    const controller = module[exportName] || module.default;
+    if (!controller) throw new Error(`[MVVM] Controller export not found: ${exportName}`);
     return controller;
   });
 }
@@ -50,8 +71,6 @@ function createTimerServices(services, timers) {
       timers.add(timer);
       return timer.id;
     },
-    // rAF 与定时器同等对待：登记进 timers，卸载时自动取消。
-    // 帧循环是「自己排自己」的（回调里再申请下一帧），漏取消就会在组件销毁后一直跑。
     requestAnimationFrame(callback) {
       const timer = { id: null, repeat: false, frame: true };
       timer.id = globalThis.requestAnimationFrame(function (timestamp) {
@@ -98,7 +117,6 @@ function controller(setup) {
           binding?.dispose?.();
         };
       } catch (error) {
-        // setup 已登记的订阅、计时器和 effect 必须随失败挂载一起释放。
         viewModel.dispose();
         binding?.dispose?.();
         throw error;
@@ -136,7 +154,7 @@ function createViewModel(component, services = {}, root, refs = {}) {
     }
   }, instance.timers);
   Object.assign(setupContext, {
-    reactive, ref, computed, watch, watchEffect, nextTick,
+    reactive, watch, nextTick,
     onBeforeMount, onMounted, onUnmounted, onScopeDispose
   });
   setupContext.$msg = UI.msg;
@@ -169,8 +187,6 @@ function createViewModel(component, services = {}, root, refs = {}) {
     if (parentSignal.aborted) abortFromParent();
   }
 
-  // 钩子（含 async）执行期间临时恢复 activeInstance：否则异步钩子里创建的
-  // computed/watch/watchEffect 的 effect 永不登记 instance.cleanups，组件 dispose 后订阅残留。
   async function runHook(hook) {
     const prev = activeInstance;
     activeInstance = instance;
@@ -242,10 +258,6 @@ function onScopeDispose(cleanup) {
   requireActiveInstance('onScopeDispose').cleanups.push(cleanup);
 }
 
-function ref(value) {
-  return reactive({ value: value });
-}
-
 function subscribeDependencies(dependencies, callback) {
   const stops = [];
   dependencies.forEach(function (keys, dependency) {
@@ -273,18 +285,6 @@ function createReactiveEffect(getter, notify) {
   }
 
   return { run, stop, isActive: function () { return !stopped; } };
-}
-
-function computed(getter) {
-  if (typeof getter !== 'function') throw new TypeError('[MVVM] computed() expects a getter');
-  const result = reactive({ value: undefined });
-  let effect;
-  effect = createReactiveEffect(getter, function (run) {
-    if (effect.isActive()) result.value = run();
-  });
-  result.value = effect.run();
-  if (activeInstance) activeInstance.cleanups.push(effect.stop);
-  return result;
 }
 
 function traverse(value, seen = new Set()) {
@@ -333,7 +333,7 @@ function watch(source, callback, options = {}) {
     if (shouldDeep || !Object.is(value, oldValue)) {
       const previous = oldValue;
       oldValue = shouldDeep ? snapshotWatchValue(value) : value;
-      callback(value, previous);
+      queueJob(function () { callback(value, previous); }, 'post');
     }
   });
   const initialValue = effect.run();
@@ -343,33 +343,9 @@ function watch(source, callback, options = {}) {
   return effect.stop;
 }
 
-function watchEffect(effect) {
-  if (typeof effect !== 'function') throw new TypeError('[MVVM] watchEffect() expects a function');
-  let cleanup;
-  const runner = createReactiveEffect(
-    function () {
-      if (cleanup) cleanup();
-      cleanup = undefined;
-      return effect(function (fn) {
-        if (typeof fn !== 'function') throw new TypeError('[MVVM] watchEffect cleanup must be a function');
-        cleanup = fn;
-      });
-    },
-    function (run) { run(); }
-  );
-  runner.run();
-  const stop = runner.stop;
-  runner.stop = function () {
-    stop();
-    if (cleanup) cleanup();
-    cleanup = undefined;
-  };
-  if (activeInstance) activeInstance.cleanups.push(runner.stop);
-  return runner.stop;
-}
-
 export default {
   loadController,
+  loadControllerFile,
   controller,
   createViewModel,
   onBeforeMount,
@@ -377,9 +353,6 @@ export default {
   onUnmounted,
   onScopeDispose,
   watch,
-  watchEffect,
-  ref,
-  computed,
   reactive,
   nextTick
 };

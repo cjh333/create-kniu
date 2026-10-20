@@ -4,6 +4,7 @@
   display: inline-block;
   vertical-align: middle;
   min-width: 120px;
+  width: 100%;
 }
 
 .kniu_sys_select_wrap {
@@ -15,7 +16,7 @@
   display: flex;
   align-items: center;
   width: 100%;
-  height: max(28px, calc(var(--kniu-select-h, 40) / var(--kniu_vw)));
+  height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
   padding: 0 34px 0 12px;
   border: 1px solid var(--kniu-border-color, #dcdfe6);
   border-radius: 4px;
@@ -24,16 +25,19 @@
   color: var(--kniu-text-color, #606266);
   font: 14px var(--kniu-font-family);
   cursor: pointer;
-  box-sizing: border-box;
-  -webkit-box-sizing: border-box;
-  -moz-box-sizing: border-box;
-  -ms-box-sizing: border-box;
-  -o-box-sizing: border-box;
   white-space: nowrap;
 }
 
 .kniu_sys_select:hover {
   border-color: #c0c4cc;
+}
+
+.kniu_sys_select_wrap[data-embedded="true"] .kniu_sys_select {
+  border-radius: 0 4px 4px 0;
+  -webkit-border-radius: 0 4px 4px 0;
+  -moz-border-radius: 0 4px 4px 0;
+  -ms-border-radius: 0 4px 4px 0;
+  -o-border-radius: 0 4px 4px 0;
 }
 
 .kniu_sys_select:focus-visible,
@@ -50,11 +54,12 @@
 .kniu_sys_select_arrow {
   position: absolute;
   top: 50%;
-  right: 12px;
-  width: 7px;
-  height: 7px;
-  border-right: 1px solid var(--kniu-color-info, #909399);
-  border-bottom: 1px solid var(--kniu-color-info, #909399);
+  /* 与 kniu-input 清除按钮同构：图形中心落在右侧 18px 处（36px 热区中心），视觉大小与 × 字形相当 */
+  right: 13px;
+  width: 10px;
+  height: 10px;
+  border-right: 1px solid #c0c4cc;
+  border-bottom: 1px solid #c0c4cc;
   transform: translateY(-70%) rotate(45deg);
   -webkit-transform: translateY(-70%) rotate(45deg);
   -moz-transform: translateY(-70%) rotate(45deg);

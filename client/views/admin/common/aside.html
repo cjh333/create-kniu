@@ -15,62 +15,70 @@
   .kniu_web_aside_help_body>table {
     font-size: 13px;
   }
+
+  .aside_sidebar_icon {
+    margin-right: 5px;
+    font-size: 18px;
+  }
 </style>
 <aside class="kniu_web_aside_sidebar_group">
-  <kniu-navbar :option="{{type:'side',home:'#/admin',active:(activeNavigationPath)}}" aria-label="应用导航">
+  <kniu-navbar :option="{{home:'#/admin',active:(activeNavigationPath),ariaLabel:'应用导航',type:'side'}}">
     <template #brand>
-      <kniu-image style="width:100%;background-color:transparent;" :option="{{src:logo}}" />
+      <kniu-image style="width:100%;background-color:transparent;" :src="{{logo}}" />
     </template>
     <template #default>
       <kniu-navbar-cell :option="{{route:'/admin',href:'#/admin'}}">
-        <kniu-icon style="margin-right:5px;font-size:18px;color:#ff5c35;" :option="{{icon:'home'}}" />控制台
+        <kniu-icon class="aside_sidebar_icon" :option="{{icon:'home',style:'color:#ff5c35;'}}" />控制台
       </kniu-navbar-cell>
       <kniu-navbar-cell :if="{{showWebsiteInfo}}" :option="{{route:'/seo',href:'#/seo'}}">
-        <kniu-icon style="margin-right:5px;font-size:18px;color:#635bff;" :option="{{icon:'web'}}" />网站信息
+        <kniu-icon class="aside_sidebar_icon" :option="{{icon:'web',style:'color:#635bff;'}}" />网站信息
       </kniu-navbar-cell>
       <kniu-navbar-cell :option="{{route:'/aboutedit',href:'#/aboutedit'}}">
-        <kniu-icon style="margin-right:5px;font-size:18px;color:#e74c3c;" :option="{{icon:'username_fill'}}" />关于我
+        <kniu-icon class="aside_sidebar_icon" :option="{{icon:'username_fill',style:'color:#e74c3c;'}}" />关于我
       </kniu-navbar-cell>
       <kniu-navbar-cell :if="{{showDaily}}" :option="{{route:'/daily',href:'#/daily'}}">
-        <kniu-icon style="margin-right:5px;font-size:18px;color:#f39c12;" :option="{{icon:'info_circle'}}" />每日一句
+        <kniu-icon class="aside_sidebar_icon" :option="{{icon:'info_circle',style:'color:#f39c12;'}}" />每日一句
       </kniu-navbar-cell>
       <kniu-navbar-cell :option="{{route:'/article',href:'#/article'}}">
-        <kniu-icon style="margin-right:5px;font-size:18px;color:#19a974;" :option="{{icon:'document'}}" />文章管理
+        <kniu-icon class="aside_sidebar_icon" :option="{{icon:'document',style:'color:#19a974;'}}" />文章管理
       </kniu-navbar-cell>
       <kniu-navbar-cell :if="{{showUserManagement}}" :option="{{route:'/user',href:'#/user'}}">
-        <kniu-icon style="margin-right:5px;font-size:18px;color:#8e44ad;" :option="{{icon:'user'}}" />账号管理
+        <kniu-icon class="aside_sidebar_icon" :option="{{icon:'user',style:'color:#8e44ad;'}}" />账号管理
       </kniu-navbar-cell>
       <kniu-navbar-cell :option="{{route:'/comment',href:'#/comment'}}">
-        <kniu-icon style="margin-right:5px;font-size:18px;color:#e67e22;" :option="{{icon:'msg'}}" />评论管理
+        <kniu-icon class="aside_sidebar_icon" :option="{{icon:'msg',style:'color:#e67e22;'}}" />评论管理
       </kniu-navbar-cell>
       <kniu-navbar-cell :option="{{route:'/reply',href:'#/reply'}}">
-        <kniu-icon style="margin-right:5px;font-size:18px;color:#409eff;" :option="{{icon:'msg'}}" />回复管理
+        <kniu-icon class="aside_sidebar_icon" :option="{{icon:'msg',style:'color:#409eff;'}}" />回复管理
       </kniu-navbar-cell>
-      <kniu-navbar-cell :if="{{showDatabaseAdmin}}" :option="{{route:'/database',href:'#/database'}}">
-        <kniu-icon style="margin-right:5px;font-size:18px;color:#0f7b6c;" :option="{{icon:'database_fill'}}" />数据库管理
+      <kniu-navbar-cell :if="{{showWebsiteInfo}}" :option="{{route:'/feedback',href:'#/feedback'}}">
+        <kniu-icon class="aside_sidebar_icon" :option="{{icon:'edit_square',style:'color:#c0392b;'}}" />反馈管理
+      </kniu-navbar-cell>
+      <kniu-navbar-cell :if="{{showDatabaseAdmin}}" :option="{{route:'/dbconnect',href:'#/dbconnect'}}">
+        <kniu-icon class="aside_sidebar_icon" :option="{{icon:'database_fill',style:'color:#0f7b6c;'}}" />数据库管理
       </kniu-navbar-cell>
     </template>
   </kniu-navbar>
   <div class="kniu_web_aside_sidebar_foot">
     <kniu-btn class="kniu_web_aside_sidebar" :option="{{unstyled:true,nativeType:'button'}}" @click="handleHelpRequest">
-      <kniu-icon style="margin-right:5px;font-size:18px;color:#9aa3b8;" :option="{{icon:'help'}}" />{{helpLabel}}
+      <kniu-icon class="aside_sidebar_icon" :option="{{icon:'help',style:'color:#9aa3b8;'}}" />{{helpLabel}}
     </kniu-btn>
     <kniu-btn class="kniu_web_aside_sidebar" :option="{{unstyled:true,nativeType:'button'}}" @click="handleLogout">
-      <kniu-icon style="margin-right:5px;font-size:18px;color:#9aa3b8;" :option="{{icon:'exit'}}" />退出登录
+      <kniu-icon class="aside_sidebar_icon" :option="{{icon:'exit',style:'color:#9aa3b8;'}}" />退出登录
     </kniu-btn>
     <div class="user">
       <span class="avatar">{{userAvatar}}</span>
-      <div><b>{{userName}}</b><small>{{userRole}}</small></div>
+      <div>
+        <strong>{{userName}}</strong>
+        <small>{{userRole}}</small>
+      </div>
     </div>
   </div>
 </aside>
 <!-- 帮助手册 -->
-<kniu-modal class="kniu_web_aside_help" style="width:960px;" :option="{{show:(showHelp)}}" @close="closeHelp">
+<kniu-modal class="kniu_web_aside_help" :option="{{show:(showHelp),onClose:(closeHelp),minmax:true,style:'width:960px'}}">
   <template #header>
     <span>{{helpTitle}}</span>
-    <kniu-btn :option="{{link:true,size:'small',type:'primary'}}" @click="closeHelp">
-      <kniu-icon :option="{{icon:'close'}}" />
-    </kniu-btn>
   </template>
   <template #default>
     <div class="kniu_web_aside_help_body kniu_sys_markdown_body">{{@helpHtml}}</div>

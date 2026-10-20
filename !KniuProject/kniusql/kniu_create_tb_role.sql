@@ -2,14 +2,13 @@ CREATE TABLE `tb_role` (
     `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '账号 ID',
     `is_select` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '后台勾选状态',
     `sid` bigint NOT NULL DEFAULT 0 COMMENT '排序',
-    `is_show` tinyint unsigned NOT NULL DEFAULT 1 COMMENT '是否禁用(0否,1是)',
+    `is_show` tinyint unsigned NOT NULL DEFAULT 1 COMMENT '是否启用(0否,1是;0禁止登录)',
     `name` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '账号',
     `nickname` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '昵称',
     `identity_token` char(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '身份令牌',
+    `token_expire_time` datetime DEFAULT NULL COMMENT '身份令牌过期时间(NULL=存量令牌待下次登录续期)',
     `password` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '密码哈希',
     `email` varchar(190) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '邮箱',
-    -- 注意：下面两个默认值仅供建表时使用，实际账号一律由接口写入（/role_add 默认传 0，
-    -- role_auth 由 syncRoleAuth() 按 role 派生）。直接 SQL 插入会因默认值 1 造出管理员账号。
     `role` tinyint unsigned NOT NULL DEFAULT 1 COMMENT '角色(1管理员,2普通用户)',
     `role_auth` tinyint unsigned NOT NULL DEFAULT 1 COMMENT '角色权限(1编辑,2查看)',
     `comment_audit` tinyint unsigned NOT NULL DEFAULT 1 COMMENT '评论是否审核(0否,1是)',
@@ -19,5 +18,6 @@ CREATE TABLE `tb_role` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_role_name` (`name`),
     UNIQUE KEY `uk_role_identity_token` (`identity_token`),
-    KEY `idx_role_visible` (`is_show`)
+    KEY `idx_role_visible` (`is_show`),
+    KEY `idx_role_sid` (`sid`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '统一账号';

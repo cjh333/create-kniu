@@ -5,18 +5,6 @@ namespace Core;
 class Db
 {
   protected static ?\mysqli $connection = null;
-
-  /**
-   * 「被管理」连接：数据库管理模块当前生效的连接档案（见 `Core\DbProfile`）。
-   *
-   * 置值后 `connect()` 一律返回它，于是模块内所有 `Db::query()/execute()/escape()`
-   * 都落到这条连接上。**`escape()` 必须与 SQL 实际执行的那条连接同源**——
-   * 转义口径与连接字符集绑定，两边分开会拼出跨连接的错值。
-   *
-   * 只允许在**鉴权之后**设置（`DatabaseController::guard()`）：系统连接那条线上跑着
-   * `Base::__construct()` 的 `tb_role` 回查，先接管连接会让它去「被切换到的库」里
-   * 找当前管理员账号，找不到就把人锁在门外。置 null 即恢复系统连接。
-   */
   protected static ?\mysqli $managedConnection = null;
 
   /**
@@ -28,6 +16,20 @@ class Db
   public static function useManaged(?\mysqli $connection): void
   {
     self::$managedConnection = $connection;
+  }
+
+  /**
+   * 取当前被接管的连接（未接管时为 null）。
+   *
+   * 供「本请求内临时切回系统连接」的调用方保存现场：先取接管连接，
+   * `useManaged(null)` 切回系统库做完操作，再 `useManaged($managed)` 还原。
+   * 典型场景：数据库管理模块的排序档案存系统库，而当前连接已被档案接管。
+   *
+   * @return \mysqli|null 被接管的连接；未接管时为 null。
+   */
+  public static function managedConnection(): ?\mysqli
+  {
+    return self::$managedConnection;
   }
   /** @var string 当前操作的数据表名。 */
   protected $name;
@@ -199,10 +201,6 @@ class Db
     $valuesString = implode(', ', $escapedValues);
     $this->options['where'][] = "{$field} IN ({$valuesString})";
 
-    $this->options['update_each'] = true;
-    $this->options['whereIn_values'] = $values;
-    $this->options['whereIn_field'] = $field;
-
     return $this;
   }
 
@@ -261,6 +259,32 @@ class Db
     return $this;
   }
 
+  /** 分页每页条数全局上限：与前端 changePageSize 夹取、/db_rows 的 MAX_PAGE_ROWS 同一口径。 */
+  public const PAGE_ROWS_MAX = 200;
+
+  /**
+   * 夹取页码下界：0/负数/非数字统一回 1，防负偏移。
+   *
+   * @param mixed $page 请求传入的页码。
+   * @return int
+   */
+  public static function clampPage($page): int
+  {
+    return max(1, (int)$page);
+  }
+
+  /**
+   * 夹取每页条数到 [1, PAGE_ROWS_MAX]：0/''/负值统一回 1（防除零与 `LIMIT 0,-5`），
+   * 超上限截到 PAGE_ROWS_MAX（与 /db_rows、前端 changePageSize 同口径）。
+   *
+   * @param mixed $listRows 请求传入的每页条数。
+   * @return int
+   */
+  public static function clampPageRows($listRows): int
+  {
+    return max(1, min(self::PAGE_ROWS_MAX, (int)$listRows));
+  }
+
   /**
    * 分页查询。
    *
@@ -270,6 +294,8 @@ class Db
    */
   public function page($page = 1, $listRows = 10)
   {
+    $page = self::clampPage($page);
+    $listRows = self::clampPageRows($listRows);
     $total = $this->count();
     $totalPages = ceil($total / $listRows);
     $page = max(1, min($page, $totalPages));
@@ -550,10 +576,6 @@ class Db
    */
   public function update($data = [])
   {
-    if (!empty($this->options['update_each']) && !empty($this->options['whereIn_values'])) {
-      return $this->updateEach($data);
-    }
-
     $allowedFields = [];
     if (!empty($this->options['field'])) {
       $fieldString = str_replace(['`', ' '], '', $this->options['field']);
@@ -601,73 +623,6 @@ class Db
       throw new \Exception(\mysqli_error(($this->connect())));
     }
     return \mysqli_affected_rows(($this->connect()));
-  }
-
-  /**
-   * 批量执行更新操作。
-   *
-   * @param array $data 更新数据。
-   * @return int 受影响的行数。
-   * @throws \Exception SQL 执行失败时抛出异常。
-   */
-  private function updateEach($data)
-  {
-    $allowedFields = [];
-    if (!empty($this->options['field'])) {
-      $fieldString = str_replace(['`', ' '], '', $this->options['field']);
-      $allowedFields = explode(',', $fieldString);
-    }
-
-    $data = array_filter($data, function (mixed $value) {
-      return $value !== null;
-    });
-
-    $filteredData = [];
-    foreach ($data as $key => $value) {
-      if (!empty($allowedFields) && !in_array($key, $allowedFields)) {
-        continue;
-      }
-      $filteredData[$key] = $value;
-    }
-
-    if (empty($filteredData)) {
-      return 0;
-    }
-
-    $totalAffected = 0;
-    $field = $this->options['whereIn_field'];
-    $values = $this->options['whereIn_values'];
-
-    foreach ($values as $value) {
-      $set = [];
-      foreach ($filteredData as $key => $val) {
-        if (is_object($val) && method_exists($val, 'getValue')) {
-          $set[] = "{$key} = {$val->getValue()}";
-        } else {
-          $escapedValue = \mysqli_real_escape_string($this->connect(), $val);
-          $set[] = "{$key} = '{$escapedValue}'";
-        }
-      }
-
-      $sql = "UPDATE {$this->name} SET " . implode(', ', $set);
-      $sql .= " WHERE {$field} = '" . \mysqli_real_escape_string($this->connect(), $value) . "'";
-
-      $result = \mysqli_query($this->connect(), $sql);
-      if ($result === false) {
-        throw new \Exception(\mysqli_error($this->connect()));
-      }
-
-      $affected = \mysqli_affected_rows($this->connect());
-      if ($affected !== false) {
-        $totalAffected += $affected;
-      }
-    }
-
-    unset($this->options['update_each']);
-    unset($this->options['whereIn_values']);
-    unset($this->options['whereIn_field']);
-
-    return $totalAffected;
   }
 
   /**

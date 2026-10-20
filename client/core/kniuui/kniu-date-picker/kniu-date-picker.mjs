@@ -2,7 +2,7 @@ import KNIU_DATE_PICKER_TEMPLATE from './kniu-date-picker.html?module';
 import KNIU_DATE_PICKER_RANGE_TEMPLATE from './kniu-date-picker.range.html?module';
 
 export function registerDatePicker(context) {
-  const { BOOLEAN_ATTRIBUTES, IDENTITY, KNIU_BACKTOP_CSS, KNIU_BADGE_CSS, KNIU_BASE_CONTAIN_CSS, KNIU_BASE_FONT_CSS, KNIU_BTN_CSS, KNIU_BTN_GROUP_CSS, KNIU_BTN_METRICS_CSS, KNIU_BTN_OVERRIDES_CSS, KNIU_COMMENT_CSS, KNIU_CONTAIN_EXCLUDE_TAGS, KNIU_CONTENT_TABLE_CSS, KNIU_CONTENT_TABLE_DOC_CSS, KNIU_DATE_PICKER_CSS, KNIU_DATE_PICKER_OVERRIDES_CSS, KNIU_DROPDOWN_CSS, KNIU_DROPDOWN_OPTION_CSS, KNIU_EDITOR_CSS, KNIU_EDITOR_OVERRIDE_CSS, KNIU_EDITOR_PRINT_CSS, KNIU_EMPTY_CSS, KNIU_FONT_FACE_CSS, KNIU_FONT_FAMILY, KNIU_FONT_MONO_FAMILY, KNIU_FONT_SERIF_FAMILY, KNIU_I18N, KNIU_ICON_CSS, KNIU_ICON_FONT_NAMES, KNIU_ICON_NAMES, KNIU_ICON_SVG, KNIU_IMAGE_CSS, KNIU_IMAGE_OVERRIDES_CSS, KNIU_INPUT_AFFIX_CSS, KNIU_INPUT_CSS, KNIU_INPUT_GROUP_CSS, KNIU_INPUT_METRICS_CSS, KNIU_INPUT_PASSWORD_ACTIONS_CSS, KNIU_INPUT_PASSWORD_CSS, KNIU_INPUT_STATES_CSS, KNIU_INPUT_TEXTAREA_CSS, KNIU_INPUT_TIP_CSS, KNIU_LIKE_CSS, KNIU_LOADING_CSS, KNIU_MARKDOWN_CSS, KNIU_MODAL_CONFIRM_CSS, KNIU_MODAL_CSS, KNIU_MSG_CSS, KNIU_NAVBAR_CELLS_CSS, KNIU_NAVBAR_CELL_CSS, KNIU_NAVBAR_CSS, KNIU_NAVBAR_PLACEHOLDER_CSS, KNIU_PAGE_CSS, KNIU_RADIO_GROUP_CSS, KNIU_RICHTEXT_CSS, KNIU_SELECT_CSS, KNIU_STATUS_CSS, KNIU_SUB_NAVBAR_CSS, KNIU_SUB_NAVBAR_OVERRIDES_CSS, KNIU_SWITCH_CSS, KNIU_TABLE_CLASS, KNIU_TABLE_COL_CSS, KNIU_TABLE_CSS, KNIU_TABLE_WRAP_CLASS, KNIU_TAB_CSS, KNIU_TAG_CSS, KNIU_UPLOAD_CSS, KNIU_USER_LOGIN_CSS, KNIU_USER_LOGIN_OVERRIDES_CSS, PRUNABLE_ATTRIBUTE_NAMES, REQUEST, RICH_TEXT_LITERAL_TAG_RE, SCROLL_LOCK_FLAG, SEMANTIC_EMPTY_ATTRIBUTES, SHADOW_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_RE, TEMPLATE, adoptDropdownStyle, adoptSharedStyle, adoptedSheetsFlushScheduled, appendRawStyle, applyScrollLock, attachComponentShadow, buildIconElement, buildPageList, compileTableRowTemplate, componentDefaults, componentLang, componentText, computePopoverLayout, confirm, createRowDeleteHandler, createSearchActions, createTable, debounce, flushPendingAdoptedSheets, getResponseRecords, getShadowInnerHTMLDescriptor, getSharedStyleSheet, hasRichTextLiteralTag, installMarkdownStyles, installOptionsOnlyProtocol, installRichTextStyles, isEmptyAttributeValue, lockDocumentScroll, makeSwitchOptions, mountAffixSlots, mountPopoverPortal, msg, normalizeComponentCss, normalizedCssCache, pendingAdoptedSheets, pruneEmptyAttribute, pruneEmptyAttributeTree, pruneEmptyAttributes, pruneEmptyRootAttributes, readScrollLockOriginals, reconcileDocumentScrollLock, releaseScrollLock, replaceChildrenWithFragment, resolveIconName, resolveTableRowTemplate, sanitizeRichHtml, sanitizeRichHtmlAsync, scheduleAdoptedSheetsFlush, scrollLockNodes, scrollLockOriginals, scrollLockOwners, setLoading, shadowInnerHTMLDescriptor, shadowStyleSheetCache, shadowTemplateCache, shouldContainHost, state, supportsAdoptedStyleSheets, tableTemplateCache, toastInstance, toastTimer, trackPopoverPosition, unlockDocumentScroll, unwrapTablesIn, use, useListPage, usePagination, wrapTablesIn, writeScrollLockOriginals } = context;
+  const { BOOLEAN_ATTRIBUTES, IDENTITY, anchorScrollRoots, KNIU_BACKTOP_CSS, KNIU_BADGE_CSS, KNIU_BASE_CONTAIN_CSS, KNIU_BASE_FONT_CSS, KNIU_BTN_CSS, KNIU_BTN_GROUP_CSS, KNIU_BTN_METRICS_CSS, KNIU_BTN_OVERRIDES_CSS, KNIU_COMMENT_CSS, KNIU_CONTAIN_EXCLUDE_TAGS, KNIU_CONTENT_TABLE_CSS, KNIU_CONTENT_TABLE_DOC_CSS, KNIU_DATE_PICKER_CSS, KNIU_DATE_PICKER_OVERRIDES_CSS, KNIU_DROPDOWN_CSS, KNIU_DROPDOWN_OPTION_CSS, KNIU_EDITOR_CSS, KNIU_EDITOR_OVERRIDE_CSS, KNIU_EDITOR_PRINT_CSS, KNIU_EMPTY_CSS, KNIU_FONT_FACE_CSS, KNIU_FONT_FAMILY, KNIU_FONT_MONO_FAMILY, KNIU_FONT_SERIF_FAMILY, KNIU_I18N, KNIU_ICON_CSS, KNIU_ICON_FONT_NAMES, KNIU_ICON_NAMES, KNIU_ICON_SVG, KNIU_IMAGE_CSS, KNIU_IMAGE_OVERRIDES_CSS, KNIU_INPUT_AFFIX_CSS, KNIU_INPUT_CSS, KNIU_INPUT_GROUP_CSS, KNIU_INPUT_METRICS_CSS, KNIU_INPUT_PASSWORD_ACTIONS_CSS, KNIU_INPUT_PASSWORD_CSS, KNIU_INPUT_STATES_CSS, KNIU_INPUT_TEXTAREA_CSS, KNIU_INPUT_TIP_CSS, KNIU_LIKE_CSS, KNIU_LOADING_CSS, KNIU_MARKDOWN_CSS, KNIU_MODAL_CONFIRM_CSS, KNIU_MODAL_CSS, KNIU_MSG_CSS, KNIU_NAVBAR_CELLS_CSS, KNIU_NAVBAR_CELL_CSS, KNIU_NAVBAR_CSS, KNIU_NAVBAR_PLACEHOLDER_CSS, KNIU_PAGE_CSS, KNIU_RADIO_GROUP_CSS, KNIU_RICHTEXT_CSS, KNIU_SELECT_CSS, KNIU_STATUS_CSS, KNIU_SUB_NAVBAR_CSS, KNIU_SUB_NAVBAR_OVERRIDES_CSS, KNIU_SWITCH_CSS, KNIU_TABLE_CLASS, KNIU_TABLE_COL_CSS, KNIU_TABLE_CSS, KNIU_TABLE_WRAP_CLASS, KNIU_TAB_CSS, KNIU_TAG_CSS, KNIU_UPLOAD_CSS, KNIU_USER_LOGIN_CSS, KNIU_USER_LOGIN_OVERRIDES_CSS, PRUNABLE_ATTRIBUTE_NAMES, REQUEST, RICH_TEXT_LITERAL_TAG_RE, SCROLL_LOCK_FLAG, SEMANTIC_EMPTY_ATTRIBUTES, SHADOW_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_RE, TEMPLATE, adoptDropdownStyle, adoptSharedStyle, adoptedSheetsFlushScheduled, appendRawStyle, applyScrollLock, attachComponentShadow, buildIconElement, buildPageList, compileTableRowTemplate, componentDefaults, componentLang, componentText, computePopoverLayout, confirm, createRowDeleteHandler, createSearchActions, createTable, debounce, deferAffixTemplateMount, flushPendingAdoptedSheets, getResponseRecords, getShadowInnerHTMLDescriptor, getSharedStyleSheet, hasRichTextLiteralTag, installMarkdownStyles, installOptionsOnlyProtocol, installRichTextStyles, isEmptyAttributeValue, lockDocumentScroll, makeSwitchOptions, mountAffixSlots, mountPopoverPortal, msg, normalizeComponentCss, normalizedCssCache, pendingAdoptedSheets, pruneEmptyAttribute, pruneEmptyAttributeTree, pruneEmptyAttributes, pruneEmptyRootAttributes, readScrollLockOriginals, reconcileDocumentScrollLock, releaseScrollLock, replaceChildrenWithFragment, resolveIconName, resolveTableRowTemplate, sanitizeRichHtml, sanitizeRichHtmlAsync, scheduleAdoptedSheetsFlush, scrollLockNodes, scrollLockOriginals, scrollLockOwners, setLoading, shadowInnerHTMLDescriptor, shadowStyleSheetCache, shadowTemplateCache, shouldContainHost, state, supportsAdoptedStyleSheets, tableTemplateCache, toastInstance, toastTimer, trackPopoverPosition, unlockDocumentScroll, unwrapTablesIn, use, usePage, usePagination, wrapTablesIn, writeScrollLockOriginals } = context;
   if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
   if (customElements.get('kniu-date-picker')) return;
   class KniuSysDatePicker extends HTMLElement {
@@ -10,6 +10,19 @@ export function registerDatePicker(context) {
     constructor() {
       super();
       attachComponentShadow(this);
+      let pendingValue;
+      if (Object.prototype.hasOwnProperty.call(this, 'value')) {
+        pendingValue = this.value;
+        delete this.value;
+      }
+      let pendingOptions = null;
+      if (Object.prototype.hasOwnProperty.call(this, 'options')) {
+        pendingOptions = this.options;
+        delete this.options;
+      } else if (Object.prototype.hasOwnProperty.call(this, '__kniuOptionsValue')) {
+        pendingOptions = this.__kniuOptionsValue;
+        delete this.__kniuOptionsValue;
+      }
       this.shadowRoot.innerHTML = `<style>${KNIU_DATE_PICKER_CSS}</style>${KNIU_DATE_PICKER_TEMPLATE}`;
       const datePanel = this.shadowRoot.querySelector('.kniu_sys_date_picker_panel');
       if (datePanel) datePanel.classList.add('kniu_sys_dropdown_panel');
@@ -36,10 +49,7 @@ export function registerDatePicker(context) {
         const path = event.composedPath();
         if (!path.includes(this) && !path.includes(this._panel)) this._close();
       };
-      this._positionHandler = () => { if (!this._panel.hidden) this._positionPanel(); };
       this._positionTimer = null;
-      this._positionFrame = 0;
-      this._lastAnchorRect = '';
       this._animationTimer = null;
       this._options = {};
       this._portalState = null;
@@ -62,6 +72,8 @@ export function registerDatePicker(context) {
           options.appendChild(option);
         }
       });
+      if (pendingOptions && typeof pendingOptions === 'object') this.options = pendingOptions;
+      if (pendingValue !== undefined) this.value = pendingValue;
     }
     connectedCallback() { this._mountAffixes(); this._mountPortal(); this._sync(); }
     disconnectedCallback() {
@@ -108,25 +120,32 @@ export function registerDatePicker(context) {
       const group = this.shadowRoot.querySelector('.kniu_sys_date_picker_group');
       ['prepend', 'append'].forEach((name) => {
         const template = Array.from(this.children).find((child) => child.tagName === 'TEMPLATE' && child.hasAttribute(`#${name}`));
-        let templateWidth = '';
         if (template) {
-          templateWidth = template.getAttribute('label-width') || '';
-          const fragment = document.createDocumentFragment();
-          Array.from(template.content.childNodes).forEach((node) => {
-            if (node.nodeType === 3 && !node.textContent.trim()) return;
-            const item = node.nodeType === 3 ? document.createElement('span') : node;
-            if (node.nodeType === 3) item.textContent = node.textContent;
-            item.setAttribute('slot', name);
-            if (templateWidth) item.dataset.labelWidth = templateWidth;
-            fragment.appendChild(item);
-          });
-          template.replaceWith(fragment);
+          deferAffixTemplateMount(template, () => {
+            const templateWidth = template.getAttribute('label-width')
+              || (template.__kniuOptionsValue && template.__kniuOptionsValue.labelWidth)
+              || '';
+            const fragment = document.createDocumentFragment();
+            Array.from(template.content.childNodes).forEach((node) => {
+              if (node.nodeType === 3 && !node.textContent.trim()) return;
+              const item = node.nodeType === 3 ? document.createElement('span') : node;
+              if (node.nodeType === 3) item.textContent = node.textContent;
+              item.setAttribute('slot', name);
+              if (templateWidth) item.dataset.labelWidth = templateWidth;
+              fragment.appendChild(item);
+            });
+            template.replaceWith(fragment);
+          }, () => this._mountAffixes());
         }
         const content = this.querySelector(`[slot="${name}"]`);
         const affix = this.shadowRoot.querySelector(`.kniu_sys_date_picker_${name}`);
-        const width = templateWidth || content?.dataset.labelWidth || '';
+        const width = content?.dataset.labelWidth || '';
         group.dataset[`has${name[0].toUpperCase()}${name.slice(1)}`] = String(Boolean(content));
-        if (width && CSS.supports('width', width)) { affix.style.width = width; affix.style.flexBasis = width; }
+        if (width && CSS.supports('width', width)) {
+          const sized = `calc(${width} + 1px)`;
+          affix.style.width = sized;
+          affix.style.flexBasis = sized;
+        }
       });
     }
     _sync() {
@@ -236,8 +255,8 @@ export function registerDatePicker(context) {
         if (!this._panel.hidden) this._positionPanel();
       }, 280);
       globalThis.addEventListener('pointerdown', this._outsideHandler, true);
-      globalThis.addEventListener('resize', this._positionHandler);
-      globalThis.addEventListener('scroll', this._positionHandler, true);
+      // 锚点跟随统一走 trackPopoverPosition（B-m2/规则 213）：rAF 同帧合并 + key 去重，
+      // 替代逐事件同步 _positionPanel 的三通道直调（每帧强制布局）。
     }
     _close() {
       if (this._panel.hidden || this._panel.dataset.state === 'closing') return;
@@ -251,9 +270,6 @@ export function registerDatePicker(context) {
         this._animationTimer = null;
         this._panel.hidden = true;
         delete this._panel.dataset.state;
-        if (this._positionFrame) globalThis.cancelAnimationFrame(this._positionFrame);
-        this._positionFrame = 0;
-        this._lastAnchorRect = '';
       };
       if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { finish(); return; }
       this._panel.dataset.state = 'closing';
@@ -261,8 +277,10 @@ export function registerDatePicker(context) {
     }
     _removeGlobalListeners() {
       globalThis.removeEventListener('pointerdown', this._outsideHandler, true);
-      globalThis.removeEventListener('resize', this._positionHandler);
-      globalThis.removeEventListener('scroll', this._positionHandler, true);
+      if (this._disposeTrack) {
+        this._disposeTrack();
+        this._disposeTrack = null;
+      }
     }
     _positionPanel() {
       const rect = this._input.getBoundingClientRect();
@@ -279,21 +297,23 @@ export function registerDatePicker(context) {
       this._panel.style.top = `${viewportTop}px`;
     }
     _startPositionTracking() {
-      if (this._positionFrame) globalThis.cancelAnimationFrame(this._positionFrame);
-      const track = () => {
-        if (this._panel.hidden || !this.isConnected) {
-          this._positionFrame = 0;
-          return;
-        }
-        const rect = this._input.getBoundingClientRect();
-        const key = `${rect.left},${rect.top},${rect.right},${rect.bottom},${globalThis.innerWidth},${globalThis.innerHeight}`;
-        if (key !== this._lastAnchorRect) {
-          this._lastAnchorRect = key;
-          this._positionPanel();
-        }
-        this._positionFrame = globalThis.requestAnimationFrame(track);
-      };
-      this._positionFrame = globalThis.requestAnimationFrame(track);
+      // 锚点跟随唯一入口 trackPopoverPosition（规则 213）：scroll composed 链逐级
+      // capture + resize 由其内部接管，rAF 合批同帧只测一次、key 未变不重排。
+      if (this._disposeTrack) {
+        this._disposeTrack();
+        this._disposeTrack = null;
+      }
+      const self = this;
+      this._disposeTrack = trackPopoverPosition(
+        function anchorRect() {
+          return self._input ? self._input.getBoundingClientRect() : null;
+        },
+        function apply() {
+          if (!self._panel.hidden) self._positionPanel();
+        },
+        function onDone(dispose) { self._disposeTrack = dispose; },
+        this._input
+      );
     }
     _render() {
       const isEnglish = String(this._options.lang || 'cn').toLowerCase() === 'en';

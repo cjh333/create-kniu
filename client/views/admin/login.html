@@ -107,54 +107,8 @@
     margin-top: 6px;
   }
 
-  .login_tabs {
-    display: flex;
-    gap: 24px;
-    justify-content: center;
-    margin-top: 20px;
-    border-bottom: 1px solid #ebeef5;
-  }
-
-  .login_tab {
-    position: relative;
-    padding: 0 2px 12px;
-    border: 0;
-    background-color: transparent;
-    color: #909399;
-    font: 15px/1 var(--kniu-font-family);
-    cursor: pointer;
-  }
-
-  .login_tab:hover {
-    color: #667eea;
-  }
-
-  .login_tab[data-active="true"] {
-    color: #23262e;
-    font-weight: 600;
-  }
-
-  .login_tab[data-active="true"]::after {
-    content: "";
-    position: absolute;
-    right: 0;
-    bottom: -1px;
-    left: 0;
-    height: 2px;
-    background-color: #667eea;
-    border-radius: 2px;
-  }
-
   .login_body {
     padding: 20px 24px 28px;
-  }
-
-  .login_pane {
-    display: none;
-  }
-
-  .login_pane[data-active="true"] {
-    display: block;
   }
 
   .kniu_sys_login_captcha_image {
@@ -195,7 +149,9 @@
   }
 
   .login_forgot {
-    text-align: right;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     margin-top: 10px;
   }
 
@@ -247,87 +203,27 @@
       </div>
       <p class="login_subtitle">{{subtitle}}</p>
     </div>
-    <div class="login_tabs" :if="{{tab !== 'reset'}}">
-      <button type="button" class="login_tab" :[active]="{{tab === 'login'}}" @click="toLogin">登录</button>
-      <button type="button" class="login_tab" :[active]="{{tab === 'register'}}" @click="toRegister">注册</button>
-    </div>
-    <div class="login_body" :style="{{tab === 'reset' ? 'margin-top:20px' : ''}}">
-      <div class="login_pane" :[active]="{{tab === 'login'}}">
-        <kniu-form :option="{{loginModel}}" @submit.prevent="onSubmit">
-          <kniu-form-cell>
-            <kniu-input :form="{{loginModel.username}}" :option="{{name:'username',placeholder:'请输入账号',maxlength:'30',clearable:true}}" />
-          </kniu-form-cell>
-          <kniu-form-cell>
-            <kniu-input :form="{{loginModel.password}}" :option="{{name:'password',placeholder:'请输入密码',showPassword:true,type:'password'}}" />
-          </kniu-form-cell>
-          <kniu-form-cell>
-            <kniu-input :form="{{loginModel.gvcode}}" :option="{{name:'gvcode',placeholder:'计算结果',maxlength:'4'}}" />
-            <kniu-image class="login_captcha" :option="{{src:(captchaImageUrl),fit:'cover'}}" @click="refreshCaptcha" />
-          </kniu-form-cell>
-          <div class="login_forgot">
-            <a href="javascript:;" @click="toReset">忘记密码？</a>
-          </div>
-          <div class="kniu_btn_group">
-            <kniu-btn :option="{{disabled:(isSubmitting),nativeType:'submit',block:true}}">登 录</kniu-btn>
-            <kniu-btn :option="{{nativeType:'button',block:true}}" @click="toHome">返 回</kniu-btn>
-          </div>
-        </kniu-form>
-      </div>
-      <div class="login_pane" :[active]="{{tab === 'register'}}">
-        <kniu-form :option="{{registerModel}}" @submit.prevent="onSubmit">
-          <kniu-form-cell>
-            <kniu-input :form="{{registerModel.username}}" :option="{{name:'username',placeholder:'账号，2-30位中文/字母/数字',maxlength:'30'}}" />
-          </kniu-form-cell>
-          <kniu-form-cell>
-            <kniu-input :form="{{registerModel.nickname}}" :option="{{name:'nickname',placeholder:'昵称，1-30位中文/字母/数字，仅用于展示',maxlength:'30'}}" />
-          </kniu-form-cell>
-          <kniu-form-cell>
-            <kniu-input :form="{{registerModel.password}}" :option="{{name:'password',placeholder:'密码，8 位以上，含大小写字母、数字和特殊字符',showPassword:true,type:'password',tip:'• 8 位以上;• 含大写字母;• 含小写字母;• 含数字;• 含特殊字符'}}" />
-          </kniu-form-cell>
-          <kniu-form-cell>
-            <kniu-input :form="{{registerModel.confirm}}" :option="{{name:'confirm',placeholder:'确认密码，请再次输入密码',showPassword:true,type:'password'}}" />
-          </kniu-form-cell>
-          <kniu-form-cell>
-            <kniu-input :form="{{registerModel.email}}" :option="{{name:'email',placeholder:'邮箱，用于找回密码',maxlength:'190'}}" />
-          </kniu-form-cell>
-          <kniu-form-cell>
-            <kniu-input :form="{{registerModel.email_code}}" :option="{{name:'email_code',placeholder:'邮箱验证码',maxlength:'6'}}" />
-            <kniu-btn style="width:120px;margin-left:5px;" :option="{{disabled:(codeSending || codeCountdown > 0),nativeType:'button',block:true}}" @click="sendRegisterCode">{{codeCountdown > 0 ? codeCountdown + 's 后重试' : '发送验证码'}}</kniu-btn>
-          </kniu-form-cell>
-          <kniu-form-cell>
-            <kniu-input :form="{{registerModel.gvcode}}" :option="{{name:'gvcode',placeholder:'计算结果',maxlength:'4'}}" />
-            <kniu-image class="login_captcha" :option="{{src:(captchaImageUrl),fit:'cover'}}" @click="refreshCaptcha" />
-          </kniu-form-cell>
-          <div class="kniu_btn_group">
-            <kniu-btn :option="{{disabled:(isSubmitting),nativeType:'submit',block:true}}">注 册</kniu-btn>
-            <kniu-btn :option="{{nativeType:'button',block:true}}" @click="toHome">返 回</kniu-btn>
-          </div>
-        </kniu-form>
-      </div>
-      <div class="login_pane" :[active]="{{tab === 'reset'}}">
-        <kniu-form :option="{{resetModel}}" @submit.prevent="onResetSubmit">
-          <kniu-form-cell>
-            <kniu-input :form="{{resetModel.username}}" :option="{{name:'username',placeholder:'注册时的账号',maxlength:'30',clearable:true}}" />
-          </kniu-form-cell>
-          <kniu-form-cell>
-            <kniu-input :form="{{resetModel.email}}" :option="{{name:'email',placeholder:'请输入注册时填写的邮箱',maxlength:'190',clearable:true}}" />
-          </kniu-form-cell>
-          <kniu-form-cell>
-            <kniu-input :form="{{resetModel.code}}" :option="{{name:'code',placeholder:'邮箱验证码',maxlength:'6'}}" />
-            <kniu-btn style="width:120px;margin-left:5px;" :option="{{disabled:(codeSending || codeCountdown > 0),nativeType:'button',block:true}}" @click="sendResetCode">{{codeCountdown > 0 ? codeCountdown + 's 后重试' : '发送验证码'}}</kniu-btn>
-          </kniu-form-cell>
-          <kniu-form-cell>
-            <kniu-input :form="{{resetModel.password}}" :option="{{name:'password',placeholder:'新密码，8 位以上，含大小写字母、数字和特殊字符',showPassword:true,type:'password',tip:'• 8 位以上;• 含大写字母;• 含小写字母;• 含数字;• 含特殊字符'}}" />
-          </kniu-form-cell>
-          <kniu-form-cell>
-            <kniu-input :form="{{resetModel.confirm}}" :option="{{name:'confirm',placeholder:'确认新密码，请再次输入新密码',showPassword:true,type:'password'}}" />
-          </kniu-form-cell>
-          <div class="kniu_btn_group">
-            <kniu-btn :option="{{disabled:(isSubmitting),nativeType:'submit',block:true}}">重置密码</kniu-btn>
-            <kniu-btn :option="{{nativeType:'button',block:true}}" @click="toLogin">返 回</kniu-btn>
-          </div>
-        </kniu-form>
-      </div>
+    <div class="login_body">
+      <kniu-form :option="{{loginModel}}" @submit.prevent="onSubmit">
+        <kniu-form-cell>
+          <kniu-input :form="{{loginModel.username}}" :option="{{name:'username',placeholder:'请输入账号',maxlength:'30',clearable:true}}" />
+        </kniu-form-cell>
+        <kniu-form-cell>
+          <kniu-input :form="{{loginModel.password}}" :option="{{name:'password',placeholder:'请输入密码',showPassword:true,type:'password'}}" />
+        </kniu-form-cell>
+        <kniu-form-cell>
+          <kniu-input :form="{{loginModel.gvcode}}" :option="{{name:'gvcode',placeholder:'计算结果',maxlength:'4'}}" />
+          <kniu-image class="login_captcha" :option="{{src:(captchaImageUrl),fit:'cover'}}" @click="refreshCaptcha" />
+        </kniu-form-cell>
+        <div class="login_forgot">
+          <a href="javascript:;" @click="toRegister">注册账号</a>
+          <a href="javascript:;" @click="toForgot">忘记密码？</a>
+        </div>
+        <div class="kniu_btn_group">
+          <kniu-btn :option="{{disabled:(isSubmitting),nativeType:'submit',block:true}}">登 录</kniu-btn>
+          <kniu-btn :option="{{nativeType:'button',block:true}}" @click="toBack">返 回</kniu-btn>
+        </div>
+      </kniu-form>
     </div>
     <div class="login_footer">Copyright 2018-{{currentYear}} &copy;KniuSystem</div>
   </div>

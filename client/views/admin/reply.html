@@ -1,74 +1,25 @@
 <style scoped>
   @import url("@kniu/kniu.min.css");
   @import url("@style/web.min.css");
-  @import url("@style/admin/admin.min.css");
-  @import url("@style/admin/admin_home.min.css");
-
-  .detail_head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 5px 10px 10px;
-  }
-
-  .detail_head_actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-left: auto;
-  }
-
-  .detail_head_actions kniu-input,
-  .detail_head_actions kniu-input-group {
-    display: block;
-    width: 280px;
-    max-width: 100%;
-    min-width: 0;
-  }
-
-  .filter_bar {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    padding: 0 10px 12px;
-    flex-wrap: wrap
-  }
-
-  .filter_item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    color: #606266
-  }
-
-  .filter_item kniu-radio-group {
-    display: inline-flex;
-    align-items: center
-  }
-
-  .detail_wrap {
-    position: relative;
-    background-color: #fff
-  }
+  @import url("@style/admin/admin_all.min.css");
 </style>
 <section class="index_cells">
   <div class="admin_content_body index_cell index_cell_2">
     <div class="detail_head">
       <div class="detail_head_actions">
         <kniu-input :form="{{keyword}}" :option="{{name:'keyword',placeholder:'请输入昵称或回复内容'}}" @keydown.enter="searchList" @input="debouncedSearch">
-          <template #append label-width="48px">
-            <kniu-btn aria-label="搜索" :option="{{text:true}}" @click="searchList">
+          <template #append :option="{{labelWidth:'48px'}}">
+            <kniu-btn :option="{{text:true,ariaLabel:'搜索'}}" @click="searchList">
               <kniu-icon :option="{{icon:'search'}}" />
             </kniu-btn>
           </template>
         </kniu-input>
-        <kniu-btn :option="{{link:true,type:'primary',size:'small'}}" @click="goBack">返回</kniu-btn>
+        <kniu-btn :option="{{link:true,type:'primary'}}" @click="goBack">返回</kniu-btn>
       </div>
     </div>
     <div class="filter_bar">
       <div class="filter_item">
-        <span>审核</span>
+        <span class="kniu_md_mr_10">审核</span>
         <kniu-radio-group :form="{{audit}}" @change="onFilterChange">
           <kniu-radio :option="{{value:'',size:'small'}}">全部</kniu-radio>
           <kniu-radio :option="{{value:'0',size:'small'}}">待审核</kniu-radio>
@@ -79,23 +30,23 @@
     <template :if="{{commentTable.data.length > 0}}">
       <div class="detail_wrap">
         <kniu-table ref="table" :option="{{commentTable}}">
-          <kniu-table-col type="checkbox" width="60" align="center" fixed="left" />
-          <kniu-table-col field="id" label="ID" width="80" align="center" fixed="left" sortable />
-          <kniu-table-col field="sid" label="排序" width="100" align="center" editable="number" fixed="left" sortable :option="{{onChange:updateSort}}" />
-          <kniu-table-col field="account_name" label="账号" width="100" show-overflow-tooltip />
-          <kniu-table-col field="nickname" label="昵称" width="80" show-overflow-tooltip />
-          <kniu-table-col field="message" label="回复内容" min-width="220" show-overflow-tooltip />
-          <kniu-table-col field="article_title" label="所属文章标题" min-width="160" show-overflow-tooltip />
-          <kniu-table-col field="parent_id" label="所属评论ID" width="100" align="center" />
-          <kniu-table-col field="likes" label="点赞" width="80" align="center" sortable />
-          <kniu-table-col field="status_text" label="状态" width="100" align="center" />
-          <kniu-table-col :if="{{canEditContent}}" field="is_show" label="审核" width="120" align="center">
+          <kniu-table-col :option="{{width:60,align:'center',fixed:'left',type:'checkbox'}}" />
+          <kniu-table-col :option="{{field:'sid',label:'排序',width:90,align:'center',editable:'number',sortable:true,onChange:(updateSort)}}" />
+          <kniu-table-col :option="{{field:'id',label:'ID',width:90,align:'center',fixed:'left',sortable:true}}" />
+          <kniu-table-col :option="{{field:'account_name',label:'账号',width:100,align:'center',showOverflowTooltip:true}}" />
+          <kniu-table-col :option="{{field:'nickname',label:'昵称',width:100,align:'center',showOverflowTooltip:true}}" />
+          <kniu-table-col :option="{{field:'message',label:'回复内容',showOverflowTooltip:true}}" />
+          <kniu-table-col :option="{{field:'article_title',label:'所属文章标题',showOverflowTooltip:true}}" />
+          <kniu-table-col :option="{{field:'parent_id',label:'所属评论ID',width:100,align:'center'}}" />
+          <kniu-table-col :option="{{field:'likes',label:'点赞',width:80,align:'center',sortable:true}}" />
+          <kniu-table-col :option="{{field:'status_text',label:'状态',width:100,align:'center'}}" />
+          <kniu-table-col :if="{{canEditContent}}" :option="{{field:'is_show',label:'审核',width:120,align:'center'}}">
             <template #default>
               <kniu-switch :option="{{switchOptions}}" @change="toggleAudit" />
             </template>
           </kniu-table-col>
-          <kniu-table-col field="create_time" label="创建时间" width="180" align="center" />
-          <kniu-table-col label="操作" width="160" align="center" fixed="right">
+          <kniu-table-col :option="{{field:'create_time',label:'创建时间',width:180,align:'center'}}" />
+          <kniu-table-col :option="{{label:'操作',width:160,align:'center',fixed:'right'}}">
             <template #default>
               <kniu-btn :option="{{type:'danger',size:'small',link:true}}" @click="deleteRow">删除</kniu-btn>
             </template>

@@ -7,6 +7,10 @@ use Core\SessionName;
 
 Env::load(dirname(__DIR__) . '/.env');
 
+// 搜索引擎收录入口（robots.txt / sitemap.xml / 爬虫渲染 / 可收录文章 URL）。
+// 必须在会话初始化与 API 路由之前：命中即输出并退出，普通请求原样放行。
+\Core\Seo::handleCrawlableRequest();
+
 $runtimeEnv = getenv('APP_ENV') ?: 'development';
 ini_set('display_errors', $runtimeEnv === 'production' ? '0' : '1');
 ini_set('log_errors', 1);

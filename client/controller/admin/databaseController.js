@@ -1,46 +1,28 @@
 import MVVM from '../../core/kniumvvm.mjs';
+import { createRequestActions } from '../../core/kniupage.mjs';
+import { createRowDeleteHandler } from '../../core/kniuui/kniuui.mjs';
 import AUTH from '../../core/kniuauth.mjs';
-import { IDENTIFIER_PATTERN, formatBytes, formatCell, rowAt, CONNECT_REDIRECT_FLAG } from './databaseShared.js';
+import { confirmYes, executeSqlTextShared, isSuperRole, requireLogin, withSubmitting } from './adminShared.js';
+import { formatBytes, rowAt, fetchList, createTableLoader, createSqlConsoleModel, openSqlConsole } from './databaseShared.js';
 
 const { controller } = MVVM;
 
 const databaseController = controller(({ $confirm, $msg, $refs, navigateTo, request, reactive, onMounted }) => {
-  const self = { $confirm, $msg, $refs, navigateTo };
-  const isSuperAdmin = Number(AUTH.getUser()?.roleId || AUTH.getUser()?.role || 0) === 1;
+  const isSuperAdmin = isSuperRole(AUTH.getUser());
+  const actions = createRequestActions({ request, msg: $msg });
 
   const state = reactive({
     isSuperAdmin,
-    createDatabaseModel: {
-      labelPosition: 'top',
-      labelWidth: 'auto',
-      name: {
-        value: '',
-        condition: function (v) { return IDENTIFIER_PATTERN.test(String(v.value || '').trim()); },
-        message: '库名只能由字母、数字和下划线组成（1-64 位）'
-      }
-    },
+    canEditContent: isSuperAdmin,
     importModel: {
       labelPosition: 'top',
-      labelWidth: 'auto',
-      sql: {
-        value: '',
-        condition: function () { return true; },
-        message: ''
-      }
+      labelWidth: 'auto'
     },
-    sqlModel: {
-      labelPosition: 'top',
-      labelWidth: 'auto',
-      sql: {
-        value: '',
-        condition: function () { return true; },
-        message: ''
-      }
-    },
+    sqlModel: createSqlConsoleModel(),
     sqlResultText: '',
+    files: [],
     showCreateDatabase: false,
     showImport: false,
-    showSql: false,
     dbTable: {
       data: [],
       rowKey: 'name',
@@ -49,173 +31,109 @@ const databaseController = controller(({ $confirm, $msg, $refs, navigateTo, requ
     }
   });
 
-  async function loadDatabases() {
-    const res = await request({ url: '/db_list', type: 'POST', mutation: false, data: {} });
-    if (res.status !== 1) {
-      self.$msg({ content: res.msg || '读取数据库列表失败', type: 'error' });
-      return { ok: false, empty: false };
+  const loadDatabases = createTableLoader({
+    request,
+    url: '/db_list',
+    state,
+    tableKey: 'dbTable',
+    $msg,
+    failMsg: '读取数据库列表失败',
+    returnsEmpty: true,
+    decorate: function (row) {
+      return { ...row, size_text: formatBytes(row.total_bytes) };
     }
-    const list = (res.data && res.data.list) || [];
-    state.dbTable = {
-      ...state.dbTable,
-      data: list.map(function (row) {
-        return { ...row, size_text: formatBytes(row.total_bytes) };
-      })
-    };
-    return { ok: true, empty: list.length === 0 };
-  }
+  });
 
   function openCreateDatabase() {
-    state.createDatabaseModel = {
-      ...state.createDatabaseModel,
-      name: { ...state.createDatabaseModel.name, value: '' }
-    };
-    state.showCreateDatabase = true;
+    openSqlConsole(state, 'showCreateDatabase');
   }
 
   function closeCreateDatabase() {
     state.showCreateDatabase = false;
   }
 
-  async function submitCreateDatabase() {
-    const form = self.$refs.createDatabaseForm;
-    if (!form || !form.validate()) return;
-    const name = String((form.values && form.values.name) || '').trim();
-    if (!IDENTIFIER_PATTERN.test(name)) {
-      self.$msg({ content: '库名只能由字母、数字和下划线组成（1-64 位）', type: 'error' });
-      return;
-    }
-    const res = await request({ url: '/db_create', type: 'POST', data: { name } });
-    if (res.status !== 1) {
-      self.$msg({ content: res.msg, type: 'error' });
-      return;
-    }
-    state.showCreateDatabase = false;
-    self.$msg({ content: res.msg, type: 'success' });
-    await loadDatabases();
+  function submitCreateDatabase() {
+    return executeSqlText().then(function (ok) {
+      if (ok) state.showCreateDatabase = false;
+    });
   }
 
   function openImport() {
-    state.importModel = { ...state.importModel, sql: { ...state.importModel.sql, value: '' } };
+    state.files = [];
     state.showImport = true;
   }
 
   function closeImport() {
     state.showImport = false;
-  }
-
-  function onImportFile(event) {
-    const input = event && event.target ? event.target : null;
-    const file = input && input.files ? input.files[0] : null;
-    if (!file) return;
-    if (!/\.sql$/i.test(file.name)) {
-      self.$msg({ content: '只允许选择 .sql 文件', type: 'error' });
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = function () {
-      state.importModel = { ...state.importModel, sql: { ...state.importModel.sql, value: String(reader.result || '') } };
-      self.$msg({ content: `已读入 ${file.name}，可直接点「开始导入」`, type: 'success' });
-    };
-    reader.onerror = function () {
-      self.$msg({ content: '读取文件失败', type: 'error' });
-    };
-    reader.readAsText(file, 'utf-8');
+    state.files = [];
+    if ($refs.upload) $refs.upload.clear();
   }
 
   async function submitImport() {
-    const sql = String(state.importModel.sql.value || '');
-    if (!sql.trim()) {
-      self.$msg({ content: '请粘贴 SQL 文本或选择 .sql 文件', type: 'error' });
-      return;
-    }
-    const confirmed = await self.$confirm('导入会按分号逐条执行脚本，且遇错即停。确定继续吗？', '提示', {
-      confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
-    }).then(function () { return true; }).catch(function () { return false; });
-    if (!confirmed) return;
-    const res = await request({ url: '/db_import', type: 'POST', data: { sql } });
-    if (res.status !== 1) {
-      self.$msg({ content: res.msg, type: 'error' });
-      return;
-    }
-    const data = res.data || {};
-    self.$msg({ content: res.msg || '导入完成', type: data.failed > 0 ? 'warning' : 'success' });
-    if (!data.failed) state.showImport = false;
-    await loadDatabases();
-  }
-
-  function openSqlConsole() {
-    state.sqlModel = { ...state.sqlModel, sql: { ...state.sqlModel.sql, value: '' } };
-    state.sqlResultText = '';
-    state.showSql = true;
-  }
-
-  function closeSql() {
-    state.showSql = false;
-  }
-
-  async function submitSql() {
-    const sql = String(state.sqlModel.sql.value || '');
-    if (!sql.trim()) {
-      self.$msg({ content: '请输入要执行的 SQL', type: 'error' });
-      return;
-    }
-    const res = await request({ url: '/db_query', type: 'POST', data: { sql } });
-    if (res.status !== 1) {
-      self.$msg({ content: res.msg, type: 'error' });
-      return;
-    }
-    const data = res.data || {};
-    const lines = [
-      `共 ${data.statements || 0} 条语句，失败 ${data.failed || 0} 条，影响 ${data.affected || 0} 行`,
-      ''
-    ];
-    (data.results || []).forEach(function (item) {
-      lines.push(`#${item.index + 1} ${item.ok ? '成功' : '失败'} · ${item.kind} · 影响/返回 ${item.affected} 行`);
-      if (item.message) lines.push(`　错误：${item.message}`);
-      if (item.truncated) lines.push('　（结果过多，仅回显前若干行）');
-      (item.rows || []).forEach(function (row) {
-        lines.push('　' + Object.keys(row).map((key) => `${key}=${formatCell(row[key])}`).join('　'));
-      });
+    await withSubmitting(state, async () => {
+      const file = (state.files || [])[0];
+      if (!(file instanceof File)) {
+        $msg({ content: '请选择 .sql 文件', type: 'error' });
+        return;
+      }
+      let sql;
+      try {
+        sql = await file.text();
+      } catch (err) {
+        $msg({ content: '读取文件失败', type: 'error' });
+        return;
+      }
+      const confirmed = await confirmYes($confirm, '导入会按分号逐条执行脚本，且遇错即停。确定继续吗？');
+      if (!confirmed) return;
+      const res = await request({ url: '/db_import', type: 'POST', data: { sql } });
+      if (res.status !== 1) {
+        $msg({ content: res.msg, type: 'error' });
+        return;
+      }
+      const data = res.data || {};
+      $msg({ content: res.msg || '导入完成', type: data.failed > 0 ? 'warning' : 'success' });
+      if (!data.failed) state.showImport = false;
+      await loadDatabases();
     });
-    state.sqlResultText = lines.join('\n');
-    self.$msg({ content: res.msg || '执行完成', type: data.failed > 0 ? 'warning' : 'success' });
-    await loadDatabases();
   }
 
-  function viewDatabase(index, list) {
+  function executeSqlText() {
+    return executeSqlTextShared(state, request, { $msg, reload: loadDatabases });
+  }
+
+  function viewRow(index, list) {
     const row = rowAt(index, list);
     if (!row || !row.name) return false;
-    self.navigateTo('/databasetables', { database: row.name });
+    navigateTo('/databasetables', { database: row.name });
     return false;
   }
 
+  const deleteRow = createRowDeleteHandler({
+    self: { $confirm, $msg },
+    url: '/db_drop',
+    confirmMessage: (row) => `确定删除数据库「${row.name}」吗？库内所有表和数据将被永久删除。`,
+    confirmTitle: '危险操作',
+    confirmButtonText: '删除',
+    buildData: (row) => ({ database: row.name }),
+    reload: () => loadDatabases()
+  });
+
   function goDbConnect() {
-    self.navigateTo('/dbconnect');
+    navigateTo('/dbconnect');
   }
 
-  function goConnections() {
-    self.navigateTo('/dbconnect');
+  async function updateSort(index, list, value) {
+    const row = rowAt(index, list);
+    if (!row || !row.name) return false;
+    const res = await actions.post('/db_sort_update', { database: row.name, sid: Math.max(0, Number(value) || 0) });
+    if (res) await loadDatabases();
+    return !!res;
   }
 
   onMounted(async function () {
-    if (!isSuperAdmin) {
-      self.$msg({ content: '数据库管理仅对超级管理员开放', type: 'error' });
-      self.navigateTo('/admin');
-      return;
-    }
-    let hasFlag = false;
-    try {
-      hasFlag = !!globalThis.sessionStorage?.getItem(CONNECT_REDIRECT_FLAG);
-    } catch (e) {
-
-    }
-    if (hasFlag) {
-      try { globalThis.sessionStorage?.removeItem(CONNECT_REDIRECT_FLAG); } catch (e) { }
-      await loadDatabases();
-    } else {
-      self.navigateTo('/dbconnect');
-    }
+    if (!requireLogin(AUTH, { $msg, navigateTo })) return;
+    const result = await loadDatabases();
+    if (!result.ok) navigateTo('/dbconnect');
   });
 
   return {
@@ -225,13 +143,10 @@ const databaseController = controller(({ $confirm, $msg, $refs, navigateTo, requ
     submitCreateDatabase,
     openImport,
     closeImport,
-    onImportFile,
     submitImport,
-    openSqlConsole,
-    closeSql,
-    submitSql,
-    viewDatabase,
-    goConnections,
+    viewRow,
+    deleteRow,
+    updateSort,
     goDbConnect
   };
 });

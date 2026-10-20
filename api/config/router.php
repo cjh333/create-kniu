@@ -1,12 +1,15 @@
 <?php
 
 use Core\Router;
-// 前台内容（游客可见，免登录：首页、详情、评论列表等）。
+// 前台内容（游客可见，免登录：首页、详情、评论列表、作者公开关于页等）。
 Router::post('/getDaily', 'IndexController@getDaily');
 Router::post('/getArticle', 'IndexController@getArticle');
+Router::post('/getHotArticles', 'IndexController@getHotArticles');
+Router::post('/getRecommendArticles', 'IndexController@getRecommendArticles');
 Router::post('/getInfo', 'IndexController@getInfo');
 Router::post('/getDetail', 'IndexController@getDetail');
 Router::post('/getComments', 'IndexController@getComments');
+Router::post('/getPublisherAbout', 'IndexController@getPublisherAbout');
 // 前台账号：注册、登录、绑定、退出与会话探测都在未登录态调用，必须免登录。
 Router::post('/frontRegister', 'IndexController@frontRegister');
 Router::post('/frontLogin', 'IndexController@frontLogin');
@@ -18,12 +21,16 @@ Router::post('/email_code', 'IndexController@emailCode');
 Router::post('/password_reset', 'IndexController@passwordReset');
 // 需要登录鉴权的前台接口（默认即需要登录，此处列出便于对照）。
 Router::post('/getAbout', 'IndexController@getAbout');
-Router::post('/getPublisherAbout', 'IndexController@getPublisherAbout');
 Router::post('/submitComment', 'IndexController@submitComment');
 Router::post('/likeComment', 'IndexController@likeComment');
 Router::post('/deleteComment', 'IndexController@deleteComment');
 Router::post('/likeArticle', 'IndexController@likeArticle');
 Router::post('/favoriteArticle', 'IndexController@favoriteArticle');
+Router::post('/followToggle', 'IndexController@followToggle');
+Router::post('/followList', 'IndexController@followList');
+Router::post('/feedbackUpload', 'IndexController@feedbackUpload');
+Router::post('/feedbackSubmit', 'IndexController@feedbackSubmit');
+Router::post('/feedbackList', 'IndexController@feedbackList');
 Router::post('/frontProfile', 'IndexController@frontProfile');
 Router::post('/frontProfileSave', 'IndexController@frontProfileSave');
 // 登录。
@@ -66,6 +73,10 @@ Router::post('/comment_detail', 'CommentController@commentDetail');
 Router::post('/comment_reply_state', 'CommentController@commentReplyState');
 Router::post('/comment_reply_read', 'CommentController@commentReplyRead');
 Router::post('/comment_reply_update', 'CommentController@commentReplyUpdate');
+// 反馈管理（前台提交的问题反馈）。
+Router::post('/feedback_list', 'FeedbackController@feedbackList');
+Router::post('/feedback_result', 'FeedbackController@feedbackResult');
+Router::post('/feedback_update', 'FeedbackController@feedbackUpdate');
 // 角色。
 Router::post('/role_add', 'RoleController@roleAdd');
 Router::post('/role_delete', 'RoleController@roleDelete');
@@ -75,10 +86,13 @@ Router::post('/role_detail', 'RoleController@roleDetail');
 // 数据库管理（仅超级管理员 role=1，闸门在控制器内，绝不进入免登录集合）。
 Router::post('/db_list', 'DatabaseController@dbList');
 Router::post('/db_create', 'DatabaseController@dbCreate');
+Router::post('/db_drop', 'DatabaseController@dbDrop');
+Router::post('/db_sort_update', 'DatabaseController@dbSortUpdate');
 Router::post('/db_tables', 'DatabaseController@dbTables');
 Router::post('/db_table_create', 'DatabaseController@dbTableCreate');
 Router::post('/db_table_structure', 'DatabaseController@dbTableStructure');
 Router::post('/db_table_drop', 'DatabaseController@dbTableDrop');
+Router::post('/db_table_sort_update', 'DatabaseController@dbTableSortUpdate');
 Router::post('/db_column_edit', 'DatabaseController@dbColumnEdit');
 Router::post('/db_column_drop', 'DatabaseController@dbColumnDrop');
 Router::post('/db_rows', 'DatabaseController@dbRows');
@@ -87,13 +101,14 @@ Router::post('/db_row_delete', 'DatabaseController@dbRowDelete');
 Router::post('/db_export', 'DatabaseController@dbExport');
 Router::post('/db_import', 'DatabaseController@dbImport');
 Router::post('/db_query', 'DatabaseController@dbQuery');
-// 数据库连接档案（「数据库连接」页）。同样仅超级管理员；与上面 12 条的差别是
+// 数据库连接档案（「数据库连接」页）。同样仅超级管理员；与上面各条的差别是
 // 本组**不接管「当前连接」**——它正是当前连接坏掉时的修复入口，接管了就进不去。
 Router::post('/db_connection_list', 'DatabaseController@dbConnectionList');
 Router::post('/db_connection_save', 'DatabaseController@dbConnectionSave');
 Router::post('/db_connection_delete', 'DatabaseController@dbConnectionDelete');
 Router::post('/db_connection_test', 'DatabaseController@dbConnectionTest');
 Router::post('/db_connection_activate', 'DatabaseController@dbConnectionActivate');
+Router::post('/db_connection_sort_update', 'DatabaseController@dbConnectionSortUpdate');
 // 关于我（按账号存储）。
 Router::post('/about_detail', 'AboutController@aboutDetail');
 Router::post('/about_save', 'AboutController@aboutSave');

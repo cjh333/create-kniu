@@ -16,11 +16,6 @@
   text-align: left;
   white-space: normal;
   box-shadow: 0 2px 12px rgba(0, 0, 0, .1);
-  box-sizing: border-box;
-  -webkit-box-sizing: border-box;
-  -moz-box-sizing: border-box;
-  -ms-box-sizing: border-box;
-  -o-box-sizing: border-box;
 }
 
 .kniu_sys_input_tip[data-open="true"] {
@@ -28,13 +23,11 @@
 }
 
 .kniu_sys_input_tip ul {
-  margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .kniu_sys_input_tip li {
-  margin: 0;
   padding: 4px 14px;
 }
 

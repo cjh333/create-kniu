@@ -25,7 +25,7 @@ class ArticleController extends Base
       $this->json([], '媒体文件上传失败', ErrorCode::UPLOAD_REJECTED);
       return;
     }
-    $this->json(['url' => $path], '上传成功', 1);
+    $this->json(['url' => $path], '上传成功', ErrorCode::SUCCESS);
   }
 
   // 增加。
@@ -58,14 +58,25 @@ class ArticleController extends Base
       'create_time' => $this->input('post.create_time') ?? date('Y-m-d H:i:s'),
       'is_show' => $this->input('post.is_show') ?? 1
     ];
+    $recommend = $this->input('post.is_recommend');
+    if ($recommend !== null && $recommend !== '') {
+      if (!$this->isAdmin()) {
+        http_response_code(403);
+        $this->json([], '仅管理员可设置推荐文章', ErrorCode::FORBIDDEN);
+        return;
+      }
+      $data['is_recommend'] = (int)$recommend === 1 ? 1 : 0;
+    }
     $data = $this->encodeFields($data, ['title', 'subtitle', 'summary', 'content']);
     try {
       Db::name('tb_article')->insert($data);
     } catch (\Throwable $e) {
-      $this->json([], '文章添加失败：' . $e->getMessage(), ErrorCode::SERVER_ERROR);
+      // 异常细节（表名/SQL 片段）只进日志，不透传前端。
+      error_log('[Article] articleAdd failed: ' . $e->getMessage());
+      $this->json([], '文章添加失败', ErrorCode::SERVER_ERROR);
       return;
     }
-    $this->json([], '添加成功', 1);
+    $this->json([], '添加成功', ErrorCode::SUCCESS);
   }
 
   // 删除。普通用户仅能删除自己发布的文章；管理员可删除任意文章。
@@ -86,7 +97,7 @@ class ArticleController extends Base
       }
     }
     Db::name('tb_article')->where('id', '=', $id)->delete();
-    $this->json([], '删除成功', 1);
+    $this->json([], '删除成功', ErrorCode::SUCCESS);
   }
 
   // 修改。普通用户仅能修改自己发布的文章；管理员可修改任意文章，批量操作仅管理员。
@@ -116,12 +127,22 @@ class ArticleController extends Base
       'subtitle' => $this->input('post.subtitle') ?? null,
       'summary' => $this->input('post.summary') ?? null,
       'content' => $this->input('post.content') ?? null,
-      'content_mode' => (($this->input('post.content_mode') ?? 'rich') === 'markdown') ? 'markdown' : 'rich',
+      // 局部更新（如开关切换）未提交 content_mode 时保持 null 以跳过该列，避免把既有 markdown 覆盖为 rich。
+      'content_mode' => $this->input('post.content_mode') === null ? null : ($this->input('post.content_mode') === 'markdown' ? 'markdown' : 'rich'),
       'cover' => $data['cover'],
       'create_time' => $this->input('post.create_time') ?? null,
       'url' => $this->input('post.url') ?? null,
       'is_show' => $this->input('post.is_show') ?? null
     ];
+    $recommend = $this->input('post.is_recommend');
+    if ($recommend !== null) {
+      if (!$isAdmin) {
+        http_response_code(403);
+        $this->json([], '仅管理员可设置推荐文章', ErrorCode::FORBIDDEN);
+        return;
+      }
+      $data['is_recommend'] = (int)$recommend === 1 ? 1 : 0;
+    }
     $data = array_filter($data, function (mixed $value) {
       return $value !== null;
     });
@@ -137,13 +158,7 @@ class ArticleController extends Base
         $this->json([], '权限不足', ErrorCode::FORBIDDEN);
         return;
       }
-      $selectallResult = Db::name('tb_selectall')
-        ->where('name', '=', 'article')
-        ->update(['is_select' => $data['is_selectall']]);
-      $articleResult = Db::name('tb_article')
-        ->whereIn('id', explode(',', $id))
-        ->update(['is_select' => $data['is_select']]);
-      $result = $selectallResult + $articleResult;
+      $result = $this->applySelectallBatch('article', 'tb_article', $data['is_selectall'] ?? null, $data['is_select'] ?? null, (string)$id);
     } else {
       if (!$isAdmin) {
         // 普通用户仅能更新自己发布的文章。
@@ -166,7 +181,7 @@ class ArticleController extends Base
         $articleQuery->where('role_id', '=', $this->currentUserId());
       }
       $articleResult = $articleQuery
-        ->field(['is_select', 'sid', 'title', 'subtitle', 'summary', 'content', 'content_mode', 'cover', 'create_time', 'url', 'is_show'])
+        ->field(['is_select', 'sid', 'title', 'subtitle', 'summary', 'content', 'content_mode', 'cover', 'create_time', 'url', 'is_show', 'is_recommend'])
         ->update($data);
       $result = $selectallResult + $articleResult;
     }
@@ -178,7 +193,7 @@ class ArticleController extends Base
       $this->json([], '数据未发生变化', ErrorCode::RULE_REJECTED);
       return;
     }
-    $this->json([], '更新成功', 1);
+    $this->json([], '更新成功', ErrorCode::SUCCESS);
   }
 
   // 查询列表。
@@ -199,10 +214,14 @@ class ArticleController extends Base
     if ($keyword !== '') {
       $query->where('`title`', 'LIKE', $this->likeEncodedPattern($keyword));
     }
+    // content longtext 不进列表：编辑弹窗改走 /article_detail 按 id 拉取（editRow 异步回填）；
+    // 列表列白名单与 article.html 视图 + 编辑弹窗（editRow 复用行数据，editform.url 为「链接」字段来源）的消费面一致。
+    // url 在保存端原文入库（不在 encodeFields 内），故也无需 decodeFields。
     $result = $query
+      ->field(['id', 'sid', 'role_id', 'cover', 'title', 'subtitle', 'summary', 'url', 'hits', 'likes', 'is_show', 'is_recommend', 'create_time'])
       ->order($field, $sort)
       ->page($pageCurrent, $pageRow);
-    $result['data'] = $this->decodeFields($result['data'] ?? [], ['title', 'subtitle', 'summary', 'content']);
+    $result['data'] = $this->decodeFields($result['data'] ?? [], ['title', 'subtitle', 'summary']);
     // 批量查询账号信息，避免在循环内逐条查询 tb_role 形成 N+1。
     $roleIds = array_values(array_unique(array_filter(array_map(function (array $row) {
       return (int)($row['role_id'] ?? 0);
@@ -279,20 +298,24 @@ class ArticleController extends Base
         'filePath' => $filePath,
         'fileExists' => @file_exists($filePath)
       ];
+      // 调试信息（含绝对路径）只进日志，不回传前端。
+      error_log('[Article] articleCoverDelete: ' . json_encode($debugInfo, JSON_UNESCAPED_UNICODE));
 
       if (!@file_exists($filePath)) {
-        $this->json($debugInfo, '文件不存在', ErrorCode::NOT_FOUND);
+        $this->json([], '文件不存在', ErrorCode::NOT_FOUND);
         return;
       }
 
       if (!@unlink($filePath)) {
-        $this->json($debugInfo, '删除文件失败', ErrorCode::SERVER_ERROR);
+        $this->json([], '删除文件失败', ErrorCode::SERVER_ERROR);
         return;
       }
 
-      $this->json([], '删除成功', 1);
+      $this->json([], '删除成功', ErrorCode::SUCCESS);
     } catch (\Exception $e) {
-      $this->json(['error' => $e->getMessage()], '服务器错误', ErrorCode::SERVER_ERROR);
+      // 异常细节只进日志，不透传前端。
+      error_log('[Article] articleCoverDelete failed: ' . $e->getMessage());
+      $this->json([], '服务器错误', ErrorCode::SERVER_ERROR);
     }
   }
 }

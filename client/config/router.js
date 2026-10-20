@@ -1,9 +1,10 @@
 import { ROUTER } from '../core/kniueventer.mjs';
 import { appLogger } from '../core/kniulogger.mjs';
 
-ROUTER.add('login', 'admin/loginController');
-ROUTER.add('register', 'admin/loginController');
 ROUTER.add('/', 'index/homeController');
+ROUTER.add('login', 'admin/loginController');
+ROUTER.add('register', 'admin/registerController');
+ROUTER.add('forgot', 'admin/forgotController');
 ROUTER.add('detail', 'index/detailController');
 ROUTER.add('admin', 'admin/homeController');
 ROUTER.add('home', 'admin/homeController');
@@ -14,6 +15,7 @@ ROUTER.add('daily', 'admin/dailyController');
 ROUTER.add('article', 'admin/articleController');
 ROUTER.add('comment', 'admin/commentController');
 ROUTER.add('reply', 'admin/replyController');
+ROUTER.add('feedback', 'admin/feedbackController');
 ROUTER.add('dbconnect', 'admin/dbConnectController');
 ROUTER.add('database', 'admin/databaseController');
 ROUTER.add('databasetables', 'admin/databaseTablesController');

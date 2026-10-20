@@ -3,7 +3,7 @@ import MVVM from './kniumvvm.mjs';
 import SERVER from '../config/server.js';
 import { resolveAliasReferences } from './kniuutil.mjs';
 
-const { bind, reactive, beginBindingCollection, endBindingCollection } = TEMPLATE;
+const { bind, reactive, beginBindingCollection, endBindingCollection, neutralizeTemplateUrls } = TEMPLATE;
 const { loadController } = MVVM;
 
 var KniuEventer = (function () {
@@ -29,7 +29,6 @@ var KniuEventer = (function () {
     };
   }
 
-  // $ 函数工厂。
   function create$(scope, kniusystem = {}) {
     const withEvents = function (eventTarget) {
       if (!eventTarget || eventTarget.__kniuWrapped) return eventTarget;
@@ -223,7 +222,6 @@ var KniuEventer = (function () {
       return eventTarget;
     };
 
-    // 安全空元素：选择器未匹配到任何元素时返回它。
     const createNullElement = function () {
       return {
         __nullElement: true,
@@ -253,6 +251,20 @@ var KniuEventer = (function () {
       };
     };
 
+    const COLLECTION_ACTION_METHODS = ['on', 'off', 'addClass', 'removeClass', 'toggleClass', 'show', 'hide'];
+    const withEventsCollection = function (items) {
+      for (const name of [...COLLECTION_ACTION_METHODS, 'find', 'parents', 'text', 'html', 'attr', 'css', 'val', 'data', 'prop']) {
+        Object.defineProperty(items, name, {
+          configurable: true,
+          value: function (...args) {
+            const results = this.map(function (element) { return element[name](...args); });
+            return COLLECTION_ACTION_METHODS.includes(name) ? this : results;
+          },
+        });
+      }
+      return items;
+    };
+
     const query = function (selector, scopeEl = scope) {
       const root = scopeEl || scope || document;
       const matches = [...root.querySelectorAll(selector)].map(withEvents);
@@ -263,10 +275,9 @@ var KniuEventer = (function () {
         if (selector) console.warn('[kniu] 选择器未匹配到任何元素：', selector);
         return createNullElement();
       }
-      return matches.length === 1 ? matches[0] : matches;
+      return matches.length === 1 ? matches[0] : withEventsCollection(matches);
     };
 
-    // 同时接受 Element / Document / ShadowRoot / DocumentFragment 等可查询节点。
     return function $(selectorOrElement, scopeEl) {
       if (selectorOrElement && typeof selectorOrElement.querySelectorAll === 'function') {
         return withEvents(selectorOrElement);
@@ -440,10 +451,15 @@ var KniuEventer = (function () {
     let expandedSource = expandPascalTags(
       resolveTemplateIncludes(resolveAliasReferences(source, SERVER.ALIAS), templateUrl)
     ).replace(/<(kniu-[a-z0-9-]+)([^<>]*?)\s*\/>/gi, '<$1$2></$1>');
-    const fragment = document.createRange().createContextualFragment(expandedSource);
+    const inert = document.implementation.createHTMLDocument('');
+    inert.body.innerHTML = expandedSource;
+    neutralizeTemplateUrls(inert.body);
+    const fragment = document.createRange().createContextualFragment(inert.body.innerHTML);
     flattenSlotTemplates(fragment);
     const scripts = [...fragment.querySelectorAll('script')];
     scripts.forEach(function (script) { return script.remove(); });
+    if (signal?.aborted) return null;
+    neutralizeTemplateUrls(fragment);
     target.replaceChildren(fragment);
 
     const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
@@ -491,9 +507,11 @@ var KniuEventer = (function () {
     };
     try {
       for (const script of scripts) {
+        if (signal?.aborted) return null;
         await execute(function () { return new AsyncFunction('root', 'kniusystem', script.textContent)(target, templateKniuSystem); });
       }
       if (typeof mountController === 'function') {
+        if (signal?.aborted) return null;
         await execute(function () { return mountController(templateKniuSystem, target); });
       }
     } catch (error) {

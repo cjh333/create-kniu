@@ -40,7 +40,6 @@
   width: calc(100vw - 30 / var(--kniu_vw) * 2);
   height: inherit;
   flex-wrap: wrap;
-  box-sizing: border-box
 }
 
 .kniu_sys_navbar_brand {
@@ -68,8 +67,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: max(44px, calc(44 / var(--kniu_vw)));
+  height: max(44px, calc(44 / var(--kniu_vw)));
   border: 0;
   border-radius: 8px;
   background-color: transparent;
@@ -127,7 +126,6 @@
   flex: 0 0 100%;
   align-items: stretch;
   min-width: 0;
-  padding: 0;
   font-size: var(--kniu-navbar-font-size)
 }
 
@@ -144,8 +142,6 @@
   justify-content: flex-start;
   gap: 0;
   width: auto;
-  margin: 0;
-  padding: 0;
   overflow-y: auto;
   background-color: #fff;
   animation: kniu_navbar_mobile_slide_in .28s ease-out both
@@ -245,7 +241,6 @@
     align-items: center;
     justify-content: flex-end;
     gap: 4px;
-    padding: 0
   }
 
   slot[name="default"] {

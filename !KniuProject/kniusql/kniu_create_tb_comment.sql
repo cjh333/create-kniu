@@ -12,5 +12,6 @@ CREATE TABLE `tb_comment` (
     PRIMARY KEY (`id`),
     KEY `idx_comment_article_visible` (`article_id`, `is_show`, `id`),
     KEY `idx_comment_parent` (`parent_id`),
-    KEY `idx_comment_role` (`role_id`)
+    KEY `idx_comment_role` (`role_id`),
+    KEY `idx_comment_sid` (`sid`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '文章评论与回复';

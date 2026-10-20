@@ -1,35 +1,7 @@
 <style scoped>
   @import url("@kniu/kniu.min.css");
   @import url("@style/web.min.css");
-  @import url("@style/admin/admin.min.css");
-  @import url("@style/admin/admin_home.min.css");
-
-  .detail_head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 5px 10px 10px;
-  }
-
-  .detail_head_actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-left: auto;
-  }
-
-  .detail_head_actions kniu-input,
-  .detail_head_actions kniu-input-group {
-    display: block;
-    width: 280px;
-    max-width: 100%;
-    min-width: 0;
-  }
-
-  .detail_wrap {
-    position: relative;
-    background-color: #fff;
-  }
+  @import url("@style/admin/admin_all.min.css");
 </style>
 <section class="index_cells">
   <div class="admin_content_body index_cell index_cell_2">
@@ -38,8 +10,8 @@
       <span :else>&ensp;</span>
       <div class="detail_head_actions">
         <kniu-input :form="{{keyword}}" :option="{{name:'keyword',placeholder:'请输入账号'}}" @keydown.enter="searchList" @input="debouncedSearch">
-          <template #append label-width="48px">
-            <kniu-btn :option="{{text:true}}" @click="searchList">
+          <template #append :option="{{labelWidth:'48px'}}">
+            <kniu-btn :option="{{text:true,ariaLabel:'搜索'}}" @click="searchList">
               <kniu-icon :option="{{icon:'search'}}" />
             </kniu-btn>
           </template>
@@ -50,19 +22,14 @@
     <template :if="{{userTable.data.length > 0}}">
       <div class="detail_wrap">
         <kniu-table ref="table" :option="{{userTable}}">
-          <kniu-table-col type="checkbox" fixed width="60" align="center" />
-          <kniu-table-col field="id" label="ID" fixed width="80" align="center" sortable />
-          <kniu-table-col field="sid" label="排序" fixed width="100" align="center" editable="number" sortable />
-          <kniu-table-col field="name" label="账号" fixed show-overflow-tooltip />
-          <kniu-table-col field="nickname" label="昵称" show-overflow-tooltip editable="text" :option="{{onChange:updateNickname}}" />
-          <kniu-table-col field="role_text" label="角色" width="160" align="center" />
+          <kniu-table-col :option="{{width:60,align:'center',fixed:'left',type:'checkbox'}}" />
+          <kniu-table-col :option="{{field:'sid',label:'排序',width:90,align:'center',editable:'number',sortable:true,onChange:(updateSort)}}" />
+          <kniu-table-col :option="{{field:'id',label:'ID',width:90,align:'center',fixed:'left',sortable:true}}" />
+          <kniu-table-col :option="{{field:'name',label:'账号',align:'center',fixed:true,showOverflowTooltip:true}}" />
+          <kniu-table-col :option="{{field:'nickname',label:'昵称',align:'center',showOverflowTooltip:true,editable:'text',onChange:(updateNickname)}}" />
+          <kniu-table-col :option="{{field:'role_text',label:'角色',width:160,align:'center'}}" />
           <template :if="{{canAdministerUsers}}">
-            <kniu-table-col field="is_show" label="禁用" width="200" align="center">
-              <template #default>
-                <kniu-switch :option="{{disabledSwitch}}" @change="updateDisabled" />
-              </template>
-            </kniu-table-col>
-            <kniu-table-col field="role_auth" label="权限" width="200" align="center">
+            <kniu-table-col :option="{{field:'role_auth',label:'权限',width:200,align:'center'}}">
               <template #default>
                 <kniu-radio-group @change="updateRoleAuth">
                   <kniu-radio value="1">编辑</kniu-radio>
@@ -70,19 +37,24 @@
                 </kniu-radio-group>
               </template>
             </kniu-table-col>
-            <kniu-table-col field="comment_audit" label="审核评论" width="200" align="center">
+            <kniu-table-col :option="{{field:'comment_audit',label:'审核评论',width:200,align:'center'}}">
               <template #default>
                 <kniu-switch :option="{{auditSwitch}}" @change="updateCommentAudit" />
               </template>
             </kniu-table-col>
-            <kniu-table-col field="muted" label="禁言" width="120" align="center">
+            <kniu-table-col :option="{{field:'muted',label:'禁言',width:120,align:'center'}}">
               <template #default>
                 <kniu-switch :option="{{mutedSwitch}}" @change="updateMuted" />
               </template>
             </kniu-table-col>
+            <kniu-table-col :option="{{field:'is_show',label:'禁用',width:200,align:'center'}}">
+              <template #default>
+                <kniu-switch :option="{{disabledSwitch}}" @change="updateDisabled" />
+              </template>
+            </kniu-table-col>
           </template>
-          <kniu-table-col field="create_time" label="创建时间" width="180" align="center" />
-          <kniu-table-col :if="{{canAdministerUsers}}" label="操作" width="160" align="center" fixed="right">
+          <kniu-table-col :option="{{field:'create_time',label:'创建时间',width:180,align:'center'}}" />
+          <kniu-table-col :if="{{canAdministerUsers}}" :option="{{field:'operation',label:'操作',width:160,align:'center',fixed:'right'}}">
             <template #default>
               <kniu-btn :if="{{scope.row.deletable}}" :option="{{type:'danger',size:'small',link:true}}" @click="deleteRow">删除</kniu-btn>
               <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="editRow">修改密码</kniu-btn>
@@ -98,54 +70,46 @@
   </div>
 </section>
 <!-- 模态框 -->
-<kniu-modal style="width:520px;" :option="{{show:(showmodal)}}" @close="closeDialog">
+<kniu-modal :option="{{show:(showmodal),onClose:(closeDialog),style:'width:520px;'}}">
   <template #header>
     <span>{{dialogTitle}}</span>
-    <kniu-btn :option="{{type:'primary',size:'small',link:true}}" @click="closeDialog">
-      <kniu-icon :option="{{icon:'close'}}" />
-    </kniu-btn>
   </template>
   <template #default>
     <kniu-form ref="form" :option="{{userModel}}">
       <kniu-form-cell :if="{{isAddDialog && canAdministerUsers}}">
+        <kniu-input :form="{{userModel.sid}}" :option="{{name:'sid',placeholder:'请输入排序'}}">
+          <template #prepend :option="{{labelWidth:'120px'}}">排序</template>
+        </kniu-input>
+      </kniu-form-cell>
+      <kniu-form-cell :if="{{isAddDialog && canAdministerUsers}}">
         <kniu-input :form="{{userModel.name}}" :option="{{name:'name',placeholder:'请输入账号'}}">
-          <template #prepend label-width="120px">账号</template>
+          <template #prepend :option="{{labelWidth:'120px'}}">账号</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell :if="{{!isAddDialog}}">
-        <kniu-input :form="{{userModel.old_password}}" :option="{{name:'old_password',type:'password',showPassword:true,placeholder:'请输入原密码'}}">
-          <template #prepend label-width="120px">原密码</template>
+        <kniu-input :form="{{userModel.old_password}}" :option="{{name:'old_password',showPassword:true,placeholder:'请输入原密码',type:'password'}}">
+          <template #prepend :option="{{labelWidth:'120px'}}">原密码</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell :if="{{isAddDialog || canAdministerUsers}}">
-        <kniu-input :form="{{userModel.password}}" :option="{{name:'password',type:'password',showPassword:true,placeholder:'请输入密码',tip:'• 8 位以上;• 含大写字母;• 含小写字母;• 含数字;• 含特殊字符'}}">
-          <template #prepend label-width="120px">{{isAddDialog ? '密码' : '新密码'}}</template>
+        <kniu-input :form="{{userModel.password}}" :option="{{name:'password',showPassword:true,placeholder:'请输入密码',tip:'• 8 位以上;• 含大写字母;• 含小写字母;• 含数字;• 含特殊字符',type:'password'}}">
+          <template #prepend :option="{{labelWidth:'120px'}}">{{isAddDialog ? '密码' : '新密码'}}</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell :if="{{isAddDialog || canAdministerUsers}}">
-        <kniu-input :form="{{userModel.repassword}}" :option="{{name:'repassword',type:'password',showPassword:true,placeholder:'请再次输入密码'}}">
-          <template #prepend label-width="120px">{{isAddDialog ? '确认密码' : '确认新密码'}}</template>
+        <kniu-input :form="{{userModel.repassword}}" :option="{{name:'repassword',showPassword:true,placeholder:'请再次输入密码',type:'password'}}">
+          <template #prepend :option="{{labelWidth:'120px'}}">{{isAddDialog ? '确认密码' : '确认新密码'}}</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell :if="{{!canAdministerUsers}}">
-        <kniu-input :form="{{userModel.new_password}}" :option="{{name:'new_password',type:'password',showPassword:true,placeholder:'请输入新密码'}}">
-          <template #prepend label-width="120px">新密码</template>
+        <kniu-input :form="{{userModel.new_password}}" :option="{{name:'new_password',showPassword:true,placeholder:'请输入新密码',type:'password'}}">
+          <template #prepend :option="{{labelWidth:'120px'}}">新密码</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell :if="{{!canAdministerUsers}}">
-        <kniu-input :form="{{userModel.confirm_password}}" :option="{{name:'confirm_password',type:'password',showPassword:true,placeholder:'请再次输入新密码'}}">
-          <template #prepend label-width="120px">确认新密码</template>
+        <kniu-input :form="{{userModel.confirm_password}}" :option="{{name:'confirm_password',showPassword:true,placeholder:'请再次输入新密码',type:'password'}}">
+          <template #prepend :option="{{labelWidth:'120px'}}">确认新密码</template>
         </kniu-input>
-      </kniu-form-cell>
-      <kniu-form-cell :if="{{isAddDialog && canAdministerUsers}}">
-        <kniu-input :form="{{userModel.sid}}" :option="{{name:'sid',placeholder:'请输入排序'}}">
-          <template #prepend label-width="120px">排序</template>
-        </kniu-input>
-      </kniu-form-cell>
-      <kniu-form-cell :if="{{isAddDialog && canAdministerUsers}}">
-        <kniu-switch :form="{{userModel.is_show}}" :option="{{disabledSwitch}}">
-          <template #prepend label-width="120px">禁用</template>
-        </kniu-switch>
       </kniu-form-cell>
     </kniu-form>
   </template>

@@ -1,11 +1,11 @@
 import PROCESS_ENV from './kniudotenv.mjs';
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { extname, join, normalize } from 'node:path';
+import { extname, join } from 'node:path';
 import SERVER from '../config/server.js';
 import { resolveAliasReferences } from './kniuutil.mjs';
 import collectTemplates, { collectDocs } from './kniubuilder.mjs';
-import { NO_CACHE, sendStaticBody, staticCacheHeaders } from './kniustatic.mjs';
+import { NO_CACHE, resolveWithinRoot, sendStaticBody, staticCacheHeaders } from './kniustatic.mjs';
 import { MIME_TYPES, handleApiRequest, resolveRequestProtocol } from './kniuproxy.mjs';
 
 const ROOT = process.cwd();
@@ -34,15 +34,8 @@ const server = createServer(async function (request, response) {
       await sendStaticBody(request, response, headers, Buffer.from(body));
       return;
     }
-    // 文本模块通道：`/client/**/*.css?module`、`/client/**/*.html?module` → `export default "<文本>"`。
-    // 浏览器里要让组件「同步」拿到文本（样式必须随组件挂载同步生效，不能异步 fetch），
-    // 只能把它们当 JS 模块来 import；`?module` 是这条通道的显式标记，普通 .css/.html 请求不受影响。
-    // .css 供组件样式（adoptSharedStyle 会做 px→vw 改写，见 SKILL #126），
-    // .html 供组件 shadow 模板骨架（组件目录化三件套，见规则 #177）。
-    // dist 侧由 kniubuilder 的 .css/.html 分支产出同语义模块，两侧必须一致。
     if (parsedUrl.searchParams.has('module') && (extname(PATH_NAME) === '.css' || extname(PATH_NAME) === '.html')) {
-      const textFile = normalize(join(ROOT, PATH_NAME));
-      if (!textFile.startsWith(ROOT)) throw new Error('Invalid path');
+      const textFile = resolveWithinRoot(ROOT, PATH_NAME);
       const body = `export default ${JSON.stringify(await readFile(textFile, 'utf8'))};`;
       await sendStaticBody(request, response, { 'Content-Type': 'text/javascript; charset=utf-8', ...NO_CACHE }, Buffer.from(body));
       return;
@@ -50,9 +43,8 @@ const server = createServer(async function (request, response) {
     let file = PATH_NAME === '/'
       ? VIEW_INDEX
       : PATH_NAME === '/upload' || PATH_NAME.startsWith('/upload/')
-        ? normalize(join(ROOT, 'public', PATH_NAME.replace(/^\/+/, '')))
-        : normalize(join(ROOT, PATH_NAME));
-    if (!file.startsWith(ROOT)) throw new Error('Invalid path');
+        ? resolveWithinRoot(ROOT, 'public' + PATH_NAME)
+        : resolveWithinRoot(ROOT, PATH_NAME);
     if ((await stat(file)).isDirectory()) file = join(file, 'index.html');
     const mime = MIME_TYPES[extname(file)] || 'application/octet-stream';
     if (extname(file) === '.html' && (PATH_NAME === '/' || PATH_NAME.endsWith('/index.html'))) {
@@ -89,6 +81,14 @@ const server = createServer(async function (request, response) {
       response.end('Not found');
     }
   }
+});
+
+server.on('error', function (err) {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`端口 ${SERVER.PORT} 已被占用：请先运行 npm run kill 释放本项目端口，或调整 client/config/server.js 的 SERVER.PORT。`);
+    process.exit(1);
+  }
+  throw err;
 });
 
 server.listen(SERVER.PORT, SERVER.HOST, function () {

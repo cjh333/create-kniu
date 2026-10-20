@@ -29,8 +29,8 @@ KniuSystem/
 │  ├─ config/                # 路由、数据库、鉴权、日志等配置
 │  ├─ core/                  # Router、Controller、Db 等基础设施
 │  └─ app/                   # index/admin 业务控制器
-├─ !kniu_project/
-│  ├─ KNIU-API-CONTRACT.md   # 与语言无关的 API 行为契约
+├─ !KniuProject/
+│  ├─ KNIU_API_CONTRACT.md    # 与语言无关的 API 行为契约
 │  └─ kniusql/               # 当前数据库建表与初始化数据基线
 ├─ public/                   # CSS、图片、字体和 Kniu 插件资源
 ├─ dist/                     # 生产构建产物
@@ -46,8 +46,8 @@ KniuSystem/
 1. 从 `client/config/router.js` 加载路由表。
 2. 调用 `createApp()` 创建应用实例和事件总线。
 3. 通过 `app.use(ROUTER)` 注入页面路由。
-4. 通过 `app.useViews({ 'admin/main': 'admin/mainController', 'index/header': 'index/headerController' })` 按目录注入公共布局 Controller——**键是「区域/名称」，值是该控制器的路径（一次调用写完，调用会整体替换而非合并；不接受嵌套对象写法）**。
-5. 调用 `app.mount('#app')` 恢复会话、注册组件并渲染当前 Hash 路由。
+4. 通过 `client.useViews(VIEWER)` 按目录注入公共布局 Controller——装配表在 `client/config/viewer.js`：**键是视图相对 `views/` 的路径（如 `'admin/common/aside'`，须等于 `kniuviewkey.mjs::toCommonKey` 派生值），值是控制器相对 `client/controller/` 基目录的真实文件路径（基目录不写入，如 `'admin/asideController.js'`）；一次调用写完，调用会整体替换而非合并；不接受嵌套对象写法**。
+5. 调用 `app.mount('#client')` 恢复会话、注册组件并渲染当前 Hash 路由（挂载目标 `#client` 对应 `client/views/index.html` 中的 `<div id="client">`）。
 
 ### 视图、路由与组件
 
@@ -105,7 +105,7 @@ export default controller(() => {
 });
 ```
 
-MVVM 提供 `ref()`、`computed()`、getter/多来源 `watch()` 和 `watchEffect()`；可复用的有状态逻辑统一以 `useXxx()` composable 命名。
+MVVM 提供 `reactive()` 状态对象与 getter/多来源 `watch()`；可复用的有状态逻辑统一以 `useXxx()` composable 命名。
 
 ### 核心模块
 
@@ -119,7 +119,7 @@ MVVM 提供 `ref()`、`computed()`、getter/多来源 `watch()` 和 `watchEffect
 | `kniueventer.mjs` | 事件总线、作用域 DOM 工具、模板加载、模板嵌入和路由注册表；业务入口统一命名为 `EVENTER` |
 | `kniuauth.mjs` | `AUTH` 登录状态、用户信息、会话恢复、退出和失效复位 |
 | `kniurequest.mjs` | `/api` 请求封装、响应归一化、并发去重和 401 处理；所有成功接口自动交给状态中心作前后快照比对 |
-| `kniuui.mjs` | 系统 UI 组件、消息提示与路径别名替换；内含通用列表组合器 `useListPage()`（编排分页、搜索和可选删除，接口、数据表与权限策略由业务 Controller 传入）；业务入口统一命名为 `UI` |
+| `kniuui.mjs` | 系统 UI 组件、消息提示与路径别名替换；内含通用列表组合器 `usePage()`（自动创建表格/分页状态并接线页事件，编排分页、搜索和可选删除，接口、数据表与权限策略由业务 Controller 传入）；业务入口统一命名为 `UI` |
 | `kniulogger.mjs` | 按环境配置的前端/构建日志；业务入口统一命名为 `LOGGER` |
 | `kniuserver.mjs` | 开发静态服务、模板清单生成和 API 反向代理 |
 | `kniuproxy.mjs` | 服务器端共享基础设施：`/api` 反向代理、请求协议解析与 MIME 映射，供 `kniuserver` 与 `kniupreview` 复用 |
@@ -225,6 +225,27 @@ dist/
 - 模板和 CSS 内的资源路径会改写为哈希文件路径。
 - `BUILDER.PUBLIC_PATH` 可设置根路径或子目录部署前缀；空字符串表示相对产物路径。
 
+### 生产部署敏感路径防护（必做）
+
+docroot 指向项目根时，以下路径**必须**禁止 HTTP 直读（根目录已附带 `.htaccess`，Apache 自动生效；nginx 需在 server 块加等价规则）：
+
+| 路径 | 内容 |
+| --- | --- |
+| `/.env` | 数据库/邮件凭证 |
+| `/runtime/`（含 `/api/runtime/`） | 会话文件、登录锁、`db-connections.json`（明文连接凭证）、请求日志 |
+| `/!KniuProject/` | SQL 基线与种子数据（含密码哈希/令牌摘要） |
+
+nginx 等价规则：
+
+```nginx
+location ~ (^|/)\. { deny all; }
+location ^~ /runtime/ { deny all; }
+location ^~ /api/runtime/ { deny all; }
+location ^~ /!KniuProject/ { deny all; }
+```
+
+两条配套前提：①源站仅允许 Cloudflare 回源 IP 访问（`Controller::clientIp()` 信任 `CF-Connecting-IP`，直连源站可伪造该头绕过防爆破锁的 IP 维度）；②上传目录 `public/upload` 由部署层禁用 PHP handler。
+
 ## 开发约定
 
 核心状态回归检查运行 `npm test`；该检查覆盖账号切换后的快照清空、请求生命周期与核心列表工具。
@@ -244,11 +265,11 @@ dist/
 - 当前 `package.json` 提供 `npm run dev`、`npm run preview`、`npm run build` 和 `npm run kill`；没有未实现的 `check` 或 `benchmark` 脚本。
 - 新增页面时，同时添加 `client/views/index/<name>.html`、`client/controller/index/<name>Controller.js`，并以 `index/<name>Controller` 注册到路由表；控制器里**不要写登录守卫**——需要登录的页面由后端接口默认鉴权返回 `1001`，请求层会自动跳登录页并带上回跳目标。
 - 新增后台页面时，同时添加 `client/views/admin/<name>.html`、`client/controller/admin/<name>Controller.js`，并以 `admin/<name>Controller` 注册到路由表；页面控制器需自行保证未登录时的接口请求能触发 401 跳转，后台页面会在 `admin/` 目录判定下自动装配主框架。
-- 新增公共布局时，将模板放入对应区域的 `common/`，将 Controller 放入同名区域目录，并在 `client/client.mjs` 的 `useViews()` 中使用 `区域/名称` 键装配：`{ 'admin/aside': 'admin/asideController' }`。**`useViews()` 只接受这一种扁平写法**——键必须等于组件标识里的 `区域/名称`（`views/admin/common/aside.html` → `admin/aside`），值是控制器路径字符串（惰性 import）或 `controller()` 产物；**它整体替换上一次的注册，不是合并**，所以要在一次调用里写全；写成嵌套对象（`{ admin: { aside: '...' } }`）会在启动期抛 `TypeError`，不会静默降级。
+- 新增公共布局时，将模板放入对应区域的 `common/`，将 Controller 放入同名区域目录，并在 `client/config/viewer.js` 中装配：`{ 'admin/common/aside': 'admin/asideController.js' }`。**只接受这一种扁平写法**——键是视图相对 `views/` 的路径（`views/admin/common/aside.html` → `admin/common/aside`，须等于 `kniuviewkey.mjs::toCommonKey` 派生值），值是控制器相对 `client/controller/` 基目录的真实文件路径（基目录不写入）；**它整体替换上一次的注册，不是合并**，所以要在一次调用里写全；写成嵌套对象（`{ admin: { common: { aside: '...' } } }`）会在启动期抛 `TypeError`，不会静默降级；键写错不会报错，但控制器会静默丢失、模板以 `{{ }}` 原样呈现——回归闸门 `node test/check_viewer_paths.mjs`。
 - 页面和公共布局组件标识包含所在区域，前后台允许使用同名文件且不会相互覆盖。
 - 后端新增接口时，在 `api/config/router.php` 注册，并将控制器放入对应应用的 `Controllers` 目录；部署到区分大小写的环境时必须保持目录名大小写正确。
 - `dist/` 是生成目录，不应直接编辑。
 
-更细的模板语法参见 [`client/core/kniutemplate.md`](client/core/kniutemplate.md)，系统 UI 组件（`kniu-table` / `kniu-page` / `kniu-empty` / `kniu-modal` / `kniu-form` / `kniu-input` / `kniu-switch` / `kniu-editor` 等）用法参见 [`client/core/kniuui.md`](client/core/kniuui.md)，当前 PHP API 说明参见 [`api/API.md`](api/API.md)，跨语言 API 契约参见 [`!kniu_project/KNIU-API-CONTRACT.md`](./!kniu_project/KNIU-API-CONTRACT.md)。
+更细的模板语法参见 [`client/core/kniutemplate/KNIU-TEMPLATE.md`](client/core/kniutemplate/KNIU-TEMPLATE.md)，系统 UI 组件（`kniu-table` / `kniu-page` / `kniu-empty` / `kniu-modal` / `kniu-form` / `kniu-input` / `kniu-switch` / `kniu-editor` 等）用法参见 [`client/core/kniuui/KNIU-UI.md`](client/core/kniuui/KNIU-UI.md)，当前 PHP API 说明参见 [`api/API.md`](api/API.md)，跨语言 API 契约参见 [`!KniuProject/KNIU_API_CONTRACT.md`](./!KniuProject/KNIU_API_CONTRACT.md)。
 
 所有 `kniu-*` 自定义组件统一使用 `kniu:option` 配置，旧的零散组件属性不再兼容。模板标签仅保留 `ref`、`kniu:form`、模板指令、插槽和模板事件；组件回调优先配置为 options 中的 `onXxx`。

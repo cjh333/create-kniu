@@ -13,11 +13,6 @@ const LANGUAGE_ALIASES = {
 export const KNIU_TABLE_WRAP_CLASS = 'kniu_sys_article_table_wrap';
 export const KNIU_TABLE_CLASS = 'kniu_sys_article_table';
 
-/**
- * 给 DOM 里的表格补包裹层（原地修改）。
- * @param {ParentNode} root 容器（元素 / DocumentFragment / template.content）。
- * @param {Node} [skipNode] 当前光标锚点：落在表内时跳过该表（包裹会把选区挤到容器根）。
- */
 export function wrapTablesIn(root, skipNode) {
   if (!root || typeof root.querySelectorAll !== 'function') return;
   const tables = Array.prototype.slice.call(root.querySelectorAll('table'));
@@ -39,7 +34,6 @@ export function wrapTablesIn(root, skipNode) {
   }
 }
 
-/** 剥掉包裹层（取值 / 源码模式 / 保存内容还原为裸 `<table>`）。 */
 export function unwrapTablesIn(root) {
   if (!root || typeof root.querySelectorAll !== 'function') return;
   Array.prototype.slice.call(root.querySelectorAll('.' + KNIU_TABLE_WRAP_CLASS)).forEach(function (wrap) {
@@ -54,7 +48,6 @@ export function unwrapTablesIn(root) {
   });
 }
 
-/** HTML 字符串版：给内容串里的表格补包裹层（富文本正文等一次性渲染场景）。 */
 export function wrapContentTables(html, documentRef = globalThis.document) {
   const source = String(html == null ? '' : html);
   if (!documentRef) return source;
@@ -79,7 +72,6 @@ function markdownHeadingId(value) {
   return text || 'section';
 }
 
-/** 链接/图片 URL 协议白名单：危险协议降级为 `#`，防 markdown 路径的存储型 XSS。 */
 function safeUrl(value) {
   return isDangerousUrl(value) ? '#' : value;
 }
@@ -322,21 +314,12 @@ export function renderMarkdown(source) {
   return rendered.replace(/\u0000CODE_(\d+)\u0000/g, (_, index) => fences[Number(index)] || '');
 }
 
-/**
- * 剥离富文本编辑器对代码围栏的包裹残留：编辑器会把 ```lang 与收尾 ``` 各自包进
- * <p>/<div> 或补 <br>，导致 renderMarkdown 的围栏保护正则匹配不上、字面量漏进正文。
- * 只处理「独立成行的围栏 + 紧邻 <pre>」这一种编辑器产物，不动正文里的行内反引号。
- */
 export function unwrapEditorCodeFence(value) {
   return String(value || '')
     .replace(/((?:^|<\/(?:p|div)>|<br\s*\/?>|\n)\s*)(?:<(?:p|div)[^>]*>\s*)?```[a-z0-9_-]*\s*(?:<\/(?:p|div)>|<br\s*\/?>|\n)+(\s*<pre\b)/gi, '$1$2')
     .replace(/(<\/pre>\s*)(?:<(?:p|div)[^>]*>\s*)?```\s*(?:<\/(?:p|div)>|<br\s*\/?>)?/gi, '$1');
 }
 
-/**
- * 文章正文 Markdown 渲染的统一入口：先剥离编辑器围栏残留，再渲染并增强代码块。
- * 详情页等「编辑器产出 + Markdown 存储」的正文一律走这里，避免各控制器重复拼装。
- */
 export function renderMarkdownArticle(value, documentRef = globalThis.document) {
   return enhanceCodeBlocks(renderMarkdown(unwrapEditorCodeFence(value)), documentRef);
 }

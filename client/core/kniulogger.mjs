@@ -1,7 +1,6 @@
 import LOGGER from '../config/logger.js';
 
 var KniuLogger = (function () {
-  // 日志级别权重：数值越大越严重。
   const LEVELS = { TRACE: 0, DEBUG: 1, INFO: 2, WARN: 3, ERROR: 4, FATAL: 5 };
 
   function resolveLogLevel(name) {
@@ -9,7 +8,6 @@ var KniuLogger = (function () {
     return LEVELS[String(name).toUpperCase()] ?? LEVELS.INFO;
   }
 
-  // 本地标准时间 YYYY-MM-DD HH:mm:ss（去掉毫秒与 Z，用空格分隔，按本地时区）。
   function padTwoDigits(value) {
     return String(value).padStart(2, '0');
   }
@@ -30,18 +28,14 @@ var KniuLogger = (function () {
         body += ` ${String(meta)}`;
       }
     }
-    // 输出顺序：消息,级别,时间戳（无空格分隔逗号）。
     return `${body},${level},${ts}`;
   }
 
-  // 轻量日志收集器：按级别过滤，可同时输出到控制台与文件，并保留内存记录便于「收集」。
   class LoggerService {
     constructor(options = {}) {
       this.config = { ...LOGGER, ...options };
       this.threshold = resolveLogLevel(this.config.LEVEL);
-      // 收集到的日志条目（内存）。
       this.entries = [];
-      // 序列化文件写入，避免并发 append 错乱。
       this._writeChain = Promise.resolve();
       this._isNode =
         typeof process !== 'undefined' && process.versions && !!process.versions.node;
@@ -81,9 +75,7 @@ var KniuLogger = (function () {
           let size = 0;
           try {
             ({ size } = await fs.stat(file));
-          } catch {
-            /* 文件尚不存在 */
-          }
+          } catch { }
           if (size >= this.config.MAX_FILE_SIZE) await this.#rotateLogFiles(fs, path, file);
           await fs.appendFile(file, line + '\n', 'utf8');
         } catch (e) {
@@ -92,7 +84,6 @@ var KniuLogger = (function () {
       }.bind(this));
     }
 
-    // 超过单文件大小限制时按 .1/.2/... 滚动，保留 MAX_FILES 份。
     async #rotateLogFiles(fs, path, file) {
       const max = this.config.MAX_FILES;
       for (let i = max - 1; i >= 1; i--) {
@@ -100,15 +91,11 @@ var KniuLogger = (function () {
         const dst = `${file}.${i}`;
         try {
           await fs.rename(src, dst);
-        } catch {
-          /* 源不存在则跳过 */
-        }
+        } catch { }
       }
       try {
         await fs.rename(file, `${file}.1`);
-      } catch {
-        /* 忽略 */
-      }
+      } catch { }
     }
 
     trace(message, meta) {
@@ -130,7 +117,6 @@ var KniuLogger = (function () {
       return this.log('FATAL', message, meta);
     }
 
-    // 返回收集到的日志条目（可按级别过滤）。
     getLogEntries(level) {
       if (!level) return [...this.entries];
       const threshold = resolveLogLevel(level);
@@ -141,7 +127,6 @@ var KniuLogger = (function () {
       this.entries.length = 0;
     }
 
-    // 进程退出前等待所有异步文件写入完成。
     async flushPendingWrites() {
       await this._writeChain;
     }

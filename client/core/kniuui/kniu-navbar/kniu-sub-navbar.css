@@ -16,7 +16,7 @@ details {
 summary {
   display: flex;
   align-items: center;
-  min-height: 50px;
+  min-height: max(50px, calc(50 / var(--kniu_vw)));
   padding: 0 16px 0 calc(16px + (var(--kniu-navbar-level, 1) - 1) * 16px);
   border-radius: 0;
   color: #4b5563;
@@ -66,7 +66,7 @@ summary:hover,
   }
 
   summary {
-    min-height: 44px;
+    min-height: max(44px, calc(44 / var(--kniu_vw)));
     padding: 0 18px;
     border-radius: 8px
   }

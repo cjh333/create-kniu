@@ -21,7 +21,6 @@
   font-size: 12px;
   text-align: left;
   cursor: pointer;
-  box-sizing: border-box
 }
 
 .kniu_sys_dropdown_option:hover:not([disabled]),

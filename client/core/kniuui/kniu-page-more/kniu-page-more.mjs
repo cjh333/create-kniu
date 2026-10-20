@@ -38,5 +38,5 @@ export function registerPageMore(context) {
     }
   }
   customElements.define('kniu-page-more', KniuSysPageMore);
-  installOptionsOnlyProtocol?.(['kniu-page-more']);
+  installOptionsOnlyProtocol?.('kniu-page-more');
 }

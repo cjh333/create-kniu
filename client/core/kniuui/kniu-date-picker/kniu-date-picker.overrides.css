@@ -130,7 +130,6 @@
   position: relative;
   justify-self: stretch;
   height: 30px;
-  padding: 0;
   font-size: 12px
 }
 
@@ -215,7 +214,7 @@
 
 .kniu_sys_date_picker_head>button,
 .kniu_sys_date_picker_range_head button {
-  height: 26px;
+  height: max(28px, calc(26 / var(--kniu_vw)));
   font-size: 14px
 }
 
@@ -250,19 +249,19 @@
 
 .kniu_sys_date_picker_week span,
 .kniu_sys_date_picker_range_week span {
-  height: 24px;
+  height: max(28px, calc(24 / var(--kniu_vw)));
   font-size: 10px;
-  line-height: 24px
+  line-height: max(28px, calc(24 / var(--kniu_vw)))
 }
 
 .kniu_sys_date_picker_day,
 .kniu_sys_date_picker_range_day {
-  height: 26px;
+  height: max(28px, calc(26 / var(--kniu_vw)));
   font-size: 10px
 }
 
 .kniu_sys_date_picker_day {
-  width: 26px
+  width: max(28px, calc(26 / var(--kniu_vw)))
 }
 
 .kniu_sys_date_picker_day[data-mark],
@@ -284,7 +283,6 @@
   min-height: 0;
   padding: 8px;
   gap: 4px;
-  box-sizing: border-box
 }
 
 .kniu_sys_date_picker_chooser[data-mode="year"],
@@ -320,7 +318,7 @@
 .kniu_sys_date_picker_time_value {
   width: 38px;
   height: 26px;
-  font-size: 11px
+  font-size: 12px
 }
 
 .kniu_sys_date_picker_time_options {
@@ -330,7 +328,7 @@
 }
 
 .kniu_sys_date_picker_time_option {
-  height: 25px
+  height: max(28px, calc(25 / var(--kniu_vw)))
 }
 
 .kniu_sys_date_picker_footer {
@@ -339,7 +337,7 @@
 
 .kniu_sys_date_picker_action {
   width: 42px;
-  height: 25px;
+  height: max(28px, calc(25 / var(--kniu_vw)));
   padding: 0;
   font-size: 11px
 }
@@ -399,7 +397,6 @@
   overflow: hidden;
   border-bottom: 0;
   border-left: 1px solid #ebeef5;
-  box-sizing: border-box
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[hidden] {
@@ -419,7 +416,6 @@
   overflow: hidden;
   flex-direction: column;
   border-left: 1px solid #ebeef5;
-  box-sizing: border-box
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_field:first-of-type {
@@ -433,10 +429,9 @@
   height: 34px;
   border-bottom: 1px solid #ebeef5;
   color: var(--kniu-text-color, #606266);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 34px;
   text-align: center;
-  box-sizing: border-box
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_value {
@@ -457,11 +452,10 @@
   border-radius: 0;
   background-color: #fff;
   box-shadow: none;
-  box-sizing: border-box
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_option {
-  height: 25px
+  height: max(28px, calc(25 / var(--kniu_vw)))
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_footer {
@@ -481,22 +475,17 @@
 .kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"])>.kniu_sys_date_picker_time {
   grid-column: 2;
   grid-row: 2 / span 2;
-  height: 189px
+  align-self: stretch;
+  height: auto
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_field {
-  height: 189px
+  height: auto
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_field::before {
-  height: 25px;
-  line-height: 25px
-}
-
-.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options,
-.kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options[hidden] {
-  height: 164px;
-  max-height: 164px
+  height: max(28px, calc(24 / var(--kniu_vw)));
+  line-height: max(28px, calc(24 / var(--kniu_vw)))
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"] .kniu_sys_date_picker_time_options {
@@ -552,7 +541,6 @@
   left: 0;
   border: 1px solid var(--kniu-border-color, #dcdfe6);
   pointer-events: none;
-  box-sizing: border-box
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"])>.kniu_sys_date_picker_time::after {
@@ -590,8 +578,16 @@
 
 .kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options,
 .kniu_sys_date_picker_panel[data-type="datetime"]:not([data-range="true"]) .kniu_sys_date_picker_time_options[hidden] {
-  height: 160px;
-  max-height: 160px
+  flex: 1 1 0;
+  -webkit-flex: 1 1 0;
+  -moz-flex: 1 1 0;
+  -ms-flex: 1 1 0;
+  -o-flex: 1 1 0;
+  margin-top: calc(12 / var(--kniu_vw));
+  margin-bottom: calc(12 / var(--kniu_vw));
+  min-height: 0;
+  height: auto;
+  max-height: none;
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-show-hour="false"] [data-time-field="minute"] .kniu_sys_date_picker_time_options,

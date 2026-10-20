@@ -8,8 +8,8 @@
 - 组件内部 DOM 类名使用 `kniu_sys_` 前缀；页面与设计系统仍用 `kniu_*` 工具类族（`kniu_container`、`kniu_web_*`、`kniu_md_*` 等）。组件源码内的类名由 `node test/audit_component_classes.mjs` 守护，退出码非 0 即存在不合规类名。
 - 所有 `kniu-*` 组件的功能配置统一通过 `kniu:option` 对象接收；同时支持简写 `:option`，两者完全等价。旧的组件配置 attribute 不再读取或兼容。
 - 组件使用 Shadow DOM 隔离内部结构与样式。
-- 所有 `kniu-*` 组件和项目页面统一只使用 `public/static/font/` 内现有的 `KniuHei` 字体文件，并按 ExtraLight(200)、Light(300)、Regular(400)、Normal(450)、Medium(500)、Bold(700)、Heavy(900) 映射实际 `font-weight`；正文和代码区域均使用 `KniuHei`，斜体使用浏览器合成样式；禁止引入 Noto/思源、微软雅黑、宋体、黑体、Arial、Georgia、Consolas、Robot 或其他系统字体作为默认字体，图标使用内置 SVG，不使用图标字体。
-- `kniu-editor` 的字体菜单只提供项目 `KniuHei` 和“无”两项；清除字体时恢复继承，不再提供旧字体或通用字体族选项。
+- 所有 `kniu-*` 组件和项目页面统一只使用 `public/static/font/` 内现有字体文件：默认字体 `KniuSans`，辅助字体 `KniuHei`，均按 LightExtra(200)、Light(300)、Regular(400)、Medium(500)、BoldSemi(600)、Bold(700)、Heavy(900) 以独立 family（`KniuSans_Regular` 等）注册 `@font-face`；正文和代码区域均使用 `KniuSans`，斜体使用浏览器合成样式；禁止引入 Noto/思源、微软雅黑、宋体、黑体、Arial、Georgia、Consolas、Robot 或其他系统字体作为默认字体，图标使用内置 SVG，不使用图标字体。`@font-face` 生效点在 document 级（`public/static/css/web(.min).css` 与 `public/static/plugin/kniu/kniu(.min).css`）；`client/core/kniuui/kniu-other/kniu-font-face.css` 为 shadow 侧同构冗余注册（shadow 内 `@font-face` 不生效，依赖 document 级注册命中）。
+- `kniu-editor` 的字体菜单只提供项目 `KniuSans`（默认）和 `KniuHei` 两项，选项 value 使用真实注册 family 名（如 `KniuSans_Regular`）；清除字体时恢复继承，不再提供旧字体或通用字体族选项。
 - 视口级下拉浮层关闭时必须恢复原始节点位置，并清除 `data-open`、`position`、`left`、`top`、`right`、`bottom`、`transform`、`visibility` 等临时定位状态；重复开闭不得复用上一次的显示或坐标状态。移动端用户菜单每次打开先清空旧坐标，在下一帧重新测量触发按钮，并在导航展开动画期间持续跟随锚点。
 
 ## 统一 options 协议（强制）
@@ -42,7 +42,7 @@ UI.use({
 });
 ```
 
-主题变量从应用根继承至 Shadow DOM。组件样式新增颜色、边框、圆角和控件高度时，应优先使用 `--kniu-color-primary`、`--kniu-border-color`、`--kniu-radius`、`--kniu-control-height`，避免在业务页面重复传视觉配置。
+主题变量从应用根继承至 Shadow DOM；`--kniu-font-family` 等被组件 `:host` 写了默认值的变量，由 `UI.use()` 在组件挂载时于基础字体样式之后追加 `:host{...}` 主题表覆盖（同特异性后者胜出），运行时重新 `UI.use()` 只影响之后新建的组件。组件样式新增颜色、边框、圆角、控件高度和字体时，应优先使用 `--kniu-color-primary`、`--kniu-border-color`、`--kniu-radius`、`--kniu-control-height`、`--kniu-font-family`，避免在业务页面重复传视觉配置。回归探针 `test/probe_ui_theme.mjs`。
 
 ### 双语配置（lang，强制约定）
 
@@ -72,11 +72,11 @@ state.commentOptions = Object.assign({}, state.commentOptions, { lang: 'en' }); 
 - **禁止频繁全量重写 innerHTML**：不要反复 `shadowRoot.innerHTML = '...'`（每次销毁旧树、重建节点、重绑事件并触发强制同步布局）。批量渲染先建 Fragment 再一次 `replaceChildren`；复用池 + 事件委托。
 - **缓存 Shadow Root 实例**：高频更新组件提前缓存 `shadowRoot` 引用，避免重复创建/销毁影子树带来的额外开销。
 - **组件样式走共享样式表** `adoptSharedStyle(root, cssText)`：按 cssText 缓存 `CSSStyleSheet`，ShadowRoot 用 `adoptedStyleSheets` 挂载。**不要在 shadowRoot 里 append 逐实例 `<style>`**（同样的 CSS 会被每个实例重复解析）。目标不是 ShadowRoot 时自动退回 `<style>` 元素。调试时设 `globalThis.__KNIU_NO_SHARED_SHEETS = true` 可退回逐实例模式做 A/B。
-- **组件 CSS 放独立文件**（`client/core/kniuui/*.css`，见 SKILL #126）：以「CSS 文本模块」导入——`import X from './kniu-editor.css?module'`，再 `adoptSharedStyle(shadowRoot, X)`。`?module` 是通道标记：dev 由 `kniuserver.mjs` 把它当 JS 模块返回（`export default "…"`），dist 由 `kniubuilder.mjs` 的 `.css` 分支内联为字符串，两侧语义一致。**文件里照原样写 px**——px→vw 换算仍由 `normalizeComponentCss()` 在运行时完成，禁止预写 `calc(N / var(--kniu_vw))`（绝对下限按 #81/#95 的既有写法保留）。**注入顺序就是层叠顺序**：需要压过共享样式（例如 `adoptDropdownStyle()` 注入的 `.kniu_sys_dropdown_panel`）的覆盖必须单独一份文件、留在原调用位置，不能并进主样式表——同特异性下后注入者取胜。
+- **组件 CSS 放独立文件**（`client/core/kniuui/*.css`，见 SKILL #126）：以「CSS 文本模块」导入——`import X from './kniu-editor.css?module'`，再 `adoptSharedStyle(shadowRoot, X)`。`?module` 是通道标记：dev 由 `kniuserver.mjs` 把它当 JS 模块返回（`export default "…"`），dist 由 `kniubuilder.mjs` 的 `.css` 分支内联为字符串，两侧语义一致。**尺寸下限属性必须显式保底**：可触及铁律下限的属性（控件高度/宽度，见 #59/#81/#83/#62）在文件里预写 `max(下限px, calc(N / var(--kniu_vw)))`——`normalizeComponentCss()` 对非 font 属性的裸 px 只做 `calc(N/vw)` 换算、**不加保底**（仅 font/font-size 加 `max(12px, …)`），窄视口会跌破下限；已含 `var(--kniu_vw)` 的值原样返回，不会双重换算。其余 px 可照原样写，由 normalize 统一换算。**注入顺序就是层叠顺序**：需要压过共享样式（例如 `adoptDropdownStyle()` 注入的 `.kniu_sys_dropdown_panel`）的覆盖必须单独一份文件、留在原调用位置，不能并进主样式表——同特异性下后注入者取胜。
 - **避免强制同步布局**：禁止在 Shadow 内同步读写 `offsetHeight` / `getBoundingClientRect` / `scrollWidth` / `clientWidth` / `offsetWidth`。需要布局指标时用 `getLayoutMetrics()` 缓存，并在 resize / ResizeObserver / 内容变化 / `doLayout` 时失效；周期性刷新（如阴影显隐）用 `scheduleShadowVisibilityUpdate()` 合并到 rAF。
 - **批量渲染先建 Fragment**：表格行、分页页码、下拉项、单选项等一律先构建 `DocumentFragment`，再一次 `replaceChildren`，禁止在循环里逐个 `appendChild`。
 - **行/项节点复用时必须改事件委托**：复用会让监听器闭包持有陈旧数据。监听器挂容器（表格整表挂 tbody 两个），行索引写 `dataset.rowIndex`，事件处理时据此从数据数组取回当前对象。复用池还需校验结构签名（如表格的 `rowPoolColumnSignature`），列结构变化即整池作废。
-- **事件机制优化（已实现）**：跨 Shadow 边界通信优先用属性绑定；高频事件工具 `debounce` / `throttle` 已落到 `client/core/kniuutil.mjs`（纯函数、零依赖，浏览器/Node 通用）。三个搜索页（article/daily/users）输入框绑定 `kniu@input="debouncedSearch"`（250ms 防抖，Enter/点击仍走即时 `searchList`）。固定导航的 `.kniu_sys_head_placeholder` 由 `kniu-navbar` 按导航实际高度同步维护。
+- **事件机制优化（已实现）**：跨 Shadow 边界通信优先用属性绑定；高频事件工具 `debounce` 已落到 `client/core/kniuutil.mjs`（纯函数、零依赖，浏览器/Node 通用）。三个搜索页（article/daily/users）输入框绑定 `kniu@input="debouncedSearch"`（250ms 防抖，Enter/点击仍走即时 `searchList`）。固定导航的 `.kniu_sys_head_placeholder` 由 `kniu-navbar` 按导航实际高度同步维护。
 - **内存泄漏兜底**：页面/组件卸载时统一销毁 Shadow 根上的所有事件监听器（含 rAF 句柄、ResizeObserver、复用池、列宽缓存、布局指标缓存），避免残留引用导致内存泄漏。
 - **框架级 diff**：组件库自带 diff 更新能力，自动实现局部更新，避免全量重渲染。
 
@@ -117,19 +117,50 @@ UI.useComponent({
 ```
 
 - 生命周期（对齐 kniumvvm）：`onBeforeMount(host)`（挂载前、绑定前）→ `TEMPLATE.bind` 响应式绑定 → `onMounted(host)`；元素移除时 `onUnmounted(host)`，随后自动 `dispose` 绑定订阅。
-- 组件内改 `state.*` 即自动更新 DOM；宿主经 `kniu:option` 赋值 → options setter 合并进响应式 state。
+- 组件内改 `state.*` 即自动更新 DOM；宿主经 `kniu:option` 赋值 → options setter **浅合并**进响应式 `state`（同名键覆盖）。例如 `<app-rating kniu:option="{{ {value:4, readonly:true} }}">` 会把初始分值设为 4、置为只读；不传时取 `setup` 里的默认值 `reactive({ value: 0, readonly: false })`。
 - `ctx` 能力：`reactive`/`nextTick`（模板引擎）、`emit(name, detail)`（= `host.emit`）、`host`；需要完整响应式体系（`computed`/`watch` 等）时直接用 `kniumvvm` 的 `controller()`。
-- 完整可运行示例见 `client/custom/app-rating/` 三件套（`.mjs` 纯逻辑 / `.html` 纯布局 / `.css` 纯样式）。
-- **内置系统组件同遵守三件套分离**：`kniu-<名>/` 目录下 `.css` 纯样式、静态模板骨架外置 `.html`（mjs 里 `import ... from './kniu-<名>.html?module'`，渲染时拼 `'<style>' + CSS + '</style>' + TEMPLATE`）、`.mjs` 纯逻辑；模板含 `${...}` 动态插值或程序化 DOM 的（如 editor/comment/table/tab/like/user-login）保持内嵌。json 仅在确有需要时加。
+- 跨 Shadow 事件：组件内 `host.emit('change', { value })` 派发 `composed:true` 的 `CustomEvent`，页面用 `kniu@change="onRatingChange"` 或 `addEventListener('change', ...)` 接收。
+- 完整参考示例见 `client/custom/app-rating/` 三件套（`.mjs` 纯逻辑 / `.html` 纯布局 / `.css` 纯样式）——**它是参考模板，项目默认未挂载**（见下方「挂载步骤」）。
 
-### 挂载步骤
+### 在页面模板中使用
 
-组件文件放在 **`client/custom/<名>/`** 下（核心库 `client/core/` 只放框架代码，自定义组件不进核心库；仅被显式 import 才进入 bundle，不参与自动打包）。在应用入口 `UI.use(...)` 附近**导入一次**即完成挂载：
+自定义组件一旦挂载，用法与内置 `kniu-*` 完全一致：
+
+```html
+<!-- 1) 直接写死属性（取 setup 默认值 value=0） -->
+<app-rating></app-rating>
+
+<!-- 2) 由父组件 state 传入初始值（kniu:option 浅合并进组件 state） -->
+<app-rating kniu:option="{{ value: 4, readonly: false }}"></app-rating>
+
+<!-- 3) 接收跨 Shadow 事件 -->
+<app-rating kniu:option="{{ rating }}" kniu@change="onRatingChange"></app-rating>
+```
 
 ```js
-import '../../custom/app-rating/app-rating.mjs';   // 副作用导入：模块顶层已调用 UI.useComponent
-// 页面模板里直接用：<app-rating kniu:option="{{ ratingOptions }}"></app-rating>
+// 对应 Controller（或组件 setup）内：
+const state = reactive({ rating: { value: 0, readonly: false } });
+
+function onRatingChange(e) {
+  // e.detail = { value: 3 }，由组件 host.emit('change', { value }) 派发
+  state.rating = { value: e.detail.value, readonly: state.rating.readonly };
+}
 ```
+
+- **内置系统组件同遵守三件套分离**：`kniu-<名>/` 目录下 `.css` 纯样式、静态模板骨架外置 `.html`（mjs 里 `import ... from './kniu-<名>.html?module'`，渲染时拼 `'<style>' + CSS + '</style>' + TEMPLATE`）、`.mjs` 纯逻辑；模板含 `${...}` 动态插值或程序化 DOM 的（如 editor/comment/table/tab/like/user-login）保持内嵌。json 仅在确有需要时加。
+
+### 挂载步骤（激活组件）
+
+组件文件放在 **`client/custom/<名>/`** 下（核心库 `client/core/` 只放框架代码，自定义组件不进核心库；**仅被显式 `import` 才进入 bundle，不参与自动打包**，未挂载的 tag 在模板里不会渲染）。
+
+在应用入口 `client/client.mjs` 的 `UI.use({...})` 附近**导入一次**（副作用导入，模块顶层已调用 `UI.useComponent`）即完成全局注册：
+
+```js
+// client/client.mjs 顶部，其它 import 附近
+import '../../custom/app-rating/app-rating.mjs';   // 副作用导入：注册 <app-rating> 自定义元素
+```
+
+> 说明：`client/custom/app-rating/` 是项目内置的**参考模板**，默认并未在 `client/client.mjs` 中挂载。若要在页面里实际使用 `<app-rating>`，需按上面一行 `import` 激活；激活后它才会被打包并可在任意模板中使用。新增你自己的组件时，照搬此「三件套 + 一处 import」流程即可。
 
 ### 高级写法：`UI.defineComponent(tag, registerFn)`
 
@@ -140,7 +171,7 @@ import '../../custom/app-rating/app-rating.mjs';   // 副作用导入：模块�
 - **tag 命名**：必须小写且含连字符（如 `app-rating`、`x-foo`）；`kniu-` 前缀为内置组件保留，`defineComponent`/`useComponent` 会直接拒绝，避免覆盖/混淆系统组件。重复 tag 自动跳过（幂等），不会抛错。
 - **共享 context**（仅低级 API）：`context` 与内置组件完全相同，包含 `attachComponentShadow`、`adoptSharedStyle`、`appendRawStyle`、`flushPendingAdoptedSheets`、`KNIU_I18N`、`TEMPLATE`、`REQUEST`、`IDENTITY`、`confirm`、`msg`、`componentDefaults`、`installOptionsOnlyProtocol`、各组件 CSS 常量等——可直接复用框架 Shadow DOM、共享样式表、主题变量、全局弹窗与请求层。
 - **选项协议（可选，仅低级 API）**：若希望接入与 `kniu-*` 完全一致的 `options` 协议（`componentDefaults` 合并、`onXxx` 回调绑定、`_sync()`/`_render()` 驱动、属性反射、非允许属性自清），在 `customElements.define` 之后调用 `context.installOptionsOnlyProtocol(['app-rating'])`；其会读取你类上的 `options` 描述符并链式合并。`useComponent` 封装已内置简版 options 协议（赋值合并进响应式 state）。
-- **样式/字体**：一律经框架 Shadow 初始化，尺寸用 `max(下限px, calc(N/var(--kniu_vw)))`，颜色优先 `--kniu-*` 主题变量（见渲染与样式约定）；字体使用内置 `KniuHei`。
+- **样式/字体**：一律经框架 Shadow 初始化，尺寸用 `max(下限px, calc(N/var(--kniu_vw)))`，颜色优先 `--kniu-*` 主题变量（见渲染与样式约定）；字体使用内置 `KniuSans`（默认）与 `KniuHei`。
 - **事件**：跨 Shadow 边界通信用 `composed: true` 的 `CustomEvent`（组件内 `host.emit(name, detail)` 派发），页面通过 `kniu@change` 或 `addEventListener('change', ...)` 接收。
 
 回归探针见 `test/probe_define_component.mjs`（dev 6987）。
@@ -390,26 +421,28 @@ const exampleController = controller(({ $confirm }) => {
 ## 页签 kniu-tab
 
 ```html
-<kniu-tab kniu:option="{{tabBar}}"></kniu-tab>
+<!-- 一体式：页签头与内容同处布局 -->
+<kniu-tab active="data">
+  <kniu-tab-panel name="data" label="数据">…</kniu-tab-panel>
+  <kniu-tab-panel name="struct" label="属性">…</kniu-tab-panel>
+</kniu-tab>
+
+<!-- 解耦式：页签头可布局在页面任意位置（如工具条），通过 for 引用面板容器 -->
+<kniu-tab-head for="dbTabBody"></kniu-tab-head>
+…
+<kniu-tab-body id="dbTabBody" active="data">
+  <kniu-tab-panel name="data" label="数据">…</kniu-tab-panel>
+  <kniu-tab-panel name="struct" label="属性">…</kniu-tab-panel>
+</kniu-tab-body>
 ```
 
-```javascript
-// 控制器侧
-const tabBar = {
-  items: [
-    { name: 'data', label: '数据' },
-    { name: 'struct', label: '属性' },
-  ],
-  active: 'data',
-  onChange: (detail) => onTabChange(detail),
-};
-```
-
+- 页签头由面板的 `label`/`name` attribute 自动生成（缺 `label` 用 `name`、缺 `name` 按序号），无需单独维护 items 配置。
+- 自管切换：点击页签写容器的 `active` attribute 并显隐对应面板（`hidden` attribute），页面零状态接线；缺省高亮 `active` 指向的面板，未指定取第一个面板。
+- 解耦式：`kniu-tab-head` 的 `for` 指向 `kniu-tab-body` 的 id（HTML label 范式，`getRootNode()` 作用域内查找，head 先于 body 解析时 rAF 轮询补挂）；body 的面板增删、name/label/active 变化经 MutationObserver 实时反映到页签。支持一次式 options：body 用 `:option="{{id:'xxx',active:'data'}}"`（id/active 落 attribute），head 用 `:option="{{for:'xxx',active:'data',data:[{name:'data',label:'数据'},{name:'struct',label:'属性'}]}}"`——`data` 数组配置页签（与面板按顺序一一对应，面板可不再写 name/label），`active` 为初始 item 名，`change` 事件与 `onChange` 回调携带 item 名。
+- 面板常驻 DOM（仅显隐切换），切走再切回不丢状态、无需重拉数据。
+- 受控可选：`:option="{{tabBar}}"` 传 `{ active, onChange }` 时 `options.active` 优先于 attribute；点击仍派发 `CustomEvent('change', { detail: { name }, bubbles: true, composed: true })` 并回调 `onChange`。受控改 `active` 需整体替换 options（原地改子属性不触发订阅）。
 - 胶囊式页签：浅灰底 `#f5f7fa` 圆角容器 + 白底高亮当前项（`color:#409eff`、字重 600、投影）。
-- `items`：`{name, label}` 数组；`active`：当前 `name`。两者都通过 `kniu:option` 整体替换（options-only 协议：原地改子属性不触发刷新）。
-- 点击行为：组件内部**先行迁移高亮**（整体替换 `_options.active` 后自渲染），再向宿主派发 `CustomEvent('change', { detail: { name }, bubbles: true, composed: true })`；同名重复点击不派发。
-- `onChange` 回调的 detail 存在**双口径**（引擎对协议组件的 options 回调与原生事件绑定并存）：一条传 `{name}`，一条传原生 `Event`。消费端必须兼容：`const raw = detail.name != null ? detail : (detail.detail || {})`。
-- 内容区互斥由消费方用 `<template kniu:if="{{activeTab === 'xxx'}}">` 实现（销毁重建语义）；切回时程序化追加的动态列必须重放。
+- `::slotted(kniu-tab-panel)` 的 display 规则会压过 UA `[hidden]`，必须同时保留 `::slotted(kniu-tab-panel[hidden]){display:none!important}`，否则面板显隐失效。
 
 ## Form 和 InputGroup
 
@@ -844,7 +877,7 @@ const state = reactive({ pageOptions: { pageSize: 15 } });
 
 ### 控制器对接
 
-`usePagination(options)` 返回 `loadList / changePage / changePageSize` 三个方法，负责请求后端、写回响应式 state；上一页和下一页由分页组件转换成 `current-change`，不再提供重复的控制器函数：
+`usePagination(options)` 返回 `loadList / changePage / changePageSize / syncOptions` 四个方法，负责请求后端、写回响应式 state；上一页和下一页由分页组件转换成 `current-change`，不再提供重复的控制器函数：
 
 ```js
 import UI from '../../core/kniuui/kniuui.mjs';
@@ -1144,7 +1177,7 @@ state.articleTabOptions = {
 
 ### 组件目录化三件套（2026-10-08 起）
 
-`kniu-article-tab` 是第一个按「Vue SFC / 微信小程序自定义组件」形态拆分的组件，文件位于 `kniu-article-tab/` 子目录：
+`kniu-article-tab` 是第一个按「模板 / 样式 / 逻辑三件套」形态拆分的组件，文件位于 `kniu-article-tab/` 子目录：
 
 | 文件 | 职责 |
 | --- | --- |

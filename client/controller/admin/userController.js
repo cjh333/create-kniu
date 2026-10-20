@@ -1,25 +1,24 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import UI from '../../core/kniuui/kniuui.mjs';
 import AUTH from '../../core/kniuauth.mjs';
+import { createRequestActions } from '../../core/kniupage.mjs';
+import { isAdminRole, makeFail, requireLogin } from './adminShared.js';
 import { assignOptionFields } from '../../core/kniuutil.mjs';
 
 const { controller } = MVVM;
-const { makeSwitchOptions, createRowDeleteHandler, useListPage } = UI;
+const { makeSwitchOptions, createRowDeleteHandler, usePage } = UI;
 const ROLE_TEXT = { '1': '管理员', '2': '普通用户' };
 
 function deriveRoleAuth(role) {
-  return String(role) === '1' ? '1' : '2';
-}
-
-function canAccessUsers(user) {
-  return !!String(user?.name || '').trim();
+  return String(role) == '1' ? '1' : '2';
 }
 
 const userController = controller(({ $confirm, $msg, $refs, navigateTo, request, reactive, onMounted }) => {
-  const self = { $confirm, $msg, $refs, navigateTo };
   const currentUser = AUTH.getUser() || {};
   const currentUserName = String(currentUser.name || '');
-  const canAdministerUsers = Number(currentUser.roleId || currentUser.role || 0) === 1 || Number(currentUser.roleAuth || 0) === 1;
+  const canAdministerUsers = isAdminRole(currentUser);
+  const self = { $confirm, $msg, navigateTo };
+  const actions = createRequestActions({ request, msg: $msg });
   function createUserModel() {
     return {
       id: '',
@@ -90,14 +89,6 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
     dialogTitle: '添加用户',
     isAddDialog: true,
     canAdministerUsers,
-    userTable: {
-      data: [],
-      rowKey: 'id',
-      stripe: true,
-      border: true,
-      maxHeight: 480,
-      loading: true
-    },
     userModel: createUserModel(),
     userSwitch: makeSwitchOptions(canAdministerUsers),
     auditSwitch: {
@@ -119,18 +110,10 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
     disabledSwitch: {
       name: 'is_show', activeValue: 0, inactiveValue: 1,
       activeColor: '#13ce66', inactiveColor: '#f56c6c', disabled: !canAdministerUsers
-    },
-    userPage: {
-      currentPage: 1,
-      pageSize: 10,
-      total: 0,
-      background: true,
-      onCurrentChange: (detail) => changePage({ detail }),
-      onSizeChange: (detail) => changePageSize({ detail })
     }
   });
 
-  const { loadList, changePage, changePageSize, searchList, debouncedSearch } = useListPage({
+  const { loadList, searchList, debouncedSearch } = usePage({
     state,
     self,
     url: '/role_list',
@@ -138,6 +121,7 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
     sort: 'asc',
     params: () => ({ keyword: state.keyword }),
     tableKey: 'userTable',
+    table: { maxHeight: 480 },
     pageKey: 'userPage',
     transform(list) {
       return (list || []).map(function (row) {
@@ -145,18 +129,14 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
           ...row,
           role_text: ROLE_TEXT[String(row.role)] || `未知(${row.role})`,
           role_auth_text: Number(row.role_auth) === 1 ? '编辑' : '查看',
-          // 超级账号（role=1）不给「删除」按钮：列内按行条件走 kniu-table 的
-          // condition 机制，作用域是 { scope: { row, $index } }，视图里必须写
-          // `{{scope.row.deletable}}`（写 `{{row.deletable}}` 求值抛错被吞，恒假）。
           deletable: Number(row.role) !== 1,
           muted: Number(row.comment_ban) === 1,
-          nickname_editable: !row.issue_time || new Date(row.issue_time).getTime() <= Date.now() - 365 * 24 * 60 * 60 * 1000,
+          nickname_editable: !row.issue_time || new Date(String(row.issue_time).replace(' ', 'T')).getTime() <= Date.now() - 365 * 24 * 60 * 60 * 1000,
           can_edit: canAdministerUsers || String(row.name || '') === currentUserName
         };
       });
     }
   });
-
   function addRow() {
     if (!canAdministerUsers) return;
     state.isAddDialog = true;
@@ -169,7 +149,7 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
     const row = list[index];
     if (!row) return false;
     if (!canAdministerUsers && String(row.name || '') !== currentUserName) {
-      self.$msg({ content: '只能修改自己的密码', type: 'error' });
+      $msg({ content: '只能修改自己的密码', type: 'error' });
       return false;
     }
     state.isAddDialog = false;
@@ -178,7 +158,6 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
     model.id = row.id;
     model.role = Number(row.role == null ? 2 : row.role);
     model.role_auth = Number(deriveRoleAuth(row.role));
-    model.is_show = Number(row.is_show == null ? 1 : row.is_show);
     state.userModel = model;
     state.dialogTitle = canAdministerUsers ? '修改密码' : '修改用户';
     state.showmodal = true;
@@ -187,12 +166,6 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
 
   function closeDialog() { state.showmodal = false; }
 
-  /**
-   * 密码落库后由后端作废被改账号的全部会话，并用响应里的 logout 标识
-   * 告知「当前登录者是否已被登出」；前端只负责同步本地登录态并跳回登录页。
-   * @param {object} res 接口响应。
-   * @return {Promise<boolean>} 是否已强制登出。
-   */
   async function applyForcedLogout(res) {
     if (!res || !res.data || !res.data.logout) return false;
     try {
@@ -200,12 +173,12 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
     } catch (error) {
       console.warn('[users] logout after password change failed:', error);
     }
-    self.navigateTo('/login');
+    navigateTo('/login');
     return true;
   }
 
   async function saveEdit() {
-    const userForm = self.$refs.form;
+    const userForm = $refs.form;
     if (!userForm) return;
     if (!userForm.validate()) return;
     const form = userForm.values;
@@ -214,17 +187,17 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
       await request({
         url: '/role_update',
         type: 'POST',
-          data: { id: form.id, old_password: form.old_password, new_password: form.new_password },
+        data: { id: form.id, old_password: form.old_password, new_password: form.new_password },
         async success(res) {
           if (res.status !== 1) {
-            self.$msg({ content: res.msg, type: 'error' });
+            $msg({ content: res.msg, type: 'error' });
             return;
           }
           state.showmodal = false;
-          self.$msg({ content: res.msg, type: 'success' });
+          $msg({ content: res.msg, type: 'success' });
           await applyForcedLogout(res);
         },
-        fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
+        fail: makeFail($msg)
       });
       return;
     }
@@ -238,7 +211,7 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
       }
       : { id: form.id };
     if (!isAdd && !String(form.password || '').trim()) {
-      self.$msg({ content: '请填写新密码', type: 'error' });
+      $msg({ content: '请填写新密码', type: 'error' });
       return;
     }
     if (isAdd || String(form.password || '').trim()) {
@@ -251,12 +224,11 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
       data,
       async success(res) {
         if (res.status !== 1) {
-          self.$msg({ content: res.msg, type: 'error' });
+          $msg({ content: res.msg, type: 'error' });
           return;
         }
         state.showmodal = false;
-        self.$msg({ content: res.msg, type: 'success' });
-        // 管理员改了自己的密码时后端同样会登出当前会话，此时不再刷新列表。
+        $msg({ content: res.msg, type: 'success' });
         if (await applyForcedLogout(res)) return;
         if (isAdd) {
           await loadList(1);
@@ -273,24 +245,12 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
           }
         }
       },
-      fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
+      fail: makeFail($msg)
     });
   }
 
-  // 账号表的多个内联字段共用同一写入流程，页面只传入本次变更字段。
   async function updateRoleField(row, patch) {
-    const result = await request({
-      url: '/role_update',
-      type: 'POST',
-      data: { id: row.id, ...patch }
-    });
-    const saved = result.status === 1;
-    self.$msg({
-      content: result.msg || (saved ? '保存成功' : '保存失败'),
-      type: saved ? 'success' : 'error'
-    });
-    if (saved) Object.assign(row, patch);
-    return saved;
+    return actions.updateRow('/role_update', row, patch);
   }
 
   async function updateMuted(index, list, value) {
@@ -331,6 +291,16 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
     return saved;
   }
 
+  async function updateSort(index, list, value) {
+    const row = list && list[index];
+    if (!row) return false;
+    const saved = await updateRoleField(row, { sid: Math.max(0, Number(value) || 0) });
+    if (saved) {
+      loadList(state.currentPage, { silent: true });
+    }
+    return saved;
+  }
+
   const deleteRowBase = createRowDeleteHandler({
     self,
     state,
@@ -340,8 +310,6 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
     gate: () => canAdministerUsers,
     getSuccessMessage: (res) => res.msg,
     reloadOnSuccess: false,
-    // 账号表属于静默表；删除账号还可能级联内容表，不能再额外请求列表，
-    // 账号页在成功后直接移除当前行，避免额外请求列表接口。
     onSuccess(row) {
       state.list = (state.list || []).filter(function (item) {
         return Number(item?.id) !== Number(row?.id);
@@ -352,37 +320,26 @@ const userController = controller(({ $confirm, $msg, $refs, navigateTo, request,
     }
   });
 
-  /**
-   * 删除账号入口：拦下 admin 超级账号。
-   *
-   * 视图侧已经用 `kniu:if="{{scope.row.deletable}}"` 让 admin 行**根本不渲染**删除按钮
-   * （列内按行条件走 kniu-table 的 `actions[].condition` 逐行求值，作用域形如
-   * `{ scope: { row, $index } }`，所以必须写 `scope.row.x`，写 `row.x` 会 ReferenceError）。
-   * 这里保留第二道闸门，是因为权限边界必须在后端（`/role_delete`），前端渲染与否不构成安全。
-   *
-   * @param {number} index 行下标。
-   * @param {Array<object>} list 当前页数据。
-   * @return {Promise<boolean>|boolean} 是否继续走删除流程。
-   */
   function deleteRow(index, list) {
     const row = (list || [])[index];
     if (row && Number(row.role) === 1) {
-      self.$msg({ content: 'admin 超级账号不可删除', type: 'error' });
+      $msg({ content: 'admin 超级账号不可删除', type: 'error' });
       return false;
     }
     return deleteRowBase(index, list);
   }
 
+  function goBack() {
+    navigateTo('/admin');
+  }
+
+  // 登录态判定统一走 requireLogin（后端会话为准，禁自造谓词 + 手写路由跳转）。
   onMounted(function () {
-    if (!canAccessUsers(AUTH.getUser())) {
-      self.$msg({ content: '权限不足', type: 'error' });
-      self.navigateTo('/admin');
-      return;
-    }
+    if (!requireLogin(AUTH, { $msg, navigateTo })) return;
     loadList(1);
   });
 
-  return { state, changePage, changePageSize, searchList, debouncedSearch, addRow, editRow, closeDialog, saveEdit, updateMuted, updateDisabled, updateRoleAuth, updateNickname, updateCommentAudit, deleteRow };
+  return { state, searchList, debouncedSearch, addRow, editRow, closeDialog, saveEdit, updateMuted, updateDisabled, updateRoleAuth, updateNickname, updateCommentAudit, updateSort, deleteRow, goBack };
 });
 
 export default userController;

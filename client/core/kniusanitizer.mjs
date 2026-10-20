@@ -1,7 +1,4 @@
-/** 单次异步切分处理的节点上限；超过则跨多帧分片执行。 */
 const SLICE_SIZE = 800;
-
-/** 危险标签不能作为富文本 DOM 节点；输入源码时按正文文本显示。 */
 const BANNED_TAGS = 'script,iframe,object,embed,link,meta,style,base,form';
 const BANNED_TAG_RE = /<(\/?)(script|iframe|object|embed|link|meta|style|base|form)(?=\s|\/?>)([^>]*?)>/gi;
 const ESCAPED_BANNED_TAG_RE = /&lt;(\/?)(script|iframe|object|embed|link|meta|style|base|form)(?=\s|\/?(?:&gt;|>))([^>]*?)(?:&gt;|>)/gi;
@@ -18,13 +15,9 @@ function escapeBannedTags(html) {
     });
 }
 
-/** 可能承载 URL 的属性名，用于拦截 javascript:/vbscript:/data: 伪协议。 */
 const URL_ATTRIBUTES = ['href', 'src', 'poster', 'xlink:href'];
-
-/** 编辑器粘贴图片会产生 data:image 内联图，仅放行常见位图格式（svg 可携带脚本，禁止）。 */
 const SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|gif|webp|bmp)([;,]|$)/i;
 
-/** 判断 URL 值是否携带危险协议，先剔除空白与控制字符再匹配，防 `javas&#9;cript:` 类拆分绕过。 */
 export function isDangerousUrl(value) {
   const stripped = String(value).replace(/[\s\x00-\x1f]+/g, '');
   if (/^(javascript|vbscript):/i.test(stripped)) return true;
@@ -32,10 +25,6 @@ export function isDangerousUrl(value) {
   return false;
 }
 
-/**
- * srcset 是逗号分隔的多个 URL；只检查整体开头会遗漏后续候选项中的危险协议。
- * 此处按协议 token 扫描，data: 仍复用图片白名单，避免把 SVG 作为图片候选绕过。
- */
 export function isDangerousSrcset(value) {
   const source = String(value).replace(/[\s\x00-\x1f]+/g, '');
   if (/(?:^|,)(?:javascript|vbscript):/i.test(source)) return true;
@@ -54,9 +43,30 @@ function isDangerousAttribute(node, attr) {
   return false;
 }
 
+const SMIL_ACTIVATION_TAGS = 'animate,animatetransform,animatemotion,set';
+const SMIL_ACTIVATION_RE = /^(on|javascript:|vbscript:|data:text)/i;
+const SMIL_VALUE_ATTRS = ['to', 'values', 'from'];
+
+function removeDangerousSmilNodes(content) {
+  content.querySelectorAll(SMIL_ACTIVATION_TAGS).forEach(function (node) {
+    const target = (node.getAttribute('attributeName') || '').trim().toLowerCase();
+    const isEventName = /^on/.test(target);
+    const isDangerousValue = SMIL_VALUE_ATTRS.some(function (name) {
+      const raw = (node.getAttribute(name) || '').trim();
+      if (!raw) return false;
+      return raw.split(';').some(function (candidate) {
+        const v = candidate.trim();
+        if (!v) return false;
+        return isDangerousUrl(v) || SMIL_ACTIVATION_RE.test(v);
+      });
+    });
+    if (isEventName || isDangerousValue) node.remove();
+  });
+}
+
 function sanitizeDom(template, documentRef) {
+  removeDangerousSmilNodes(template.content);
   template.content.querySelectorAll(BANNED_TAGS).forEach(function (node) { node.remove(); });
-  // 旧内容或重复清洗可能产生 <code><code>...</code></code>；行内源码仅保留一层语义标签。
   template.content.querySelectorAll('code code').forEach(function (inner) {
     while (inner.firstChild) inner.parentNode.insertBefore(inner.firstChild, inner);
     inner.remove();
@@ -70,19 +80,12 @@ function sanitizeDom(template, documentRef) {
   return template.innerHTML;
 }
 
-/**
- * 同步富文本白名单清洗。
- * @param {string} html 待清洗的 HTML 字符串。
- * @param {Document} [documentRef] 用于创建模板的 document（默认当前 document）。
- * @returns {string} 清洗后的 HTML。
- */
 export function sanitizeRichHtml(html, documentRef = document) {
   const template = documentRef.createElement('template');
   template.innerHTML = escapeBannedTags(html);
   return sanitizeDom(template, documentRef);
 }
 
-/** 让出一帧，避免长时间占用主线程（无 requestIdleCallback 环境回退 setTimeout）。 */
 function yieldToMainThread() {
   const scheduler = (typeof globalThis !== 'undefined' && globalThis.scheduler && typeof globalThis.scheduler.yield === 'function')
     ? globalThis.scheduler
@@ -93,19 +96,10 @@ function yieldToMainThread() {
   });
 }
 
-/**
- * 异步（可切分）富文本白名单清洗。
- *
- * 与 sanitizeRichHtml 产物完全一致；当内容节点量较大时按 SLICE_SIZE 分片，
- * 片间主动让出主线程，避免一次同步清空造成输入/渲染卡顿。小内容直接同步完成。
- *
- * @param {string} html 待清洗的 HTML 字符串。
- * @param {Document} [documentRef] 用于创建模板的 document（默认当前 document）。
- * @returns {Promise<string>} 清洗后的 HTML。
- */
 export async function sanitizeRichHtmlAsync(html, documentRef = document) {
   const template = documentRef.createElement('template');
   template.innerHTML = escapeBannedTags(html);
+  removeDangerousSmilNodes(template.content);
   template.content.querySelectorAll(BANNED_TAGS).forEach(function (node) { node.remove(); });
   template.content.querySelectorAll('code code').forEach(function (inner) {
     while (inner.firstChild) inner.parentNode.insertBefore(inner.firstChild, inner);
@@ -119,7 +113,6 @@ export async function sanitizeRichHtmlAsync(html, documentRef = document) {
   for (let offset = 0; offset < all.length; offset += SLICE_SIZE) {
     const slice = all.slice(offset, offset + SLICE_SIZE);
     slice.forEach(stripAttributesOf);
-    // 每片之间让出主线程，交由浏览器调度，避免长任务。
     await yieldToMainThread();
   }
   return template.innerHTML;

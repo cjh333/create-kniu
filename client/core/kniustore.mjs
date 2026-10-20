@@ -1,4 +1,3 @@
-// 轻量全局状态中心：存放跨组件/跨路由需要共享的状态与业务动作，不依赖 UI 或 MVVM。
 const stores = new Map();
 
 function normalizeName(name) {
@@ -165,7 +164,6 @@ export function removeStateStore(name) {
   return stores.delete(normalizeName(name));
 }
 
-// 切换账号或退出时仅清除快照；保留监听器，存活的 Controller 无需重新订阅。
 export function resetAllStateStores() {
   stores.forEach(function (record) {
     record.state = cloneValue(record.initialState);

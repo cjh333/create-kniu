@@ -15,20 +15,42 @@
 
 .kniu_sys_radio {
   display: inline-flex;
+  display: -webkit-inline-flex;
   align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  transform: translateY(-0.15em);
+  -webkit-transform: translateY(-0.15em);
+  -moz-transform: translateY(-0.15em);
+  -ms-transform: translateY(-0.15em);
+  -o-transform: translateY(-0.15em);
   gap: 7px;
-  color: var(--kniu-text-color, #606266);
   font: 14px/1.5 var(--kniu-font-family);
+  color: var(--kniu-text-color, #606266);
   cursor: pointer;
-  user-select: none
 }
 
 .kniu_sys_radio_control {
   position: relative;
   display: inline-flex;
-  align-items: center;
+  display: -webkit-inline-flex;
   justify-content: center;
-  flex: none
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex: none;
+  -webkit-flex: none;
+  -moz-flex: none;
+  -ms-flex: none;
+  -o-flex: none;
 }
 
 .kniu_sys_radio_input {
@@ -37,14 +59,16 @@
   appearance: none;
   width: max(12px, calc(14 / var(--kniu_vw)));
   height: max(12px, calc(14 / var(--kniu_vw)));
-  margin: 0;
   border: 1px solid var(--kniu-border-color, #dcdfe6);
   border-radius: 50%;
   outline: 0;
   background-color: #fff;
-  box-sizing: border-box;
   cursor: pointer;
-  transition: border-color .2s, background-color .2s
+  transition: border-color .2s, background-color .2s;
+  -webkit-transition: border-color .2s, background-color .2s;
+  -moz-transition: border-color .2s, background-color .2s;
+  -ms-transition: border-color .2s, background-color .2s;
+  -o-transition: border-color .2s, background-color .2s;
 }
 
 .kniu_sys_radio_dot {

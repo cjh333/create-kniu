@@ -45,7 +45,7 @@
   padding: 11px 16px;
   border-left: 4px solid #2563eb;
   border-radius: 0 6px 6px 0;
-  background: #f1f1f1;
+  background-color: #f1f1f1;
   line-height: 1.7;
   color: #4b5563
 }
@@ -85,13 +85,13 @@
 
 .kniu_sys_markdown_body>table th,
 .kniu_sys_markdown_body>.kniu_sys_article_table_wrap>table th {
-  background: #f3f4f6
+  background-color: #f3f4f6
 }
 
 .kniu_sys_markdown_body :not(pre)>code {
   padding: 2px 5px;
   border-radius: 3px;
-  background: #f1f5f9;
+  background-color: #f1f5f9;
   color: #be185d;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: .9em
@@ -104,7 +104,7 @@
   padding: 16px;
   border: 1px solid #d9dce1;
   border-radius: 6px;
-  background: #f6f8fa;
+  background-color: #f6f8fa;
   color: #24292f;
   text-align: left;
   font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace

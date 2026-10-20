@@ -1,4 +1,4 @@
-# kniu-template 使用说明
+﻿# kniu-template 使用说明
 
 > UI 组件约定：`kniu-*` 的功能配置只允许通过 `kniu:option` 传入。`ref`、`kniu:form`、模板指令、插槽及 `kniu@...` 属于模板引擎接口；旧组件 attribute 不再兜底。组件回调能由 options 表达时，优先使用 `onXxx`。
 
@@ -93,15 +93,18 @@ Controller 需要让异步请求在卸载时自动取消时，使用 setup 注�
 
 ### 表单字段辅助
 
-`kniuutil.mjs` 提供纯函数 `createForm()`、`required()`、`email()`、`pattern()`，用于快速创建与 `<kniu-form>` 兼容的字段对象；模板仍只使用 `kniu:form`，不增加新语法。
+`kniuutil.mjs` 提供纯函数 `required(message)`，返回与 `<kniu-form>` 兼容的「去空白非空」字段对象（`{ value, condition: true, message }`，与 `kniu-form` 的 `condition:true` 同一判定路径）；格式校验（邮箱、长度、字符集等）直接在控制器里写正则字面量，不包辅助函数。模板仍只使用 `kniu:form`，不增加新语法。
 
 ```js
-const form = createForm({ name: required('请输入名称'), email: email() }, { labelWidth: '120px' });
+const form = {
+  name: required('请输入名称'),
+  email: { value: '', condition: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: '请输入邮箱' }
+};
 ```
 
 ### 通用列表组合
 
-`kniuui.mjs` 的 `useListPage()` 组合分页、搜索与可选删除。它不内置接口、数据表或权限，业务页面仍明确传入 `url`、`deleteUrl` 和删除策略。
+`kniuui.mjs` 的 `usePage()` 组合分页、搜索与可选删除。它不内置接口、数据表或权限，业务页面仍明确传入 `url`、`deleteUrl` 和删除策略。
 
 路由通过 `ROUTER.add(path, controller)` 将页面与控制器装配起来（视图按文件名约定解析为 `kniu-system-<filename>` 自定义元素）：
 
@@ -124,34 +127,29 @@ ROUTER.add('/example', exampleController);
 | `navigateTo` | 微应用运行时注入 | 路由跳转：`navigateTo('/')`；第二参数可传递不显示在地址栏的路由状态 |
 | `getRouteData` | 微应用运行时注入 | 读取 `navigateTo(path, data)` 传入的当前路由状态 |
 | `openExternalUrl` | 微应用运行时注入 | 在新标签页打开外部 HTTP/HTTPS 地址：`openExternalUrl('https://www.baidu.com')` |
-| 公共布局 / `useViews` | `kniubase.mjs` | 公共布局按 `区域/名称` 注册并生成包含目录的唯一组件标识，避免前后台同名覆盖 |
-| `ROUTER` / `useToastNotifications` / `createAppRuntime` 等 | `kniubase.mjs` 透传 | 底层框架能力，需要自定义外壳运行时才按需使用 |
+| 公共布局 / `useViews` | `kniubase.mjs` + `kniuviewkey.mjs` | 公共布局按「视图相对 views/ 的路径」注册（`viewer.js` 装配，`toCommonKey` 派生查找键）并生成包含目录的唯一组件标识，避免前后台同名覆盖 |
+| `ROUTER` | `client/config/router.js` | 路由注册表（自 `kniueventer.mjs` 导出，应用启动时消费） |
 
 > 选用建议：Model 只负责数据与派生规则；Controller 使用 `reactive`、`eventTo`、`navigateTo` 和 `openExternalUrl`；View 不写业务脚本。
 
-公共工作台（侧边栏 + 顶栏 + 内容区 + Toast）在应用入口处按目录注册，由后台公共主外壳承载；Controller 由 `useViews()` 按区域名称交给运行时加载，不直接从不存在的根级 `controller/` 路径导入：
+公共工作台（侧边栏 + 顶栏 + 内容区 + Toast）的装配表在 `client/config/viewer.js`（静态非路由页面映射，与 router.js 的路由跳转不同），由 `client.mjs` 的 `useViews(VIEWER)` 一次性注入；键 = 视图模板相对 `views/` 的路径，值 = 控制器相对 `client/controller/` 基目录的真实文件路径（控制器强制存放在该目录，基目录不写入）：
 
 ```js
-import ROUTER from './config/router.js';
-import CREATEAPP from './core/kniubase.mjs';
-
-const app = CREATEAPP();
-app.use(ROUTER);
-app.useViews({
-  'admin/main': 'admin/mainController',
-  'admin/aside': 'admin/asideController',
-  'admin/header': 'admin/headerController',
-  'index/header': 'index/headerController',
-  'index/footer': 'index/footerController'
-});
-app.mount('#app');
+// client/config/viewer.js
+export default {
+  'admin/common/main': 'admin/mainController.js',
+  'admin/common/aside': 'admin/asideController.js',
+  'admin/common/header': 'admin/headerController.js',
+  'index/common/header': 'index/headerController.js',
+  'index/common/footer': 'index/footerController.js'
+};
 ```
 
-**`useViews()` 的键就是「区域/名称」**——`client/views/admin/common/aside.html` 的组件标识为 `kniu-system-admin-common-aside`，查找键为 `admin/aside`，因此注册时必须逐字写成 `'admin/aside'`。三点硬约束：
+**`useViews()` 的键就是「视图相对 views/ 的路径」**——`client/views/admin/common/aside.html` 的组件标识为 `kniu-system-admin-common-aside`，查找键为 `admin/common/aside`（由 `kniuviewkey.mjs::toCommonKey` 派生，单一真相源），因此注册时必须逐字写成 `'admin/common/aside'`。三点硬约束：
 
-1. **键是扁平字符串**（`'区域/名称'`），值只能是控制器路径字符串（惰性 `import`）、控制器函数、`controller()` 产物或 `null`；写成嵌套对象（`{ admin: { aside: 'admin/asideController' } }`）会在启动期抛 `TypeError`——嵌套的键是 `admin`，而查找键恒为 `admin/aside`，查不到就只能静默降级为「无控制器」。
+1. **键是扁平字符串**（视图路径），值只能是控制器真实路径字符串（惰性 `import`，经 `kniumvvm.mjs::loadControllerFile` 装载，导出名取文件名）、控制器函数、`controller()` 产物或 `null`；写成嵌套对象（`{ admin: { common: { aside: '...' } } }`）会在启动期抛 `TypeError`——嵌套的键是 `admin`，而查找键恒为 `admin/common/aside`，查不到就只能静默降级为「无控制器」。
 2. **调用是整体替换而非合并**，一次 `useViews()` 写全；连写两次会让前一次的注册全部失效。
-3. **控制器缺失不会报错**：模板里 `{{userName}}` 之类取值变空，而 `kniu:if` 在表达式求值失败时**按真渲染**（fail-open）——表现是「本该互斥的两个分支同时出现」（如前台顶栏的「登录/注册」与用户菜单并存）。回归闸门：`node test/probe_useviews.mjs`。
+3. **控制器缺失不会报错，且有两种可分辨形态**：①控制器在、作用域缺名——`{{userName}}` 求值静默空串（模板作用域不回退 globalThis）；②控制器缺失（键写错或与框架查找键格式分叉）——模板**未经编译**，`{{ }}` 以原样文本呈现，`:if`/`:for` 等指令全部失效（fail-open）。回归闸门：`node test/check_viewer_paths.mjs`（核对键 = toCommonKey 派生值、视图/控制器真实存在、导出名匹配）。
 
 微应用内跳转与外部打开：
 
@@ -197,6 +195,7 @@ reactive({
 - 纯路径（仅 `字母/数字/下划线/点号`）按 `state` 取值；表达式（含运算符、字面量等）直接求值。
 - 求值时**自动记录被访问的路径**并订阅，因此 `owner.name` 这类路径的修改会精确触发重渲染。
 - 缺失值 / 出错渲染为空字符串。
+- 🔴 **作用域不回退 `globalThis`（2026-10-18 起）**：标识符在 state 与循环局部变量中均未命中时，一律静默空串，**不会**去读 `globalThis`。因此模板表达式里**禁止**出现 `Math`、`Object`、`JSON`、`document`、`location` 等全局对象/函数——它们会渲染为空字符串而非报错（静默失效，极难排查）。需要这类运算请在 controller 里算好放进 state。守卫闸门 `test/check_scope_globals.mjs` 会扫描视图/控制器中的 `{{...}}`，命中清单内全局名即 FAIL；已知由 controller state 提供的同名键（如 `profile.html` 的 `history`）须在闸门的 `SHADOWED_BY_STATE` 显式登记并附控制器依据。
 
 > 表达式示例：`{{i * j}}`、`{{i <= j}}`、`{{count + 1}}`、`{{status === 'done' ? '已完成' : '进行中'}}`。
 >
@@ -295,9 +294,13 @@ const state = reactive({ zero: 0 }); // 渲染出 0 1 2 3 4
   - `{{index}}` —— 当前下标（整数）
   - `{{item.xxx}}` —— 当前元素的字段，支持嵌套（`item.user.name`）
   - 其它 `{{path}}` —— 回退到根 state
-- 响应式覆盖：
-  - 数组 `push` / `splice` / 整段重赋值（订阅 `length` 与数组整体 path）
-  - 元素叶子属性修改（订阅各 item 现有属性）
+- 响应式覆盖（2026-10-13 修复后口径）：
+  - 数组 `push` / `unshift` / `pop` / `shift` / `splice` / 索引赋值（含远索引）/ 整段重赋值——数组索引写入统一联动 `length` 订阅
+  - 元素叶子属性修改（含 `item.a.b` 深层路径）——per-node 订阅把文本/属性渲染直接挂到 item 代理的对应键上，**只重跑受影响的那几个渲染，不整表重渲**（1000 行改 1 个字段实测 0.01ms，全表改字段 3.1ms）
+  - item 新增字段——`{{ item.newField }}` 这类路径在绑定时就已订阅（求值得到 `undefined` 也记路径），字段落地即刷新
+  - 整对象读取（`{{ item }}`、`{{ JSON.stringify(item) }}`、`kniu:option="{{ item }}"`）——静态不可知用了哪些键，退化为「每个自身键 + ITERATE」订阅；表达式里出现 `item.` / `item[` 才算静态深层访问的遍历中间步（跳过单段订阅），据此区分两种形态
+  - 同值 `set`（`Object.is` 相等）不触发通知（业界通行语义）
+- 行重建时机（keyed）：仅当**作用域身份变化**——item 代理被整体替换、或模板引用了 `index` 且下标变化——才从原始模板整行重建换节点；identity 不变时完全跳过（已渲染节点的 `{{ }}` 标记已被消费，重绑是空操作，旧实现还会顺脚清空该行全部字段订阅，故 2026-10-13 起改为身份判定）。非 keyed 列表每次整表重建，行内字段变更同样走 per-node 订阅
 
 ### 4.1 自定义变量名 `kniu:for-index` / `kniu:for-item`
 
@@ -714,7 +717,7 @@ export default exampleController;
 
 ## 8. DOM 查询方法 `$()`
 
-`$()` 接收 CSS 选择器或 `Element`，返回带链式 DOM 方法的包装对象；匹配多个元素时返回包装对象数组。当前应用启动时启用了 `strictSelectors`，查询不到元素会直接抛错，以尽早暴露 View 与 Controller 不一致。关闭严格模式时才返回安全的空对象并输出警告。
+`$()` 接收 CSS 选择器或 `Element`，返回带链式 DOM 方法的包装对象；匹配多个元素时返回带同样链式方法的数组。`strictSelectors` 默认关闭：查询不到元素时返回安全的空对象并输出警告（如需启动期暴露 View 与 Controller 不一致，可在应用作用域上置 `strictSelectors: true` 改为直接抛错）。
 
 ```js
 const { $ } = kniusystem;
@@ -870,15 +873,43 @@ export default demoController;
 
 ## 12. 简洁 Controller 与响应式 API
 
-Controller 使用 `controller(setupFn)`，并从 setup 直接返回 `{ state, ...actions }`。`ref(value)` 适合单值状态；`computed(getter)` 创建派生值；`watch(getter, callback)`、`watch([getterA, getterB], callback)` 和 `watchEffect(effect)` 会随组件销毁自动停止。依赖按对象字段精确收集，条件依赖会在每次运行后自动更新。
+Controller 使用 `controller(setupFn)`，并从 setup 直接返回 `{ state, ...actions }`；状态一律用 `reactive()` 建对象（标量也放进对象的字段里），不需要 `ref` 包装、也不手写派生 getter——派生逻辑直接写成普通函数或 `state` 字段。`watch(getter, callback)`、`watch([getterA, getterB], callback)` 会随组件销毁自动停止。依赖按对象字段精确收集，条件依赖会在每次运行后自动更新。
 
 ## 13. 更新调度与模板性能
 
 - 同一轮内的重复状态通知进入微任务队列并按函数身份去重，避免连续赋值造成重复渲染。
+- 调度器三档优先级（2026-10-13）：`pre`（预留）/ `render`（模板渲染，默认档）/ `post`（用户 watch 回调）。同一微任务内按 pre → render → post 顺序 flush；任一档执行中入队的新作业在下一轮补跑，`MAX_FLUSH_CYCLES = 100` 兜底防止回调互相触发死循环。用户 `watch` 回调走 post 档——执行时 DOM 渲染作业已全部完成，回调里读 DOM 尺寸/焦点看到的是更新后的状态（post-flush 语义）。连续多次变更会被去重，回调只保留最后一次。
 - `nextTick()` 返回当前刷新任务，可在需要读取更新后界面状态时等待它完成。
 - 模板绑定开始前会扫描并预编译表达式；运行期编译缓存最多保留 1000 项，防止无限增长。
 - 文本、属性、表单值和组件属性在写入 DOM 前比较新旧值，相同值不会产生 DOM 操作。
 - 响应式依赖精确到对象字段，不相关字段变化不会触发对应绑定。
+- 性能基准（2026-10-13 优化后，jsdom 微基准，数值为量级参考）：1000 绑定点冷启动约 60-160ms（含 for 行克隆）；1000 文本节点一次 flush 约 1.3-1.6ms；1 万次 set 合并为 1 次 flush 约 0.6ms；1000 行 `kniu:for` 非 keyed 全量重建约 60ms；**`kniu:key` 列表行内字段变更 1000 行约 3.1ms（优化前 60.7ms，约 20 倍）、单行变更 0.01ms**。与业界主流运行时框架同机对比：细粒度文本/属性更新同量级，列表重建与冷启动因缺少编译期优化相对偏慢，大数据量列表推荐 `kniu:key` 或改用 `kniu-table`（自带行池复用）。
+- **与业界主流框架同机配对基准（2026-10-14，`test/bench_kniu_vs_vue.mjs`，生产构建口径，每轮 KNIU/对照交替消除机器漂移）**：
+
+  | 场景（1000 行/节点量级） | KNIU | 对照 | K/V |
+  |---|---|---|---|
+  | A1b 冷启动 1000 插值+500 属性 | 58.03 | 9.41 | 6.17（慢） |
+  | A1 for 列表冷启动 1000 行 | 374.43 | 42.42 | 8.83（慢） |
+  | B1 set→flush→1000 文本节点 | 1.37 | 3.29 | 0.42（快 2.4x） |
+  | C1 1 万 set→1 flush | 0.52 | 4.76 | 0.11（快 9x） |
+  | D1 深层 reactive get x10 万 | 19.15 | 38.61 | 0.50（快 2x） |
+  | E3 keyed 行内字段变更 1000 行 | 7.75 | 13.31 | 0.58（快 1.7x） |
+  | E3b keyed 单行字段变更 | 0.10 | 1.80 | 0.06（快 18x） |
+  | F1 单绑定点 10 万 set | 13.00 | 90.88 | 0.14（快 7x） |
+  | G1 if 切换 500 节点 | 33.35 | 5.89 | 5.66（慢） |
+  | E1 非 keyed 全换 1000 行* | 162.30 | 10.16 | 15.97（算法差） |
+  | E1k keyed 换新对象 1000 行* | 181.67 | 10.11 | 17.97（算法差） |
+  | E2 push 触发 1000 行* | 161.83 | 1.36 | 118.59（算法差） |
+
+  *算法差异场景：KNIU 非 keyed=整表重建、keyed 换对象=逐行克隆重建；对照框架无论 keyed 与否都原地 patch。**结论：更新路径（字段变更/批量 set/条件渲染后的细粒度更新）KNIU 全面快于对照框架（无 vdom diff、无 vnode 分配、直接写 DOM，最高 18 倍）；挂载/冷启动路径慢 6-9 倍（无编译期优化，运行时遍历+克隆）；列表「换数据」场景必须 `kniu:key` 且避免整体替换（换新对象同 key 也会逐行重建，这是与对照框架的最大算法差距）。**
+- **冷启动成本归因（2026-10-14，`test/bench_coldstart_breakdown.mjs`，轮询交错消除 GC 税）**：A1（1000 行 bind，孤立口径 254-265ms）中——表达式链路（3000 绑定点 × 2 次求值 + 订阅）仅 46-64ms（~20%）；cloneNode ~20ms、customElements.upgrade ~23-29ms、TreeWalker ~22-25ms、insertBefore ~28-30ms、querySelectorAll ~3-5ms；其余 ~112ms 是 applyBindings 每行的闭包/Map 分配与多轮属性扫描。**优化优先级：①upgrade 前先判定含自定义元素标签再 adoptNode+upgrade（省 ~9-11%）；②表达式订阅复用首渲染已算出的 paths，省掉一次求值（表达式链路减半）；③单遍遍历合并文本/元素收集；④每行闭包惰性化。P2 代理缓存仅对冷启动的表达式链路有理论收益（~35-50ms/A1），更新路径已证伪，重新评估须以冷启动配对 A/B 为准。**
+- **引擎收尾优化（2026-10-14，对应 `kniutemplate.mjs` O6–O13，最终态）**：在 O1–O5 之后继续压挂载路径——①O6–O9 叶子计划（leaf plan）统一收口：把每行绑定的「路径收集 + 求值闭包」抽成可共享结构，避免千行重建时重复构造；②O10 `compileLeafPlan` 标注每 key 段为快路径（正则识别 `item.n` / `item.user.name` / `index` 点积），生成直读 getter + 静态订阅路径，跳过 `makeScope` Proxy 与 `with` 求值；③O11 模板预克隆缓存：列表模板首挂载克隆一次缓存，后续行复用；④O12 静态表达式快路径落到 `applyLeafPlan`：订阅改走静态 `fastPaths`，`{{item.n}}` 场景彻底无 Proxy/with 税；⑤O13 非 keyed 首挂载由逐节点 `insertBefore` 改为先收进 `DocumentFragment` 一次性插入（对齐 keyed 路径）。**实测（隔离口径，与上方配对表的方法学不同，仅作量级参考）**：表达式链路（3000 绑定点）22→16ms；bind 对照 157→127ms；A1 非配对冷启动约 232ms（配对口径见上方表格 A1 行）。**止步判据**：`{{item.n}}` 场景的 Proxy/with 税已被 O12 消除，剩余成本是 `cloneNode + TreeWalker + insertBefore` 的固有结构税（无编译期优化下的架构既定成本），AOT 预编译虽可再削但违反项目「零编译步骤 / 纯 HTML 即模板」的简单前提，故 O1–O13 为合理终点。验收同 O1–O5：`probe_for_field_scope` 43/43、`probe_scheduler_tiers` 15/15、`probe_reactivity_array`、`probe_daily_switch`、`core-cadence` 全过；`verify_compact` 119/0 与 4 个静态闸门 + production build 全过。
+
+- 已评估并回退的优化（2026-10-13）：scope 包裹代理按 (对象,前缀)/(extra,base) 缓存。微基准显示代理创建占表达式求值成本 74-81%，但配对 A/B 实测端到端零收益（真实管线里 jsdom DOM 操作与调度开销主导），且需引入模块级 `scopeAccessed` 全局态，复杂度与收益倒挂。结论记录在 `kniutemplate.mjs` 的 `makeScope` 注释里，未来表达式求量成为瓶颈时可重新评估。
+- **复审优化落地（2026-10-14，对应 `kniutemplate.mjs` O1-O5）**：①O1 `upgradeCustomElements` 短路——`customElements.getNames()` 为空（纯原生模板，冷启动绝对多数路径）直接跳过整棵子树遍历升级；②O2 表达式订阅复用首渲染 `evalExpr` 已算出的 `paths`，删掉 `subscribe` 里独立的第二次 `evalExpr`（每表达式两次求值→一次）；③O3 `collectBindingNodes(root)` 只算一次、元素/属性两段绑定共用同一节点集，并把 `DIRECTIVE_ATTRS/hasDirectiveAncestor/queryDirectives` 从每行的 `bind()` 内部提到 IIFE 作用域共享（原先千行列表重建数千次函数/数组）；④O4 把 `bindingNodeCache` 的每行 `new Map()` 改为单变量缓存；⑤O5 keyed `setupFor` 的 render 不再每次把**全部**视图节点重塞 fragment 再插入——`sameOrder`（字段更新/同 key 换值）直接跳过整段重排、`prefixExtend`（稳定 key 的 push）只追尾部新节点，仅顺序/集合真变化才走全量重排。**实测**：冷启动归因里「表达式链路（3000 绑定点）」从 46-64ms 降到 34-54ms（约 −30%，O2 生效）；keyed 换新对象 E1k 从 181.67ms 降到约 161ms（−11%，O5 去掉 O(n) DOM 搬运）；A1 端到端受机器噪声主导、且与优化前 254-265ms 持平——因挂载路径仍由 `cloneNode + insertBefore + TreeWalker + 每行运行时解释`（无编译期优化）主导，这是项目「无编译步骤」既定架构下的固有成本，非本轮可消除。E2（非 keyed push）仍走全量重建，属「非 keyed」语义下的正确行为，O5 不覆盖。**验收**：`probe_for_field_scope` 43/43、`probe_scheduler_tiers` 15/15、`probe_reactivity_array` 20/20、`core-cadence`、`probe_daily_switch` 全过；7 个静态闸门 + production build 全过。
+- **同文件提炼与递归修复（2026-10-17，引擎保持单文件不拆分）**：函数级提炼（均在 `kniutemplate.mjs` IIFE 内部）：①`setupFor.build` 与 `setupIf.render` 的互归递归入口收口为 `setupNestedFor/setupNestedIf`，模板物化（kniu:for 存 content 片段 / kniu:if 存 template 元素克隆两种形状）收口为 `materializeRoots`（返回形状由 frag 本身决定）；②文本节点/属性插值/leaf plan 三处同构插值解析循环收口为模块级 `parseBindingSegments`（文本绑定的 `@` raw 标记经 trackRaw 参数保留）；③`kniu@` 与 `kniu:option onXxx` 两路逐字重复的修饰符裁决收口为 `applyEventModifiers` + `modifierListenerOptions`；④6 处 8 条件指令链收口为 `hasAnyDirective`，`FOR_ATTRS/IF_ATTRS` 常量化；⑤`toCamelCase`/`runCleanups` 收口。**顺修两个既有缺陷（行为探针暴露）**：⑥根级 `template :for` 直接嵌套 `template :for` 时，内层渲染内容滞留在游离 frag 中永不入 DOM（build 早有根 :if 的分支收集、根 :for 缺失）——补 rootFor 分支收集 + `setupFor` 返回 anchor，嵌套模板递归打通；⑦`DATA_ATTR_RE` 原式 `/^(?:kniu:|):[/` 实际只匹配 `kniu::[name]` 与 `:[name]`，§6.3 主语法 `kniu:[name]` 从未生效（落入通用循环被 warn+移除）——改正则 `(?:kniu:|:)\[`。**验收**：`test/probe_template_core.mjs` 行为探针 13/13（for>if/else、for>for>if 嵌套、@raw 清洗、事件守卫、leaf plan 响应式、elseif 链切换、属性与 data 绑定、表达式订阅），production build 全过。
+- **第二轮同文件提炼（2026-10-17，仍是单文件不拆分，2030→2005 行）**：在上一轮基础上继续消除**逐字重复写法**（非逻辑变更，全部可证伪）：①双前缀（`kniu:x` / `:x`）指令读写「12 处站点」收口为 `directiveAttr / hasDirectiveAttr / removeDirectiveAttrs` 三件套，并修正 `hasText ? getAttribute('kniu:loading-text') : getAttribute(':loading-text')` 恒取前者、`:loading-text` 别名从未生效的缺陷；②`[root, ...querySelectorAll('*')]` 的 4 处「自身+后代」手写遍历收口为 `selfAndDescendants`；③两处逐字相同的有限容量缓存淘汰（sanitize / expression）收口为 `cacheSetLimited`；④元素与 `kniu:option` 双路重复的事件修饰符裁决收口为 `findUnknownModifiers / hasConflictingModifiers`（并记录各自 warn 文案差异）；⑤4 个 loading 属性名常量化为 `LOADING_ATTR_NAMES / LOADING_BODY_ATTR_NAMES / LOADING_TEXT_ATTR_NAMES`；⑥`precompileTemplate` 第三份 `{{}}` 正则改为复用 `parseBindingSegments`，第三处 `{{}}` 提取专用助手 `extractBracedExpr`（与 `stripBraces` 语义区分：前者抓首个内插值，后者脱外层整包花括号）；⑦**13 处「先渲染后订阅」配对**收口为 `bindRender(expr, render)`；⑧根级 for/if 的「从 baseline 反向收集到 anchor」两处逐字循环收口为 `collectSinceBaseline`；⑨`setupIf` 分支链的 `kniu:elseif/:elseif` 扫描与表达式提取收口到 `hasDirectiveAttr` / `extractBracedExpr`；⑩删 `setupFor` 中赋值后从未读取的死变量。**两个非回归的事实（探针暴露，记录以免重复排查）**：⑪`kniu:loading-text` 按**表达式**求值（见 §6.5），写裸文案 `kniu:loading-text="加载中"` 会被当标识符求值后静默空串，必须写 `="{{tip}}"` 或 `="{{'加载中'}}"`；⑫探针页不注册 `kniu-loading` 自定义元素时，`mask.show / mask.text` 只是普通自有属性，**断言须走属性值而非 shadow DOM**（组件升级不是本引擎的职责边界）。**验收**：`test/probe_template_core.mjs` 扩到 **22/22**（新增 R10 `:x` 短前缀别名全链路、R11 loading 三形态 + text 响应式、R12 双路修饰符守卫、R13 缓存淘汰后仍可求值），`ONLY=<节名>` 支持单节隔离；退出码归零（R3 的 `<img src="x">` XSS 载体 404 已按 URL 过滤，不再污染回归判定）；production build 全过。
+- **作用域切断 globalThis 回退（2026-10-18，安全加固，行为变更）**：`makeScope` 的 Proxy `get` 原先在 `obj[key]` 为 `undefined` 时回退读 `globalThis[key]`（仅放行 own property 且剔除 `DANGEROUS_SCOPE_KEYS`），形成「模板表达式可隐式触达全局对象」的攻击面（如 `{{document.cookie}}`、`{{location.href}}`、`{{fetch(...)}}` 在 state 未命中时可达）。现改为**未命中一律 `return undefined`**，回退代码注释保留备查。**语义边界**：只切断「state 未命中时的全局回退」，state 自身同名键（含 `history`、`location` 这类易撞名的自然状态键）完全不受影响——由 R14b 专门锁定。**影响面核查**：全库 49 个视图/控制器文件的 `{{...}}` 表达式零处引用清单内全局名（唯一命中 `profile.html` 的 `{{history}}` 经确认是 `profileController.js:22 history: []` 的 state 键，与 `window.history` 同名，属误报）。**验收**：`test/probe_template_core.mjs` 扩到 **24/24**（新增 R14：R14a 锁 `Object/String/top` 均渲染空串且同 host 内正常 state key 仍为 `7`（防表达式链路整体坏掉的假阴性）、R14b 锁 state 同名键优先）；R14 已做**非恒真验证**（临时回退旧写法后 R14a 失败、R14b 仍过，证明断言精准指向回退行为）；新增静态闸门 `test/check_scope_globals.mjs`（扫描 `{{...}}` 中的全局名，剔除字符串字面量/属性中段/对象字面量键后比对高危清单，`SHADOWED_BY_STATE` 显式登记 state 同名键并附控制器依据，未登记命中即 FAIL；已用临时违规文件验证 3 处全抓且无误报）；`check_row_scope_expr` PASS；production build 全过。
 
 ```js
 state.keyword = '第一项';

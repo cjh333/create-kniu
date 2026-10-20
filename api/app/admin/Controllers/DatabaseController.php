@@ -30,8 +30,8 @@ class DatabaseController extends Base
   /** SQL 控制台单次允许执行的语句条数。 */
   private const MAX_STATEMENTS = 200;
 
-  /** 数据行浏览单页最大条数。 */
-  private const MAX_PAGE_ROWS = 200;
+  /** 数据行浏览单页最大条数（与 Db::PAGE_ROWS_MAX 同源）。 */
+  private const MAX_PAGE_ROWS = Db::PAGE_ROWS_MAX;
 
   /** SQL 控制台回显的最大行数。 */
   private const MAX_RESULT_ROWS = 500;
@@ -116,6 +116,298 @@ class DatabaseController extends Base
     return $name;
   }
 
+  /* ==================== 库列表排序档案 ==================== */
+
+  /*
+   * 库本身没有 id/排序字段——`information_schema.SCHEMATA` 是只读视图，
+   * 排序值无处落库，因此外置到**系统库**的 `tb_database_sort`
+   * （基线：`!KniuProject/kniusql/kniu_create_tb_database_sort.sql`）。
+   *
+   * 三个设计约束：
+   *   ① **必须落在系统连接上**：排序是「本项目」的偏好数据，不是被管服务器的数据；
+   *      写进被管库会污染用户数据，且对方账号可能连建表权限都没有。
+   *   ② **按连接档案隔离**（`profile_id`，空串 = 系统连接）：库列表按「当前连接」
+   *      取数，两台服务器上同名的库排序必须互不干扰。
+   *   ③ **读路径降级、写路径报错**：表缺失时 `/db_list` 照常出列表（只是没有
+   *      持久化排序），而保存必须明确失败并提示补跑基线 SQL——静默丢编辑最糟。
+   */
+
+  /**
+   * 排序档案的作用域键：当前连接档案 id（空串 = 系统连接）。
+   *
+   * @return string 档案 id 或空串。
+   */
+  private function sortScope(): string
+  {
+    return DbProfile::activeId();
+  }
+
+  /**
+   * 在系统连接上执行一次操作（本请求的连接可能已被档案接管）。
+   *
+   * @param callable $fn 系统连接上的操作。
+   * @return mixed $fn 的返回值。
+   */
+  private function onSystemConnection(callable $fn)
+  {
+    $managed = Db::managedConnection();
+    Db::useManaged(null);
+    try {
+      return $fn();
+    } finally {
+      Db::useManaged($managed);
+    }
+  }
+
+  /**
+   * 读取排序档案：库名 => sid。
+   *
+   * 表缺失（基线未执行）时降级为空 Map：读接口不该因缺表整体失败。
+   *
+   * @param string $scope 作用域键。
+   * @return array<string, int> 库名 => 排序值。
+   */
+  private function sortMap(string $scope): array
+  {
+    try {
+      $rows = $this->onSystemConnection(function () use ($scope): array {
+        return Db::query(
+          'SELECT db_name, sid FROM tb_database_sort WHERE profile_id = \'' . Db::escape($scope) . '\''
+        );
+      });
+    } catch (\Throwable $e) {
+      return [];
+    }
+    $map = [];
+    foreach ($rows as $row) {
+      $map[(string)$row['db_name']] = (int)$row['sid'];
+    }
+    return $map;
+  }
+
+  /**
+   * 写入/更新一条库排序（按 作用域 + 库名 幂等）。
+   *
+   * @param string $scope 作用域键。
+   * @param string $database 数据库名（已过白名单）。
+   * @param int $sid 排序值（≥0）。
+   * @return void
+   * @throws \Throwable 排序表缺失或写入失败（由调用方转业务码）。
+   */
+  private function sortSave(string $scope, string $database, int $sid): void
+  {
+    $this->onSystemConnection(function () use ($scope, $database, $sid): void {
+      Db::execute(
+        'INSERT INTO tb_database_sort (profile_id, db_name, sid, update_time) VALUES (\''
+        . Db::escape($scope) . '\', \'' . Db::escape($database) . '\', ' . $sid . ', NOW()) '
+        . 'ON DUPLICATE KEY UPDATE sid = VALUES(sid), update_time = NOW()'
+      );
+    });
+  }
+
+  /**
+   * 删除一条库排序（尽力而为：主操作已成功，不能因清理失败而回滚报错）。
+   *
+   * @param string $scope 作用域键。
+   * @param string $database 数据库名（已过白名单）。
+   * @return void
+   */
+  private function sortForget(string $scope, string $database): void
+  {
+    try {
+      $this->onSystemConnection(function () use ($scope, $database): void {
+        Db::execute(
+          'DELETE FROM tb_database_sort WHERE profile_id = \'' . Db::escape($scope) . '\''
+          . ' AND db_name = \'' . Db::escape($database) . '\''
+        );
+      });
+    } catch (\Throwable $e) {
+      // 表缺失或系统库暂时不可用：留下孤儿行而已（下次读排序时自然忽略），不波及主操作。
+    }
+  }
+
+  /**
+   * 删除某条连接档案的全部排序残留（档案被删除时调用，同样是尽力而为）。
+   *
+   * @param string $scope 档案 id。
+   * @return void
+   */
+  private function sortForgetScope(string $scope): void
+  {
+    try {
+      $this->onSystemConnection(function () use ($scope): void {
+        Db::execute(
+          'DELETE FROM tb_database_sort WHERE profile_id = \'' . Db::escape($scope) . '\''
+        );
+      });
+    } catch (\Throwable $e) {
+      // 同上：清理失败不应当把「删除连接」变成失败操作。
+    }
+  }
+
+  /*
+   * 连接档案列表 / 数据表列表的排序档案——与库列表排序（tb_database_sort）同构的
+   * 另外两份外置存储，覆盖其余两个「源数据没有排序字段」的只读列表：
+   *   ① 连接档案（#/dbconnect）：档案在 JSON 文件里（DbProfile），没有排序字段；
+   *      档案本身是全局的（不分服务器），因此 `tb_database_connect_sort` 只有
+   *      `connect_id` 一个作用域键。
+   *   ② 数据表（#/databasetables）：表来自 `information_schema.TABLES`（只读），
+   *      按「连接档案 + 库名」隔离——两台服务器上同名的库，表排序互不干扰。
+   * 三条设计约束与库排序完全一致：落系统连接（偏好数据不污染被管服务器）、
+   * 按作用域隔离、读路径表缺失降级 / 写路径明确报错并提示补跑基线 SQL。
+   */
+
+  /**
+   * 连接排序档案：connect_id => sid。表缺失（基线未执行）时降级为空 Map。
+   *
+   * @return array<string, int> 连接档案 id => 排序值。
+   */
+  private function connectSortMap(): array
+  {
+    try {
+      $rows = $this->onSystemConnection(function (): array {
+        return Db::query('SELECT connect_id, sid FROM tb_database_connect_sort');
+      });
+    } catch (\Throwable $e) {
+      return [];
+    }
+    $map = [];
+    foreach ($rows as $row) {
+      $map[(string)$row['connect_id']] = (int)$row['sid'];
+    }
+    return $map;
+  }
+
+  /**
+   * 写入/更新一条连接排序（按 connect_id 幂等）。
+   *
+   * @param string $connectId 连接档案 id。
+   * @param int $sid 排序值（≥0）。
+   * @return void
+   * @throws \Throwable 排序表缺失或写入失败（由调用方转业务码）。
+   */
+  private function connectSortSave(string $connectId, int $sid): void
+  {
+    $this->onSystemConnection(function () use ($connectId, $sid): void {
+      Db::execute(
+        'INSERT INTO tb_database_connect_sort (connect_id, sid, update_time) VALUES (\''
+        . Db::escape($connectId) . '\', ' . $sid . ', NOW()) '
+        . 'ON DUPLICATE KEY UPDATE sid = VALUES(sid), update_time = NOW()'
+      );
+    });
+  }
+
+  /**
+   * 删除一条连接排序（尽力而为：删连接是主操作，不能因清理失败而回滚报错）。
+   *
+   * @param string $connectId 连接档案 id。
+   * @return void
+   */
+  private function connectSortForget(string $connectId): void
+  {
+    try {
+      $this->onSystemConnection(function () use ($connectId): void {
+        Db::execute(
+          'DELETE FROM tb_database_connect_sort WHERE connect_id = \'' . Db::escape($connectId) . '\''
+        );
+      });
+    } catch (\Throwable $e) {
+      // 表缺失或系统库暂时不可用：留下孤儿行而已（读排序时自然忽略），不波及主操作。
+    }
+  }
+
+  /**
+   * 表排序档案：「库名.表名」=> sid（当前连接作用域）。表缺失时降级为空 Map。
+   *
+   * @param string $scope 作用域键（连接档案 id，空串 = 系统连接）。
+   * @param string $database 数据库名。
+   * @return array<string, int> 「库名.表名」=> 排序值。
+   */
+  private function tableSortMap(string $scope, string $database): array
+  {
+    try {
+      $rows = $this->onSystemConnection(function () use ($scope, $database): array {
+        return Db::query(
+          'SELECT db_name, table_name, sid FROM tb_database_table_sort WHERE profile_id = \''
+          . Db::escape($scope) . '\' AND db_name = \'' . Db::escape($database) . '\''
+        );
+      });
+    } catch (\Throwable $e) {
+      return [];
+    }
+    $map = [];
+    foreach ($rows as $row) {
+      $map[(string)$row['db_name'] . '.' . (string)$row['table_name']] = (int)$row['sid'];
+    }
+    return $map;
+  }
+
+  /**
+   * 写入/更新一条表排序（按 作用域 + 库名 + 表名 幂等）。
+   *
+   * @param string $scope 作用域键。
+   * @param string $database 数据库名（已过白名单）。
+   * @param string $table 数据表名（已过白名单）。
+   * @param int $sid 排序值（≥0）。
+   * @return void
+   * @throws \Throwable 排序表缺失或写入失败（由调用方转业务码）。
+   */
+  private function tableSortSave(string $scope, string $database, string $table, int $sid): void
+  {
+    $this->onSystemConnection(function () use ($scope, $database, $table, $sid): void {
+      Db::execute(
+        'INSERT INTO tb_database_table_sort (profile_id, db_name, table_name, sid, update_time) VALUES (\''
+        . Db::escape($scope) . '\', \'' . Db::escape($database) . '\', \'' . Db::escape($table) . '\', '
+        . $sid . ', NOW()) '
+        . 'ON DUPLICATE KEY UPDATE sid = VALUES(sid), update_time = NOW()'
+      );
+    });
+  }
+
+  /**
+   * 删除一条表排序（尽力而为：删表是主操作，清理失败只留孤儿行）。
+   *
+   * @param string $scope 作用域键。
+   * @param string $database 数据库名。
+   * @param string $table 数据表名。
+   * @return void
+   */
+  private function tableSortForget(string $scope, string $database, string $table): void
+  {
+    try {
+      $this->onSystemConnection(function () use ($scope, $database, $table): void {
+        Db::execute(
+          'DELETE FROM tb_database_table_sort WHERE profile_id = \'' . Db::escape($scope) . '\''
+          . ' AND db_name = \'' . Db::escape($database) . '\''
+          . ' AND table_name = \'' . Db::escape($table) . '\''
+        );
+      });
+    } catch (\Throwable $e) {
+      // 同上：清理失败不应当把「删表」变成失败操作。
+    }
+  }
+
+  /**
+   * 删除某个库的全部表排序残留（库被删除时调用，尽力而为）。
+   *
+   * @param string $scope 作用域键。
+   * @param string $database 数据库名。
+   * @return void
+   */
+  private function tableSortForgetDatabase(string $scope, string $database): void
+  {
+    try {
+      $this->onSystemConnection(function () use ($scope, $database): void {
+        Db::execute(
+          'DELETE FROM tb_database_table_sort WHERE profile_id = \'' . Db::escape($scope) . '\''
+          . ' AND db_name = \'' . Db::escape($database) . '\''
+        );
+      });
+    } catch (\Throwable $e) {
+      // 同上：清理失败不应当把「删库」变成失败操作。
+    }
+  }
+
   /**
    * 读取并校验数据库名参数。
    *
@@ -150,13 +442,13 @@ class DatabaseController extends Base
   {
     $dir = dirname(__DIR__, 3) . '/runtime/log';
     if (!is_dir($dir)) {
-      @mkdir($dir, 0777, true);
+      @mkdir($dir, 0755, true);
     }
     $line = json_encode([
       'time' => date('Y-m-d H:i:s'),
       'user' => (string)($_SESSION['admin_token']['name'] ?? ''),
       'user_id' => $this->currentUserId(),
-      'ip' => substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
+      'ip' => substr(\Core\Controller::clientIp(), 0, 45),
       'action' => $action,
       'context' => $context,
     ], JSON_UNESCAPED_UNICODE);
@@ -356,19 +648,54 @@ class DatabaseController extends Base
    * @param int $index 语句序号（从 0 起）。
    * @return array<string, mixed> 执行结果。
    */
+  /**
+   * 高危语句判定（纯函数，供探针直测）。
+   *
+   * 判定前必须先剥离 MySQL「忽略型」注释并归一化空白：空块注释（如 LOAD 与 _FILE
+   * 之间插注释）、`--` 与 `#` 行注释在 MySQL 语法中等价于记号分隔符，不剥离则
+   * `INTO + 注释 + OUTFILE` 一类写法可绕过下方关键词匹配。
+   *
+   * 版本注释（`/*!NNNN ... *\/` 开头的执行型注释）其内容 MySQL 会执行，故**只剥
+   * 首尾分隔符、保留内部记号**——若整体剥离或保留分隔符，都会让注释内容与外侧
+   * 关键词的邻接性丢失（`INTO/*!50000 OUTFILE*\/` 形态的绕过，C3-M1）。
+   * `--` 行注释按 MySQL 口径：其后跟任意空白（含换行）或行尾即开启注释。
+   *
+   * @param string $statement 单条 SQL 原文。
+   * @return string|null 命中高危时返回拦截文案，安全返回 null。
+   */
+  public static function sqlHighRiskReason(string $statement): ?string
+  {
+    // ① 普通块注释整体替换为空格（/*! 开头的版本注释由本规则排除，留给②③处理）。
+    $scan = preg_replace('/\/\*(?!\!)[\s\S]*?\*\//', ' ', $statement);
+    // ② 版本注释只替换首分隔符 /*!NNNN（含无版本号 /*!），内容保留。
+    $scan = preg_replace('/\/\*![0-9]*/', ' ', $scan);
+    // ③ 替换版本注释尾分隔符 */，使其内容与外侧关键词恢复邻接。
+    $scan = preg_replace('/\*\//', ' ', $scan);
+    // ④ 行注释（MySQL 口径）：-- 后跟空格/制表符则剥到行尾；-- 后直接换行 = 空注释，
+    //     只剥 -- 与换行本身（下一行是有效 SQL，必须恢复与外侧关键词的邻接）。
+    $scan = preg_replace('/--[ \t][^\n]*/', ' ', $scan);
+    $scan = preg_replace('/--\r?\n/', ' ', $scan);
+    $scan = preg_replace('/--$/m', ' ', $scan);
+    $scan = preg_replace('/#[^\n]*/', ' ', $scan);
+    $scan = preg_replace('/\s+/', ' ', $scan);
+    $upper = strtoupper($scan);
+    if (preg_match('/LOAD\s*_FILE/', $upper)) {
+      return '禁止 LOAD_FILE（读取服务器文件）';
+    }
+    if (preg_match('/INTO\s+(OUTFILE|DUMPFILE)/', $upper)) {
+      return '禁止 INTO OUTFILE/DUMPFILE（写入服务器文件）';
+    }
+    if (preg_match('/\b(SHUTDOWN|KILL)\b/', $upper)) {
+      return '禁止 SHUTDOWN/KILL（实例级操作）';
+    }
+    return null;
+  }
+
   private function runStatement(string $statement, int $index): array
   {
     // 高危语句闸门：即使 superadmin 场景也挡住「读服务器文件 / 写服务器文件 / 关库」三条路，
-    // 防止会话被劫持后一步穿透到文件系统与实例级破坏。
-    $upper = strtoupper($statement);
-    $blocked = null;
-    if (str_contains($upper, 'LOAD_FILE')) {
-      $blocked = '禁止 LOAD_FILE（读取服务器文件）';
-    } elseif (preg_match('/INTO\s+(OUTFILE|DUMPFILE)/', $upper)) {
-      $blocked = '禁止 INTO OUTFILE/DUMPFILE（写入服务器文件）';
-    } elseif (preg_match('/\b(SHUTDOWN|KILL)\b/', $upper)) {
-      $blocked = '禁止 SHUTDOWN/KILL（实例级操作）';
-    }
+    // 防止会话被劫持后一步穿透到文件系统与实例级破坏（剥离注释后判定，见 sqlHighRiskReason）。
+    $blocked = self::sqlHighRiskReason($statement);
     if ($blocked !== null) {
       return [
         'index' => $index,
@@ -526,16 +853,37 @@ class DatabaseController extends Base
       $this->json([], '数据库连接失败：' . $e->getMessage(), ErrorCode::SERVICE_UNAVAILABLE);
     }
     $current = (string)($this->input('post.database/s') ?? '');
+    // 排序值合并系统库的 tb_database_sort：未编辑过的库取「按库名的初始序号」作默认值
+    // （与无档案时的表现完全一致），编辑过的库取档案值。
+    $sortMap = $this->sortMap($this->sortScope());
+    $list = [];
+    $serial = 0;
+    foreach ($rows as $row) {
+      $serial++;
+      $name = (string)$row['db_name'];
+      $list[] = [
+        'id' => $serial,
+        'sid' => isset($sortMap[$name]) ? $sortMap[$name] : $serial,
+        'name' => $name,
+        'table_count' => (int)$row['table_count'],
+        'total_bytes' => (int)$row['total_bytes'],
+        'is_current' => $name === $current,
+      ];
+    }
+    // 按 sid 升序（同值按库名保证确定性）；展示序号 id 在排序后重新连续编号，
+    // 否则排完序 ID 列会跳号。PHP 8 的 usort 稳定，仍显式带 name 兜底。
+    usort($list, function (array $a, array $b): int {
+      if ($a['sid'] === $b['sid']) {
+        return strcmp($a['name'], $b['name']);
+      }
+      return $a['sid'] < $b['sid'] ? -1 : 1;
+    });
+    foreach ($list as $index => $row) {
+      $list[$index]['id'] = $index + 1;
+    }
     $this->json([
       'current' => $current,
-      'list' => array_map(function (array $row): array {
-        return [
-          'name' => (string)$row['db_name'],
-          'table_count' => (int)$row['table_count'],
-          'total_bytes' => (int)$row['total_bytes'],
-          'is_current' => (string)$row['db_name'] === $current,
-        ];
-      }, $rows),
+      'list' => $list,
     ]);
   }
 
@@ -561,6 +909,120 @@ class DatabaseController extends Base
   }
 
   /**
+   * 删除数据库。
+   *
+   * @return void
+   */
+  public function dbDrop(): void
+  {
+    $this->guard();
+    $database = $this->databaseParam();
+    if (in_array($database, self::SYSTEM_SCHEMAS, true)) {
+      $this->json([], '系统库禁止删除', ErrorCode::FORBIDDEN);
+    }
+    if (!$this->databaseExists($database)) {
+      $this->json([], '数据库不存在', ErrorCode::NOT_FOUND);
+    }
+    try {
+      Db::execute("DROP DATABASE `{$database}`");
+    } catch (\Throwable $e) {
+      $this->json([], '删除数据库失败：' . (string)$e->getMessage(), ErrorCode::SERVER_ERROR);
+    }
+    // 连带清理排序档案：库没了，sid 档案就是孤儿行（尽力而为，失败不影响删库结果）。
+    $this->sortForget($this->sortScope(), $database);
+    // 该库下的全部表排序档案一并清理（同上，尽力而为）。
+    $this->tableSortForgetDatabase($this->sortScope(), $database);
+    $this->writeAudit('db_drop', ['database' => $database]);
+    $this->json(['name' => $database], '数据库删除成功');
+  }
+
+  /**
+   * 排序落库三端点（/db_sort_update、/db_table_sort_update、/db_connection_sort_update）
+   * 的公共收口（A3-m3）：「try 落库 catch 补救指引 + writeAudit + json」三段收拢；
+   * 鉴权、参数校验与存在性闸门因端点而异，保留在各端点内。
+   *
+   * @param string $auditName 审计动作名（如 db_sort_update）。
+   * @param array $audit 审计参数。
+   * @param callable $save 落库函数（抛异常即失败，json 终止）。
+   * @param string $baselineSql 基线 SQL 文件名（补救指引用）。
+   * @param array $payload 成功响应的 data。
+   * @return never
+   */
+  private function sortUpdateGuard(string $auditName, array $audit, callable $save, string $baselineSql, array $payload): void
+  {
+    try {
+      $save();
+    } catch (\Throwable $e) {
+      // 排序表缺失（基线 SQL 未执行）或系统库写入失败：明确失败并给出补救指引，
+      // 不静默吞掉用户的编辑。
+      $this->json([], '排序保存失败：' . $e->getMessage()
+        . '（请确认已执行 !KniuProject/kniusql/' . $baselineSql . '）', ErrorCode::SERVER_ERROR);
+    }
+    $this->writeAudit($auditName, $audit);
+    $this->json($payload, '排序已保存');
+  }
+
+  /**
+   * 保存库列表的排序值（前端行内编辑 sid 列的落库入口）。
+   *
+   * 与其它模块的 sid 编辑同构：onChange 即入库，成功后由前端重拉列表
+   * （`/db_list` 此时已按 sid 排序），刷新不丢。
+   *
+   * @return void
+   */
+  public function dbSortUpdate(): void
+  {
+    $this->guard();
+    $database = $this->databaseParam();
+    $sid = (int)($this->input('post.sid/d', 0));
+    if ($sid < 0) {
+      $this->json([], '排序值不能为负数', ErrorCode::PARAM_INVALID);
+    }
+    if (!$this->databaseExists($database)) {
+      $this->json([], '数据库不存在', ErrorCode::NOT_FOUND);
+    }
+    $this->sortUpdateGuard(
+      'db_sort_update',
+      ['database' => $database, 'sid' => $sid],
+      function () use ($database, $sid): void {
+        $this->sortSave($this->sortScope(), $database, $sid);
+      },
+      'kniu_create_tb_database_sort.sql',
+      ['database' => $database, 'sid' => $sid]
+    );
+  }
+
+  /**
+   * 保存数据表列表的排序值（前端行内编辑 sid 列的落库入口）。
+   *
+   * 与 `/db_sort_update` 同构：onChange 即入库，成功后由前端重拉列表
+   * （`/db_tables` 此时已按 sid 排序），刷新不丢。表名/库名同样走
+   * `requireTable()` 存在性闸门（3001），避免给已消失的表留排序档案。
+   *
+   * @return void
+   */
+  public function dbTableSortUpdate(): void
+  {
+    $this->guard();
+    $database = $this->databaseParam();
+    $table = $this->tableParam();
+    $sid = (int)($this->input('post.sid/d', 0));
+    if ($sid < 0) {
+      $this->json([], '排序值不能为负数', ErrorCode::PARAM_INVALID);
+    }
+    $this->requireTable($database, $table);
+    $this->sortUpdateGuard(
+      'db_table_sort_update',
+      ['database' => $database, 'table' => $table, 'sid' => $sid],
+      function () use ($database, $table, $sid): void {
+        $this->tableSortSave($this->sortScope(), $database, $table, $sid);
+      },
+      'kniu_create_tb_database_table_sort.sql',
+      ['database' => $database, 'table' => $table, 'sid' => $sid]
+    );
+  }
+
+  /**
    * 数据表列表。
    *
    * @return void
@@ -573,24 +1035,47 @@ class DatabaseController extends Base
       $this->json([], '数据库不存在', ErrorCode::NOT_FOUND);
     }
     $rows = Db::query(
-      'SELECT TABLE_NAME, TABLE_TYPE, ENGINE, TABLE_ROWS, DATA_LENGTH, INDEX_LENGTH, TABLE_COLLATION, TABLE_COMMENT '
-      . 'FROM information_schema.TABLES WHERE TABLE_SCHEMA = \''
-      . Db::escape($database) . '\' ORDER BY TABLE_NAME ASC'
+      'SELECT t.TABLE_NAME, t.TABLE_TYPE, t.ENGINE, t.TABLE_ROWS, t.DATA_LENGTH, t.INDEX_LENGTH, t.TABLE_COLLATION, t.TABLE_COMMENT, c.CHARACTER_SET_NAME '
+      . 'FROM information_schema.TABLES t '
+      . 'LEFT JOIN information_schema.COLLATIONS c ON c.COLLATION_NAME = t.TABLE_COLLATION '
+      . 'WHERE t.TABLE_SCHEMA = \''
+      . Db::escape($database) . '\' ORDER BY t.TABLE_NAME ASC'
     );
+    // 排序值合并系统库的 tb_database_table_sort（按「连接档案 + 库名」隔离）：
+    // 未编辑过的表取「按表名的初始序号」作默认值（与无档案时的表现完全一致），
+    // 编辑过的表取档案值；按 sid 升序（同值按库名兜底）后重编展示序号 id。
+    $sortMap = $this->tableSortMap($this->sortScope(), $database);
+    $list = [];
+    $serial = 0;
+    foreach ($rows as $row) {
+      $serial++;
+      $name = (string)$row['TABLE_NAME'];
+      $list[] = [
+        'id' => $serial,
+        'sid' => isset($sortMap[$database . '.' . $name]) ? $sortMap[$database . '.' . $name] : $serial,
+        'name' => $name,
+        'type' => (string)$row['TABLE_TYPE'],
+        'engine' => (string)($row['ENGINE'] ?? ''),
+        'charset' => (string)($row['CHARACTER_SET_NAME'] ?? ''),
+        'rows' => (int)($row['TABLE_ROWS'] ?? 0),
+        'data_length' => (int)($row['DATA_LENGTH'] ?? 0),
+        'index_length' => (int)($row['INDEX_LENGTH'] ?? 0),
+        'collation' => (string)($row['TABLE_COLLATION'] ?? ''),
+        'comment' => (string)($row['TABLE_COMMENT'] ?? ''),
+      ];
+    }
+    usort($list, function (array $a, array $b): int {
+      if ($a['sid'] === $b['sid']) {
+        return strcmp($a['name'], $b['name']);
+      }
+      return $a['sid'] < $b['sid'] ? -1 : 1;
+    });
+    foreach ($list as $index => $row) {
+      $list[$index]['id'] = $index + 1;
+    }
     $this->json([
       'database' => $database,
-      'list' => array_map(function (array $row): array {
-        return [
-          'name' => (string)$row['TABLE_NAME'],
-          'type' => (string)$row['TABLE_TYPE'],
-          'engine' => (string)($row['ENGINE'] ?? ''),
-          'rows' => (int)($row['TABLE_ROWS'] ?? 0),
-          'data_length' => (int)($row['DATA_LENGTH'] ?? 0),
-          'index_length' => (int)($row['INDEX_LENGTH'] ?? 0),
-          'collation' => (string)($row['TABLE_COLLATION'] ?? ''),
-          'comment' => (string)($row['TABLE_COMMENT'] ?? ''),
-        ];
-      }, $rows),
+      'list' => $list,
     ]);
   }
 
@@ -631,7 +1116,16 @@ class DatabaseController extends Base
         $this->json([], "字段「{$name}」的类型「{$type}」不支持", ErrorCode::PARAM_INVALID);
       }
       $sqlType = $type;
-      if ($allowedTypes[$type] > 0) {
+      if ($type === 'DECIMAL') {
+        // DECIMAL 需「精度,标度」两位参数（D-L16）：(int) 强转会把 10,2 截成 DECIMAL(10)。
+        $lengthRaw = trim((string)($field['length'] ?? ''));
+        if (!preg_match('/^(\d{1,2}),\s*(\d{1,2})$/', $lengthRaw, $decimalParts)
+          || (int)$decimalParts[1] < 1 || (int)$decimalParts[1] > 65
+          || (int)$decimalParts[2] > (int)$decimalParts[1]) {
+          $this->json([], "字段「{$name}」的 DECIMAL 长度必须形如 10,2（精度 1-65，标度≤精度）", ErrorCode::PARAM_INVALID);
+        }
+        $sqlType = "DECIMAL({$decimalParts[1]},{$decimalParts[2]})";
+      } elseif ($allowedTypes[$type] > 0) {
         $max = $allowedTypes[$type] === 1 ? 65535 : 65;
         if ($length < 1 || $length > $max) {
           $this->json([], "字段「{$name}」的长度必须在 1-{$max} 之间", ErrorCode::PARAM_INVALID);
@@ -649,8 +1143,9 @@ class DatabaseController extends Base
       } else {
         $piece .= ' NOT NULL';
       }
-      if (!empty($field['default']) && $piece !== '' && strpos($piece, 'AUTO_INCREMENT') === false) {
-        $default = (string)$field['default'];
+      // 默认值判空用字符串口径（D-L16）：'0' 是合法默认值，empty() 会把它误当未填跳过。
+      if (isset($field['default']) && trim((string)$field['default']) !== '' && strpos($piece, 'AUTO_INCREMENT') === false) {
+        $default = trim((string)$field['default']);
         $piece .= ' DEFAULT ' . (preg_match('/^-?\d+(\.\d+)?$/', $default) === 1 ? $default : "'" . Db::escape($default) . "'");
       }
       if (!empty($field['comment'])) {
@@ -766,8 +1261,7 @@ class DatabaseController extends Base
     $table = $this->tableParam();
     $this->requireTable($database, $table);
     $primaryKey = $this->primaryKeyOf($database, $table);
-    // 排序列可空（空 = 回落主键 / 首列），因此只有非空时才过白名单。
-    $column = trim((string)($this->input('post.column/s', '')));
+    $column = trim((string)($this->input('post.field/s', '')));
     if ($column !== '') {
       $column = $this->validIdentifier($column, '列名');
     }
@@ -780,7 +1274,7 @@ class DatabaseController extends Base
     if ($sort === '' || !in_array($sort, $columnNames, true)) {
       $sort = $columnNames[0] ?? '';
     }
-    $direction = strtoupper((string)($this->input('post.direction/s', 'asc'))) === 'DESC' ? 'DESC' : 'ASC';
+    $direction = strtoupper((string)($this->input('post.sort/s', 'asc'))) === 'DESC' ? 'DESC' : 'ASC';
     $page = max(1, (int)($this->input('post.page_current') ?? 1));
     $size = (int)($this->input('post.page_rows') ?? 20);
     $size = $size > 0 ? min($size, self::MAX_PAGE_ROWS) : 20;
@@ -788,9 +1282,11 @@ class DatabaseController extends Base
     $where = '';
     if ($keyword !== '') {
       $branches = [];
+      // 关键词按字面匹配：escape 后消毒 %/_，防通配符全列扫描（C3-m2）。
+      $escapedKeyword = $this->escapeLikeWildcards(Db::escape($keyword));
       foreach ($columnNames as $name) {
         $safe = $this->validIdentifier($name, '列名');
-        $branches[] = "`{$safe}` LIKE '" . Db::escape('%' . $keyword . '%') . "'";
+        $branches[] = "`{$safe}` LIKE '%{$escapedKeyword}%'";
       }
       if ($branches) {
         $where = ' WHERE ' . implode(' OR ', $branches);
@@ -821,12 +1317,10 @@ class DatabaseController extends Base
       'database' => $database,
       'table' => $table,
       'primary_key' => $primaryKey,
-      'writable' => $primaryKey !== '',
-      'columns' => $columnNames,
       'total' => $total,
-      'page' => $page,
-      'size' => $size,
-      'list' => $list,
+      'page_current' => $page,
+      'page_total' => $size > 0 ? (int)ceil($total / $size) : 1,
+      'data' => $list,
     ]);
   }
 
@@ -931,6 +1425,8 @@ class DatabaseController extends Base
     } catch (\Throwable $e) {
       $this->json([], '删除数据表失败：' . (string)$e->getMessage(), ErrorCode::SERVER_ERROR);
     }
+    // 连带清理该表的排序档案：表没了，sid 档案就是孤儿行（尽力而为）。
+    $this->tableSortForget($this->sortScope(), $database, $table);
     $this->writeAudit('db_table_drop', ['database' => $database, 'table' => $table]);
     $this->json(['database' => $database, 'table' => $table], '数据表已删除');
   }
@@ -1066,7 +1562,7 @@ class DatabaseController extends Base
   /**
    * 导出数据库为 .sql 文本（text/plain 直出，前端包 Blob 下载）。
    *
-   * @return void
+   * @return never 方法输出 .sql 文本后终止脚本。
    */
   public function dbExport(): void
   {
@@ -1115,13 +1611,16 @@ class DatabaseController extends Base
           }
           $values[] = '(' . implode(',', $cells) . ')';
         }
-        $out .= 'INSERT INTO `' . $name . '` (' . implode(',', $quoted) . ") VALUES\n"
+        $insertSql = 'INSERT INTO `' . $name . '` (' . implode(',', $quoted) . ") VALUES\n"
           . implode(",\n", $values) . ";\n";
-        if (strlen($out) > self::MAX_SQL_BYTES) {
+        // 拼接前预检（D-L10）：超限批不再并入 $out，防止「先整批拼接后才发现超限」
+        // 让单批大字段无界驻留内存；内存峰值收窄为「上限 + 单批」。
+        if (strlen($out) + strlen($insertSql) > self::MAX_SQL_BYTES) {
           $out .= "\n-- 导出已达 " . round(self::MAX_SQL_BYTES / 1048576, 1) . "MB 上限，后续数据未导出\n";
           $truncated = true;
           break 2;
         }
+        $out .= $insertSql;
       }
       $out .= "\n";
     }
@@ -1264,11 +1763,35 @@ class DatabaseController extends Base
   {
     $this->requireSuperAdmin();
     $activeId = DbProfile::activeId();
+    // 排序值合并系统库的 tb_database_connect_sort：未编辑过的连接取「档案保存顺序
+    // 序号」作默认值（与无档案时的表现完全一致），编辑过的取档案值；按 sid 升序
+    // （同值按保存顺序兜底）后重编展示序号 id，档案 id 另以 profile_id 下发
+    // （前端行内操作以它为键，rowKey 同样用它，不随展示序号漂移）。
+    $sortMap = $this->connectSortMap();
+    $list = [];
+    $serial = 0;
+    foreach (DbProfile::all() as $item) {
+      $serial++;
+      $masked = DbProfile::mask($item, $activeId);
+      $connectId = (string)$item['id'];
+      $masked['profile_id'] = $connectId;
+      $masked['sid'] = isset($sortMap[$connectId]) ? $sortMap[$connectId] : $serial;
+      $masked['_order'] = $serial;
+      $list[] = $masked;
+    }
+    usort($list, function (array $a, array $b): int {
+      if ($a['sid'] === $b['sid']) {
+        return $a['_order'] < $b['_order'] ? -1 : 1;
+      }
+      return $a['sid'] < $b['sid'] ? -1 : 1;
+    });
+    foreach ($list as $index => $row) {
+      $list[$index]['id'] = $index + 1;
+      unset($list[$index]['_order']);
+    }
     $this->json([
       'active' => $activeId,
-      'list' => array_map(function (array $item) use ($activeId): array {
-        return DbProfile::mask($item, $activeId);
-      }, DbProfile::all()),
+      'list' => $list,
     ]);
   }
 
@@ -1333,6 +1856,10 @@ class DatabaseController extends Base
     if (!DbProfile::remove($id)) {
       $this->json([], '连接不存在', ErrorCode::NOT_FOUND);
     }
+    // 连带清理该档案作用域下的排序残留（尽力而为，失败不影响删连接）。
+    $this->sortForgetScope($id);
+    // 连接档案自身的排序行一并清理（同上，尽力而为）。
+    $this->connectSortForget($id);
     $this->writeAudit('db_connection_delete', ['id' => $id]);
     $this->json(['active' => DbProfile::activeId()], '连接已删除');
   }
@@ -1418,6 +1945,41 @@ class DatabaseController extends Base
     $this->json(
       ['active' => $id, 'probe' => $probe],
       '已切换到「' . (string)$profile['name'] . '」'
+    );
+  }
+
+  /**
+   * 保存连接档案列表的排序值（前端行内编辑 sid 列的落库入口）。
+   *
+   * 档案存在 JSON 文件里（DbProfile），没有排序字段，sid 以档案 id 为键落
+   * 系统库 `tb_database_connect_sort`（全局作用域：连接档案不分服务器）。
+   * 与 `/db_sort_update` 同构：onChange 即入库，成功后由前端重拉列表。
+   * 不需要连接接管（只写系统库），因此鉴权收拢到 `requireSuperAdmin()`。
+   *
+   * @return void
+   */
+  public function dbConnectionSortUpdate(): void
+  {
+    $this->requireSuperAdmin();
+    $connectId = trim((string)$this->input('post.id/s', ''));
+    if ($connectId === '') {
+      $this->json([], '缺少连接标识', ErrorCode::PARAM_INVALID);
+    }
+    $sid = (int)($this->input('post.sid/d', 0));
+    if ($sid < 0) {
+      $this->json([], '排序值不能为负数', ErrorCode::PARAM_INVALID);
+    }
+    if (DbProfile::find($connectId) === null) {
+      $this->json([], '连接不存在', ErrorCode::NOT_FOUND);
+    }
+    $this->sortUpdateGuard(
+      'db_connection_sort_update',
+      ['id' => $connectId, 'sid' => $sid],
+      function () use ($connectId, $sid): void {
+        $this->connectSortSave($connectId, $sid);
+      },
+      'kniu_create_tb_database_connect_sort.sql',
+      ['id' => $connectId, 'sid' => $sid]
     );
   }
 }

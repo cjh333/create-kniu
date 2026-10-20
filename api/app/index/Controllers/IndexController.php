@@ -24,7 +24,7 @@ class IndexController extends Controller
     $page = max(1, (int)$this->input('post.page_current/d', 1));
     $rows = min(50, max(1, (int)$this->input('post.page_rows/d', 8)));
     $query = Db::name('tb_article')
-      ->field(['id', 'role_id', 'is_show', 'title', 'summary', 'create_time', 'hits', 'likes'])
+      ->field(['id', 'role_id', 'is_show', 'title', 'summary', 'cover', 'create_time', 'hits', 'likes'])
       ->where('is_show', '=', 1)
       ->order('id', 'desc');
     $result = $query->page($page, $rows);
@@ -48,6 +48,31 @@ class IndexController extends Controller
     unset($article);
     $result['data'] = $articles;
     $this->json($result);
+  }
+
+  // 前台热门浏览：按浏览次数取前 9 篇已显示文章。
+  public function getHotArticles(): void
+  {
+    $articles = Db::name('tb_article')
+      ->field(['id', 'title', 'hits'])
+      ->where('is_show', '=', 1)
+      ->order(['hits' => 'desc', 'id' => 'desc'])
+      ->limit(9)
+      ->select();
+    $this->json($this->decodeFields($articles, ['title']));
+  }
+
+  // 前台推荐好文：按发布时间取最新 9 篇管理员推荐且已显示的文章。
+  public function getRecommendArticles(): void
+  {
+    $articles = Db::name('tb_article')
+      ->field(['id', 'title', 'create_time', 'hits'])
+      ->where('is_show', '=', 1)
+      ->where('is_recommend', '=', 1)
+      ->order(['create_time' => 'desc', 'id' => 'desc'])
+      ->limit(9)
+      ->select();
+    $this->json($this->decodeFields($articles, ['title']));
   }
 
   public function getInfo(): void
@@ -101,10 +126,14 @@ class IndexController extends Controller
   {
     try {
       $roleId = $this->requireLogin();
-      $about = Db::name('tb_about')->field(['content'])->where('role_id', '=', $roleId)->find();
-      $about = $this->decodeFields($about, ['content']);
+      $about = Db::name('tb_about')->field(['content', 'avatar'])->where('role_id', '=', $roleId)->find();
+      $about = $this->decodeFields($about, ['content', 'avatar']);
       // 关于页内容只来自当前账号资料，避免与网站 SEO 设置混用。
-      $this->json(['content' => (string)($about['content'] ?? '')]);
+      $this->json(array_merge([
+        'content' => (string)($about['content'] ?? ''),
+        'nickname' => $this->frontNicknameOf($roleId),
+        'avatar' => trim((string)($about['avatar'] ?? ''))
+      ], $this->aboutStats($roleId, false)));
     } catch (\Throwable $e) {
       $this->json(['content' => ''], '获取关于我失败', ErrorCode::SERVER_ERROR);
     }
@@ -114,14 +143,278 @@ class IndexController extends Controller
   {
     $roleId = (int)$this->input('post.role_id/d', 0);
     if ($roleId <= 0) { $this->json(['content' => ''], '用户参数错误', ErrorCode::PARAM_INVALID); return; }
-    $about = Db::name('tb_about')->field(['content'])->where('role_id', '=', $roleId)->find();
-    $about = $this->decodeFields($about, ['content']);
-    $this->json(['content' => (string)($about['content'] ?? '')]);
+    $about = Db::name('tb_about')->field(['content', 'avatar'])->where('role_id', '=', $roleId)->find();
+    $about = $this->decodeFields($about, ['content', 'avatar']);
+    // 访客身份是可选的：带 token 且绑定账号时才能给出 isSelf / followed；
+    // 关注表可能尚未初始化（旧库），查询失败按未关注回退，不阻断关于页渲染。
+    $viewer = $this->roleByIdentityToken(strtolower(trim((string)$this->input('post.identity_token/s', ''))));
+    $viewerRoleId = (int)($viewer['role_id'] ?? 0);
+    $isSelf = $viewerRoleId > 0 && $viewerRoleId === $roleId;
+    $followed = false;
+    if ($viewerRoleId > 0 && !$isSelf) {
+      try {
+        $followed = !empty(Db::name('tb_role_follow')->where([
+          'follower_role_id' => $viewerRoleId,
+          'followed_role_id' => $roleId
+        ])->value('id'));
+      } catch (\Throwable $ignored) {
+        // 关注关系表未初始化时按未关注展示，关注操作会在服务端被拦截。
+      }
+    }
+    // 公开视角：仅统计已发布文章；昵称/头像属于展示信息，允许游客读取。
+    $this->json(array_merge([
+      'content' => (string)($about['content'] ?? ''),
+      'nickname' => $this->frontNicknameOf($roleId),
+      'avatar' => trim((string)($about['avatar'] ?? '')),
+      'isSelf' => $isSelf,
+      'followed' => $followed
+    ], $this->aboutStats($roleId, true)));
+  }
+
+  /**
+   * 关注 / 取消关注（页面级鉴权，与 /favoriteArticle 同口径）。
+   *
+   * 关注关系存 tb_role_follow（follower→followed 唯一键）；服务端强校验：
+   * 不能关注自己（规则拒绝 2002）、目标账号必须存在。幂等切换，重复关注不报错。
+   */
+  public function followToggle(): void
+  {
+    $targetRoleId = (int)$this->input('post.role_id/d', 0);
+    $followed = $this->input('post.followed/b', true);
+    $frontUser = $this->roleByIdentityToken($this->validIdentityToken());
+    if ($targetRoleId <= 0 || !$frontUser) {
+      $this->json([], '请先登录后再关注', ErrorCode::UNAUTHORIZED);
+      return;
+    }
+    $followerRoleId = (int)$frontUser['role_id'];
+    if ($followerRoleId === $targetRoleId) {
+      $this->json([], '不能关注自己', ErrorCode::RULE_REJECTED);
+      return;
+    }
+    try {
+      $target = Db::name('tb_role')->field(['id'])->where('id', '=', $targetRoleId)->find();
+      if (!$target) {
+        $this->json([], '目标账号不存在', ErrorCode::NOT_FOUND);
+        return;
+      }
+      $existing = Db::name('tb_role_follow')->where([
+        'follower_role_id' => $followerRoleId,
+        'followed_role_id' => $targetRoleId
+      ])->find();
+      if ($followed && !$existing) {
+        Db::name('tb_role_follow')->insert([
+          'follower_role_id' => $followerRoleId,
+          'followed_role_id' => $targetRoleId,
+          'create_time' => date('Y-m-d H:i:s')
+        ]);
+      } elseif (!$followed && $existing) {
+        Db::name('tb_role_follow')->where('id', '=', (int)$existing['id'])->delete();
+      }
+      $this->json(['followed' => $followed], '操作成功', ErrorCode::SUCCESS);
+    } catch (\Throwable $e) {
+      $this->json([], '关注操作失败', ErrorCode::SERVER_ERROR);
+    }
+  }
+
+  /**
+   * 前台「反馈问题」图片上传（页面级鉴权：后台会话或前台身份令牌）。
+   *
+   * 仅允许常见位图（upload.php 全局白名单还含音视频，此处收紧），存 feedback 子目录。
+   */
+  public function feedbackUpload(): void
+  {
+    if ($this->currentLoginId() <= 0) {
+      $this->json([], '请先登录', ErrorCode::UNAUTHORIZED);
+      return;
+    }
+    if (!isset($_FILES['file']) || !is_array($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+      $this->json([], '请选择需要上传的问题图片', ErrorCode::PARAM_INVALID);
+      return;
+    }
+    $allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!in_array((string)$_FILES['file']['type'], $allowed, true)) {
+      $this->json([], '仅支持 jpg/png/gif/webp 图片', ErrorCode::UPLOAD_REJECTED);
+      return;
+    }
+    $path = $this->uploadFile($_FILES['file'], 'feedback');
+    if ($path === '') {
+      $this->json([], '图片上传失败', ErrorCode::UPLOAD_REJECTED);
+      return;
+    }
+    $this->json(['url' => $path], '上传成功', ErrorCode::SUCCESS);
+  }
+
+  /**
+   * 前台「反馈问题」提交（页面级鉴权：后台会话或前台身份令牌）。
+   *
+   * 标题/简述必填并限长；图片最多 2 张，且只接受本站 /upload/feedback/ 内的
+   * 相对路径（客户端仅传上传接口返回值，防止夹带外链或目录穿越）。
+   */
+  public function feedbackSubmit(): void
+  {
+    if ($this->currentLoginId() <= 0) {
+      $this->json([], '请先登录', ErrorCode::UNAUTHORIZED);
+      return;
+    }
+    $title = trim((string)$this->input('post.title/s', ''));
+    $content = trim((string)$this->input('post.content/s', ''));
+    if ($title === '' || $content === '') {
+      $this->json([], '请填写问题标题与问题简述', ErrorCode::PARAM_INVALID);
+      return;
+    }
+    if (mb_strlen($title) > 200 || mb_strlen($content) > 2000) {
+      $this->json([], '问题标题不能超过 200 字、简述不能超过 2000 字', ErrorCode::PARAM_INVALID);
+      return;
+    }
+    $images = [];
+    foreach (explode(',', (string)$this->input('post.images/s', '')) as $image) {
+      $image = trim($image);
+      if ($image === '' || in_array($image, $images, true)) continue;
+      if (count($images) >= 2) break;
+      if (preg_match('#^/upload/feedback/[A-Za-z0-9/._-]+$#', $image) !== 1 || str_contains($image, '..')) continue;
+      $images[] = $image;
+    }
+    try {
+      Db::name('tb_feedback')->insert($this->encodeFields([
+        'role_id' => $this->currentLoginId(),
+        'title' => $title,
+        'content' => $content,
+        'images' => implode(',', $images)
+      ], ['title', 'content']));
+      $this->json([], '反馈提交成功', ErrorCode::SUCCESS);
+    } catch (\Throwable $e) {
+      error_log('feedbackSubmit failed: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+      $this->json([], '反馈提交失败，请稍后重试', ErrorCode::SERVER_ERROR);
+    }
+  }
+
+  /**
+   * 前台「我的反馈」列表（页面级鉴权，与 /frontProfile 同口径）。
+   *
+   * 只返回当前账号自己提交的反馈（倒序 LIMIT 100）；文本单轮解码返回，
+   * images 拆为 imageList 数组便于前端渲染缩略图；表未初始化（旧库）按空列表回退。
+   */
+  public function feedbackList(): void
+  {
+    $token = $this->validIdentityToken();
+    if ($token === '') {
+      $this->json([], '身份令牌无效', ErrorCode::IDENTITY_INVALID);
+      return;
+    }
+    $user = $this->roleByIdentityToken($token);
+    if (!$user) {
+      $this->json([], '身份令牌无效', ErrorCode::IDENTITY_INVALID);
+      return;
+    }
+    try {
+      $rows = Db::name('tb_feedback')
+        ->field(['id', 'title', 'content', 'images', 'result', 'create_time'])
+        ->where('role_id', '=', (int)$user['role_id'])
+        ->order('id', 'desc')
+        ->limit(100)
+        ->select();
+      $rows = $this->decodeFields($rows, ['title', 'content', 'result']);
+      foreach ($rows as &$row) {
+        $row['imageList'] = array_values(array_filter(array_map('trim', explode(',', (string)($row['images'] ?? '')))));
+        unset($row['images']);
+      }
+      unset($row);
+      $this->json(['list' => $rows], '操作成功', ErrorCode::SUCCESS);
+    } catch (\Throwable $e) {
+      error_log('feedbackList failed: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+      $this->json(['list' => []], '操作成功', ErrorCode::SUCCESS);
+    }
+  }
+
+  /**
+   * 前台「我的关注」列表（页面级鉴权，与 /frontProfile 同口径）。
+   *
+   * 返回当前账号关注的账号：昵称/头像/简述 + 发表文章数（已发布）、被关注数、
+   * 累计获赞（仅文章点赞合计，不含评论获赞）。先收集主键再 whereIn 批量查询内存映射（禁 N+1），
+   * 列表 LIMIT 100；关注表未初始化（旧库）时按空列表回退，不阻断个人中心渲染。
+   */
+  public function followList(): void
+  {
+    // 空令牌（仅持后台会话）不短路：解析失败统一走 requireLogin 会话回退，
+    // 兑现「identity_token（或后台会话）」的契约承诺（D3-3，与 frontProfile 同口径）。
+    $token = $this->validIdentityToken();
+    $user = $this->roleByIdentityToken($token);
+    if (!$user) {
+      $user = Db::name('tb_role')->field(['id'])->where('id', '=', $this->requireLogin())->find();
+    }
+    if (!$user) {
+      $this->json([], '账号不存在', ErrorCode::NOT_FOUND);
+      return;
+    }
+    $userId = (int)$user['id'];
+    $follows = [];
+    try {
+      $follows = Db::name('tb_role_follow')
+        ->field(['followed_role_id'])
+        ->where('follower_role_id', '=', $userId)
+        ->order('id', 'desc')
+        ->limit(100)
+        ->select();
+    } catch (\Throwable $e) {
+      // 关注表未初始化：按空列表返回，与 /getPublisherAbout 的回退口径一致。
+    }
+    $roleIds = [];
+    foreach ($follows as $row) {
+      $roleId = (int)$row['followed_role_id'];
+      if ($roleId > 0) $roleIds[$roleId] = $roleId;
+    }
+    if (empty($roleIds)) {
+      $this->json(['list' => []], '操作成功', ErrorCode::SUCCESS);
+      return;
+    }
+    $ids = implode(',', $roleIds);
+    $nicknameMap = [];
+    foreach (Db::query("SELECT `id`, `nickname` FROM `tb_role` WHERE `id` IN (" . $ids . ")") as $role) {
+      $nicknameMap[(int)$role['id']] = (string)$role['nickname'];
+    }
+    $avatarMap = [];
+    $summaryMap = [];
+    foreach (Db::name('tb_about')->whereIn('role_id', $roleIds)->field(['role_id', 'avatar', 'summary'])->select() as $about) {
+      $decoded = $this->decodeFields([$about], ['avatar', 'summary'])[0];
+      $roleId = (int)$decoded['role_id'];
+      $avatarMap[$roleId] = trim((string)($decoded['avatar'] ?? ''));
+      $summaryMap[$roleId] = (string)($decoded['summary'] ?? '');
+    }
+    $articleCountMap = [];
+    foreach (Db::query("SELECT `role_id`, COUNT(*) AS total FROM `tb_article` WHERE `role_id` IN (" . $ids . ") AND `is_show` = 1 GROUP BY `role_id`") as $row) {
+      $articleCountMap[(int)$row['role_id']] = (int)$row['total'];
+    }
+    $followerCountMap = [];
+    try {
+      foreach (Db::query("SELECT `followed_role_id`, COUNT(*) AS total FROM `tb_role_follow` WHERE `followed_role_id` IN (" . $ids . ") GROUP BY `followed_role_id`") as $row) {
+        $followerCountMap[(int)$row['followed_role_id']] = (int)$row['total'];
+      }
+    } catch (\Throwable $e) {
+      // 关注表未初始化：被关注数按 0 展示。
+    }
+    // 「获得了 N 个点赞」口径：只统计所有文章的总点赞数（不含评论获赞）。
+    $likeCountMap = [];
+    foreach (Db::query("SELECT `role_id`, COALESCE(SUM(`likes`), 0) AS total FROM `tb_article` WHERE `role_id` IN (" . $ids . ") GROUP BY `role_id`") as $row) {
+      $likeCountMap[(int)$row['role_id']] = (int)$row['total'];
+    }
+    $list = [];
+    foreach ($roleIds as $roleId) {
+      $list[] = [
+        'roleId' => $roleId,
+        'nickname' => $this->normalizeFrontNickname(html_entity_decode($nicknameMap[$roleId] ?? '', ENT_QUOTES)),
+        'avatar' => $avatarMap[$roleId] ?? '',
+        'summary' => $summaryMap[$roleId] ?? '',
+        'articleCount' => $articleCountMap[$roleId] ?? 0,
+        'followerCount' => $followerCountMap[$roleId] ?? 0,
+        'likeCount' => $likeCountMap[$roleId] ?? 0
+      ];
+    }
+    $this->json(['list' => $list], '操作成功', ErrorCode::SUCCESS);
   }
 
   public function getDetail(): void
   {
-    $id = $this->input('post.id/d', 1);
+    $id = $this->input('post.id/d', 0);
     $identityToken = strtolower(trim((string)$this->input('post.identity_token/s', '')));
 
     if ($id <= 0) {
@@ -130,28 +423,36 @@ class IndexController extends Controller
     }
 
     try {
+      // 先取行判定可见性：未发布文章（is_show=0）仅作者本人可读，
+      // 与 previous/next 查询的 is_show=1 口径一致；不可见时不计浏览、不暴露存在性。
+      $rows = Db::name('tb_article')
+        ->where('id', '=', $id)
+        ->select();
+      if (empty($rows)) {
+        $this->json([], '文章不存在', ErrorCode::NOT_FOUND);
+        return;
+      }
+      $frontUser = $this->roleByIdentityToken($identityToken);
+      $ownerRoleId = (int)($rows[0]['role_id'] ?? 0);
+      $isOwn = $this->isOwnedByCurrentUser($ownerRoleId, $frontUser);
+      if ((int)($rows[0]['is_show'] ?? 0) !== 1 && !$isOwn) {
+        $this->json([], '文章不存在或未发布', ErrorCode::NOT_FOUND);
+        return;
+      }
       // 使用数据库原子递增，避免并发访问时出现覆盖写；详情接口每次成功读取计为一次浏览。
       Db::name('tb_article')
         ->where('id', '=', $id)
         ->inc('hits')
         ->update();
-      $result = Db::name('tb_article')
-        ->where('id', '=', $id)
-        ->select();
-
-      if (empty($result)) {
-        $this->json([], '文章不存在', ErrorCode::NOT_FOUND);
-        return;
-      }
+      $result = $rows;
 
       $result = $this->decodeFields($result, ['title', 'subtitle', 'summary', 'content']);
-      $publisherRole = Db::name('tb_role')->field(['nickname'])->where('id', '=', (int)($result[0]['role_id'] ?? 0))->find();
+      $publisherRole = Db::name('tb_role')->field(['nickname'])->where('id', '=', $ownerRoleId)->find();
       $result[0]['publisher'] = $this->normalizeFrontNickname(
         html_entity_decode((string)($publisherRole['nickname'] ?? ''), ENT_QUOTES)
       );
-      $result[0]['publisher_role_id'] = (int)($result[0]['role_id'] ?? 0);
-      $frontUser = $this->roleByIdentityToken($identityToken);
-      $result[0]['isOwn'] = $this->isOwnedByCurrentUser((int)($result[0]['role_id'] ?? 0), $frontUser);
+      $result[0]['publisher_role_id'] = $ownerRoleId;
+      $result[0]['isOwn'] = $isOwn;
       $likeRoleId = (int)($frontUser['role_id'] ?? 0);
       $result[0]['liked'] = $likeRoleId > 0 && !empty($_SESSION['article_like_' . $likeRoleId . '_' . $id . '_' . date('Ymd')]);
       if ($frontUser) {
@@ -162,6 +463,8 @@ class IndexController extends Controller
         } else {
           Db::name('tb_article_history')->insert(['role_id' => $userId, 'article_id' => $id, 'last_view_time' => date('Y-m-d H:i:s')]);
         }
+        // 一年前历史清理挂浏览写入口（B-m6/规则 119）：读接口（frontProfile）不再夹带全表删除。
+        Db::name('tb_article_history')->where('last_view_time', '<', date('Y-m-d H:i:s', strtotime('-1 year')))->delete();
       }
       $result[0]['favorited'] = $frontUser
         ? Db::name('tb_article_favorite')->where(['role_id' => (int)$frontUser['role_id'], 'article_id' => $id])->count() > 0
@@ -214,10 +517,23 @@ class IndexController extends Controller
     try {
       $currentUser = $this->roleByIdentityToken($identityToken);
       $currentUserId = $currentUser ? (int)($currentUser['role_id'] ?? $currentUser['id'] ?? 0) : 0;
+      // 先校验所属文章可见性（与 getDetail 同口径）：未发布草稿仅作者本人可读，
+      // 防止草稿文章下的评论被 article_id 枚举读取（C3-m1）。
+      $article = Db::name('tb_article')
+        ->where('id', '=', $articleId)
+        ->field(['id', 'is_show', 'role_id'])
+        ->find();
+      if (!$article || ((int)($article['is_show'] ?? 0) !== 1 && (int)($article['role_id'] ?? 0) !== $currentUserId)) {
+        $this->json([], '文章不存在或未发布', ErrorCode::NOT_FOUND);
+        return;
+      }
       $result = Db::name('tb_comment')
         ->where('article_id', '=', $articleId)
         ->where('is_show', '=', 1)
         ->order('id', 'asc')
+        // 防御性上限（B-m5）：前端 kniu-comment 为一次性全量渲染，超大评论量
+        // 会拖垮整条链路；正常文章远低于此值，后续做分页时前端同批治理。
+        ->limit(500)
         ->select();
       $result = $this->decodeFields($result, ['message']);
 
@@ -328,7 +644,7 @@ class IndexController extends Controller
         'article_id' => $articleId,
         'role_id' => (int)$frontUser['role_id'],
         'parent_id' => $parentId,
-        'ip' => substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
+        'ip' => substr(\Core\Controller::clientIp(), 0, 45),
         'message' => $message,
         'is_show' => (int)($frontUser['comment_audit'] ?? 1) === 0 ? 1 : 0
       ], ['message']);
@@ -342,7 +658,7 @@ class IndexController extends Controller
       $this->json(
         ['id' => (int)$id, 'is_show' => $isShown ? 1 : 0],
         $isShown ? '评论发表成功' : '评论已提交，审核通过后将展示',
-        1
+        ErrorCode::SUCCESS
       );
     } catch (\Exception $e) {
       $this->json([], '评论失败', ErrorCode::SERVER_ERROR);
@@ -352,7 +668,8 @@ class IndexController extends Controller
   /**
    * 评论点赞。
    *
-   * 每个账号每天只能给同一条评论点赞一次；成功后当天保持红心，不能取消。
+   * 每个账号每天对同一条评论仅一个点赞态：支持点赞/反选切换（liked 参数），
+   * 当日有效、不跨设备（状态存会话，次日键自然失效）。
    */
   public function likeComment(): void
   {
@@ -386,19 +703,25 @@ class IndexController extends Controller
       $likeKey = $roleId . ':' . $commentId . ':' . date('Ymd');
       $wasLiked = !empty($_SESSION['comment_likes'][$likeKey]);
       if ($liked === $wasLiked) {
-        $this->json(['likes' => (int)$comment['likes'], 'liked' => $wasLiked, 'locked' => false], '操作成功', 1);
+        $this->json(['likes' => (int)$comment['likes'], 'liked' => $wasLiked, 'locked' => false], '操作成功', ErrorCode::SUCCESS);
         return;
       }
 
+      // 计数原子化：读-改-写在并发点赞下会互相覆盖（与 getDetail 的 hits 原子递增同口径），
+      // $next 仅作响应展示值按基值推算。
       $next = $liked ? ((int)$comment['likes'] + 1) : max(0, (int)$comment['likes'] - 1);
-      Db::name('tb_comment')->where('id', '=', $commentId)->update(['likes' => $next]);
+      if ($liked) {
+        Db::name('tb_comment')->where('id', '=', $commentId)->inc('likes')->update([]);
+      } else {
+        Db::name('tb_comment')->where('id', '=', $commentId)->update(['likes' => Db::raw('GREATEST(likes - 1, 0)')]);
+      }
       if ($liked) {
         $_SESSION['comment_likes'][$likeKey] = true;
       } else {
         unset($_SESSION['comment_likes'][$likeKey]);
       }
 
-      $this->json(['likes' => (int)$next, 'liked' => (bool)$liked, 'locked' => false], '操作成功', 1);
+      $this->json(['likes' => (int)$next, 'liked' => (bool)$liked, 'locked' => false], '操作成功', ErrorCode::SUCCESS);
     } catch (\Exception $e) {
       $this->json([], '点赞失败', ErrorCode::SERVER_ERROR);
     }
@@ -433,10 +756,20 @@ class IndexController extends Controller
         return;
       }
       if ((int)$comment['parent_id'] === 0) {
-        Db::name('tb_comment')->where('parent_id', '=', $commentId)->delete();
+        // 两步删除原子化（D-L17）：删回复成功而删评论失败会留下「孤儿评论行」。
+        Db::beginTrans();
+        try {
+          Db::name('tb_comment')->where('parent_id', '=', $commentId)->delete();
+          Db::name('tb_comment')->where('id', '=', $commentId)->delete();
+          Db::commit();
+        } catch (\Throwable $txError) {
+          Db::rollback();
+          throw $txError;
+        }
+      } else {
+        Db::name('tb_comment')->where('id', '=', $commentId)->delete();
       }
-      Db::name('tb_comment')->where('id', '=', $commentId)->delete();
-      $this->json([], '删除成功', 1);
+      $this->json([], '删除成功', ErrorCode::SUCCESS);
     } catch (\Exception $e) {
       $this->json([], '删除失败', ErrorCode::SERVER_ERROR);
     }
@@ -505,15 +838,20 @@ class IndexController extends Controller
       $likeKey = 'article_like_' . $roleId . '_' . $articleId . '_' . date('Ymd');
       $wasLiked = !empty($_SESSION[$likeKey]);
       if ($liked === $wasLiked) {
-        $this->json(['likes' => (int)($article['likes'] ?? 0), 'liked' => $wasLiked], '操作成功', 1);
+        $this->json(['likes' => (int)($article['likes'] ?? 0), 'liked' => $wasLiked], '操作成功', ErrorCode::SUCCESS);
         return;
       }
+      // 计数原子化：同 likeComment，防并发点赞互相覆盖。
       $current = (int)($article['likes'] ?? 0);
       $next = $liked ? $current + 1 : max(0, $current - 1);
-      Db::name('tb_article')->where('id', '=', $articleId)->update(['likes' => $next]);
+      if ($liked) {
+        Db::name('tb_article')->where('id', '=', $articleId)->inc('likes')->update([]);
+      } else {
+        Db::name('tb_article')->where('id', '=', $articleId)->update(['likes' => Db::raw('GREATEST(likes - 1, 0)')]);
+      }
       if ($liked) $_SESSION[$likeKey] = true;
       else unset($_SESSION[$likeKey]);
-      $this->json(['likes' => $next, 'liked' => $liked], '操作成功', 1);
+      $this->json(['likes' => $next, 'liked' => $liked], '操作成功', ErrorCode::SUCCESS);
     } catch (\Exception $e) {
       $this->json([], '点赞失败', ErrorCode::SERVER_ERROR);
     }
@@ -554,7 +892,7 @@ class IndexController extends Controller
       } elseif (!$favorited && $existing) {
         Db::name('tb_article_favorite')->where('id', '=', (int)$existing['id'])->delete();
       }
-      $this->json(['favorited' => $favorited], '操作成功', 1);
+      $this->json(['favorited' => $favorited], '操作成功', ErrorCode::SUCCESS);
     } catch (\Exception $e) {
       $this->json([], '收藏操作失败', ErrorCode::SERVER_ERROR);
     }
@@ -582,6 +920,34 @@ class IndexController extends Controller
       . mb_substr($nickname, 1, null, 'UTF-8');
   }
 
+  /** 展示用昵称（实体解码 + 首字母小写规范），账号不存在时回退空串。 */
+  private function frontNicknameOf(int $roleId): string
+  {
+    $role = Db::name('tb_role')->field(['nickname'])->where('id', '=', $roleId)->find();
+    return $this->normalizeFrontNickname(html_entity_decode((string)($role['nickname'] ?? ''), ENT_QUOTES));
+  }
+
+  /**
+   * 「关于」页展示资料所需的聚合统计。
+   *
+   * @param int $roleId 账号 ID。
+   * @param bool $onlyShown true 只统计已发布文章（公开视角），false 统计全部（本人视角，与 /frontProfile 同口径）。
+   */
+  private function aboutStats(int $roleId, bool $onlyShown): array
+  {
+    $articleWhere = $onlyShown ? ' AND `is_show` = 1' : '';
+    $articleRows = Db::query('SELECT COUNT(*) AS articles, COALESCE(SUM(`likes`), 0) AS like_total FROM `tb_article` WHERE `role_id` = ' . $roleId . $articleWhere);
+    $commentRows = Db::query('SELECT COUNT(*) AS comments, COALESCE(SUM(`likes`), 0) AS like_total FROM `tb_comment` WHERE `role_id` = ' . $roleId);
+    $favoriteRows = Db::query('SELECT COUNT(*) AS total FROM `tb_article_favorite` f INNER JOIN `tb_article` a ON a.`id` = f.`article_id` WHERE f.`role_id` = ' . $roleId . ' AND a.`is_show` = 1');
+    return [
+      'articleCount' => (int)($articleRows[0]['articles'] ?? 0),
+      'articleLikeCount' => (int)($articleRows[0]['like_total'] ?? 0),
+      'commentLikeCount' => (int)($commentRows[0]['like_total'] ?? 0),
+      'commentCount' => (int)($commentRows[0]['comments'] ?? 0),
+      'favoriteCount' => (int)($favoriteRows[0]['total'] ?? 0)
+    ];
+  }
+
   /**
    * 前台个人中心数据（页面级鉴权，与前端 /profile 守卫同一口径）。
    *
@@ -589,11 +955,9 @@ class IndexController extends Controller
    */
   public function frontProfile(): void
   {
+    // 空令牌（仅持后台会话）不短路：解析失败统一走 requireLogin 会话回退，
+    // 兑现「identity_token（或后台会话）」的契约承诺（D-L5）。
     $token = $this->validIdentityToken();
-    if ($token === '') {
-      $this->json([], '身份令牌无效', ErrorCode::IDENTITY_INVALID);
-      return;
-    }
     $user = $this->roleByIdentityToken($token);
     if (!$user) {
       $user = Db::name('tb_role')
@@ -604,20 +968,24 @@ class IndexController extends Controller
     $nickname = $this->normalizeFrontNickname(html_entity_decode((string)($user['nickname'] ?? ''), ENT_QUOTES));
     $userId = (int)$user['id'];
     $lastNicknameChange = strtotime((string)($user['issue_time'] ?? $user['create_time'] ?? '')) ?: 0;
-    $articleLikeRows = Db::query('SELECT COALESCE(SUM(`likes`), 0) AS total FROM `tb_article` WHERE `role_id` = ' . $userId);
+    // 头像与 /about 同源：优先 tb_about.avatar（本人视角，无需 is_show 闸门）。
+    $aboutRow = Db::name('tb_about')->field(['avatar'])->where('role_id', '=', $userId)->find();
+    $avatar = trim((string)($aboutRow['avatar'] ?? ''));
+    $articleLikeRows = Db::query('SELECT COUNT(*) AS articles, COALESCE(SUM(`likes`), 0) AS total FROM `tb_article` WHERE `role_id` = ' . $userId);
     $commentLikeRows = Db::query('SELECT COALESCE(SUM(`likes`), 0) AS total, COUNT(*) AS comments FROM `tb_comment` WHERE `role_id` = ' . $userId);
     $favorites = Db::query('SELECT a.`id`, a.`title`, f.`create_time` FROM `tb_article_favorite` f INNER JOIN `tb_article` a ON a.`id` = f.`article_id` WHERE f.`role_id` = ' . $userId . ' AND a.`is_show` = 1 ORDER BY f.`id` DESC LIMIT 100');
     $favorites = $this->decodeFields($favorites, ['title']);
-    Db::name('tb_article_history')->where('last_view_time', '<', date('Y-m-d H:i:s', strtotime('-1 year')))->delete();
     $history = Db::query('SELECT a.`id`, a.`title`, h.`last_view_time` FROM `tb_article_history` h INNER JOIN `tb_article` a ON a.`id` = h.`article_id` WHERE h.`role_id` = ' . $userId . ' AND a.`is_show` = 1 ORDER BY h.`last_view_time` DESC LIMIT 100');
     $history = $this->decodeFields($history, ['title']);
     $this->json([
       'id' => $userId,
       'name' => html_entity_decode((string)$user['name'], ENT_QUOTES),
       'nickname' => $nickname,
+      'avatar' => $avatar,
       'is_show' => (int)($user['is_show'] ?? 1),
       'comment_ban' => (int)($user['comment_ban'] ?? 0),
       'canEditNickname' => $lastNicknameChange <= strtotime('-1 year'),
+      'articleCount' => (int)($articleLikeRows[0]['articles'] ?? 0),
       'articleLikeCount' => (int)($articleLikeRows[0]['total'] ?? 0),
       'commentLikeCount' => (int)($commentLikeRows[0]['total'] ?? 0),
       'commentCount' => (int)($commentLikeRows[0]['comments'] ?? 0),
@@ -659,7 +1027,7 @@ class IndexController extends Controller
       }
       $currentNickname = $this->normalizeFrontNickname(html_entity_decode((string)($user['nickname'] ?? ''), ENT_QUOTES));
       if ($currentNickname === $nickname) {
-        $this->json(['id' => $roleId, 'nickname' => $currentNickname], '昵称未变更', 1);
+        $this->json(['id' => $roleId, 'nickname' => $currentNickname], '昵称未变更', ErrorCode::SUCCESS);
         return;
       }
       $lastChangedAt = strtotime((string)($user['issue_time'] ?? $user['create_time'] ?? '')) ?: 0;
@@ -675,7 +1043,7 @@ class IndexController extends Controller
       $this->json([], '昵称保存失败', ErrorCode::SERVER_ERROR);
       return;
     }
-    $this->json(['id' => $roleId, 'nickname' => $nickname], '昵称保存成功', 1);
+    $this->json(['id' => $roleId, 'nickname' => $nickname], '昵称保存成功', ErrorCode::SUCCESS);
   }
 
   public function frontProfileClear(): void
@@ -684,6 +1052,15 @@ class IndexController extends Controller
     if ($token === '') {
       $this->json([], '身份令牌无效', ErrorCode::IDENTITY_INVALID);
       return;
+    }
+    // 退出必须同时吊销两条认证通道：只毁会话不摘令牌，被窃取或残留的
+    // localStorage 令牌在 30 天有效期内仍可经 roleByIdentityToken 认证
+    //（前端持有的凭据不可信，退出即失效）。按令牌哈希 + 解析账号双路摘除。
+    $roleId = $this->currentLoginId();
+    $tokenHash = hash('sha256', $token);
+    Db::name('tb_role')->where('identity_token', '=', $tokenHash)->update(['identity_token' => Db::raw('NULL'), 'token_expire_time' => Db::raw('NULL')]);
+    if ($roleId > 0) {
+      Db::name('tb_role')->where('id', '=', $roleId)->update(['identity_token' => Db::raw('NULL'), 'token_expire_time' => Db::raw('NULL')]);
     }
     unset($_SESSION['front_token'], $_SESSION['admin_token']);
     if (session_status() === PHP_SESSION_ACTIVE) {
@@ -694,32 +1071,51 @@ class IndexController extends Controller
       }
       session_destroy();
     }
-    $this->json([], '已退出登录', 1);
+    $this->json([], '已退出登录', ErrorCode::SUCCESS);
   }
 
-  /** 用有效后台会话恢复前台身份，保证从后台打开前端时保持登录。 */
+  /**
+   * 前端身份校准（应用启动期由 kniubase 在首渲染前调用，前端各页按其结果渲染）。
+   *
+   * 后端会话是唯一真相：解析顺序与 currentLoginId 完全一致——后台会话优先，
+   * 其次前台身份令牌；令牌解析成功即升级为前后台会话，后续请求走会话通道，
+   * 不再依赖前端 localStorage 持有的令牌（前端凭据不可信，仅作 bootstrap）。
+   * 免登录：游客调用返回 loggedIn:false，不建任何会话。
+   */
   public function frontSessionSync(): void
   {
     try {
       $token = $this->validIdentityToken();
-      if ($token === '' || !$this->validateToken()) {
-        $this->json(['loggedIn' => false, 'id' => 0, 'name' => '', 'nickname' => '']);
-        return;
+      $roleId = 0;
+      if ($this->validateToken()) {
+        $roleId = $this->sessionLoginId();
       }
-      $roleId = (int)($_SESSION['admin_token']['id'] ?? 0);
+      if ($roleId <= 0 && $token !== '') {
+        $frontUser = $this->roleByIdentityToken($token);
+        $roleId = (int)($frontUser['role_id'] ?? 0);
+      }
       if ($roleId <= 0) {
         $this->json(['loggedIn' => false, 'id' => 0, 'name' => '', 'nickname' => '']);
         return;
       }
-      // 会话 ID 是唯一身份标识；账号名只作为展示和兼容旧会话的回退值。
-      $role = Db::name('tb_role')->where('id', '=', $roleId)->field(['id', 'name', 'nickname'])->find();
+      // 会话指向的账号已不存在（删号后会话仍在有效期）：就地销毁，
+      // 否则 currentLoginId 的会话通道会凭幽灵 id 继续放行。
+      $role = Db::name('tb_role')->where('id', '=', $roleId)->field(['id', 'name', 'nickname', 'role', 'role_auth'])->find();
       if (!$role) {
+        unset($_SESSION['front_token'], $_SESSION['admin_token']);
         $this->json(['loggedIn' => false, 'id' => 0, 'name' => '', 'nickname' => '']);
         return;
       }
       $name = trim(html_entity_decode((string)($role['name'] ?? ''), ENT_QUOTES));
-      $frontUserId = $this->bindFrontUserByRoleId(hash('sha256', $token), $roleId);
+      // 令牌升级：把当前浏览器令牌绑到该账号并建立会话（无后台会话时含后台会话），
+      // 之后认证以后端 session 为准，前端令牌退居「首访引导」角色。
+      if ($token !== '') {
+        $this->bindFrontUserByRoleId(hash('sha256', $token), $roleId);
+      }
       $this->createFrontSession($roleId, $name);
+      if (!$this->validateToken()) {
+        $this->createAdminSession($roleId, $name, (string)($role['role'] ?? ''), (int)($role['role_auth'] ?? 0));
+      }
       $avatar = '';
       try {
         $about = Db::name('tb_about')->where('role_id', '=', $roleId)->field(['avatar'])->find();
@@ -730,7 +1126,7 @@ class IndexController extends Controller
       }
       $this->json([
         'loggedIn' => true,
-        'id' => $frontUserId,
+        'id' => $roleId,
         'roleId' => $roleId,
         'name' => $name,
         'nickname' => $this->normalizeFrontNickname(html_entity_decode((string)($role['nickname'] ?? ''), ENT_QUOTES)),
@@ -837,9 +1233,11 @@ class IndexController extends Controller
       EmailCode::consume($verify['id']);
     } catch (\Throwable $e) {
       if ($transactionStarted) Db::rollback();
-      // 账号唯一索引是最终约束，覆盖并发注册场景。
-      if (stripos((string)$e->getMessage(), 'uk_role_name') !== false) {
-        $this->json([], '该账号已存在', ErrorCode::CONFLICT);
+      // 唯一索引是最终约束，覆盖并发注册场景：账号冲突与昵称冲突同回 3002（D-L8，
+      // 昵称当前为应用层检查，未来基线补 uk_role_nickname 后此映射自动生效）。
+      if (stripos((string)$e->getMessage(), 'uk_role_name') !== false
+        || stripos((string)$e->getMessage(), 'uk_role_nickname') !== false) {
+        $this->json([], stripos((string)$e->getMessage(), 'uk_role_nickname') !== false ? '该昵称已存在' : '该账号已存在', ErrorCode::CONFLICT);
         return;
       }
       $this->json([], '注册失败，请稍后重试', ErrorCode::SERVER_ERROR);
@@ -858,7 +1256,7 @@ class IndexController extends Controller
       'role' => '2',
       'role_auth' => 2,
       'nickname' => $nickname
-    ], '注册成功', 1);
+    ], '注册成功', ErrorCode::SUCCESS);
   }
 
   /**
@@ -891,31 +1289,25 @@ class IndexController extends Controller
       ->field(['id', 'name', 'nickname', 'password', 'role', 'role_auth', 'is_show'])
       ->select();
     if (empty($rows)) {
-      $this->json([], '账号不存在', ErrorCode::NOT_FOUND);
-      return;
-    }
-    $account = $rows[0];
-    if (!$this->verifyPassword($password, (string)$account['password'])) {
+      // 账号不存在与密码错误同口径：登记失败计数 + 同文案同码，防账号枚举（与 frontBind 一致）。
+      $this->registerLoginFailure('front', $username);
       $this->json([], '账号或密码错误', ErrorCode::CREDENTIAL_INVALID);
       return;
     }
+    $account = $rows[0];
+    // 防爆破：按「账号+IP」持久化计数（算术验证码可被脚本破解，不作为唯一闸门）。
+    if ($this->checkLoginLock('front', $username)) {
+      $this->json([], '失败次数过多，请 10 分钟后再试', ErrorCode::CREDENTIAL_INVALID);
+      return;
+    }
+    if (!$this->verifyPassword($password, (string)$account['password'])) {
+      $this->registerLoginFailure('front', $username);
+      $this->json([], '账号或密码错误', ErrorCode::CREDENTIAL_INVALID);
+      return;
+    }
+    $this->clearLoginLock('front', $username);
 
-    $id = $this->bindFrontUser(hash('sha256', $token), (string)$account['name']);
-    $this->createFrontSession((int)$account['id'], $username);
-    $this->createAdminSession(
-      (int)$account['id'],
-      html_entity_decode((string)$account['name'], ENT_QUOTES),
-      (string)($account['role'] ?? ''),
-      (int)($account['role_auth'] ?? 0)
-    );
-    $this->json([
-      'id' => $id,
-      'role_id' => (int)$account['id'],
-      'name' => html_entity_decode((string)$account['name'], ENT_QUOTES),
-      'role' => (string)($account['role'] ?? ''),
-      'role_auth' => (int)($account['role_auth'] ?? 0),
-      'nickname' => $this->normalizeFrontNickname(html_entity_decode((string)($account['nickname'] ?? ''), ENT_QUOTES))
-    ], '登录成功', 1);
+    $this->finishFrontAuth($token, $account, $username, '登录成功');
   }
 
   /**
@@ -933,17 +1325,15 @@ class IndexController extends Controller
     }
 
     // frontBind 免验证码（个人中心绑定入口，设计如此），但必须防爆破：
-    // 会话级失败锁定（范式同邮箱验证码 fail_count/lock_until）——连续失败 5 次锁 10 分钟。
-    $now = time();
-    if ((int)($_SESSION['front_bind_lock_until'] ?? 0) > $now) {
-      $this->json([], '失败次数过多，请 10 分钟后再试', ErrorCode::CREDENTIAL_INVALID);
-      return;
-    }
-
+    // 按「账号+IP」持久化计数锁定（原会话级锁定弃用 Cookie 即可重置，已升级）。
     $username = $this->normalizeFrontNickname((string)$this->input('post.username/s', ''));
     $password = (string)$this->input('post.password/s', '');
     if ($username === '' || $password === '') {
       $this->json([], '账号和密码不能为空', ErrorCode::PARAM_INVALID);
+      return;
+    }
+    if ($this->checkLoginLock('bind', $username)) {
+      $this->json([], '失败次数过多，请 10 分钟后再试', ErrorCode::CREDENTIAL_INVALID);
       return;
     }
 
@@ -952,20 +1342,43 @@ class IndexController extends Controller
       ->field(['id', 'name', 'nickname', 'password', 'role', 'role_auth', 'is_show'])
       ->select();
     if (empty($rows)) {
-      $this->registerFrontBindFailure($now);
-      $this->json([], '账号不存在', ErrorCode::NOT_FOUND);
+      // 与 frontLogin 同口径：登记失败计数 + 同文案同码，防账号枚举（D-L4）。
+      $this->registerLoginFailure('bind', $username);
+      $this->json([], '账号或密码错误', ErrorCode::CREDENTIAL_INVALID);
       return;
     }
     $account = $rows[0];
     if (!$this->verifyPassword($password, (string)$account['password'])) {
-      $this->registerFrontBindFailure($now);
+      $this->registerLoginFailure('bind', $username);
       $this->json([], '账号或密码错误', ErrorCode::CREDENTIAL_INVALID);
       return;
     }
-    unset($_SESSION['front_bind_fail_count'], $_SESSION['front_bind_lock_until']);
+    $this->clearLoginLock('bind', $username);
 
+    $this->finishFrontAuth($token, $account, $username, '绑定成功');
+  }
+
+  /**
+   * 前台认证收尾：绑定身份令牌 + 建立前后台共享会话 + 回包。
+   *
+   * frontLogin 与 frontBind 的后半段逐字一致，收口到此（仅成功提示语不同）。
+   *
+   * @param string $token 已验证合法的身份令牌。
+   * @param array $account tb_role 账号行。
+   * @param string $displayName 展示用昵称（写入前台会话）。
+   * @param string $message 成功提示语。
+   * @return void
+   */
+  private function finishFrontAuth(string $token, array $account, string $displayName, string $message): void
+  {
+    // 封禁闸门：is_show=0 的账号禁止取得任何会话（与后台 logup 的禁用校验同口径）。
+    // 放在此处可同时覆盖 frontLogin 与 frontBind 两个入口，避免各自漏判。
+    if ((int)($account['is_show'] ?? 1) === 0) {
+      $this->json([], '该账号已被禁用，请联系管理员', ErrorCode::ACCOUNT_DISABLED);
+      return;
+    }
     $id = $this->bindFrontUser(hash('sha256', $token), (string)$account['name']);
-    $this->createFrontSession((int)$account['id'], $username);
+    $this->createFrontSession((int)$account['id'], $displayName);
     $this->createAdminSession(
       (int)$account['id'],
       html_entity_decode((string)$account['name'], ENT_QUOTES),
@@ -979,21 +1392,7 @@ class IndexController extends Controller
       'role' => (string)($account['role'] ?? ''),
       'role_auth' => (int)($account['role_auth'] ?? 0),
       'nickname' => $this->normalizeFrontNickname(html_entity_decode((string)($account['nickname'] ?? ''), ENT_QUOTES))
-    ], '绑定成功', 1);
-  }
-
-  /**
-   * frontBind 失败计数：连续 5 次写 lock_until 锁定 600 秒（范式同 EmailCode 失败锁定）。
-   */
-  private function registerFrontBindFailure(int $now): void
-  {
-    $count = (int)($_SESSION['front_bind_fail_count'] ?? 0) + 1;
-    if ($count >= 5) {
-      $_SESSION['front_bind_fail_count'] = 0;
-      $_SESSION['front_bind_lock_until'] = $now + 600;
-      return;
-    }
-    $_SESSION['front_bind_fail_count'] = $count;
+    ], $message, ErrorCode::SUCCESS);
   }
 
   /**
@@ -1018,7 +1417,14 @@ class IndexController extends Controller
 
     if ($scene !== EmailCode::SCENE_REGISTER) {
       if (!Db::name('tb_role')->where('email', '=', $email)->value('id')) {
-        $this->json([], '该邮箱尚未注册账号', ErrorCode::NOT_FOUND);
+        // 防邮箱枚举：未注册邮箱与已注册返回同形响应（不实际发码），
+        // 不给「探测某邮箱是否注册」的口子；data 也必须同构，否则响应体仍可区分。
+        $config = EmailCode::config();
+        $this->json([
+          'expire' => max(30, (int)($config['CODE_EXPIRE'] ?? 600)),
+          'interval' => max(0, (int)($config['CODE_INTERVAL'] ?? 60)),
+          'dev' => false
+        ], '验证码已发送，请查收邮箱', ErrorCode::SUCCESS);
         return;
       }
     }
@@ -1041,7 +1447,7 @@ class IndexController extends Controller
       'expire' => $result['expire'],
       'interval' => (int)(EmailCode::config()['CODE_INTERVAL'] ?? 60),
       'dev' => $result['dev']
-    ], $tip, 1);
+    ], $tip, ErrorCode::SUCCESS);
   }
 
   /**
@@ -1075,6 +1481,14 @@ class IndexController extends Controller
       return;
     }
 
+    // 先校验验证码、再定位账号：把「账号与注册邮箱不匹配」的枚举面挡在邮箱验证码之后
+    // （验证码需要邮箱持有者触发与校验，攻击者无法离线批量试配对）。
+    $verify = EmailCode::verify($email, EmailCode::SCENE_RESET, $code);
+    if (!$verify['status']) {
+      $this->json([], $verify['msg'], ErrorCode::CAPTCHA_INVALID);
+      return;
+    }
+
     $account = Db::name('tb_role')
       ->where('name', '=', htmlspecialchars($username, ENT_QUOTES))
       ->where('email', '=', $email)
@@ -1084,16 +1498,16 @@ class IndexController extends Controller
       $this->json([], '账号与注册邮箱不匹配', ErrorCode::NOT_FOUND);
       return;
     }
-    $verify = EmailCode::verify($email, EmailCode::SCENE_RESET, $code);
-    if (!$verify['status']) {
-      $this->json([], $verify['msg'], ErrorCode::CAPTCHA_INVALID);
-      return;
-    }
 
     try {
       Db::name('tb_role')->where('id', '=', (int)$account['id'])->update(['password' => $this->hashPassword($password)]);
       EmailCode::consume($verify['id']);
-      $this->json([], '密码重置成功，请使用新密码登录', 1);
+      // 规则 131：改密成功即作废被改账号全部会话与身份令牌——已持旧会话/令牌的
+      // 攻击者（含后台会话与前台会话）必须被驱逐，密码重置才有驱逐效果。
+      // 请求自身是未登录的找回流程会话，destroySessionsOfUser 会排除当前会话。
+      $this->destroySessionsOfUser((int)$account['id']);
+      $this->revokeIdentityToken((int)$account['id']);
+      $this->json([], '密码重置成功，请使用新密码登录', ErrorCode::SUCCESS);
     } catch (\Exception $e) {
       $this->json([], '密码重置失败，请稍后重试', ErrorCode::SERVER_ERROR);
     }
@@ -1154,12 +1568,7 @@ class IndexController extends Controller
   {
     $roleId = (int)(Db::name('tb_role')->where('name', '=', $encodedName)->value('id') ?? 0);
     if ($roleId <= 0) return 0;
-    // Db::update 会过滤 PHP null；使用原始 NULL 才能真正解除旧账号绑定。
-    Db::name('tb_role')->where('identity_token', '=', $tokenHash)->where('id', '<>', $roleId)->update(['identity_token' => Db::raw('NULL')]);
-    Db::name('tb_role')->where('id', '=', $roleId)->update([
-      'identity_token' => $tokenHash,
-      'nickname' => Db::name('tb_role')->where('id', '=', $roleId)->value('nickname')
-    ]);
+    $this->bindIdentityToken($tokenHash, $roleId, true);
     return $roleId;
   }
 
@@ -1167,9 +1576,7 @@ class IndexController extends Controller
   private function bindFrontUserByRoleId(string $tokenHash, int $roleId): int
   {
     if ($roleId <= 0) return 0;
-    // Db::update 会过滤 PHP null；使用原始 NULL 才能真正解除旧账号绑定。
-    Db::name('tb_role')->where('identity_token', '=', $tokenHash)->where('id', '<>', $roleId)->update(['identity_token' => Db::raw('NULL')]);
-    Db::name('tb_role')->where('id', '=', $roleId)->update(['identity_token' => $tokenHash]);
+    $this->bindIdentityToken($tokenHash, $roleId);
     return $roleId;
   }
 

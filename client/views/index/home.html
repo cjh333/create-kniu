@@ -27,7 +27,7 @@
           <div class="index_group_1">
             <article class="index_wrap_11">
               <template :for="{{dailys}}" :key="id">
-                <div class="index_item_11" style="background-color:rgba(0,0,0,.03);">
+                <div class="index_item_11" style="background-color: rgba(0, 0, 0, .01);">
                   <div class="index_daily_group">
                     <p class="index_daily_title">({{today}}) 每日一句：</p>
                     <p class="index_daily_cn">{{item.cn}}</p>
@@ -36,7 +36,7 @@
                 </div>
               </template>
               <kniu-input class="kniu_md_mt_15 kniu_md_main" :form="{{keyword}}" :option="{{name:'keyword',placeholder:'请输入文章标题'}}" @keydown.enter="searchList" @input="debouncedSearch">
-                <template #append label-width="48px">
+                <template #append :option="{{labelWidth:'48px'}}">
                   <kniu-btn block aria-label="搜索" :option="{{text:true}}" @click="searchList">
                     <kniu-icon :option="{{icon:'search'}}" />
                   </kniu-btn>
@@ -45,20 +45,27 @@
               <template :for="{{articles}}" :key="id">
                 <div class="kniu_md_mt_15 index_item_11">
                   <div class="index_article_group">
-                    <a class="kniu_md_diy_underline index_article_title_group" :option="{{articleId:item.id,onClick:toDetail}}" href="javascript:;">
-                      <span class="index_article_title">{{item.title}}</span>
-                    </a>
-                    <div class="index_article_summary" :if="{{item.summary}}">
-                      <a class="kniu_md_diy_underline" :option="{{articleId:item.id,onClick:toDetail}}" href="javascript:;">{{item.summary}}</a>
+                    <template :if="{{item.cover}}">
+                      <div class="index_article_cover_wrap">
+                        <kniu-image class="index_article_cover" src="{{item.cover}}" />
+                      </div>
+                    </template>
+                    <div class="index_article_wrap">
+                      <div class="index_article_title_wrap">
+                        <a class="kniu_md_diy_underline index_article_title" :option="{{articleId:item.id,onClick:toDetail}}" href="javascript:;">{{item.title}}</a>
+                      </div>
+                      <div class="index_article_summary_wrap" :if="{{item.summary}}">
+                        <a class="kniu_md_diy_underline index_article_summary" :option="{{articleId:item.id,onClick:toDetail}}" href="javascript:;">{{item.summary}}</a>
+                      </div>
+                      <dl class="index_article_info_group">
+                        <dd class="index_article_info">
+                          <a class="index_article_link" :option="{{roleId:item.publisher_role_id,onClick:toAbout}}" href="javascript:;">发布者：{{item.publisher}}</a>
+                        </dd>
+                        <dd class="index_article_info">浏览数：{{item.hits}}次</dd>
+                        <dd class="index_article_info">点赞数：{{item.likes}}次</dd>
+                        <dd class="index_article_info">发布于：{{item.create_time}}</dd>
+                      </dl>
                     </div>
-                    <dl class="index_article_info_group">
-                      <dd class="index_article_info">
-                        <a class="index_article_link" :option="{{roleId:item.publisher_role_id,onClick:toAbout}}" href="javascript:;">发布人：{{item.publisher}}</a>
-                      </dd>
-                      <dd class="index_article_info">发布于：{{item.create_time}}</dd>
-                      <dd class="index_article_info">浏览次数：{{item.hits}}次</dd>
-                      <dd class="index_article_info">点赞数：{{item.likes}}</dd>
-                    </dl>
                   </div>
                 </div>
               </template>
@@ -76,7 +83,31 @@
                     </div>
                   </div>
                 </template>
-                <ul class="index_advertise_group{{!loggedIn ? ' kniu_md_mt_0' : ''}}">
+                <div class="index_hot_read_group{{!loggedIn ? ' kniu_md_mt_0' : ''}}">
+                  <p class="index_hot_read_title">热门浏览</p>
+                  <dl class="index_hot_read_wrap">
+                    <template :for="{{hotArticles}}" :key="id">
+                      <template :if="{{item.hits > 0}}">
+                        <dd class="index_hot_read_item">
+                          <a class="kniu_md_diy_underline index_hot_read_link" :option="{{articleId:item.id,onClick:toDetail}}" href="javascript:;">{{item.title}}</a>
+                        </dd>
+                      </template>
+                    </template>
+                  </dl>
+                </div>
+                <template :if="{{recommendArticles.length > 0}}">
+                  <div class="index_hot_read_group">
+                    <p class="index_hot_read_title">推荐好文</p>
+                    <dl class="index_hot_read_wrap">
+                      <template :for="{{recommendArticles}}" :key="id">
+                        <dd class="index_hot_read_item">
+                          <a class="kniu_md_diy_underline index_hot_read_link" :option="{{articleId:item.id,onClick:toDetail}}" href="javascript:;">{{item.title}}</a>
+                        </dd>
+                      </template>
+                    </dl>
+                  </div>
+                </template>
+                <ul class="index_advertise_group">
                   <template :for="{{advertises}}" :key="id">
                     <template :if="{{item.isShow == 1}}">
                       <li class="index_advertise">

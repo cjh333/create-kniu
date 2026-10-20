@@ -37,6 +37,10 @@ const headerController = controller(({ eventTo, navigateTo, request, reactive, o
 
   const debouncedSearch = debounce(dispatchSearch, 250);
 
+  const syncSearch = function (payload) {
+    state.keyword = setTransientSearchKeyword(payload?.keyword);
+  };
+
   function searchList() {
     setTransientSearchKeyword(state.keyword);
     navigateTo('/');
@@ -51,10 +55,6 @@ const headerController = controller(({ eventTo, navigateTo, request, reactive, o
       stopSearch?.();
     };
   });
-
-  const syncSearch = function (payload) {
-    state.keyword = setTransientSearchKeyword(payload?.keyword);
-  };
 
   return { state, loadSeoLogo, searchList, debouncedSearch };
 });

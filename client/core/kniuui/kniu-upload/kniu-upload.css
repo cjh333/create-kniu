@@ -28,7 +28,82 @@
   border-right: 0;
   background-color: var(--kniu-fill-color, #f5f7fa);
   color: #c0c4cc;
-  box-sizing: border-box
+  font: inherit;
+  outline: 0
+}
+
+.kniu_sys_upload_hint_wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-right: 0;
+  background-color: #fff;
+  font: inherit;
+  outline: 0
+}
+
+.kniu_sys_upload_hint_wrap:focus-within {
+  border-color: var(--kniu-color-primary, #409eff)
+}
+
+.kniu_sys_upload_hint_input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 32px 0 12px;
+  border: 0;
+  background-color: transparent;
+  color: #303133;
+  font: inherit;
+  text-overflow: ellipsis;
+  outline: 0;
+}
+
+.kniu_sys_upload_hint_input:disabled {
+  background-color: var(--kniu-fill-color, #f5f7fa);
+  color: #c0c4cc;
+  cursor: not-allowed
+}
+
+.kniu_sys_upload_hint_clear {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  display: flex;
+  visibility: hidden;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background-color: transparent;
+  color: #c0c4cc;
+  font-size: 16px;
+  text-align: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none
+}
+
+.kniu_sys_upload_hint_wrap[data-clear-visible="true"] .kniu_sys_upload_hint_clear {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto
+}
+
+.kniu_sys_upload_hint_clear:hover,
+.kniu_sys_upload_hint_clear:focus {
+  color: var(--kniu-color-primary, #409eff)
+}
+
+.kniu_sys_upload_hint_clear[aria-disabled="true"] {
+  cursor: not-allowed;
+  color: var(--kniu-border-color, #dcdfe6)
 }
 
 .kniu_sys_upload_btn {
@@ -74,6 +149,67 @@
   margin-top: 10px
 }
 
+/* 非图片类型上传（accept 无 image）整墙隐藏，display:flex 会覆盖 hidden 的 UA 样式，需显式声明。 */
+.kniu_sys_upload_wall[hidden] {
+  display: none
+}
+
+.kniu_sys_upload_files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px
+}
+
+.kniu_sys_upload_files[hidden] {
+  display: none
+}
+
+.kniu_sys_upload_file_row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-radius: 4px;
+  background-color: var(--kniu-fill-color, #f5f7fa);
+  font-size: 13px
+}
+
+.kniu_sys_upload_file_name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--kniu-text-color, #606266);
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+
+.kniu_sys_upload_file_remove {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background-color: transparent;
+  color: #c0c4cc;
+  font: 18px/1 var(--kniu-font-family);
+  cursor: pointer
+}
+
+.kniu_sys_upload_file_remove:hover:not(:disabled) {
+  background-color: var(--kniu-color-danger, #f56c6c);
+  color: #fff
+}
+
+.kniu_sys_upload_file_remove:disabled {
+  cursor: not-allowed;
+  opacity: .5
+}
+
 .kniu_sys_upload_item {
   position: relative;
   width: 160px;
@@ -98,7 +234,6 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  padding: 0;
   border: 0;
   border-radius: 50%;
   background-color: #aab4c4;

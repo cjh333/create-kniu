@@ -1,62 +1,61 @@
 <style scoped>
   @import url("@kniu/kniu.min.css");
   @import url("@style/web.min.css");
-  @import url("@style/admin/admin.min.css");
-  @import url("@style/admin/admin_home.min.css");
+  @import url("@style/admin/admin_all.min.css");
 </style>
 <section class="seo_cells">
   <div class="admin_content_body index_cell index_cell_2">
     <kniu-form ref="form" :option="{{...(seoModel)}}" @submit.prevent="onSubmit">
       <kniu-form-cell>
         <kniu-input :form="{{seoModel.title}}" :option="{{readonly:(!canEditContent),name:'title',placeholder:'请输入网站名称'}}">
-          <template #prepend label-width="120px">网站名称</template>
+          <template #prepend :option="{{labelWidth:'120px'}}">网站名称</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
         <kniu-input :form="{{seoModel.url}}" :option="{{readonly:(!canEditContent),name:'url',placeholder:'请输入网站域名'}}">
-          <template #prepend label-width="120px">网站域名</template>
+          <template #prepend :option="{{labelWidth:'120px'}}">网站域名</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
         <kniu-input>
-          <template #prepend label-width="120px">logo</template>
-          <template #append label-width="120px">
+          <template #prepend :option="{{labelWidth:'120px'}}">logo</template>
+          <template #append :option="{{labelWidth:'120px'}}">
             <kniu-upload ref="upload" :form="{{files}}" :option="{{disabled:(!canEditContent),name:'logo',maxSize:'5',accept:'.ico,image/x-icon,image/vnd.microsoft.icon,image/png,image/gif'}}">选择logo</kniu-upload>
           </template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
         <kniu-input :form="{{seoModel.description}}" :option="{{readonly:(!canEditContent),name:'description',placeholder:'请输入description描述',row:'3',type:'textarea'}}">
-          <template #prepend label-width="120px">description</template>
+          <template #prepend :option="{{labelWidth:'120px'}}">description</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
         <kniu-input :form="{{seoModel.keywords}}" :option="{{readonly:(!canEditContent),name:'keywords',placeholder:'请输入keywords关键词'}}">
-          <template #prepend label-width="120px">keywords</template>
+          <template #prepend :option="{{labelWidth:'120px'}}">keywords</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
         <kniu-input :form="{{seoModel.author}}" :option="{{readonly:(!canEditContent),name:'author',placeholder:'请输入author作者'}}">
-          <template #prepend label-width="120px">author</template>
+          <template #prepend :option="{{labelWidth:'120px'}}">author</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
         <kniu-input :form="{{seoModel.copyright}}" :option="{{readonly:(!canEditContent),name:'copyright',placeholder:'请输入版权'}}">
-          <template #prepend label-width="120px">copyright</template>
+          <template #prepend :option="{{labelWidth:'120px'}}">copyright</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
         <kniu-input :form="{{seoModel.icp}}" :option="{{readonly:(!canEditContent),name:'icp',placeholder:'请输入备案号'}}">
-          <template #prepend label-width="120px">icp</template>
+          <template #prepend :option="{{labelWidth:'120px'}}">icp</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell>
         <kniu-input :form="{{seoModel.email}}" :option="{{readonly:(!canEditContent),name:'email',placeholder:'请输入邮箱'}}">
-          <template #prepend label-width="120px">email</template>
+          <template #prepend :option="{{labelWidth:'120px'}}">email</template>
         </kniu-input>
       </kniu-form-cell>
       <kniu-form-cell :if="{{canEditContent}}">
-        <kniu-btn style="margin-left: 120px;" :option="{{disabled:(isSubmitting),nativeType:'submit'}}">
+        <kniu-btn :option="{{disabled:(isSubmitting),nativeType:'submit',style:'margin-left:120px;'}}">
           <kniu-icon :if="{{isSubmitting}}" :option="{{icon:'loading'}}" />
           <template :else>提 交</template>
         </kniu-btn>

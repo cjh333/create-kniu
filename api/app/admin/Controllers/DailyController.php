@@ -25,7 +25,7 @@ class DailyController extends Base
     ];
     $data = $this->encodeFields($data, ['cn', 'en']);
     Db::name('tb_daily')->insert($data);
-    $this->json([], '添加成功', 1);
+    $this->json([], '添加成功', ErrorCode::SUCCESS);
   }
 
   // 删除。
@@ -36,7 +36,7 @@ class DailyController extends Base
     Db::name('tb_daily')
       ->where('id', '=', $id)
       ->delete();
-    $this->json([], '删除成功', 1);
+    $this->json([], '删除成功', ErrorCode::SUCCESS);
   }
 
   // 修改。
@@ -62,13 +62,7 @@ class DailyController extends Base
     }
     $data = $this->encodeFields($data, ['cn', 'en']);
     if ($type === 'KNIU_TABLE_EVENT_CHECKALL') {
-      $selectallResult = Db::name('tb_selectall')
-        ->where('name', '=', 'daily')
-        ->update(['is_select' => $data['is_selectall']]);
-      $dailyResult = Db::name('tb_daily')
-        ->whereIn('id', explode(',', $id))
-        ->update(['is_select' => $data['is_select']]);
-      $result = $selectallResult + $dailyResult;
+      $result = $this->applySelectallBatch('daily', 'tb_daily', $data['is_selectall'] ?? null, $data['is_select'] ?? null, (string)$id);
     } else {
       $selectallResult = Db::name('tb_selectall')
         ->where('name', '=', 'daily')
@@ -87,7 +81,7 @@ class DailyController extends Base
       $this->json([], '数据未发生变化', ErrorCode::RULE_REJECTED);
       return;
     }
-    $this->json([], '更新成功', 1);
+    $this->json([], '更新成功', ErrorCode::SUCCESS);
   }
 
   // 查询列表。

@@ -1,4 +1,5 @@
 import AUTH from './kniuauth.mjs';
+import IDENTITY from './kniuidentity.mjs';
 import UI from './kniuui/kniuui.mjs';
 import { createStateStore } from './kniustore.mjs';
 
@@ -6,8 +7,36 @@ const STATUS_SUCCESS = 1;
 const STATUS_UNAUTHORIZED = 1001;
 const requestState = createStateStore('request');
 let authRedirectHandler = null;
-function authRedirect(handler) {
-  authRedirectHandler = typeof handler === 'function' ? handler : null;
+let authRedirectCodes = [STATUS_UNAUTHORIZED];
+
+function authRedirect(clientOrHandler, redirectConfig) {
+  if (typeof clientOrHandler === 'function') {
+    authRedirectHandler = clientOrHandler;
+    return;
+  }
+  const client = clientOrHandler;
+  // redirectConfig 形态：{ trigger:[业务码...], targets:[{route,tab,account?}] }（config/request.js 的 REDIRECT）；
+  // 传数组按旧版 targets 兼容，trigger 取默认 [1001]。
+  const config = redirectConfig && !Array.isArray(redirectConfig) ? redirectConfig : { targets: redirectConfig };
+  const trigger = Array.isArray(config.trigger) && config.trigger.length
+    ? config.trigger.map(Number).filter(function (code) { return Number.isFinite(code); })
+    : [STATUS_UNAUTHORIZED];
+  const targets = Array.isArray(config.targets) ? config.targets.filter(Boolean) : [];
+  authRedirectCodes = trigger.length ? trigger : [STATUS_UNAUTHORIZED];
+  if (!client || typeof client.navigateTo !== 'function') {
+    authRedirectHandler = null;
+    return;
+  }
+  authRedirectHandler = function (route) {
+    const item = targets.find(function (entry) {
+      return (entry.account === true) === IDENTITY.hasAccount();
+    }) || targets[0];
+    if (!item || item.route === route) return;
+    const routeData = typeof client.getRouteData === 'function' ? client.getRouteData() : null;
+    const payload = routeData && typeof routeData === 'object' ? { ...routeData } : {};
+    payload.redirect = route;
+    client.navigateTo(item.route, payload);
+  };
 }
 
 var KniuRequest = (function () {
@@ -31,6 +60,62 @@ var KniuRequest = (function () {
     credentials: 'include',
     timeout: 15000
   };
+
+  // ===== 统一拦截器 =====
+  // 请求拦截器：(config) => config | false——返回 false 拦截本次请求（不发网络，按失败结果回调）；
+  // 响应拦截器：(result) => result——可修改或替换结果对象，每个请求的最终结果都会依次经过。
+  // 业务侧经 useRequestInterceptor / useResponseInterceptor 注册，返回注销函数；
+  // 拦截器自身异常按请求失败上抛（sendRequests 的 allSettled 兜底），不会静默吞掉。
+  const interceptors = { request: [], response: [] };
+
+  function useInterceptor(list, handler) {
+    if (typeof handler !== 'function') return function noop() { };
+    list.push(handler);
+    return function off() {
+      const index = list.indexOf(handler);
+      if (index >= 0) list.splice(index, 1);
+    };
+  }
+
+  function useRequestInterceptor(handler) {
+    return useInterceptor(interceptors.request, handler);
+  }
+
+  function useResponseInterceptor(handler) {
+    return useInterceptor(interceptors.response, handler);
+  }
+
+  async function runRequestInterceptors(config) {
+    let current = config;
+    for (let index = 0; index < interceptors.request.length; index += 1) {
+      const next = await interceptors.request[index](current);
+      if (next === false) return false;
+      if (next) current = next;
+    }
+    return current;
+  }
+
+  async function runResponseInterceptors(result) {
+    let current = result;
+    for (let index = 0; index < interceptors.response.length; index += 1) {
+      const next = await interceptors.response[index](current);
+      if (next) current = next;
+    }
+    return current;
+  }
+
+  // 内置响应拦截器（注册在首位，先于业务拦截器）：登录鉴权跳转。
+  // 触发条件 = HTTP 401，或业务码命中 authRedirectCodes（由 client.mjs 经 config/request.js
+  // 的 REDIRECT.trigger 注入）；redirectOnUnauthorized:false 的请求豁免。
+  interceptors.response.push(async function authRedirectInterceptor(result) {
+    if (!result || result.aborted) return result;
+    if (result.request && result.request.redirectOnUnauthorized === false) return result;
+    const httpUnauthorized = result.httpStatus === 401;
+    const codeTriggered = authRedirectCodes.indexOf(Number(result.status)) >= 0;
+    if (!httpUnauthorized && !codeTriggered) return result;
+    handleAuthenticationExpired();
+    return result;
+  });
 
   function normalizeRequest(raw = {}) {
     return {
@@ -130,21 +215,31 @@ var KniuRequest = (function () {
       if (hash.startsWith('#/login') || hash.startsWith('#/register')) return;
       sessionStorage.removeItem('kniu_authed');
       AUTH.markLoggedOut();
+      IDENTITY.clearIdentity();
       const routePath = hash.replace(/^#/, '').split('?')[0].split('#')[0] || '/';
       if (authRedirectHandler) authRedirectHandler(routePath);
       else if (typeof location !== 'undefined') location.hash = '/login';
     } catch (e) {
-
+      console.error('[kniurequest] 登录过期跳转处理失败：', e);
     }
   }
 
   async function executeRequest(rawRequest) {
     const request = normalizeRequest(rawRequest);
+    const explicitTimeout = !!(rawRequest && typeof rawRequest === 'object' && rawRequest.timeout !== undefined);
+    const config = await runRequestInterceptors(request);
+    const result = config === false
+      ? createFailureResult(0, '请求已被拦截', request)
+      : await performRequest(config, explicitTimeout);
+    // 每个请求的最终结果（含被拦截、网络失败）都统一经过响应拦截器。
+    return runResponseInterceptors(result);
+  }
+
+  async function performRequest(request, explicitTimeout) {
     const url = buildRequestUrl(request.url, request.data, request.type);
     const hasBody = FETCH_METHODS.includes(request.type);
     const isFormData = typeof FormData !== 'undefined' && request.data instanceof FormData;
     const timeoutMs = Number(request.timeout) || 0;
-    const explicitTimeout = !!(rawRequest && typeof rawRequest === 'object' && rawRequest.timeout !== undefined);
     const applyTimeout = timeoutMs > 0 && (!isFormData || explicitTimeout);
     let timeoutController = null;
     let timeoutTimer = null;
@@ -195,12 +290,8 @@ var KniuRequest = (function () {
         const status = Number(body.status) || 0;
         const msg = body.msg || (response.ok ? 'success' : 'error');
         const data = body.data !== undefined ? body.data : null;
-        if ((httpStatus === 401 || status === STATUS_UNAUTHORIZED) && request.redirectOnUnauthorized !== false) {
-          handleAuthenticationExpired();
-        }
         return { status, msg, data, httpStatus, request };
       }
-      if (httpStatus === 401 && request.redirectOnUnauthorized !== false) handleAuthenticationExpired();
       return response.ok
         ? { status: 1, msg: 'success', data: parsed, httpStatus, request }
         : createFailureResult(httpStatus, `请求失败（HTTP ${httpStatus}）`, request);
@@ -262,10 +353,14 @@ var KniuRequest = (function () {
     return isSingle ? results[0] : results;
   }
 
-  return { sendRequests };
+  return { sendRequests, handleAuthenticationExpired, interceptors, useRequestInterceptor, useResponseInterceptor };
 }());
 
 const sendRequests = KniuRequest.sendRequests;
+const notifyAuthExpired = KniuRequest.handleAuthenticationExpired;
+const interceptors = KniuRequest.interceptors;
+const useRequestInterceptor = KniuRequest.useRequestInterceptor;
+const useResponseInterceptor = KniuRequest.useResponseInterceptor;
 
 export default sendRequests;
-export { STATUS_SUCCESS, STATUS_UNAUTHORIZED, requestState, authRedirect };
+export { STATUS_SUCCESS, STATUS_UNAUTHORIZED, requestState, authRedirect, notifyAuthExpired, interceptors, useRequestInterceptor, useResponseInterceptor };

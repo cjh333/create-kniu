@@ -3,11 +3,6 @@
 .kniu_sys_image_group,
 .kniu_sys_image_wrap,
 .kniu_sys_image {
-  box-sizing: border-box;
-  -webkit-box-sizing: border-box;
-  -moz-box-sizing: border-box;
-  -ms-box-sizing: border-box;
-  -o-box-sizing: border-box;
   width: 100%;
   height: 100%;
 }

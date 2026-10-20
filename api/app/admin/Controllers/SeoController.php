@@ -63,12 +63,15 @@ class SeoController extends Base
       $this->json([], '数据未发生变化', ErrorCode::RULE_REJECTED);
       return;
     }
-    $this->json([], '更新成功', 1);
+    $this->json([], '更新成功', ErrorCode::SUCCESS);
   }
 
   // 查询。
   public function seoList(): void
   {
+    // 读与写同口径：全站 SEO（含站长邮箱）不得对任意已登录账号开放，
+    // 前端菜单隐藏只是体验，不能替代服务端授权。
+    if (!$this->requireManagePermission()) return;
     $result = Db::name('tb_seo')->select();
     if (empty($result)) {
       $this->json([], 'SEO设置不存在', ErrorCode::NOT_FOUND);

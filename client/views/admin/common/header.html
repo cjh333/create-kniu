@@ -155,7 +155,7 @@
   <kniu-btn class="kniu_web_aside_mdnav{{currentPath === '/reply' ? ' active' : ''}}" data-nav="/reply" :option="{{block:true,nativeType:'button'}}" @click="handleNavigation">
     <kniu-icon class="kniu_web_aside_mdnav_icon" :option="{{icon:'msg'}}" /><span class="kniu_web_aside_mdnav_title">回复管理</span>
   </kniu-btn>
-  <kniu-btn :if="{{showDatabaseAdmin}}" class="kniu_web_aside_mdnav{{currentPath.indexOf('/database') === 0 ? ' active' : ''}}" data-nav="/database" :option="{{block:true,nativeType:'button'}}" @click="handleNavigation">
+  <kniu-btn :if="{{showDatabaseAdmin}}" class="kniu_web_aside_mdnav{{currentPath === '/dbconnect' || currentPath.indexOf('/database') === 0 ? ' active' : ''}}" data-nav="/dbconnect" :option="{{block:true,nativeType:'button'}}" @click="handleNavigation">
     <kniu-icon class="kniu_web_aside_mdnav_icon" :option="{{icon:'database_fill'}}" /><span class="kniu_web_aside_mdnav_title">数据库管理</span>
   </kniu-btn>
 </nav>

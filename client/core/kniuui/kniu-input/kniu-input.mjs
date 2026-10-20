@@ -2,7 +2,7 @@ import KNIU_INPUT_TEMPLATE from './kniu-input.html?module';
 import KNIU_INPUT_GROUP_TEMPLATE from './kniu-input.group.html?module';
 
 export function registerInput(context) {
-  const { BOOLEAN_ATTRIBUTES, IDENTITY, KNIU_BACKTOP_CSS, KNIU_BADGE_CSS, KNIU_BASE_CONTAIN_CSS, KNIU_BASE_FONT_CSS, KNIU_BTN_CSS, KNIU_BTN_GROUP_CSS, KNIU_BTN_METRICS_CSS, KNIU_BTN_OVERRIDES_CSS, KNIU_COMMENT_CSS, KNIU_CONTAIN_EXCLUDE_TAGS, KNIU_CONTENT_TABLE_CSS, KNIU_CONTENT_TABLE_DOC_CSS, KNIU_DATE_PICKER_CSS, KNIU_DATE_PICKER_OVERRIDES_CSS, KNIU_DROPDOWN_CSS, KNIU_DROPDOWN_OPTION_CSS, KNIU_EDITOR_CSS, KNIU_EDITOR_OVERRIDE_CSS, KNIU_EDITOR_PRINT_CSS, KNIU_EMPTY_CSS, KNIU_FONT_FACE_CSS, KNIU_FONT_FAMILY, KNIU_FONT_MONO_FAMILY, KNIU_FONT_SERIF_FAMILY, KNIU_I18N, KNIU_ICON_CSS, KNIU_ICON_FONT_NAMES, KNIU_ICON_NAMES, KNIU_ICON_SVG, KNIU_IMAGE_CSS, KNIU_IMAGE_OVERRIDES_CSS, KNIU_INPUT_AFFIX_CSS, KNIU_INPUT_CSS, KNIU_INPUT_GROUP_CSS, KNIU_INPUT_METRICS_CSS, KNIU_INPUT_PASSWORD_ACTIONS_CSS, KNIU_INPUT_PASSWORD_CSS, KNIU_INPUT_STATES_CSS, KNIU_INPUT_TEXTAREA_CSS, KNIU_INPUT_TIP_CSS, KNIU_LIKE_CSS, KNIU_LOADING_CSS, KNIU_MARKDOWN_CSS, KNIU_MODAL_CONFIRM_CSS, KNIU_MODAL_CSS, KNIU_MSG_CSS, KNIU_NAVBAR_CELLS_CSS, KNIU_NAVBAR_CELL_CSS, KNIU_NAVBAR_CSS, KNIU_NAVBAR_PLACEHOLDER_CSS, KNIU_PAGE_CSS, KNIU_RADIO_GROUP_CSS, KNIU_RICHTEXT_CSS, KNIU_SELECT_CSS, KNIU_STATUS_CSS, KNIU_SUB_NAVBAR_CSS, KNIU_SUB_NAVBAR_OVERRIDES_CSS, KNIU_SWITCH_CSS, KNIU_TABLE_CLASS, KNIU_TABLE_COL_CSS, KNIU_TABLE_CSS, KNIU_TABLE_WRAP_CLASS, KNIU_TAB_CSS, KNIU_TAG_CSS, KNIU_UPLOAD_CSS, KNIU_USER_LOGIN_CSS, KNIU_USER_LOGIN_OVERRIDES_CSS, PRUNABLE_ATTRIBUTE_NAMES, REQUEST, RICH_TEXT_LITERAL_TAG_RE, SCROLL_LOCK_FLAG, SEMANTIC_EMPTY_ATTRIBUTES, SHADOW_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_RE, TEMPLATE, adoptDropdownStyle, adoptSharedStyle, adoptedSheetsFlushScheduled, appendRawStyle, applyScrollLock, attachComponentShadow, buildIconElement, buildPageList, compileTableRowTemplate, componentDefaults, componentLang, componentText, computePopoverLayout, confirm, createRowDeleteHandler, createSearchActions, createTable, debounce, flushPendingAdoptedSheets, getResponseRecords, getShadowInnerHTMLDescriptor, getSharedStyleSheet, hasRichTextLiteralTag, installMarkdownStyles, installOptionsOnlyProtocol, installRichTextStyles, isEmptyAttributeValue, lockDocumentScroll, makeSwitchOptions, mountAffixSlots, mountPopoverPortal, msg, normalizeComponentCss, normalizedCssCache, pendingAdoptedSheets, pruneEmptyAttribute, pruneEmptyAttributeTree, pruneEmptyAttributes, pruneEmptyRootAttributes, readScrollLockOriginals, reconcileDocumentScrollLock, releaseScrollLock, replaceChildrenWithFragment, resolveIconName, resolveTableRowTemplate, sanitizeRichHtml, sanitizeRichHtmlAsync, scheduleAdoptedSheetsFlush, scrollLockNodes, scrollLockOriginals, scrollLockOwners, setLoading, shadowInnerHTMLDescriptor, shadowStyleSheetCache, shadowTemplateCache, shouldContainHost, state, supportsAdoptedStyleSheets, tableTemplateCache, toastInstance, toastTimer, trackPopoverPosition, unlockDocumentScroll, unwrapTablesIn, use, useListPage, usePagination, wrapTablesIn, writeScrollLockOriginals } = context;
+  const { BOOLEAN_ATTRIBUTES, IDENTITY, KNIU_BACKTOP_CSS, KNIU_BADGE_CSS, KNIU_BASE_CONTAIN_CSS, KNIU_BASE_FONT_CSS, KNIU_BTN_CSS, KNIU_BTN_GROUP_CSS, KNIU_BTN_METRICS_CSS, KNIU_BTN_OVERRIDES_CSS, KNIU_COMMENT_CSS, KNIU_CONTAIN_EXCLUDE_TAGS, KNIU_CONTENT_TABLE_CSS, KNIU_CONTENT_TABLE_DOC_CSS, KNIU_DATE_PICKER_CSS, KNIU_DATE_PICKER_OVERRIDES_CSS, KNIU_DROPDOWN_CSS, KNIU_DROPDOWN_OPTION_CSS, KNIU_EDITOR_CSS, KNIU_EDITOR_OVERRIDE_CSS, KNIU_EDITOR_PRINT_CSS, KNIU_EMPTY_CSS, KNIU_FONT_FACE_CSS, KNIU_FONT_FAMILY, KNIU_FONT_MONO_FAMILY, KNIU_FONT_SERIF_FAMILY, KNIU_I18N, KNIU_ICON_CSS, KNIU_ICON_FONT_NAMES, KNIU_ICON_NAMES, KNIU_ICON_SVG, KNIU_IMAGE_CSS, KNIU_IMAGE_OVERRIDES_CSS, KNIU_INPUT_AFFIX_CSS, KNIU_INPUT_CSS, KNIU_INPUT_GROUP_CSS, KNIU_INPUT_METRICS_CSS, KNIU_INPUT_PASSWORD_ACTIONS_CSS, KNIU_INPUT_PASSWORD_CSS, KNIU_INPUT_STATES_CSS, KNIU_INPUT_TEXTAREA_CSS, KNIU_INPUT_TIP_CSS, KNIU_LIKE_CSS, KNIU_LOADING_CSS, KNIU_MARKDOWN_CSS, KNIU_MODAL_CONFIRM_CSS, KNIU_MODAL_CSS, KNIU_MSG_CSS, KNIU_NAVBAR_CELLS_CSS, KNIU_NAVBAR_CELL_CSS, KNIU_NAVBAR_CSS, KNIU_NAVBAR_PLACEHOLDER_CSS, KNIU_PAGE_CSS, KNIU_RADIO_GROUP_CSS, KNIU_RICHTEXT_CSS, KNIU_SELECT_CSS, KNIU_STATUS_CSS, KNIU_SUB_NAVBAR_CSS, KNIU_SUB_NAVBAR_OVERRIDES_CSS, KNIU_SWITCH_CSS, KNIU_TABLE_CLASS, KNIU_TABLE_COL_CSS, KNIU_TABLE_CSS, KNIU_TABLE_WRAP_CLASS, KNIU_TAB_CSS, KNIU_TAG_CSS, KNIU_UPLOAD_CSS, KNIU_USER_LOGIN_CSS, KNIU_USER_LOGIN_OVERRIDES_CSS, PRUNABLE_ATTRIBUTE_NAMES, REQUEST, RICH_TEXT_LITERAL_TAG_RE, SCROLL_LOCK_FLAG, SEMANTIC_EMPTY_ATTRIBUTES, SHADOW_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_RE, TEMPLATE, adoptDropdownStyle, adoptSharedStyle, adoptedSheetsFlushScheduled, appendRawStyle, applyScrollLock, attachComponentShadow, buildIconElement, buildPageList, compileTableRowTemplate, componentDefaults, componentLang, componentText, computePopoverLayout, confirm, createRowDeleteHandler, createSearchActions, createTable, debounce, deferAffixTemplateMount, flushPendingAdoptedSheets, getResponseRecords, getShadowInnerHTMLDescriptor, getSharedStyleSheet, hasRichTextLiteralTag, installMarkdownStyles, installOptionsOnlyProtocol, installRichTextStyles, isEmptyAttributeValue, lockDocumentScroll, makeSwitchOptions, mountAffixSlots, mountPopoverPortal, msg, normalizeComponentCss, normalizedCssCache, pendingAdoptedSheets, pruneEmptyAttribute, pruneEmptyAttributeTree, pruneEmptyAttributes, pruneEmptyRootAttributes, readScrollLockOriginals, reconcileDocumentScrollLock, releaseScrollLock, replaceChildrenWithFragment, resolveIconName, resolveTableRowTemplate, sanitizeRichHtml, sanitizeRichHtmlAsync, scheduleAdoptedSheetsFlush, scrollLockNodes, scrollLockOriginals, scrollLockOwners, setLoading, shadowInnerHTMLDescriptor, shadowStyleSheetCache, shadowTemplateCache, shouldContainHost, state, supportsAdoptedStyleSheets, tableTemplateCache, toastInstance, toastTimer, trackPopoverPosition, unlockDocumentScroll, unwrapTablesIn, use, usePage, usePagination, wrapTablesIn, writeScrollLockOriginals } = context;
   if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
   if (!customElements.get('kniu-input')) {
     class KniuSysInput extends HTMLElement {
@@ -10,6 +10,10 @@ export function registerInput(context) {
       constructor() {
         super();
         attachComponentShadow(this);
+        if (Object.prototype.hasOwnProperty.call(this, 'value')) {
+          this.__kniuPendingValue = this.value;
+          delete this.value;
+        }
         this.shadowRoot.innerHTML = `<style>${KNIU_INPUT_CSS}</style>${KNIU_INPUT_TEMPLATE}`;
         adoptSharedStyle(this.shadowRoot, KNIU_INPUT_STATES_CSS);
         this._input = this.shadowRoot.querySelector('.kniu_sys_input');
@@ -63,6 +67,16 @@ export function registerInput(context) {
         this._bindControl(this._input);
         adoptSharedStyle(this.shadowRoot, KNIU_INPUT_TEXTAREA_CSS);
         appendRawStyle(this.shadowRoot, KNIU_INPUT_METRICS_CSS);
+        if (this.__kniuPendingValue !== undefined) {
+          this.value = this.__kniuPendingValue;
+          delete this.__kniuPendingValue;
+        }
+        // 升级前经参数包分支写入的 options（模板克隆路径绑定发生在升级前）在此回放，补齐 type/name 等属性反射。
+        if (Object.prototype.hasOwnProperty.call(this, '__kniuOptionsValue')) {
+          const pendingOptions = this.__kniuOptionsValue;
+          delete this.__kniuOptionsValue;
+          this.options = pendingOptions;
+        }
       }
       connectedCallback() {
         if (!this.hasAttribute('autocomplete')) this.setAttribute('autocomplete', 'off');
@@ -88,6 +102,21 @@ export function registerInput(context) {
       }
       get value() { return this._input.value; }
       set value(value) { this._input.value = value == null ? '' : String(value); this._syncClearable(); }
+      static get OPTION_ATTRIBUTES() { return ['type', 'name', 'placeholder', 'autocomplete', 'autocapitalize', 'maxlength', 'rows', 'disabled', 'readonly', 'required', 'show-password', 'clearable', 'label-width', 'tip']; }
+      get options() { return this.__kniuOptionsValue || {}; }
+      set options(value) {
+        this.__kniuOptionsValue = value && typeof value === 'object' ? value : {};
+        const keys = this.constructor.OPTION_ATTRIBUTES;
+        Object.keys(this.__kniuOptionsValue).forEach((key) => {
+          const item = this.__kniuOptionsValue[key];
+          if (typeof item === 'function') return;
+          const name = String(key).replace(/[A-Z]/g, (char) => '-' + char.toLowerCase());
+          if (keys.indexOf(name) === -1) return;
+          if (item === true) this.setAttribute(name, '');
+          else if (item === false || item == null) this.removeAttribute(name);
+          else this.setAttribute(name, String(item));
+        });
+      }
       focus() { this._input.focus(); }
       select() { this._input.select(); }
       _bindControl(node) {
@@ -127,34 +156,38 @@ export function registerInput(context) {
         ['prepend', 'append'].forEach((name) => {
           const affix = this.shadowRoot.querySelector(`.kniu_sys_input_${name}`);
           const template = Array.from(this.children).find((child) => child.tagName === 'TEMPLATE' && child.hasAttribute(`#${name}`));
-          let templateLabelWidth = '';
           if (template) {
-            templateLabelWidth = template.getAttribute('label-width') || '';
-            const frag = document.createDocumentFragment();
-            const nodes = Array.from(template.content.childNodes);
-            nodes.forEach((node) => {
-              if (node.nodeType === 1) {
-                node.setAttribute('slot', name);
-                if (templateLabelWidth) node.dataset.labelWidth = templateLabelWidth;
-                frag.appendChild(node);
-              } else if (node.nodeType === 3 && node.textContent.trim()) {
-                const span = document.createElement('span');
-                span.setAttribute('slot', name);
-                if (templateLabelWidth) span.dataset.labelWidth = templateLabelWidth;
-                span.appendChild(node);
-                frag.appendChild(span);
-              }
-            });
-            template.replaceWith(frag);
+            deferAffixTemplateMount(template, () => {
+              const templateLabelWidth = template.getAttribute('label-width')
+                || (template.__kniuOptionsValue && template.__kniuOptionsValue.labelWidth)
+                || template.getAttribute('data-label-width')
+                || '';
+              const frag = document.createDocumentFragment();
+              Array.from(template.content.childNodes).forEach((node) => {
+                if (node.nodeType === 1) {
+                  node.setAttribute('slot', name);
+                  if (templateLabelWidth) node.dataset.labelWidth = templateLabelWidth;
+                  frag.appendChild(node);
+                } else if (node.nodeType === 3 && node.textContent.trim()) {
+                  const span = document.createElement('span');
+                  span.setAttribute('slot', name);
+                  if (templateLabelWidth) span.dataset.labelWidth = templateLabelWidth;
+                  span.appendChild(node);
+                  frag.appendChild(span);
+                }
+              });
+              template.replaceWith(frag);
+            }, () => this._mountAffixes());
           }
           const slotContent = this.querySelector(`[slot="${name}"]`);
           const hasSlot = Boolean(slotContent);
           const labelWidth = this.getAttribute('label-width')
-            || templateLabelWidth
             || (slotContent ? (slotContent.dataset.labelWidth || slotContent.getAttribute('label-width') || '') : '');
           if (labelWidth && CSS.supports('width', labelWidth)) {
-            affix.style.width = labelWidth;
-            affix.style.flexBasis = labelWidth;
+            // affix 为 border-box 且横向恰有 1px 外边框（append 在右、prepend 在左），宽度补偿 1px 使内容区等于配置的 labelWidth。
+            const sized = `calc(${labelWidth} + 1px)`;
+            affix.style.width = sized;
+            affix.style.flexBasis = sized;
           } else {
             affix.style.removeProperty('width');
             affix.style.removeProperty('flex-basis');
@@ -260,7 +293,9 @@ export function registerInput(context) {
         if (this._disposeTipTrack) this._disposeTipTrack();
         this._disposeTipTrack = trackPopoverPosition(
           () => { if (!this.isConnected || this._tipPanel.dataset.open !== 'true') return null; return this._input.getBoundingClientRect(); },
-          apply
+          apply,
+          null,
+          this._input
         );
       }
       _hideTip() {
@@ -295,7 +330,7 @@ export function registerInput(context) {
           });
           this._templateObserver.observe(this, { childList: true });
         }
-        this._syncSiblingMargin();
+        queueMicrotask(() => this._syncSiblingMargin());
       }
       disconnectedCallback() {
         if (this._templateObserver) this._templateObserver.disconnect();
@@ -320,7 +355,7 @@ export function registerInput(context) {
         }
       }
       _detectInput() {
-        const hasControl = this.querySelector(':scope > kniu-input, :scope > kniu-date-picker, :scope > kniu-image, :scope > kniu-switch, :scope > kniu-editor') != null;
+        const hasControl = this.querySelector(':scope > kniu-input, :scope > kniu-date-picker, :scope > kniu-image, :scope > kniu-switch, :scope > kniu-editor, :scope > kniu-select') != null;
         this.shadowRoot.querySelector('.kniu_sys_input_group').dataset.containsInput = String(hasControl);
       }
       _sync() {

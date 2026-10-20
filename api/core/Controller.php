@@ -15,7 +15,7 @@ class Controller
    * @param mixed $data 要返回的数据。
    * @param string $msg 响应消息，默认为空。
    * @param int $status 响应状态码，1 表示成功，0 表示失败。
-   * @return void
+   * @return never 方法内部直接输出响应并终止脚本，调用点之后的代码不可达。
    */
   protected function json($data, $msg = '', $status = ErrorCode::SUCCESS)
   {
@@ -479,7 +479,7 @@ class Controller
    * 输出验证码图片。
    *
    * @param \GdImage $image 图片资源。
-   * @return void
+   * @return never 方法输出验证码后终止脚本。
    */
   private function outputCaptchaImage($image)
   {
@@ -687,6 +687,176 @@ class Controller
   }
 
   /**
+   * 吊销账号的前台身份令牌（改密/禁用/降权时与会话吊销同步执行）。
+   *
+   * 令牌是会话之外的另一条认证通道，只销毁会话文件不清令牌，
+   * 被处置账号在令牌有效期内仍可持续获得前台身份（规则 131）。
+   *
+   * @param int $roleId 目标账号 tb_role.id；<=0 直接跳过。
+   * @return void
+   */
+  protected function revokeIdentityToken(int $roleId): void
+  {
+    if ($roleId <= 0) return;
+    Db::name('tb_role')->where('id', '=', $roleId)->update([
+      'identity_token' => Db::raw('NULL'),
+      'token_expire_time' => Db::raw('NULL')
+    ]);
+  }
+
+  /**
+   * 删除指定账号在文件会话存储中的全部会话文件（保留当前请求自身的会话）。
+   *
+   * 覆盖后台（admin_token）与前台（front_token）两类会话。会话序列化格式为
+   * php 处理器的 "键|序列化值"，两类 token 都是扁平数组，故按 "键|a:N:{...}"
+   * 截出内部片断再取 id 即可，无需 session_decode（session_decode 会覆盖
+   * 当前请求的 $_SESSION）。
+   *
+   * @param int $userId 目标账号 tb_role.id。
+   * @return int 实际删除的会话文件数量。
+   */
+  protected function destroySessionsOfUser(int $userId): int
+  {
+    $savePath = (string)session_save_path();
+    // php.ini 支持 "N;/path" 多级目录写法，取分号后的真实路径。
+    $separator = strrpos($savePath, ';');
+    if ($separator !== false) {
+      $savePath = substr($savePath, $separator + 1);
+    }
+    if ($savePath === '' || !is_dir($savePath)) {
+      return 0;
+    }
+    $currentSid = (string)session_id();
+    $files = glob(rtrim($savePath, '/\\') . DIRECTORY_SEPARATOR . 'sess_*');
+    if (!is_array($files)) {
+      return 0;
+    }
+    $removed = 0;
+    foreach ($files as $file) {
+      $sid = substr(basename($file), 5);
+      if ($sid === '' || $sid === $currentSid) {
+        continue;
+      }
+      $content = @file_get_contents($file);
+      if ($content === false || $content === '') {
+        continue;
+      }
+      // 同一文件任一 token 归属目标账号即整个会话文件删除（两键不会同属一文件时分身）。
+      foreach (['admin_token', 'front_token'] as $tokenKey) {
+        $tokenSegment = [];
+        if (preg_match('/' . $tokenKey . '\|a:\d+:\{([^{}]*)\}/', $content, $tokenSegment) !== 1) {
+          continue;
+        }
+        $idSegment = [];
+        if (preg_match('/s:2:"id";i:(\d+);/', $tokenSegment[1], $idSegment) !== 1) {
+          continue;
+        }
+        if ((int)$idSegment[1] === $userId && @unlink($file)) {
+          $removed++;
+          break;
+        }
+      }
+    }
+    return $removed;
+  }
+
+  /** 登录失败锁定阈值（连续失败次数，与邮箱验证码 CODE_FAIL_LIMIT 同口径）。 */
+  private const LOGIN_FAIL_LIMIT = 5;
+
+  /** 登录失败锁定时长（秒，与邮箱验证码 CODE_LOCK_SECONDS 同口径）。 */
+  private const LOGIN_LOCK_SECONDS = 600;
+
+  /**
+   * 持久化登录失败锁（防爆破）：按「场景:账号:IP」维度计数，跨会话生效。
+   *
+   * 存储为 runtime/login_locks/{md5}.json，避免依赖具体表结构与 session
+   * （session 级锁定弃用 Cookie 即可绕过）。登录是低频入口，失败时顺带
+   * 清理同目录过期锁文件（对照「过期数据只在低频入口清一次」口径）。
+   *
+   * @param string $scene 场景前缀（admin / front / bind）。
+   * @param string $username 提交的账号名（区分大小写原样入键）。
+   * @return bool 当前是否处于锁定期。
+   */
+  protected function checkLoginLock(string $scene, string $username): bool
+  {
+    $state = $this->readLoginLockState($scene, $username);
+    return $state !== null && (int)($state['lock_until'] ?? 0) > time();
+  }
+
+  /**
+   * 登记一次登录失败；达到阈值时写入锁定截止时间并清理过期锁。
+   *
+   * @param string $scene 场景前缀。
+   * @param string $username 提交的账号名。
+   * @return void
+   */
+  protected function registerLoginFailure(string $scene, string $username): void
+  {
+    $path = $this->loginLockPath($scene, $username);
+    $state = $this->readLoginLockState($scene, $username);
+    $count = (int)($state['fail_count'] ?? 0) + 1;
+    $next = ['fail_count' => $count, 'lock_until' => 0];
+    if ($count >= self::LOGIN_FAIL_LIMIT) {
+      $next = ['fail_count' => 0, 'lock_until' => time() + self::LOGIN_LOCK_SECONDS];
+    }
+    @mkdir(dirname($path), 0700, true);
+    @file_put_contents($path, json_encode($next), LOCK_EX);
+    if ($count >= self::LOGIN_FAIL_LIMIT) {
+      $this->purgeExpiredLoginLocks();
+    }
+  }
+
+  /**
+   * 登录成功后清除该键的失败计数。
+   *
+   * @param string $scene 场景前缀。
+   * @param string $username 提交的账号名。
+   * @return void
+   */
+  protected function clearLoginLock(string $scene, string $username): void
+  {
+    $path = $this->loginLockPath($scene, $username);
+    if (is_file($path)) {
+      @unlink($path);
+    }
+  }
+
+  /** 登录锁文件路径：键含账号名与客户端 IP，避免同账号跨 IP 互相牵连。 */
+  private function loginLockPath(string $scene, string $username): string
+  {
+    $ip = self::clientIp();
+    $key = $scene . ':' . $username . ':' . $ip;
+    return dirname(__DIR__) . '/runtime/login_locks/' . md5($key) . '.json';
+  }
+
+  /** 读取锁状态文件；不存在或损坏返回 null。 */
+  private function readLoginLockState(string $scene, string $username)
+  {
+    $path = $this->loginLockPath($scene, $username);
+    if (!is_file($path)) {
+      return null;
+    }
+    $decoded = json_decode((string)file_get_contents($path), true);
+    return is_array($decoded) ? $decoded : null;
+  }
+
+  /** 清理已过期的锁文件（仅在登记失败达到阈值这类低频时机调用）。 */
+  private function purgeExpiredLoginLocks(): void
+  {
+    $dir = dirname($this->loginLockPath('', ''));
+    foreach (glob($dir . '/*.json') ?: [] as $file) {
+      $state = json_decode((string)file_get_contents($file), true);
+      $lockUntil = is_array($state) ? (int)($state['lock_until'] ?? 0) : 0;
+      // 锁定已过期，或文件 7 天内无任何更新（fail_count 1~4 的未锁定文件 lock_until 恒为 0，
+      // 只按 lock_until 清理会无界累积——伪造海量随机账号名即可撑爆目录）。
+      $stale = filemtime($file) !== false && filemtime($file) < time() - 7 * 86400;
+      if ($stale || ($lockUntil > 0 && $lockUntil < time())) {
+        @unlink($file);
+      }
+    }
+  }
+
+  /**
    * 渲染视图模板。
    *
    * @param string $view 视图名称。
@@ -743,7 +913,7 @@ class Controller
    * 前端页面守卫与后端接口鉴权必须同口径，否则会出现「前端拦住、后端放行」：
    * 已登录 = 后台会话有效（validateToken）或前台身份令牌已绑定 tb_role 账号。
    * 默认所有接口都需要登录，由 Core\Router 在调用 action 前统一执行；
-   * 免登录接口在 api/config/router.php 的路由注册处显式传 false。
+   * 免登录清单的唯一来源是 api/config/auth.php 的 NO_AUTH（路由注册不再传参）。
    *
    * @param bool $required 是否强制鉴权。true=未登录直接拦截；false=只识别身份，游客放行（返回 0）。
    * @param string $message 未登录时返回给前端的提示语。
@@ -759,12 +929,68 @@ class Controller
   }
 
   /**
-   * 未登录时的拒绝响应（前台默认 HTTP 200 + 业务码 201「登录态无效」）。
+   * 未登录时的拒绝响应（前台默认 HTTP 200 + 业务码 1001「登录态无效」）。
    * 后台在 Core\Base 中覆盖为 HTTP 401（前端请求层据此跳转登录页）。
    */
   protected function rejectLogin(string $message, int $code = ErrorCode::UNAUTHORIZED): void
   {
     $this->json([], $message, $code);
+  }
+
+  /**
+   * 客户端真实 IP：仅当 REMOTE_ADDR 命中受信代理白名单（api/config/proxy.php 的
+   * TRUSTED_PROXIES）时才采信 CF-Connecting-IP——反代后 REMOTE_ADDR 是边缘节点 IP，
+   * 全体访客共享会导致防爆破锁互相误伤、审计 IP 失真。白名单外的请求一律回
+   * REMOTE_ADDR：原实现仅校验头格式即采信，「仅允许 CF 回源」属部署前提而非代码
+   * 强制，伪造该头可轮换绕过登录失败锁、污染审计 IP（2026-10-19 C-M1 修复）。
+   *
+   * @return string
+   */
+  public static function clientIp(): string
+  {
+    $remote = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    $proxied = trim((string)($_SERVER['HTTP_CF_CONNECTING_IP'] ?? ''));
+    if ($proxied === '' || filter_var($proxied, FILTER_VALIDATE_IP) === false) {
+      return $remote;
+    }
+    return self::isTrustedProxy($remote) ? $proxied : $remote;
+  }
+
+  /**
+   * REMOTE_ADDR 是否命中受信代理（精确 IP 或 IPv4 CIDR，如 Cloudflare 回源网段）。
+   *
+   * @param string $ip REMOTE_ADDR 原值。
+   * @return bool
+   */
+  private static function isTrustedProxy(string $ip): bool
+  {
+    if ($ip === '') {
+      return false;
+    }
+    $config = require __DIR__ . '/../config/proxy.php';
+    foreach ((array)($config['TRUSTED_PROXIES'] ?? []) as $range) {
+      $range = trim((string)$range);
+      if ($range === '') {
+        continue;
+      }
+      if ($range === $ip) {
+        return true;
+      }
+      if (preg_match('#^(\d{1,3}(?:\.\d{1,3}){3})/(\d{1,2})$#', $range, $m) === 1
+        && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+        $mask = (int)$m[2];
+        if ($mask > 32) {
+          continue;
+        }
+        $net = ip2long($m[1]);
+        $addr = ip2long($ip);
+        if ($net !== false && $addr !== false
+          && ($net >> (32 - $mask)) === ($addr >> (32 - $mask))) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /**
@@ -828,14 +1054,47 @@ class Controller
     if (!preg_match('/^[a-f0-9]{64}$/', $token)) return null;
     // 全站身份解析热点：只取业务消费的列，避免把 password 哈希读入内存。
     $role = Db::name('tb_role')
-      ->field(['id', 'name', 'nickname', 'is_show', 'comment_ban', 'comment_audit', 'issue_time', 'create_time'])
+      ->field(['id', 'name', 'nickname', 'is_show', 'comment_ban', 'comment_audit', 'token_expire_time', 'issue_time', 'create_time'])
       ->where('identity_token', '=', hash('sha256', $token))
       ->find();
     if (!$role) return null;
+    // 令牌过期即视为未绑定（bindIdentityToken 签发时写入；NULL 为存量令牌，待下次登录续期）。
+    if (!empty($role['token_expire_time']) && strtotime((string)$role['token_expire_time']) < time()) return null;
+    // 禁用账号的令牌立即失效：令牌是会话之外的另一条认证通道，
+    // 不加此闸门则被禁用账号在令牌有效期内仍可经 currentLoginId 获得前台身份。
+    if ((int)($role['is_show'] ?? 1) === 0) return null;
     // 统一返回 tb_role.id、name 与 nickname；昵称不得回退为用户名。
     $role['role_id'] = (int)$role['id'];
     $role['nickname'] = $role['nickname'] ?? '';
     return $role;
+  }
+
+  /**
+   * 把浏览器身份令牌绑定到指定账号：先解除该令牌在其它账号上的旧绑定，再写到目标账号。
+   *
+   * 后台登录同步（AuthController）、前台登录绑定与令牌直绑（IndexController）
+   * 三处逐字重复，收口到此。$keepNickname 控制绑定时是否回写昵称现值
+   * （后台同步与前台登录的历史行为，原样保留）。
+   *
+   * @param string $tokenHash 令牌的 sha256 哈希。
+   * @param int $roleId 目标账号 tb_role.id；<=0 直接跳过。
+   * @param bool $keepNickname 绑定时是否顺带回写当前库中昵称。
+   * @return void
+   */
+  protected function bindIdentityToken(string $tokenHash, int $roleId, bool $keepNickname = false): void
+  {
+    if ($roleId <= 0) return;
+    // Db::update 会过滤 PHP null；使用原始 NULL 才能真正解除旧账号绑定。
+    Db::name('tb_role')->where('identity_token', '=', $tokenHash)->where('id', '<>', $roleId)->update(['identity_token' => Db::raw('NULL')]);
+    $payload = ['identity_token' => $tokenHash];
+    // 令牌有效期随每次绑定（注册/登录/绑定）刷新：绝对过期防长期离线凭据被拖库后永久可用。
+    $authConfig = require __DIR__ . '/../config/auth.php';
+    $expireDays = max(1, (int)($authConfig['IDENTITY_TOKEN_EXPIRE_DAYS'] ?? 30));
+    $payload['token_expire_time'] = date('Y-m-d H:i:s', time() + $expireDays * 86400);
+    if ($keepNickname) {
+      $payload['nickname'] = Db::name('tb_role')->where('id', '=', $roleId)->value('nickname');
+    }
+    Db::name('tb_role')->where('id', '=', $roleId)->update($payload);
   }
 
   /**
@@ -851,8 +1110,8 @@ class Controller
       return 'id';
     }
 
-    $result = Db::query("SELECT COUNT(*) as count FROM {$table} WHERE sid > 0");
-    $hasValidSid = ($result[0]['count'] ?? 0) > 0;
+    $result = Db::query("SELECT 1 FROM {$table} WHERE sid > 0 LIMIT 1");
+    $hasValidSid = !empty($result);
     return $hasValidSid ? 'sid' : 'id';
   }
 
@@ -869,6 +1128,21 @@ class Controller
   protected function likeEncodedPattern(string $keyword): string
   {
     return '%' . htmlspecialchars($keyword, ENT_QUOTES) . '%';
+  }
+
+  /**
+   * 对 LIKE 关键词消毒通配符（%/_ 转为字面匹配，C3-m2）。
+   *
+   * 必须在 Db::escape / htmlspecialchars 编码之后调用：本方法产生的反斜杠
+   * 转义（\%、\_）若再过 Db::escape 会被双转义失效。用于后台管理面的
+   * 原始 SQL LIKE 拼接，防关键词含 %/_ 导致全列全表扫描与语义偏差。
+   *
+   * @param string $escapedKeyword 已过 Db::escape 的关键词。
+   * @return string 通配符已转义的关键词。
+   */
+  protected function escapeLikeWildcards(string $escapedKeyword): string
+  {
+    return str_replace(['%', '_'], ['\\%', '\\_'], $escapedKeyword);
   }
 
   /**

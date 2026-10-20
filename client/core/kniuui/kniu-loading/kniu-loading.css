@@ -16,8 +16,11 @@
 .kniu_sys_loading_mask {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   visibility: hidden;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
@@ -49,17 +52,25 @@
 }
 
 .kniu_sys_loading_spinner {
-  border: 3px solid rgba(102, 126, 234, .25);
-  border-top-color: #667eea;
+  border: 3px solid rgba(64, 158, 255, .25);
+  border-top-color: var(--kniu-color-primary, #409eff);
   border-radius: 50%;
   -webkit-border-radius: 50%;
   -moz-border-radius: 50%;
   -ms-border-radius: 50%;
   -o-border-radius: 50%;
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
+  box-sizing: border-box;
   animation: kniu_sys_loading_spin .7s linear infinite;
   -webkit-animation: kniu_sys_loading_spin .7s linear infinite;
+}
+
+.kniu_sys_loading_text {
+  font-size: 13px;
+  color: #606266;
+  max-width: 80%;
+  text-align: center
 }
 
 @keyframes kniu_sys_loading_spin {

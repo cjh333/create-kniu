@@ -9,7 +9,7 @@
   grid-template-columns: var(--kniu-label-width, 80px) minmax(0, 1fr);
   align-items: stretch;
   border: 1px solid var(--kniu-border-color, #dcdfe6);
-  border-radius: 4px;
+  border-radius: var(--kniu-radius, 4px);
   overflow: hidden;
   background-color: #fff
 }
@@ -22,7 +22,6 @@
   font-size: 14px;
   line-height: 1.5;
   text-align: right;
-  box-sizing: border-box;
   min-height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
   display: flex;
   align-items: center;
@@ -107,4 +106,15 @@
 .kniu_sys_input_group[data-has-label="false"] .kniu_sys_input_content {
   padding: 0;
   background-color: transparent
+}
+
+/* 嵌入自绘控件且单元格带标签时：标签块自画左半边框（上左下 + 左圆角），右边框由内层控件的 border-left 提供，与 kniu-input 的 affix 结构同构 */
+.kniu_sys_input_group[data-contains-input="true"][data-has-label="true"] .kniu_sys_input_label {
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-right: 0;
+  border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -webkit-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -moz-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -ms-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -o-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px)
 }

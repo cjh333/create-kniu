@@ -211,7 +211,10 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     const id = getArticleId();
     if (!id) return;
     const content = detail?.content || '';
-    if (!content.trim()) return;
+    if (!content.trim()) {
+      UI.msg({ content: '评论内容不能为空', type: 'error' });
+      return;
+    }
     commentSubmitActive = true;
     const maxLength = Math.max(0, Number(state.commentOptions.maxLength) || 0);
     if (maxLength && Array.from(content).length > maxLength) {
@@ -222,6 +225,7 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
     const result = await request({
       url: '/submitComment',
       type: 'POST',
+      redirectOnUnauthorized: false,
       data: {
         article_id: id,
         parent_id: detail?.parentId || 0,
@@ -248,7 +252,10 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
 
   async function onSubmitComment(detail) {
     const content = String(detail?.content || '').trim();
-    if (!content) return;
+    if (!content) {
+      UI.msg({ content: '评论内容不能为空', type: 'error' });
+      return;
+    }
     await submitComment(detail);
   }
 
@@ -315,7 +322,13 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
       data: { identity_token: currentIdentity.token },
       redirectOnUnauthorized: false
     });
-    if (result.status !== 1 || !result.data?.nickname) return;
+    if (result.status !== 1 || !result.data?.nickname) {
+      updateCommentOptions({ currentUser: '', currentUserId: 0 });
+      if (result.status === STATUS_UNAUTHORIZED && IDENTITY.getIdentity().nickname) {
+        IDENTITY.clearIdentity();
+      }
+      return;
+    }
     updateCommentOptions({
       currentUser: result.data.nickname,
       currentUserId: Number(result.data.roleId || result.data.id) || 0,
@@ -380,8 +393,7 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
         next: result.data.next || null
       });
       state.loading = false;
-      await loadCurrentIdentity();
-      await loadComments();
+      await Promise.all([loadCurrentIdentity(), loadComments()]);
       if (!IDENTITY.getIdentity().nickname) return;
       const pending = takePendingComment(id);
       if (pending) await submitComment(pending);
@@ -399,13 +411,19 @@ const detailController = controller(({ navigateTo, getRouteData, onRouteChange, 
   }
 
   function toAbout(event) {
-    const roleId = Number(event?.currentTarget?.dataset?.roleId);
+    const roleId = Number(event?.currentTarget?.__kniuOptionsValue?.roleId);
+    if (Number.isInteger(roleId) && roleId > 0) navigateTo('/about', { role_id: roleId });
+  }
+
+  function toCommentAbout(detail) {
+    const roleId = Number(detail?.userId);
     if (Number.isInteger(roleId) && roleId > 0) navigateTo('/about', { role_id: roleId });
   }
 
   state.commentOptions.onSubmit = onSubmitComment;
   state.commentOptions.onLike = onLikeComment;
   state.commentOptions.onDelete = onDeleteComment;
+  state.commentOptions.onUser = toCommentAbout;
   const offRouteChange = onRouteChange(function (hash, prev) {
     if (prev === null || String(hash || '').split('?')[0] !== '/detail') return;
     const routeId = getRouteArticleId();

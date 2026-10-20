@@ -4,7 +4,6 @@
   display: block;
   width: 100%;
   min-width: 0;
-  border-bottom: 1px solid #e5e7eb;
   font-family: var(--kniu-font-family);
   font-size: var(--kniu-navbar-font-size)
 }
@@ -13,10 +12,10 @@ a {
   display: flex;
   align-items: center;
   width: 100%;
-  min-height: 50px;
+  border-bottom: 1px solid #e5e7eb;
+  min-height: max(50px, calc(50 / var(--kniu_vw)));
   padding: 0 16px 0 calc(16px + var(--kniu-navbar-level, 0) * 16px);
   border-radius: 0;
-  box-sizing: border-box;
   color: #4b5563;
   text-decoration: none;
   font: inherit;
@@ -42,11 +41,11 @@ a:hover,
 
 :host([side]) a {
   gap: 8px;
-  min-height: 50px;
+  min-height: max(50px, calc(50 / var(--kniu_vw)));
   width: 100%;
   padding: 0 12px;
+  border-bottom: none;
   border-radius: 11px;
-  box-sizing: border-box;
   color: #9ca5bf
 }
 
@@ -58,13 +57,13 @@ a:hover,
 
 @media(min-width:calc(1280px - 60px)) {
   :host(:not([side])) {
-    width: auto;
-    border-bottom: 0
+    width: auto
   }
 
   :host(:not([side])) a {
+    border-bottom: 0;
     width: auto;
-    min-height: 44px;
+    min-height: max(44px, calc(44 / var(--kniu_vw)));
     padding: 0 18px;
     border-radius: 8px
   }

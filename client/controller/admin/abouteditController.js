@@ -1,15 +1,20 @@
 import MVVM from '../../core/kniumvvm.mjs';
-import { buildMultipartFormData, optionsToValues, toSingleFileList } from '../../core/kniuutil.mjs';
+import AUTH from '../../core/kniuauth.mjs';
+import { createRequestActions } from '../../core/kniupage.mjs';
+import { assignOptionFields, buildMultipartFormData, optionsToValues, required, toSingleFileList } from '../../core/kniuutil.mjs';
+import { adminEditorMaxHeight, makeFail, requireLogin, withSubmitting } from './adminShared.js';
 
 const { controller } = MVVM;
 
-const abouteditController = controller(({ $msg, request, reactive, onMounted }) => {
+const abouteditController = controller(({ $msg, navigateTo, request, reactive, onMounted }) => {
+  const actions = createRequestActions({ request, msg: $msg });
   const state = reactive({
     isSubmitting: false,
     files: [],
+    editorMaxHeight: adminEditorMaxHeight(),
     models: {
       avatar: '',
-      summary: '',
+      summary: required('请输入首页关于我的简述'),
       content: ''
     }
   });
@@ -25,37 +30,23 @@ const abouteditController = controller(({ $msg, request, reactive, onMounted }) 
           $msg({ content: res.msg, type: 'error' });
           return;
         }
-        state.models.avatar = String(res.data?.avatar || '');
-        state.models.summary = String(res.data?.summary || '');
-        state.models.content = String(res.data?.content || '');
-        state.files = toSingleFileList(res.data?.avatar);
+        assignOptionFields(state.models, res.data);
+        state.files = toSingleFileList(state.models.avatar);
       },
-      fail(res) {
-        $msg({ content: res.msg, type: 'error' });
-      }
+      fail: makeFail($msg)
     });
   }
 
   async function onSubmit() {
-    if (state.isSubmitting) return;
-    state.isSubmitting = true;
-    await request({
-      url: '/about_save',
-      type: 'POST',
-      data: buildMultipartFormData(optionsToValues(state.models), { fileField: 'avatar', files: state.files }),
-      success(res) {
-        $msg({ content: res.msg, type: res.status === 1 ? 'success' : 'error' });
-      },
-      fail(res) {
-        $msg({ content: res.msg, type: 'error' });
-      },
-      complete() {
-        state.isSubmitting = false;
-      }
+    await withSubmitting(state, async () => {
+      await actions.post('/about_save', buildMultipartFormData(optionsToValues(state.models), { fileField: 'avatar', files: state.files }));
     });
   }
 
-  onMounted(getAboutDetail);
+  onMounted(function () {
+    if (!requireLogin(AUTH, { $msg, navigateTo })) return;
+    getAboutDetail();
+  });
   return { state, onSubmit };
 });
 

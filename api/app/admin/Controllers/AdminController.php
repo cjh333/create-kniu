@@ -29,19 +29,9 @@ class AdminController extends Base
   // 系统信息。
   public function system(): void
   {
-    // 先提交并**释放会话文件锁**，再做系统探针。
-    //
-    // 原因：PHP 文件会话在一次请求期间持排他锁，而后台轮询与同浏览器的前台请求**共用一个会话**
-    // ⇒ 一个慢 `/system`（无 FFI 的 Windows 上要起 PowerShell，硬超时最坏约 4s）会把前台请求
-    // 全部堵在锁上（现象：静态资源正常、`/api/*` 全部挂起）。
-    // 鉴权与 `admin_token` 的字段补全已在 `Base::__construct()` 完成并写回，本方法之后只读
-    // `$_SESSION`（读不受影响），所以这里提前关会话是安全的。
     if (session_status() === PHP_SESSION_ACTIVE) {
       session_write_close();
     }
-
-    // 轮询意图：'memory'（秒级刷可用内存）/ 'uptime'（分钟级刷运行时间）/ 'all'（默认，全刷）。
-    // 白名单归一，未知值按 'all' 处理——绝不能因为传了个没见过的 scope 就返回一份没刷新的数据。
     $scope = (string)$this->input('post.scope/s', 'all');
     if (!in_array($scope, ['memory', 'uptime'], true)) {
       $scope = 'all';
@@ -52,6 +42,14 @@ class AdminController extends Base
     $info['role']     = $this->mapRoleName($_SESSION['admin_token']['role'] ?? '');
     $info['role_id'] = (int)($_SESSION['admin_token']['role'] ?? 0);
     $info['role_auth'] = (int)($_SESSION['admin_token']['role_auth'] ?? 0);
+    // 服务器敏感面（rootDir/公网 IP/MySQL 版本/服务器软件/平台架构）仅超管（role=1）可见（m3）；
+    // 非超管后台账号（role_auth=1）仍需本接口的运行态（内存/uptime/时钟）与登录身份回显，
+    // 缺失字段由前端按 '—' 兜底展示，不破坏后台首页加载。
+    if ((int)($_SESSION['admin_token']['role'] ?? 0) !== 1) {
+      foreach (['platform', 'arch', 'server', 'ip', 'rootDir', 'mysqlVer'] as $sensitiveKey) {
+        unset($info[$sensitiveKey]);
+      }
+    }
     $this->json($info);
   }
 
@@ -70,15 +68,6 @@ class AdminController extends Base
     return $roleMap[$roleId] ?? ((string)($roleId ?: ''));
   }
 
-  /**
-   * 获取系统信息。
-   *
-   * @param string $scope 刷新范围：'memory'（只刷可用内存）/ 'uptime'（只刷运行时间）/ 'all'（全刷）。
-   *                      两条轮询各有各的节奏（秒级 / 分钟级），各自只认自己的 scope，
-   *                      免得高频那条每次都白算一遍分钟级的运行时间、反之亦然。
-   *                      未刷新的字段取自缓存，调用方本就不看它们。
-   * @return array 系统信息。
-   */
   private function getSystemInfo(string $scope = 'all'): array
   {
     $cacheFile = SystemHelper::getSystemInfoCacheFile();
@@ -87,23 +76,15 @@ class AdminController extends Base
     if (file_exists($cacheFile) && (time() - filemtime($cacheFile)) < $cacheTime) {
       $cachedData = json_decode(file_get_contents($cacheFile), true);
       if ($cachedData && is_array($cachedData)) {
-        return $this->refreshDynamicInfo($cachedData, $scope);
+        return $scope === 'all' ? $cachedData : $this->refreshDynamicInfo($cachedData, $scope);
       }
     }
 
     $systemInfo = $this->buildSystemInfo();
     file_put_contents($cacheFile, json_encode($systemInfo));
-
-    return $this->refreshDynamicInfo($systemInfo, $scope);
+    return $scope === 'all' ? $systemInfo : $this->refreshDynamicInfo($systemInfo, $scope);
   }
 
-  /**
-   * 按 scope 刷新动态字段。
-   *
-   * @param array $info 基础数据（来自缓存或新构建）。
-   * @param string $scope 刷新范围，取值见 getSystemInfo()。
-   * @return array 刷新后的数据。
-   */
   private function refreshDynamicInfo(array $info, string $scope): array
   {
     if ($scope === 'all' || $scope === 'memory') {
@@ -112,11 +93,6 @@ class AdminController extends Base
     }
 
     if ($scope === 'all' || $scope === 'uptime') {
-      // 缓存里的 uptime 最多已陈旧 $cacheTime 秒，而它只按分钟显示 ⇒ 现算，
-      // 免得前端每分钟取到的仍是「上上分钟」的值。
-      // 注意：**没有 FFI 的 Windows 上这次读要起 PowerShell（含硬超时最坏约 4s）**，
-      // 所以配套下发的 `uptimeRefreshMs` 必须 fail-closed（读不到 → 60s，绝不能落到 1s 档）：
-      // 「慢探针 + 快轮询」会把 PHP 进程与 Session 文件锁持续占满，导致整站 504。
       $info['uptime'] = SystemHelper::getSystemUptime();
       $info['uptimeRefreshMs'] = SystemHelper::getUptimeRefreshMs();
     }
@@ -155,13 +131,26 @@ class AdminController extends Base
       'platform' => PHP_OS,
       'arch' => php_uname('m'),
       'server' => $_SERVER['SERVER_SOFTWARE'] ?? '',
-      'ip' => $_SERVER['SERVER_ADDR'] ?? gethostbyname(gethostname()),
+      'ip' => SystemHelper::getPublicIp((string)($_SERVER['SERVER_ADDR'] ?? gethostbyname(gethostname()))),
       'rootDir' => $_SERVER['DOCUMENT_ROOT'] ?? '',
       'mysqlVer' => $this->getCachedMysqlVersion(),
-      'totalMemory' => SystemHelper::getTotalMemory()
+      'totalMemory' => SystemHelper::getTotalMemory(),
+      'uploadMaxSize' => $this->getUploadMaxSize()
     ];
 
     return $staticCache;
+  }
+
+  /**
+   * 获取上传配置中的最大文件大小，作为后台系统信息的唯一数据源。
+   *
+   * @return string 格式化后的最大上传文件大小。
+   */
+  private function getUploadMaxSize(): string
+  {
+    $config = require dirname(__DIR__, 3) . '/config/upload.php';
+    $maxSize = is_array($config) ? (int)($config['MAX_SIZE'] ?? 0) : 0;
+    return $maxSize > 0 ? SystemHelper::formatBytes($maxSize, 0) : '—';
   }
 
   // 获取 MySQL 版本。

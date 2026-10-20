@@ -1,61 +1,28 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import AUTH from '../../core/kniuauth.mjs';
-import { buildMultipartFormData, fillOptionsFromResponse, optionsToValues, toSingleFileList } from '../../core/kniuutil.mjs';
+import { createRequestActions } from '../../core/kniupage.mjs';
+import { isAdminRole, makeFail, requireLogin, withSubmitting } from './adminShared.js';
+import { buildMultipartFormData, fillOptionsFromResponse, optionsToValues, required, toSingleFileList } from '../../core/kniuutil.mjs';
 
 const { controller } = MVVM;
 
-const seoController = controller(({ $msg, request, reactive, onMounted }) => {
+const seoController = controller(({ $msg, navigateTo, request, reactive, onMounted }) => {
+  const actions = createRequestActions({ request, msg: $msg });
   const state = reactive({
-    canEditContent: Number(AUTH.getUser()?.roleId || AUTH.getUser()?.role || 0) === 1 || Number(AUTH.getUser()?.roleAuth || 0) === 1,
+    canEditContent: isAdminRole(AUTH.getUser()),
     isSubmitting: false,
     files: [],
     seoModel: {
       id: '',
-      title: {
-        value: '',
-        condition: /^(?=.*\S).+$/,
-        message: '请输入网站名称'
-      },
-      url: {
-        value: '',
-        condition: /^(?=.*\S).+$/,
-        message: '请输入网站域名'
-      },
-      logo: {
-        value: '',
-        condition: /^(?=.*\S).+$/,
-        message: '请选择网站logo'
-      },
-      description: {
-        value: '',
-        condition: /^(?=.*\S).+$/,
-        message: '请输入description描述'
-      },
-      keywords: {
-        value: '',
-        condition: /^(?=.*\S).+$/,
-        message: '请输入keywords关键词'
-      },
-      author: {
-        value: '',
-        condition: /^(?=.*\S).+$/,
-        message: '请输入author作者'
-      },
-      copyright: {
-        value: '',
-        condition: /^(?=.*\S).+$/,
-        message: '请输入版权'
-      },
-      icp: {
-        value: '',
-        condition: /^(?=.*\S).+$/,
-        message: '请输入备案号'
-      },
-      email: {
-        value: '',
-        condition: /^(?=.*\S).+$/,
-        message: '请输入邮箱'
-      },
+      title: required('请输入网站名称'),
+      url: required('请输入网站域名'),
+      logo: required('请选择网站logo'),
+      description: required('请输入description描述'),
+      keywords: required('请输入keywords关键词'),
+      author: required('请输入author作者'),
+      copyright: required('请输入版权'),
+      icp: required('请输入备案号'),
+      email: required('请输入邮箱'),
     }
   });
 
@@ -76,7 +43,7 @@ const seoController = controller(({ $msg, request, reactive, onMounted }) => {
         if (!item) return;
         state.files = toSingleFileList(state.seoModel.logo.value);
       },
-      fail(res) { $msg({ content: res.msg, type: 'error' }); }
+      fail: makeFail($msg)
     }).finally(function () {
       seoRequest = null;
     });
@@ -86,31 +53,19 @@ const seoController = controller(({ $msg, request, reactive, onMounted }) => {
 
   async function onSubmit() {
     if (!state.canEditContent) return;
-    if (state.isSubmitting) {
-      return;
-    }
-    state.isSubmitting = true;
-    const data = buildMultipartFormData(optionsToValues(state.seoModel), {
-      fileField: 'logo',
-      files: state.files
-    });
-    await request({
-      url: '/seo_update',
-      type: 'POST',
-      data: data,
-      success(res) {
-        $msg({ content: res.msg, type: res.status === 1 ? 'success' : 'error' });
-      },
-      fail(res) {
-        $msg({ content: res.msg, type: 'error' });
-      },
-      complete() {
-        state.isSubmitting = false;
-      }
+    await withSubmitting(state, async () => {
+      const data = buildMultipartFormData(optionsToValues(state.seoModel), {
+        fileField: 'logo',
+        files: state.files
+      });
+      await actions.post('/seo_update', data);
     });
   }
 
-  onMounted(getSeoList);
+  onMounted(function () {
+    if (!requireLogin(AUTH, { $msg, navigateTo })) return;
+    getSeoList();
+  });
 
   return { state, onSubmit };
 });

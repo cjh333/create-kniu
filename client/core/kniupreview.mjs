@@ -2,13 +2,12 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import SERVER from '../config/server.js';
-import { NO_CACHE, sendStaticBody, staticCacheHeaders } from './kniustatic.mjs';
+import { NO_CACHE, resolveWithinRoot, sendStaticBody, staticCacheHeaders } from './kniustatic.mjs';
 import { MIME_TYPES, handleApiRequest, resolveRequestProtocol } from './kniuproxy.mjs';
 
 const ROOT = normalize(join(process.cwd(), 'dist'));
 const VIEW_INDEX = join(ROOT, 'index.html');
 const UPLOAD_ROOT = normalize(join(process.cwd(), 'public'));
-
 const server = createServer(async function (request, response) {
   let PATH_NAME = '';
   try {
@@ -20,13 +19,11 @@ const server = createServer(async function (request, response) {
       return;
     }
     const isUpload = PATH_NAME === '/upload' || PATH_NAME.startsWith('/upload/');
-    const ALLOWED_ROOT = isUpload ? UPLOAD_ROOT : ROOT;
     let file = PATH_NAME === '/'
       ? VIEW_INDEX
       : isUpload
-        ? normalize(join(UPLOAD_ROOT, PATH_NAME.replace(/^\/+/, '')))
-        : normalize(join(ROOT, PATH_NAME.replace(/^\/+/, '')));
-    if (!file.startsWith(`${ALLOWED_ROOT}\\`) && file !== ALLOWED_ROOT) throw new Error('Invalid path');
+        ? resolveWithinRoot(UPLOAD_ROOT, PATH_NAME)
+        : resolveWithinRoot(ROOT, PATH_NAME);
     if ((await stat(file)).isDirectory()) file = join(file, 'index.html');
     const mime = MIME_TYPES[extname(file)] || 'application/octet-stream';
     const cacheHeaders = staticCacheHeaders(file, PATH_NAME, mime);
@@ -46,6 +43,13 @@ const server = createServer(async function (request, response) {
       response.end('Not found');
     }
   }
+});
+server.on('error', function (err) {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`预览端口 ${SERVER.PORT + 1} 已被占用：请先运行 npm run kill 释放本项目端口后重试。`);
+    process.exit(1);
+  }
+  throw err;
 });
 server.listen(SERVER.PORT + 1, SERVER.HOST, function () {
   const PROTOCOL = typeof server.setSecureContext === 'function' ? 'https' : 'http';

@@ -1,8 +1,7 @@
-<style>
+<style scoped>
   @import url("@kniu/kniu.min.css");
   @import url("@style/web.min.css");
-  @import url("@style/admin/admin.min.css");
-  @import url("@style/admin/admin_home.min.css");
+  @import url("@style/admin/admin_all.min.css");
 </style>
 <section class="index_cells">
   <div class="admin_content_body index_cell index_cell_2">
@@ -25,14 +24,14 @@
                   <tr>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">你好，{{ username }}</p>
+                        <p class="table_text1">你好，{{username}}</p>
                       </div>
                     </td>
                   </tr>
                   <tr>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">所属角色：{{ role }}</p>
+                        <p class="table_text1">所属角色：{{role}}</p>
                       </div>
                     </td>
                   </tr>
@@ -63,7 +62,7 @@
                     </td>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">{{ platform }}</p>
+                        <p class="table_text1">{{platform}}</p>
                       </div>
                     </td>
                   </tr>
@@ -75,7 +74,7 @@
                     </td>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">{{ arch }}</p>
+                        <p class="table_text1">{{arch}}</p>
                       </div>
                     </td>
                   </tr>
@@ -87,7 +86,7 @@
                     </td>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">{{ server }} ({{ ip }})</p>
+                        <p class="table_text1">{{server}} ({{ip}})</p>
                       </div>
                     </td>
                   </tr>
@@ -99,7 +98,7 @@
                     </td>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">{{ rootDir }}</p>
+                        <p class="table_text1">{{rootDir}}</p>
                       </div>
                     </td>
                   </tr>
@@ -111,19 +110,19 @@
                     </td>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">{{ mysqlVersion }}</p>
+                        <p class="table_text1">{{mysqlVersion}}</p>
                       </div>
                     </td>
                   </tr>
                   <tr>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">上传文件大小</p>
+                        <p class="table_text1">上传文件最大值</p>
                       </div>
                     </td>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">50M</p>
+                        <p class="table_text1">{{uploadMaxSize}}</p>
                       </div>
                     </td>
                   </tr>
@@ -135,7 +134,7 @@
                     </td>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">{{ uptime }}</p>
+                        <p class="table_text1">{{uptime}}</p>
                       </div>
                     </td>
                   </tr>
@@ -147,7 +146,7 @@
                     </td>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">{{ totalMemory }}</p>
+                        <p class="table_text1">{{totalMemory}}</p>
                       </div>
                     </td>
                   </tr>
@@ -159,7 +158,7 @@
                     </td>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">{{ currentMemory }}</p>
+                        <p class="table_text1">{{currentMemory}}</p>
                       </div>
                     </td>
                   </tr>
@@ -171,7 +170,7 @@
                     </td>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">{{ currentTime }}</p>
+                        <p class="table_text1">{{currentTime}}</p>
                       </div>
                     </td>
                   </tr>
@@ -183,7 +182,7 @@
                     </td>
                     <td>
                       <div class="kniu_table_cell">
-                        <p class="table_text1">{{ utcTime }}</p>
+                        <p class="table_text1">{{utcTime}}</p>
                       </div>
                     </td>
                   </tr>

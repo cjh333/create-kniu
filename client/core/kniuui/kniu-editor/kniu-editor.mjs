@@ -1,5 +1,7 @@
+import { renderMarkdownArticle } from '../../kniucode.mjs';
+import { isDangerousUrl } from '../../kniusanitizer.mjs';
 export function registerEditor(context) {
-  const { BOOLEAN_ATTRIBUTES, IDENTITY, KNIU_BACKTOP_CSS, KNIU_BADGE_CSS, KNIU_BASE_CONTAIN_CSS, KNIU_BASE_FONT_CSS, KNIU_BTN_CSS, KNIU_BTN_GROUP_CSS, KNIU_BTN_METRICS_CSS, KNIU_BTN_OVERRIDES_CSS, KNIU_COMMENT_CSS, KNIU_CONTAIN_EXCLUDE_TAGS, KNIU_CONTENT_TABLE_CSS, KNIU_CONTENT_TABLE_DOC_CSS, KNIU_DATE_PICKER_CSS, KNIU_DATE_PICKER_OVERRIDES_CSS, KNIU_DROPDOWN_CSS, KNIU_DROPDOWN_OPTION_CSS, KNIU_EDITOR_CSS, KNIU_EDITOR_OVERRIDE_CSS, KNIU_EDITOR_PRINT_CSS, KNIU_EMPTY_CSS, KNIU_FONT_FACE_CSS, KNIU_FONT_FAMILY, KNIU_FONT_MONO_FAMILY, KNIU_FONT_SERIF_FAMILY, KNIU_I18N, KNIU_ICON_CSS, KNIU_ICON_FONT_NAMES, KNIU_ICON_NAMES, KNIU_ICON_SVG, KNIU_IMAGE_CSS, KNIU_IMAGE_OVERRIDES_CSS, KNIU_INPUT_AFFIX_CSS, KNIU_INPUT_CSS, KNIU_INPUT_GROUP_CSS, KNIU_INPUT_METRICS_CSS, KNIU_INPUT_PASSWORD_ACTIONS_CSS, KNIU_INPUT_PASSWORD_CSS, KNIU_INPUT_STATES_CSS, KNIU_INPUT_TEXTAREA_CSS, KNIU_INPUT_TIP_CSS, KNIU_LIKE_CSS, KNIU_LOADING_CSS, KNIU_MARKDOWN_CSS, KNIU_MODAL_CONFIRM_CSS, KNIU_MODAL_CSS, KNIU_MSG_CSS, KNIU_NAVBAR_CELLS_CSS, KNIU_NAVBAR_CELL_CSS, KNIU_NAVBAR_CSS, KNIU_NAVBAR_PLACEHOLDER_CSS, KNIU_PAGE_CSS, KNIU_RADIO_GROUP_CSS, KNIU_RICHTEXT_CSS, KNIU_SELECT_CSS, KNIU_STATUS_CSS, KNIU_SUB_NAVBAR_CSS, KNIU_SUB_NAVBAR_OVERRIDES_CSS, KNIU_SWITCH_CSS, KNIU_TABLE_CLASS, KNIU_TABLE_COL_CSS, KNIU_TABLE_CSS, KNIU_TABLE_WRAP_CLASS, KNIU_TAB_CSS, KNIU_TAG_CSS, KNIU_UPLOAD_CSS, KNIU_USER_LOGIN_CSS, KNIU_USER_LOGIN_OVERRIDES_CSS, PRUNABLE_ATTRIBUTE_NAMES, REQUEST, RICH_TEXT_LITERAL_TAG_RE, SCROLL_LOCK_FLAG, SEMANTIC_EMPTY_ATTRIBUTES, SHADOW_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_RE, TEMPLATE, adoptDropdownStyle, adoptSharedStyle, adoptedSheetsFlushScheduled, appendRawStyle, applyScrollLock, attachComponentShadow, buildIconElement, buildPageList, compileTableRowTemplate, componentDefaults, componentLang, componentText, computePopoverLayout, confirm, createRowDeleteHandler, createSearchActions, createTable, debounce, flushPendingAdoptedSheets, getResponseRecords, getShadowInnerHTMLDescriptor, getSharedStyleSheet, hasRichTextLiteralTag, installMarkdownStyles, installOptionsOnlyProtocol, installRichTextStyles, isEmptyAttributeValue, lockDocumentScroll, makeSwitchOptions, mountAffixSlots, mountPopoverPortal, msg, normalizeComponentCss, normalizedCssCache, pendingAdoptedSheets, pruneEmptyAttribute, pruneEmptyAttributeTree, pruneEmptyAttributes, pruneEmptyRootAttributes, readScrollLockOriginals, reconcileDocumentScrollLock, releaseScrollLock, replaceChildrenWithFragment, resolveIconName, resolveTableRowTemplate, sanitizeRichHtml, sanitizeRichHtmlAsync, scheduleAdoptedSheetsFlush, scrollLockNodes, scrollLockOriginals, scrollLockOwners, setLoading, shadowInnerHTMLDescriptor, shadowStyleSheetCache, shadowTemplateCache, shouldContainHost, state, supportsAdoptedStyleSheets, tableTemplateCache, toastInstance, toastTimer, trackPopoverPosition, unlockDocumentScroll, unwrapTablesIn, use, useListPage, usePagination, wrapTablesIn, writeScrollLockOriginals } = context;
+  const { BOOLEAN_ATTRIBUTES, IDENTITY, KNIU_BACKTOP_CSS, KNIU_BADGE_CSS, KNIU_BASE_CONTAIN_CSS, KNIU_BASE_FONT_CSS, KNIU_BTN_CSS, KNIU_BTN_GROUP_CSS, KNIU_BTN_METRICS_CSS, KNIU_BTN_OVERRIDES_CSS, KNIU_COMMENT_CSS, KNIU_CONTAIN_EXCLUDE_TAGS, KNIU_CONTENT_TABLE_CSS, KNIU_CONTENT_TABLE_DOC_CSS, KNIU_DATE_PICKER_CSS, KNIU_DATE_PICKER_OVERRIDES_CSS, KNIU_DROPDOWN_CSS, KNIU_DROPDOWN_OPTION_CSS, KNIU_EDITOR_CSS, KNIU_EDITOR_OVERRIDE_CSS, KNIU_EDITOR_PRINT_CSS, KNIU_EMPTY_CSS, KNIU_FONT_FACE_CSS, KNIU_FONT_FAMILY, KNIU_FONT_MONO_FAMILY, KNIU_FONT_SERIF_FAMILY, KNIU_I18N, KNIU_ICON_CSS, KNIU_ICON_FONT_NAMES, KNIU_ICON_NAMES, KNIU_ICON_SVG, KNIU_IMAGE_CSS, KNIU_IMAGE_OVERRIDES_CSS, KNIU_INPUT_AFFIX_CSS, KNIU_INPUT_CSS, KNIU_INPUT_GROUP_CSS, KNIU_INPUT_METRICS_CSS, KNIU_INPUT_PASSWORD_ACTIONS_CSS, KNIU_INPUT_PASSWORD_CSS, KNIU_INPUT_STATES_CSS, KNIU_INPUT_TEXTAREA_CSS, KNIU_INPUT_TIP_CSS, KNIU_LIKE_CSS, KNIU_LOADING_CSS, KNIU_MARKDOWN_CSS, KNIU_MODAL_CONFIRM_CSS, KNIU_MODAL_CSS, KNIU_MSG_CSS, KNIU_NAVBAR_CELLS_CSS, KNIU_NAVBAR_CELL_CSS, KNIU_NAVBAR_CSS, KNIU_NAVBAR_PLACEHOLDER_CSS, KNIU_PAGE_CSS, KNIU_RADIO_GROUP_CSS, KNIU_RICHTEXT_CSS, KNIU_SELECT_CSS, KNIU_STATUS_CSS, KNIU_SUB_NAVBAR_CSS, KNIU_SUB_NAVBAR_OVERRIDES_CSS, KNIU_SWITCH_CSS, KNIU_TABLE_CLASS, KNIU_TABLE_COL_CSS, KNIU_TABLE_CSS, KNIU_TABLE_WRAP_CLASS, KNIU_TAB_CSS, KNIU_TAG_CSS, KNIU_UPLOAD_CSS, KNIU_USER_LOGIN_CSS, KNIU_USER_LOGIN_OVERRIDES_CSS, PRUNABLE_ATTRIBUTE_NAMES, REQUEST, RICH_TEXT_LITERAL_TAG_RE, SCROLL_LOCK_FLAG, SEMANTIC_EMPTY_ATTRIBUTES, SHADOW_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_RE, TEMPLATE, adoptDropdownStyle, adoptSharedStyle, adoptedSheetsFlushScheduled, appendRawStyle, applyScrollLock, attachComponentShadow, buildIconElement, buildPageList, compileTableRowTemplate, componentDefaults, componentLang, componentText, computePopoverLayout, confirm, createRowDeleteHandler, createSearchActions, createTable, debounce, deferAffixTemplateMount, flushPendingAdoptedSheets, getResponseRecords, getShadowInnerHTMLDescriptor, getSharedStyleSheet, hasRichTextLiteralTag, installMarkdownStyles, installOptionsOnlyProtocol, installRichTextStyles, isEmptyAttributeValue, lockDocumentScroll, makeSwitchOptions, mountAffixSlots, mountPopoverPortal, msg, normalizeComponentCss, normalizedCssCache, pendingAdoptedSheets, pruneEmptyAttribute, pruneEmptyAttributeTree, pruneEmptyAttributes, pruneEmptyRootAttributes, readScrollLockOriginals, reconcileDocumentScrollLock, releaseScrollLock, replaceChildrenWithFragment, resolveIconName, resolveTableRowTemplate, sanitizeRichHtml, sanitizeRichHtmlAsync, scheduleAdoptedSheetsFlush, scrollLockNodes, scrollLockOriginals, scrollLockOwners, setLoading, shadowInnerHTMLDescriptor, shadowStyleSheetCache, shadowTemplateCache, shouldContainHost, state, supportsAdoptedStyleSheets, tableTemplateCache, toastInstance, toastTimer, trackPopoverPosition, unlockDocumentScroll, unwrapTablesIn, use, usePage, usePagination, wrapTablesIn, writeScrollLockOriginals } = context;
   if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
   if (customElements.get('kniu-editor')) return;
 
@@ -14,10 +16,8 @@ export function registerEditor(context) {
   var EDITOR_ICON_CLEAR_FORMAT = '<kniu-icon icon="unbrush" aria-hidden="true"></kniu-icon>';
 
   var EDITOR_TOOLBAR_ITEMS = {
-    'markdown': '<button type="button" class="kniu_sys_editor_btn" data-action="markdown" title="Markdown"><kniu-icon icon="markdown" aria-hidden="true"></kniu-icon></button>',
     'undo': '<button type="button" class="kniu_sys_editor_btn" data-cmd="undo" title="撤销"><kniu-icon icon="back" aria-hidden="true"></kniu-icon></button>',
     'redo': '<button type="button" class="kniu_sys_editor_btn" data-cmd="redo" title="重做"><kniu-icon icon="front" aria-hidden="true"></kniu-icon></button>',
-    'preview': '<button type="button" class="kniu_sys_editor_btn" data-action="preview" title="预览"><kniu-icon icon="view" aria-hidden="true"></kniu-icon></button>',
     'print': '<button type="button" class="kniu_sys_editor_btn" data-action="print" title="打印"><kniu-icon icon="print" aria-hidden="true"></kniu-icon></button>',
     'code': '<button type="button" class="kniu_sys_editor_btn" data-action="code" title="代码模式"><kniu-icon icon="code" aria-hidden="true"></kniu-icon></button>',
     'maximize': '<button type="button" class="kniu_sys_editor_btn" data-action="maximize" title="最大化/还原"><kniu-icon icon="fullscreen_open" aria-hidden="true"></kniu-icon></button>',
@@ -37,7 +37,7 @@ export function registerEditor(context) {
     'insertUnorderedList': '<button type="button" class="kniu_sys_editor_btn" data-cmd="insertUnorderedList" title="无序列表"><kniu-icon icon="unlist" aria-hidden="true"></kniu-icon></button>',
     'lineheight': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_lineheight" data-action="lineheight" title="行距" aria-label="选择行距"><kniu-icon icon="lineheight" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
     'spacing': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_spacing" data-action="spacing" title="字距" aria-label="选择字距"><kniu-icon icon="spacing" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
-    'heading': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_heading" data-action="heading" title="标题" aria-label="选择标题"><kniu-icon icon="h1" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+    'heading': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_heading" data-action="heading" title="标题" aria-label="选择标题"><kniu-icon icon="h" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
     'h1': '<button type="button" class="kniu_sys_editor_btn" data-block="h1" title="标题1"><kniu-icon icon="h1" aria-hidden="true"></kniu-icon></button>',
     'h2': '<button type="button" class="kniu_sys_editor_btn" data-block="h2" title="标题2"><kniu-icon icon="h2" aria-hidden="true"></kniu-icon></button>',
     'h3': '<button type="button" class="kniu_sys_editor_btn" data-block="h3" title="标题3"><kniu-icon icon="h3" aria-hidden="true"></kniu-icon></button>',
@@ -75,8 +75,36 @@ export function registerEditor(context) {
     ['table', 'hr', 'emoticons'],
     ['image', 'media', 'link', 'unlink'],
     ['inlineCode', 'pre'],
-    ['print', 'preview', 'maximize'],
-    ['markdown']
+    ['print', 'maximize']
+  ];
+
+  var EDITOR_MD_TOOLBAR_ITEMS = {
+    'undo': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="undo" title="撤销"><kniu-icon icon="back" aria-hidden="true"></kniu-icon></button>',
+    'redo': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="redo" title="重做"><kniu-icon icon="front" aria-hidden="true"></kniu-icon></button>',
+    'bold': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="bold" title="粗体"><kniu-icon icon="font_strong" aria-hidden="true"></kniu-icon></button>',
+    'italic': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="italic" title="斜体"><kniu-icon icon="font_i" aria-hidden="true"></kniu-icon></button>',
+    'strike': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="strike" title="删除线"><kniu-icon icon="font_del" aria-hidden="true"></kniu-icon></button>',
+    'inlineCode': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="inlineCode" title="行内代码"><kniu-icon icon="inlinecode" aria-hidden="true"></kniu-icon></button>',
+    'heading': '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_heading" data-md-cmd="heading" title="标题"><kniu-icon icon="h" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+    'quote': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="quote" title="引用"><kniu-icon icon="quotes" aria-hidden="true"></kniu-icon></button>',
+    'code': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="code" title="代码块"><kniu-icon icon="pre" aria-hidden="true"></kniu-icon></button>',
+    'ul': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="ul" title="无序列表"><kniu-icon icon="unlist" aria-hidden="true"></kniu-icon></button>',
+    'ol': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="ol" title="有序列表"><kniu-icon icon="list" aria-hidden="true"></kniu-icon></button>',
+    'link': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="link" title="链接"><kniu-icon icon="link" aria-hidden="true"></kniu-icon></button>',
+    'image': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="image" title="图片"><kniu-icon icon="picture" aria-hidden="true"></kniu-icon></button>',
+    'hr': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="hr" title="分割线"><kniu-icon icon="line_x" aria-hidden="true"></kniu-icon></button>',
+    'table': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="table" title="表格"><kniu-icon icon="table" aria-hidden="true"></kniu-icon></button>',
+    'preview': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="preview" title="预览"><kniu-icon icon="view" aria-hidden="true"></kniu-icon></button>',
+    'maximize': '<button type="button" class="kniu_sys_editor_btn" data-md-cmd="maximize" title="最大化/还原"><kniu-icon icon="fullscreen_open" aria-hidden="true"></kniu-icon></button>'
+  };
+
+  var EDITOR_MARKDOWN_TOOLBAR = [
+    ['undo', 'redo'],
+    ['bold', 'italic', 'strike', 'inlineCode'],
+    ['heading', 'quote'],
+    ['code', 'ul', 'ol'],
+    ['link', 'image', 'hr', 'table'],
+    ['preview', 'maximize']
   ];
 
   function wrapEditorTables(editor, skipNode) {
@@ -88,7 +116,7 @@ export function registerEditor(context) {
   }
 
   class KniuSysEditor extends HTMLElement {
-    static get observedAttributes() { return ['name', 'placeholder', 'readonly', 'disabled', 'toolbar', 'mode']; }
+    static get observedAttributes() { return ['name', 'placeholder', 'readonly', 'disabled', 'toolbar', 'type']; }
     constructor() {
       super();
       attachComponentShadow(this);
@@ -102,7 +130,6 @@ export function registerEditor(context) {
         '<button type="button" class="kniu_sys_editor_btn" data-cmd="redo" title="重做"><kniu-icon icon="front" aria-hidden="true"></kniu-icon></button>',
         '<span class="kniu_sys_editor_divider"></span>',
         // 视图
-        '<button type="button" class="kniu_sys_editor_btn" data-action="preview" title="预览"><kniu-icon icon="view" aria-hidden="true"></kniu-icon></button>',
         '<button type="button" class="kniu_sys_editor_btn" data-action="print" title="打印"><kniu-icon icon="print" aria-hidden="true"></kniu-icon></button>',
         '<button type="button" class="kniu_sys_editor_btn" data-action="code" title="代码模式"><kniu-icon icon="code" aria-hidden="true"></kniu-icon></button>',
         '<button type="button" class="kniu_sys_editor_btn" data-action="maximize" title="最大化/还原"><kniu-icon icon="fullscreen_open" aria-hidden="true"></kniu-icon></button>',
@@ -128,11 +155,9 @@ export function registerEditor(context) {
         '<button type="button" class="kniu_sys_editor_btn" data-cmd="insertOrderedList" title="有序列表"><kniu-icon icon="list" aria-hidden="true"></kniu-icon></button>',
         '<button type="button" class="kniu_sys_editor_btn" data-cmd="insertUnorderedList" title="无序列表"><kniu-icon icon="unlist" aria-hidden="true"></kniu-icon></button>',
         '<span class="kniu_sys_editor_divider"></span>',
-        // 行距（下拉按钮，与字体同款交互；由 _buildToolbar 按配置重建）
         '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_lineheight" data-action="lineheight" title="行距" aria-label="选择行距"><kniu-icon icon="lineheight" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
         '<span class="kniu_sys_editor_divider"></span>',
-        // 块级（heading 标题下拉 H2~H6 + 段落；由 _buildToolbar 按配置重建）
-        '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_heading" data-action="heading" title="标题" aria-label="选择标题"><kniu-icon icon="h1" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
+        '<button type="button" class="kniu_sys_editor_btn kniu_sys_editor_heading" data-action="heading" title="标题" aria-label="选择标题"><kniu-icon icon="h" aria-hidden="true"></kniu-icon><span class="kniu_sys_editor_font_arrow">▾</span></button>',
         '<button type="button" class="kniu_sys_editor_btn" data-block="p" title="段落"><kniu-icon icon="p" aria-hidden="true"></kniu-icon></button>',
         '<span class="kniu_sys_editor_divider"></span>',
         '<button type="button" class="kniu_sys_editor_btn" data-block="blockquote" title="引用"><kniu-icon icon="quotes" aria-hidden="true"></kniu-icon></button>',
@@ -157,8 +182,15 @@ export function registerEditor(context) {
         '<button type="button" class="kniu_sys_editor_btn" data-cmd="selectAll" title="全选"><kniu-icon icon="alllist" aria-hidden="true"></kniu-icon></button>',
         '<div class="kniu_sys_editor_popover kniu_sys_dropdown_panel" hidden></div>',
         '</div>',
+        '<div class="kniu_sys_editor_split">',
         '<div class="kniu_sys_editor_content_wrap"><div class="kniu_sys_editor_line_numbers" aria-hidden="true"><div class="kniu_sys_editor_line_numbers_inner"></div></div><div class="kniu_sys_editor_content" contenteditable="true" data-placeholder=""></div></div>',
-        '<div class="kniu_sys_editor_source_wrap"><div class="kniu_sys_editor_source_lines" aria-hidden="true"><div class="kniu_sys_editor_source_lines_inner"></div></div><textarea class="kniu_sys_editor_source" spellcheck="false"></textarea></div>',
+        '<div class="kniu_sys_editor_source_wrap"><span class="kniu_sys_editor_pane_badge">Markdown</span><div class="kniu_sys_editor_source_lines" aria-hidden="true"><div class="kniu_sys_editor_source_lines_inner"></div></div><textarea class="kniu_sys_editor_source" spellcheck="false"></textarea></div>',
+        '<div class="kniu_sys_editor_preview_wrap"><span class="kniu_sys_editor_pane_badge">预览</span><div class="kniu_sys_editor_preview kniu_sys_markdown_body" aria-hidden="true"></div></div>',
+        '</div>',
+        '<div class="kniu_sys_editor_statusbar">',
+        '<span class="kniu_sys_editor_status_info"></span>',
+        '<label class="kniu_sys_editor_status_sync"><input type="checkbox" class="kniu_sys_editor_sync_scroll" checked><span>同步滚动</span></label>',
+        '</div>',
         '</div>',
         '</div>'
       ].join('');
@@ -168,19 +200,27 @@ export function registerEditor(context) {
       this._toolbar = this.shadowRoot.querySelector('.kniu_sys_editor_toolbar');
       this._source = this.shadowRoot.querySelector('.kniu_sys_editor_source');
       this._sourceLines = this.shadowRoot.querySelector('.kniu_sys_editor_source_lines_inner');
+      this._previewPane = this.shadowRoot.querySelector('.kniu_sys_editor_preview');
+      this._statusBar = this.shadowRoot.querySelector('.kniu_sys_editor_statusbar');
+      this._statusInfo = this.shadowRoot.querySelector('.kniu_sys_editor_status_info');
+      this._statusSync = this.shadowRoot.querySelector('.kniu_sys_editor_sync_scroll');
       this._editorLines = this.shadowRoot.querySelector('.kniu_sys_editor_line_numbers_inner');
       adoptDropdownStyle(this.shadowRoot);
       adoptSharedStyle(this.shadowRoot, KNIU_EDITOR_OVERRIDE_CSS);
       appendRawStyle(this.shadowRoot, KNIU_CONTENT_TABLE_CSS);
+      appendRawStyle(this.shadowRoot, KNIU_MARKDOWN_CSS);
       this._codeMode = false;
       this._markdownMode = false;
+      this._markdownPreview = undefined;
+      this._mdSyncScroll = true;
+      this._mdScrollEcho = null;
       this._maximized = false;
       this._maxPrevParent = null;
       this._maxPrevNext = null;
-      this._preview = false;
       this._popoverAction = null;
       this._lineNumberResizeObserver = null;
       this._lineNumberKey = '';
+      this._maxHeight = null;
 
       var self = this;
       this._buildToolbar(this._resolveToolbarConfig());
@@ -190,13 +230,22 @@ export function registerEditor(context) {
           e.stopPropagation();
           self._toggleMaximize();
         }
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'b' || e.key === 'B') && !self._codeMode && !self._markdownMode) {
+          e.preventDefault();
+          self._editor.focus();
+          documentRef.execCommand('bold', false, null);
+          self._normalizeBold();
+          self.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          self._syncToolbarState();
+        }
       });
 
       this._editor.addEventListener('input', function () {
-        self._escapeParsedRichTextNodes();
+        // 输入热路径只做轻活（B3-m2）：危险标签转码与表格规范化移到插入路径
+        //（_afterContentInsert）/blur/setValue；行号 rAF 合批，同帧多次输入只测一次。
+        self._lineContentVersion = (self._lineContentVersion || 0) + 1;
         self.removeAttribute('data-invalid');
-        self._updateLineNumbers();
-        self._syncEditorTables();
+        self._scheduleLineNumbers();
         self.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
       });
       this._editor.addEventListener('beforeinput', function (e) {
@@ -208,22 +257,45 @@ export function registerEditor(context) {
       this._editor.addEventListener('paste', function (e) {
         var clipboard = e.clipboardData;
         var text = clipboard && clipboard.getData ? clipboard.getData('text/plain') : '';
-        if (!hasRichTextLiteralTag(text)) return;
-        e.preventDefault();
-        self._insertSafeRichText(text);
+        if (hasRichTextLiteralTag(text)) {
+          e.preventDefault();
+          self._insertSafeRichText(text);
+          return;
+        }
+        // text/html 富文本粘贴走浏览器原生插入（内容在事件后进入 DOM），
+        // 异步补一次危险标签黑名单扫描——防线从每键 input 收敛到插入路径（B3-m2）。
+        if (clipboard && clipboard.types && Array.prototype.indexOf.call(clipboard.types, 'text/html') >= 0) {
+          setTimeout(function () {
+            self._afterContentInsert();
+            self._lineContentVersion = (self._lineContentVersion || 0) + 1;
+            self._scheduleLineNumbers();
+          }, 0);
+        }
       });
       this._editor.addEventListener('scroll', function () { self._updateLineNumbers(); });
       this._editor.addEventListener('focus', function () { self._updateLineNumbers(); });
       this._editor.addEventListener('blur', function () {
+        self._lineContentVersion = (self._lineContentVersion || 0) + 1;
         self._normalizeTables();
+        self._afterContentInsert();
         self.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
       });
-      this._source.addEventListener('input', function () {
-        self._updateLineNumbers();
-        self.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-      });
+      this._source.addEventListener('input', function () { self._handleSourceInput(); });
       this._source.addEventListener('scroll', function () {
         self._updateLineNumbers();
+        if (self._consumeScrollEcho('source')) return;
+        self._syncMarkdownPreviewScroll();
+      });
+      this._previewPane.addEventListener('scroll', function () {
+        if (self._consumeScrollEcho('preview')) return;
+        self._syncMarkdownSourceScroll();
+      });
+      this._source.addEventListener('keyup', function () { self._scheduleStatusUpdate(); });
+      this._source.addEventListener('click', function () { self._updateMarkdownStatus(); });
+      this._source.addEventListener('select', function () { self._updateMarkdownStatus(); });
+      this._statusSync.addEventListener('change', function () {
+        self._mdSyncScroll = self._statusSync.checked;
+        if (self._mdSyncScroll) self._syncMarkdownPreviewScroll();
       });
       this._source.addEventListener('focus', function () { self._updateLineNumbers(); });
       this._editor.addEventListener('keyup', function () { self._syncToolbarState(); });
@@ -251,7 +323,7 @@ export function registerEditor(context) {
       this._scheduleSourceLineNumbers();
       if (!this._lineNumberResizeObserver && typeof ResizeObserver !== 'undefined') {
         this._lineNumberResizeObserver = new ResizeObserver(function () {
-          this._updateLineNumbers();
+          this._scheduleLineNumbers();
         }.bind(this));
         this._lineNumberResizeObserver.observe(this._editor);
         this._lineNumberResizeObserver.observe(this._source);
@@ -267,7 +339,10 @@ export function registerEditor(context) {
         this._sync();
         return;
       }
-      if (name === 'mode') this.setMode(this.getAttribute('mode'));
+      if (name === 'type') {
+        const typeValue = this.getAttribute('type');
+        if (typeValue) this.setType(typeValue);
+      }
       this._sync();
     }
     disconnectedCallback() {
@@ -275,6 +350,10 @@ export function registerEditor(context) {
         this._lineNumberResizeObserver.disconnect();
         this._lineNumberResizeObserver = null;
       }
+      if (this._lineNumberRaf) { globalThis.cancelAnimationFrame(this._lineNumberRaf); this._lineNumberRaf = 0; }
+      if (this._statusDebounce) { clearTimeout(this._statusDebounce); this._statusDebounce = 0; }
+      if (this._mdPreviewDebounce) { clearTimeout(this._mdPreviewDebounce); this._mdPreviewDebounce = 0; }
+      if (this._mdPreviewRaf) { globalThis.cancelAnimationFrame(this._mdPreviewRaf); this._mdPreviewRaf = 0; }
     }
 
     get toolbar() {
@@ -289,6 +368,27 @@ export function registerEditor(context) {
         return Array.isArray(item) ? item.join(' ') : String(item);
       }).join(' ') : String(v);
       this.setAttribute('toolbar', str);
+    }
+
+    get maxHeight() {
+      if (this.__kniuOptions && Object.prototype.hasOwnProperty.call(this.__kniuOptions, 'maxHeight')) {
+        return this.__kniuOptions.maxHeight;
+      }
+      return this._maxHeight;
+    }
+    set maxHeight(v) {
+      this._maxHeight = (v == null || v === '') ? null : v;
+      this._applyMaxHeight();
+    }
+    _applyMaxHeight() {
+      var wrap = this.shadowRoot.querySelector('.kniu_sys_editor_content_wrap');
+      if (!wrap) return;
+      var value = Number(this._maxHeight);
+      if (this._maximized || !Number.isFinite(value) || value <= 0) {
+        wrap.style.maxHeight = '';
+        return;
+      }
+      wrap.style.maxHeight = Math.max(200, value) + 'px';
     }
 
     _resolveToolbarConfig() {
@@ -316,6 +416,8 @@ export function registerEditor(context) {
     }
 
     _buildToolbar(groups) {
+      if (this._markdownMode) { this._buildMarkdownToolbar(); return; }
+      if (!groups) groups = this._resolveToolbarConfig();
       var html = [];
       for (var gi = 0; gi < groups.length; gi++) {
         if (gi > 0) html.push('<span class="kniu_sys_editor_divider"></span>');
@@ -357,6 +459,13 @@ export function registerEditor(context) {
           self.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         });
       });
+      this._bindPopoverEvents();
+      this._applyToolbarLang();
+      this._syncToolbarState();
+    }
+
+    _bindPopoverEvents() {
+      var self = this;
       this._popover = this._toolbar.querySelector('.kniu_sys_editor_popover');
       this._popover.addEventListener('click', function (e) {
         var t = e.target;
@@ -392,6 +501,8 @@ export function registerEditor(context) {
         if (sizeBtn) { self._applyFontSize(sizeBtn.dataset.fontSize); return; }
         var headingBtn = t.closest ? t.closest('[data-heading]') : null;
         if (headingBtn) { self._applyHeading(headingBtn.dataset.heading); return; }
+        var mdHeadingBtn = t.closest ? t.closest('[data-md-heading]') : null;
+        if (mdHeadingBtn) { self._insertMarkdownHeading(Number(mdHeadingBtn.dataset.mdHeading)); self._closePopover(); return; }
         var lineHeightBtn = t.closest ? t.closest('[data-line-height]') : null;
         if (lineHeightBtn) { self._applyLineHeight(lineHeightBtn.dataset.lineHeight); return; }
         var spacingBtn = t.closest ? t.closest('[data-letter-spacing]') : null;
@@ -400,7 +511,7 @@ export function registerEditor(context) {
         if (colorBtn) { self._applyEditorColor(colorBtn.dataset.editorColor || ''); return; }
       });
       this._popover.addEventListener('pointerdown', function (e) {
-        var option = e.target.closest ? e.target.closest('[data-font],[data-font-size],[data-editor-color],[data-heading],[data-line-height],[data-letter-spacing]') : null;
+        var option = e.target.closest ? e.target.closest('[data-font],[data-font-size],[data-editor-color],[data-heading],[data-md-heading],[data-line-height],[data-letter-spacing]') : null;
         if (option) e.preventDefault();
       });
       this._popover.addEventListener('change', function (e) {
@@ -430,6 +541,276 @@ export function registerEditor(context) {
       });
       this._applyToolbarLang();
       this._syncToolbarState();
+    }
+
+    _buildMarkdownToolbar() {
+      var html = [];
+      for (var gi = 0; gi < EDITOR_MARKDOWN_TOOLBAR.length; gi++) {
+        if (gi > 0) html.push('<span class="kniu_sys_editor_divider"></span>');
+        var group = EDITOR_MARKDOWN_TOOLBAR[gi] || [];
+        for (var i = 0; i < group.length; i++) {
+          var item = EDITOR_MD_TOOLBAR_ITEMS[group[i]];
+          if (item) html.push(item);
+        }
+      }
+      html.push('<div class="kniu_sys_editor_popover kniu_sys_dropdown_panel" hidden></div>');
+      this._toolbar.innerHTML = html.join('');
+      this._syncMaximizeIcon();
+      var previewBtn = this._toolbar.querySelector('[data-md-cmd="preview"]');
+      if (previewBtn) previewBtn.setAttribute('aria-pressed', String(this._markdownPreview !== false));
+      var self = this;
+      this._toolbar.querySelectorAll('.kniu_sys_editor_btn').forEach(function (btn) {
+        btn.addEventListener('pointerdown', function (e) { e.preventDefault(); });
+        btn.addEventListener('click', function () { self._handleToolbar(btn); });
+      });
+      this._bindPopoverEvents();
+    }
+
+    _markdownHeadingPopoverHTML() {
+      var headings = [['h1', 'H1'], ['h2', 'H2'], ['h3', 'H3'], ['h4', 'H4'], ['h5', 'H5'], ['h6', 'H6']];
+      return '<div class="kniu_sys_editor_font_list" role="menu">' + headings.map(function (h) {
+        return '<button type="button" class="kniu_sys_editor_font_item kniu_sys_dropdown_option" role="menuitemradio" aria-checked="false" data-md-heading="' + h[0].slice(1) + '">' + h[1] + '</button>';
+      }).join('') + '</div>';
+    }
+
+    _insertMarkdownHeading(level) {
+      var ta = this._source;
+      var s = ta.selectionStart, e = ta.selectionEnd;
+      var v = ta.value;
+      var lineStart = v.lastIndexOf('\n', s - 1) + 1;
+      var lineEnd = v.indexOf('\n', s);
+      if (lineEnd === -1) lineEnd = v.length;
+      var line = v.slice(lineStart, lineEnd).replace(/^#{1,6}\s*/, '');
+      var prefix = new Array(level + 1).join('#') + ' ';
+      ta.value = v.slice(0, lineStart) + prefix + line + v.slice(lineEnd);
+      var caret = lineStart + prefix.length + (s - lineStart);
+      ta.setSelectionRange(caret, caret + (e - s));
+      this._handleSourceInput();
+      this._source.focus();
+    }
+
+    _handleMarkdownToolbar(btn) {
+      var md = btn.dataset.mdCmd;
+      if (md === 'maximize') { this._toggleMaximize(); return; }
+      if (md === 'preview') { this._toggleMarkdownPreview(); return; }
+      if (md === 'heading') { this._togglePopover('md-heading', btn); return; }
+      if (md === 'undo' || md === 'redo') {
+        this._source.focus();
+        try { documentRef.execCommand(md, false, null); } catch (e) { }
+        this._handleSourceInput();
+        return;
+      }
+      this._source.focus();
+      switch (md) {
+        case 'bold': this._insertMarkdownAround('**', '**', '粗体文本'); break;
+        case 'italic': this._insertMarkdownAround('*', '*', '斜体文本'); break;
+        case 'strike': this._insertMarkdownAround('~~', '~~', '删除线文本'); break;
+        case 'inlineCode': this._insertMarkdownAround('`', '`', '代码'); break;
+        case 'quote': this._insertMarkdownLine('> ', '引用内容'); break;
+        case 'ul': this._insertMarkdownLine('- ', '列表项'); break;
+        case 'ol': this._insertMarkdownLine('1. ', '列表项'); break;
+        case 'code': this._insertMarkdownBlock('代码'); break;
+        case 'hr': this._insertMarkdownLine('', '---'); break;
+        case 'link': this._insertMarkdownLink(); break;
+        case 'image': this._insertMarkdownImage(); break;
+        case 'table': this._insertMarkdownTable(); break;
+      }
+    }
+
+    _insertMarkdownAround(before, after, placeholder) {
+      var ta = this._source;
+      var s = ta.selectionStart, e = ta.selectionEnd;
+      var v = ta.value;
+      var selected = v.slice(s, e);
+      var text = selected || placeholder;
+      ta.value = v.slice(0, s) + before + text + after + v.slice(e);
+      if (selected) {
+        ta.setSelectionRange(s + before.length + text.length, s + before.length + text.length);
+      } else {
+        ta.setSelectionRange(s + before.length, s + before.length + placeholder.length);
+      }
+      this._handleSourceInput();
+    }
+
+    _insertMarkdownLine(prefix, placeholder) {
+      var ta = this._source;
+      var s = ta.selectionStart, e = ta.selectionEnd;
+      var v = ta.value;
+      var before = v.slice(0, s), after = v.slice(e);
+      var needNl = before && !before.endsWith('\n') ? '\n' : '';
+      var insert = needNl + prefix + placeholder;
+      ta.value = before + insert + after;
+      var caret = before.length + insert.length;
+      ta.setSelectionRange(caret, caret);
+      this._handleSourceInput();
+    }
+
+    _insertMarkdownBlock(placeholder) {
+      var ta = this._source;
+      var s = ta.selectionStart, e = ta.selectionEnd;
+      var v = ta.value;
+      var before = v.slice(0, s), after = v.slice(e);
+      var needNl = before && !before.endsWith('\n') ? '\n' : '';
+      var insert = needNl + '```\n' + placeholder + '\n```\n';
+      ta.value = before + insert + after;
+      var caret = before.length + insert.length - 5;
+      ta.setSelectionRange(caret, caret);
+      this._handleSourceInput();
+    }
+
+    _insertMarkdownLink() {
+      var ta = this._source;
+      var s = ta.selectionStart, e = ta.selectionEnd;
+      var v = ta.value;
+      var selected = v.slice(s, e) || '链接文本';
+      var text = '[' + selected + '](https://)';
+      ta.value = v.slice(0, s) + text + v.slice(e);
+      var caret = s + 1 + selected.length + 2;
+      ta.setSelectionRange(caret, caret + 'https://'.length);
+      this._handleSourceInput();
+    }
+
+    _insertMarkdownImage() {
+      var ta = this._source;
+      var s = ta.selectionStart, e = ta.selectionEnd;
+      var v = ta.value;
+      var selected = v.slice(s, e) || '图片描述';
+      var text = '![' + selected + '](https://)';
+      ta.value = v.slice(0, s) + text + v.slice(e);
+      var caret = s + 2 + selected.length + 2;
+      ta.setSelectionRange(caret, caret + 'https://'.length);
+      this._handleSourceInput();
+    }
+
+    _insertMarkdownTable() {
+      var ta = this._source;
+      var s = ta.selectionStart, e = ta.selectionEnd;
+      var v = ta.value;
+      var before = v.slice(0, s), after = v.slice(e);
+      var needNl = before && !before.endsWith('\n') ? '\n' : '';
+      var tpl = needNl + '| 列1 | 列2 |\n| --- | --- |\n| 内容 | 内容 |\n';
+      ta.value = before + tpl + after;
+      var caret = before.length + needNl.length + tpl.length;
+      ta.setSelectionRange(caret, caret);
+      this._handleSourceInput();
+    }
+
+    _toggleMarkdownPreview() {
+      this._markdownPreview = this._markdownPreview === false ? true : false;
+      this._group.dataset.markdownPreview = String(this._markdownPreview !== false);
+      var btn = this.shadowRoot.querySelector('[data-md-cmd="preview"]');
+      if (btn) btn.setAttribute('aria-pressed', String(this._markdownPreview !== false));
+      if (this._markdownPreview !== false) this._renderMarkdownPreview();
+    }
+
+    _handleSourceInput() {
+      this._lineContentVersion = (this._lineContentVersion || 0) + 1;
+      this._updateLineNumbers();
+      this._scheduleStatusUpdate();
+      if (this._markdownMode && this._markdownPreview !== false) this._scheduleMarkdownPreview();
+      this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    }
+
+    // 状态栏字数/行列合拍（B3-S1）：input/keyup 打字态 150ms 防抖收敛，
+    // 避免每键 3 次全文扫描；click/select（光标移动）保持同步反馈。
+    _scheduleStatusUpdate() {
+      var self = this;
+      if (this._statusDebounce) clearTimeout(this._statusDebounce);
+      this._statusDebounce = setTimeout(function () {
+        self._statusDebounce = 0;
+        self._updateMarkdownStatus();
+      }, 150);
+    }
+
+    // 行号 rAF 合批（B-M2）：同帧多次输入/resize 只测量一次；
+    // 缓存 key 为内容版本号（_lineNumbersKey），滚动/焦点路径 key 未变时零测量。
+    _scheduleLineNumbers() {
+      if (typeof globalThis.requestAnimationFrame !== 'function') {
+        this._updateLineNumbers();
+        return;
+      }
+      if (this._lineNumberRaf) return;
+      var self = this;
+      this._lineNumberRaf = globalThis.requestAnimationFrame(function () {
+        self._lineNumberRaf = 0;
+        self._updateLineNumbers();
+      });
+    }
+
+    // 内容插入后的纵深收口（B3-m2）：危险标签黑名单转码 + 新表规范化，
+    // 只在插入路径（paste/插入命令/setValue/blur）执行，不挂每键 input。
+    _afterContentInsert() {
+      this._escapeParsedRichTextNodes();
+      this._syncEditorTables();
+    }
+
+    _updateMarkdownStatus() {
+      if (!this._statusInfo || !this._source) return;
+      var value = this._source.value || '';
+      var chars = value.replace(/\n/g, '').length;
+      var pos = this._source.selectionStart || 0;
+      var before = value.slice(0, pos);
+      var line = before.split('\n').length;
+      var col = pos - before.lastIndexOf('\n');
+      this._statusInfo.textContent = chars + ' 字 | 行 ' + line + ', 列 ' + col;
+    }
+
+    _consumeScrollEcho(dir) {
+      var echo = this._mdScrollEcho;
+      if (echo && echo.dir === dir && Date.now() - echo.t < 120) {
+        this._mdScrollEcho = null;
+        return true;
+      }
+      return false;
+    }
+
+    _syncMarkdownPreviewScroll() {
+      if (!this._markdownMode || !this._mdSyncScroll) return;
+      if (!this._previewPane || this._markdownPreview === false) return;
+      var ta = this._source;
+      var scrollRange = ta.scrollHeight - ta.clientHeight;
+      var ratio = scrollRange > 0 ? ta.scrollTop / scrollRange : 0;
+      var paneRange = this._previewPane.scrollHeight - this._previewPane.clientHeight;
+      this._mdScrollEcho = { dir: 'preview', t: Date.now() };
+      this._previewPane.scrollTop = paneRange > 0 ? Math.round(ratio * paneRange) : 0;
+    }
+
+    _syncMarkdownSourceScroll() {
+      if (!this._markdownMode || !this._mdSyncScroll) return;
+      if (!this._previewPane || this._markdownPreview === false) return;
+      var ta = this._source;
+      var paneRange = this._previewPane.scrollHeight - this._previewPane.clientHeight;
+      var ratio = paneRange > 0 ? this._previewPane.scrollTop / paneRange : 0;
+      var scrollRange = ta.scrollHeight - ta.clientHeight;
+      this._mdScrollEcho = { dir: 'source', t: Date.now() };
+      ta.scrollTop = scrollRange > 0 ? Math.round(ratio * scrollRange) : 0;
+    }
+
+    // markdown 预览合批：150ms 防抖收敛连击，rAF 边界渲染同帧只画一次（B2-M1）。
+    _scheduleMarkdownPreview() {
+      if (typeof globalThis.requestAnimationFrame !== 'function') {
+        this._renderMarkdownPreview();
+        return;
+      }
+      var self = this;
+      if (this._mdPreviewDebounce) clearTimeout(this._mdPreviewDebounce);
+      this._mdPreviewDebounce = setTimeout(function () {
+        self._mdPreviewDebounce = 0;
+        if (self._mdPreviewRaf) globalThis.cancelAnimationFrame(self._mdPreviewRaf);
+        self._mdPreviewRaf = globalThis.requestAnimationFrame(function () {
+          self._mdPreviewRaf = 0;
+          self._renderMarkdownPreview();
+        });
+      }, 150);
+    }
+
+    _renderMarkdownPreview() {
+      if (!this._previewPane) return;
+      var value = this._source.value || '';
+      if (this._mdPreviewValue === value) return;
+      this._mdPreviewValue = value;
+      this._previewPane.innerHTML = renderMarkdownArticle(value);
+      this._previewPane.setAttribute('aria-hidden', 'false');
     }
 
     _applyToolbarLang() {
@@ -473,6 +854,8 @@ export function registerEditor(context) {
         this._source.value = raw.replace(/\r\n?/g, '\n');
         this._updateLineNumbers();
         this._scheduleSourceLineNumbers();
+        this._updateMarkdownStatus();
+        if (this._markdownPreview !== false) this._renderMarkdownPreview();
         return;
       }
       var self = this;
@@ -500,7 +883,9 @@ export function registerEditor(context) {
     _applyEditorValue(html) {
       this._editor.innerHTML = html;
       this._normalizeCodeBlocks();
+      this._afterContentInsert();
       this._normalizeTables();
+      this._lineContentVersion = (this._lineContentVersion || 0) + 1;
       if (this._source) {
         this._source.value = this._serializedHtml();
         this._updateLineNumbers();
@@ -525,21 +910,26 @@ export function registerEditor(context) {
       if (typeof document.execCommand === 'function') {
         inserted = document.execCommand('insertHTML', false, html);
       }
-      if (inserted) return;
-      var selection = document.getSelection();
-      if (!selection || !selection.rangeCount) return;
-      var range = selection.getRangeAt(0);
-      var template = document.createElement('template');
-      template.innerHTML = html;
-      var lastNode = template.content.lastChild;
-      range.deleteContents();
-      range.insertNode(template.content);
-      if (lastNode) {
-        range.setStartAfter(lastNode);
-        range.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(range);
+      if (!inserted) {
+        var selection = document.getSelection();
+        if (!selection || !selection.rangeCount) return;
+        var range = selection.getRangeAt(0);
+        var template = document.createElement('template');
+        template.innerHTML = html;
+        var lastNode = template.content.lastChild;
+        range.deleteContents();
+        range.insertNode(template.content);
+        if (lastNode) {
+          range.setStartAfter(lastNode);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
       }
+      // 插入路径收口（B3-m2）：危险标签转码 + 表格规范化只在此执行，不挂每键 input。
+      this._afterContentInsert();
+      this._lineContentVersion = (this._lineContentVersion || 0) + 1;
+      this._scheduleLineNumbers();
       this._editor.dispatchEvent(new Event('input', { bubbles: true }));
     }
     _escapeParsedRichTextNodes() {
@@ -554,9 +944,10 @@ export function registerEditor(context) {
     }
     _lineNumbersKey() {
       var sourceMode = this._codeMode || this._markdownMode;
-      var input = sourceMode ? this._source : this._editor;
-      if (!input) return '';
-      return (sourceMode ? 'src:' : 'rich:') + input.scrollHeight + ':' + input.clientHeight + ':' + input.childElementCount;
+      // 缓存 key 用内容版本号（B-M2）：不含 scrollHeight/clientHeight 强制布局读，
+      // 折行/块结构变化由输入路径递增版本号驱动，滚动/焦点路径 key 未变即零测量；
+      // 编辑器尺寸变化由 ResizeObserver 合批重测兜底。
+      return (sourceMode ? 'src:' : 'rich:') + (this._lineContentVersion || 0);
     }
     _updateLineNumbers(force) {
       var sourceMode = this._codeMode || this._markdownMode;
@@ -635,8 +1026,6 @@ export function registerEditor(context) {
       if (!rows.length) rows.push(0);
       var contentHeight = Math.max(0, input.scrollHeight - metrics.paddingTop - metrics.paddingBottom);
       var total = Math.max(rows[rows.length - 1] + metrics.lineHeight, contentHeight);
-      // 内容不足一屏时把行号补齐到可视行数，与源码态 _buildSourceLineNumbers 的 visibleRows 口径一致：
-      // 多出的行号是标尺性质、落在末行下方的空白区，不改变已有行号与正文行盒的一一对应。
       var visibleRows = Math.max(1, Math.ceil(Math.max(0,
         input.clientHeight - metrics.paddingTop - metrics.paddingBottom) / metrics.lineHeight));
       while (rows.length < visibleRows && rows[rows.length - 1] + metrics.lineHeight < total) {
@@ -684,11 +1073,11 @@ export function registerEditor(context) {
     focus() { this._editor.focus(); }
 
     _handleToolbar(btn) {
+      if (this._markdownMode) { this._handleMarkdownToolbar(btn); return; }
       var cmd = btn.dataset.cmd;
       var block = btn.dataset.block;
       var action = btn.dataset.action;
       if (action === 'maximize') { this._toggleMaximize(); return; }
-      if (this._markdownMode && action !== 'markdown') return;
       if (action === 'code') {
         if (this._markdownMode) return;
         this._toggleCodeMode();
@@ -701,8 +1090,6 @@ export function registerEditor(context) {
         this._syncToolbarState();
         return;
       }
-      if (action === 'markdown') { this.setMode(this._markdownMode ? 'rich' : 'markdown'); return; }
-      if (action === 'preview') { this._togglePreview(); return; }
       if (action === 'print') { this._print(); return; }
       if (action === 'table' || action === 'emoticons' || action === 'link' || action === 'image' || action === 'media' || action === 'fontname' || action === 'fontsize' || action === 'forecolor' || action === 'hilitecolor' || action === 'heading' || action === 'lineheight' || action === 'spacing') { this._togglePopover(action, btn); return; }
       if (cmd && this._selectedMedia && /^justify(?:Left|Center|Right|Full)$/.test(cmd)) {
@@ -713,6 +1100,7 @@ export function registerEditor(context) {
       if (cmd === 'selectAll') { this._toggleSelectAll(); this._syncToolbarState(); return; }
       if (cmd) {
         documentRef.execCommand(cmd, false, null);
+        if (cmd === 'bold') this._normalizeBold();
       } else if (block) {
         if (block === 'pre') { this._togglePre(); }
         else { this._formatBlockSafe(block); }
@@ -727,6 +1115,27 @@ export function registerEditor(context) {
       this._editor.focus();
       this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
       this._syncToolbarState();
+    }
+
+    _normalizeBold() {
+      var self = this;
+      var selection = documentRef.getSelection();
+      var range = null;
+      if (selection && selection.rangeCount && this._editor.contains(selection.anchorNode)) {
+        range = selection.getRangeAt(0);
+      }
+      var bolds = Array.prototype.slice.call(this._editor.querySelectorAll('b'));
+      bolds.forEach(function (node) {
+        var strong = self._editor.ownerDocument.createElement('strong');
+        while (node.firstChild) strong.appendChild(node.firstChild);
+        var attributes = node.attributes;
+        for (var i = 0; i < attributes.length; i++) strong.setAttribute(attributes[i].name, attributes[i].value);
+        node.parentNode.replaceChild(strong, node);
+      });
+      if (range) {
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
     }
 
     _alignSelectedMedia(command) {
@@ -824,12 +1233,18 @@ export function registerEditor(context) {
         this._maximized = false;
         this.removeAttribute('data-maximized');
       }
-      var maxBtn = this.shadowRoot.querySelector('[data-action="maximize"]');
-      if (maxBtn) {
-        maxBtn.setAttribute('aria-pressed', String(this._maximized));
-        maxBtn.innerHTML = this._maximized ? EDITOR_ICON_RESTORE : EDITOR_ICON_MAXIMIZE;
-      }
+      this._syncMaximizeIcon();
+      // 最大化让位全屏（清 inline maxHeight），还原时恢复动态上限。
+      this._applyMaxHeight();
       if (!this._codeMode) this._editor.focus(); else this._source.focus();
+    }
+
+    _syncMaximizeIcon() {
+      var btns = this.shadowRoot.querySelectorAll('[data-action="maximize"], [data-md-cmd="maximize"]');
+      Array.prototype.forEach.call(btns, function (btn) {
+        btn.setAttribute('aria-pressed', String(this._maximized));
+        btn.innerHTML = this._maximized ? EDITOR_ICON_RESTORE : EDITOR_ICON_MAXIMIZE;
+      }, this);
     }
 
     _toggleCodeMode() {
@@ -855,15 +1270,16 @@ export function registerEditor(context) {
       this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
     }
 
-    get mode() { return this._markdownMode ? 'markdown' : 'rich'; }
-    set mode(value) { this.setMode(value); }
-    setMode(value) {
+    get type() { return this._markdownMode ? 'markdown' : 'rich'; }
+    set type(value) { this.setType(value); }
+    setType(value) {
       var markdown = String(value || '').toLowerCase() === 'markdown';
-      if (markdown === this._markdownMode) return;
+      if (markdown === this._markdownMode) { this._buildToolbar(); this._sync(); return; }
       if (markdown) {
         this._source.value = this._codeMode ? this._source.value : (this._lastRawValue || this._editor.innerText);
         this._codeMode = true;
       } else {
+        if (this._popover) this._closePopover(true);
         this._editor.innerHTML = sanitizeRichHtml(this._source.value);
         this._normalizeCodeBlocks();
         this._normalizeTables();
@@ -873,9 +1289,18 @@ export function registerEditor(context) {
       this._group.dataset.markdownMode = String(markdown);
       this._updateLineNumbers();
       this._scheduleSourceLineNumbers();
-      var button = this.shadowRoot.querySelector('[data-action="markdown"]');
-      if (button) button.setAttribute('aria-pressed', String(markdown));
+      this._buildToolbar();
       this._sync();
+      if (markdown) {
+        this._updateMarkdownStatus();
+        if (this._markdownPreview === false) {
+          this._group.dataset.markdownPreview = 'false';
+        } else {
+          this._group.dataset.markdownPreview = 'true';
+          this._renderMarkdownPreview();
+        }
+        this._source.focus();
+      }
       this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
     }
 
@@ -970,15 +1395,6 @@ export function registerEditor(context) {
         }
       }
       return out.join('').replace(/^\s+/, '');
-    }
-
-    _togglePreview() {
-      this._preview = !this._preview;
-      this.setAttribute('data-preview', String(this._preview));
-      var ro = this._preview || this.hasAttribute('readonly') || this.hasAttribute('disabled');
-      this._editor.contentEditable = ro ? 'false' : 'true';
-      var btn = this.shadowRoot.querySelector('[data-action="preview"]');
-      if (btn) btn.setAttribute('aria-pressed', String(this._preview));
     }
 
     _print() {
@@ -1211,7 +1627,7 @@ export function registerEditor(context) {
         else if (action === 'heading') this._headingRange = savedRange;
         else if (action === 'lineheight') this._lineHeightRange = savedRange;
         else if (action === 'spacing') this._letterSpacingRange = savedRange;
-        else { this._colorRange = savedRange; this._colorAction = action; }
+        else if (action === 'forecolor' || action === 'hilitecolor') { this._colorRange = savedRange; this._colorAction = action; }
       }
       this._popover.innerHTML = action === 'table' ? this._tablePopoverHTML()
         : action === 'link' ? this._linkPopoverHTML()
@@ -1220,10 +1636,11 @@ export function registerEditor(context) {
               : action === 'fontname' ? this._fontPopoverHTML()
                 : action === 'fontsize' ? this._fontSizePopoverHTML()
                   : action === 'heading' ? this._headingPopoverHTML()
-                    : action === 'lineheight' ? this._lineHeightPopoverHTML()
-                      : action === 'spacing' ? this._letterSpacingPopoverHTML()
-                        : action === 'forecolor' || action === 'hilitecolor' ? this._colorPopoverHTML()
-                          : this._emojiPopoverHTML();
+                    : action === 'md-heading' ? this._markdownHeadingPopoverHTML()
+                      : action === 'lineheight' ? this._lineHeightPopoverHTML()
+                        : action === 'spacing' ? this._letterSpacingPopoverHTML()
+                          : action === 'forecolor' || action === 'hilitecolor' ? this._colorPopoverHTML()
+                            : this._emojiPopoverHTML();
       this._popover.classList.toggle('kniu_sys_editor_popover_link', action === 'link' || action === 'image' || action === 'media');
       this._popover.hidden = false;
       this._positionPopover(btn);
@@ -1469,7 +1886,7 @@ export function registerEditor(context) {
     }
 
     _validResourceUrl(url) {
-      return Boolean(url) && !/^(javascript|vbscript):/i.test(url) && !/^data:(?!image\/)/i.test(url);
+      return Boolean(url) && !isDangerousUrl(url);
     }
 
     _syncMediaSourceFields() {
@@ -1612,7 +2029,8 @@ export function registerEditor(context) {
 
     _fontPopoverHTML() {
       var fonts = [
-        ['KniuHei', 'KniuHei', 'KniuHei']
+        ['KniuSans_Regular', 'KniuSans', 'KniuSans_Regular'],
+        ['KniuHei_Regular', 'KniuHei', 'KniuHei_Regular']
       ];
       return '<div class="kniu_sys_editor_font_list" role="menu">' + fonts.map(function (font) {
         return '<button type="button" class="kniu_sys_editor_font_item kniu_sys_dropdown_option" role="menuitemradio" aria-checked="' + (font[0] ? 'false' : 'true') + '" data-font="' + font[0] + '" style="font-family:\'' + font[2] + '\'">' + font[1] + '</button>';
@@ -1654,7 +2072,7 @@ export function registerEditor(context) {
     }
 
     _headingPopoverHTML() {
-      var headings = [['h2', 'H2'], ['h3', 'H3'], ['h4', 'H4'], ['h5', 'H5'], ['h6', 'H6']];
+      var headings = [['h1', 'H1'], ['h2', 'H2'], ['h3', 'H3'], ['h4', 'H4'], ['h5', 'H5'], ['h6', 'H6']];
       return '<div class="kniu_sys_editor_font_list" role="menu">' + headings.map(function (h) {
         return '<button type="button" class="kniu_sys_editor_font_item kniu_sys_dropdown_option" role="menuitemradio" aria-checked="false" data-heading="' + h[0] + '">' + h[1] + '</button>';
       }).join('') + '</div>';
@@ -1898,7 +2316,7 @@ export function registerEditor(context) {
       var textInput = this._popover.querySelector('.kniu_sys_editor_pop_link_text');
       var error = this._popover.querySelector('.kniu_sys_editor_popover_error');
       var url = urlInput ? urlInput.value.trim() : '';
-      if (!url || /^(javascript|vbscript|data):/i.test(url)) {
+      if (!url || isDangerousUrl(url)) {
         if (error) error.textContent = !url ? this._editorT()('editor.enterLinkUrl') : this._editorT()('editor.enterLinkUrlSafe');
         if (urlInput) urlInput.focus();
         return;
@@ -1944,23 +2362,34 @@ export function registerEditor(context) {
       this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
     }
 
+    // 工具栏按钮引用惰性缓存（B2-S1）：断连（工具栏重建）后自动重查，
+    // 常态下 _syncToolbarState 的十余次 querySelector 降为 Map 读取。
+    _toolbarBtn(selector) {
+      if (!this.__btnCache) this.__btnCache = new Map();
+      var btn = this.__btnCache.get(selector);
+      if (btn && btn.isConnected) return btn;
+      btn = this.shadowRoot.querySelector(selector);
+      this.__btnCache.set(selector, btn);
+      return btn;
+    }
+
     _syncToolbarState() {
       if (this._codeMode) return;
       var cmds = ['bold', 'italic', 'underline', 'strikeThrough', 'justifyLeft', 'justifyCenter', 'justifyRight', 'justifyFull', 'subscript', 'superscript'];
       for (var i = 0; i < cmds.length; i++) {
-        var btn = this.shadowRoot.querySelector('[data-cmd="' + cmds[i] + '"]');
+        var btn = this._toolbarBtn('[data-cmd="' + cmds[i] + '"]');
         if (btn) {
           try { btn.setAttribute('aria-pressed', String(documentRef.queryCommandState(cmds[i]))); }
           catch (e) { btn.setAttribute('aria-pressed', 'false'); }
         }
       }
-      var allBtn = this.shadowRoot.querySelector('[data-cmd="selectAll"]');
+      var allBtn = this._toolbarBtn('[data-cmd="selectAll"]');
       if (allBtn) allBtn.setAttribute('aria-pressed', String(this._isAllSelected()));
-      var preBtn = this.shadowRoot.querySelector('[data-block="pre"]');
+      var preBtn = this._toolbarBtn('[data-block="pre"]');
       if (preBtn) preBtn.setAttribute('aria-pressed', String(this._currentBlockTag() === 'pre'));
-      var headingBtn = this.shadowRoot.querySelector('[data-action="heading"]');
+      var headingBtn = this._toolbarBtn('[data-action="heading"]');
       if (headingBtn) headingBtn.setAttribute('aria-pressed', String(/^h[1-6]$/.test(this._currentBlockTag())));
-      var lhBtn = this.shadowRoot.querySelector('[data-action="lineheight"]');
+      var lhBtn = this._toolbarBtn('[data-action="lineheight"]');
       if (lhBtn) {
         var lhPressed = false;
         try {
@@ -1979,7 +2408,7 @@ export function registerEditor(context) {
         } catch (e) { lhPressed = false; }
         lhBtn.setAttribute('aria-pressed', String(lhPressed));
       }
-      var spBtn = this.shadowRoot.querySelector('[data-action="spacing"]');
+      var spBtn = this._toolbarBtn('[data-action="spacing"]');
       if (spBtn) {
         var spPressed = false;
         try {
@@ -2000,35 +2429,44 @@ export function registerEditor(context) {
     }
 
     _mountAffixes() {
+      var self = this;
+      var applyPrependStyles = function () {
+        var prependContent = self.querySelector('[slot="prepend"]');
+        self._group.dataset.hasPrepend = String(Boolean(prependContent));
+        if (prependContent) {
+          var affix = self.shadowRoot.querySelector('.kniu_sys_editor_prepend');
+          var lw = prependContent.dataset.labelWidth || '';
+          if (lw && CSS.supports('width', lw)) {
+            affix.style.width = lw;
+            affix.style.flexBasis = lw;
+          } else {
+            affix.style.removeProperty('width');
+            affix.style.removeProperty('flex-basis');
+          }
+        }
+      };
       var template = Array.from(this.children).find(function (child) {
         return child.tagName === 'TEMPLATE' && child.hasAttribute('#prepend');
       });
       if (template) {
-        var content = documentRef.createElement('span');
-        content.slot = 'prepend';
-        var labelWidth = template.getAttribute('label-width');
-        if (labelWidth) content.dataset.labelWidth = labelWidth;
-        content.append(template.content.cloneNode(true));
-        template.replaceWith(content);
+        deferAffixTemplateMount(template, function () {
+          var content = documentRef.createElement('span');
+          content.slot = 'prepend';
+          var labelWidth = template.getAttribute('label-width')
+            || (template.__kniuOptionsValue && template.__kniuOptionsValue.labelWidth)
+            || '';
+          if (labelWidth) content.dataset.labelWidth = labelWidth;
+          if (template.__kniuOptionsValue) content.__kniuOptionsValue = template.__kniuOptionsValue;
+          content.append(template.content.cloneNode(true));
+          template.replaceWith(content);
+        }, applyPrependStyles);
       }
-      var prependContent = this.querySelector('[slot="prepend"]');
-      this._group.dataset.hasPrepend = String(Boolean(prependContent));
-      if (prependContent) {
-        var affix = this.shadowRoot.querySelector('.kniu_sys_editor_prepend');
-        var lw = prependContent.dataset.labelWidth || '';
-        if (lw && CSS.supports('width', lw)) {
-          affix.style.width = lw;
-          affix.style.flexBasis = lw;
-        } else {
-          affix.style.removeProperty('width');
-          affix.style.removeProperty('flex-basis');
-        }
-      }
+      applyPrependStyles();
     }
 
     _sync() {
       var toolbarConfig = this._resolveToolbarConfig();
-      var toolbarKey = JSON.stringify(toolbarConfig);
+      var toolbarKey = JSON.stringify(toolbarConfig) + '|md:' + (this._markdownMode ? 1 : 0);
       if (this.__kniuLastToolbar !== toolbarKey) {
         this.__kniuLastToolbar = toolbarKey;
         if (this._toolbar) this._buildToolbar(toolbarConfig);
@@ -2045,16 +2483,17 @@ export function registerEditor(context) {
       var ro = this.hasAttribute('readonly') || this.hasAttribute('disabled');
       this._editor.contentEditable = ro ? 'false' : 'true';
       if (this._source) this._source.disabled = ro;
-      var ctrls = this.shadowRoot.querySelectorAll('.kniu_sys_editor_btn, .kniu_sys_editor_select, .kniu_sys_editor_color');
+      if (this._statusSync) this._statusSync.disabled = ro; var ctrls = this.shadowRoot.querySelectorAll('.kniu_sys_editor_btn, .kniu_sys_editor_select, .kniu_sys_editor_color');
       for (var i = 0; i < ctrls.length; i++) {
         var c = ctrls[i];
-        var isCodeToggle = c.dataset.action === 'code' || c.dataset.action === 'markdown';
+        var isCodeToggle = c.dataset.action === 'code';
         var isCodeAction = c.dataset.action === 'code';
         var isMax = c.dataset.action === 'maximize';
         c.disabled = ro
           || (this._markdownMode && isCodeAction)
-          || (this._codeMode && !isCodeToggle && !isMax);
+          || (this._codeMode && !this._markdownMode && !isCodeToggle && !isMax);
       }
+      this._applyMaxHeight();
     }
 
     _editorLang() {

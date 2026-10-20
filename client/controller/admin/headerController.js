@@ -1,5 +1,6 @@
 import MVVM from '../../core/kniumvvm.mjs';
 import { getCurrentRoutePath, getRouteContext } from '../../core/kniuutil.mjs';
+import { applyNavFlags } from './adminShared.js';
 import AUTH from '../../core/kniuauth.mjs';
 
 const { controller } = MVVM;
@@ -9,7 +10,6 @@ let replyNotificationCompletedAt = 0;
 const REPLY_NOTIFICATION_DEDUPE_MS = 3000;
 
 function requestReplyNotificationState(request) {
-  // 公共头部可能在路由切换时先于页面销毁/鉴权跳转挂载；匿名状态绝不探测受保护接口。
   if (!AUTH.isLoggedIn()) return Promise.resolve(null);
   const now = Date.now();
   if (replyNotificationRequest) return replyNotificationRequest;
@@ -30,54 +30,41 @@ function requestReplyNotificationState(request) {
 }
 
 function getAdminPageName(path) {
-  if (path === '/seo') return '网站信息';
-  if (path === '/aboutedit') return '关于我';
-  if (path === '/daily') return '每日一句';
-  if (path === '/article') return '文章管理';
-  if (path === '/user') return '用户管理';
-  if (path === '/comment') return '评论管理';
-  if (path === '/reply') return '回复管理';
-  // 「数据库管理」是三层独立页面（库列表 → 数据表 → 单表），层级细节见 getAdminBreadcrumb()。
-  if (path === '/database') return '数据库管理';
-  if (path === '/databasetables') return '数据表';
-  if (path === '/databasetable') return '表数据';
-  return '控制台';
+  const pathMap = {
+    '/seo': '网站信息',
+    '/aboutedit': '关于我',
+    '/daily': '每日一句',
+    '/article': '文章管理',
+    '/user': '用户管理',
+    '/comment': '评论管理',
+    '/reply': '回复管理',
+    '/feedback': '反馈管理',
+    '/dbconnect': '数据库管理',
+    '/database': '数据库列表',
+    '/databasetables': '数据表',
+    '/databasetable': '表数据'
+  };
+  return pathMap[path] || '控制台';
 }
 
-/**
- * 后台面包屑层级。
- *
- * 默认只有一段（栏目名）。「数据库管理」的三层是**真实路由页**，逐层下钻的层级信息
- * 统一挂到这条全局面包屑上（页内不再另画一条 crumb）：末段是当前位置（`name`），
- * 之前的每一段是**可点的上级**（`parents`，点它等同按「返回」回上一层）。
- *
- * 末段优先显示**上下文**（库名 / 表名）而不是泛泛的页面名 —— 三层页面的页面名
- * 已经由侧栏高亮的「数据库管理」表达，面包屑需要回答的是「我现在在哪个库/哪张表」。
- *
- * @param {string} path 当前路由路径。
- * @param {Object<string,string>} context `getRouteContext()` 取出的层级参数。
- * @return {{name: string, parents: Array<{label: string, route: string, data?: Object}>}} 面包屑。
- */
 function getAdminBreadcrumb(path, context) {
-  if (path === '/database') {
+  if (path === '/dbconnect') {
     return { name: '数据库管理', parents: [] };
   }
-  // 「数据库连接」在层级上属于数据库管理的下一级（它是首次进入、库为空/连不上时的落地页），
-  // 所以面包屑挂回「数据库管理」，而不是另起一个顶级入口。
-  if (path === '/dbconnect') {
+  if (path === '/database') {
     return {
-      name: '数据库连接',
-      parents: [{ label: '数据库管理', route: '/database' }]
+      name: '数据库列表',
+      parents: [{ label: '数据库管理', route: '/dbconnect' }]
     };
   }
   if (path === '/databasetables') {
     return {
       name: context.database || '数据表',
-      parents: [{ label: '数据库管理', route: '/database' }]
+      parents: [{ label: '数据库管理', route: '/dbconnect' }]
     };
   }
   if (path === '/databasetable') {
-    const parents = [{ label: '数据库管理', route: '/database' }];
+    const parents = [{ label: '数据库管理', route: '/dbconnect' }];
     if (context.database) {
       parents.push({ label: context.database, route: '/databasetables', data: { database: context.database } });
     }
@@ -107,16 +94,6 @@ const headerController = controller(({ eventTo, getRouteData, navigateTo, onRout
     state.currentApp = getAdminBreadcrumb(path, getRouteContext(getRouteData, ['database', 'table']));
   }
 
-  /**
-   * 点面包屑里的上级节点：回到上一层。
-   *
-   * 用**下标**回查 `state.currentApp.parents`，而不是把参数塞进 `data-*`：
-   * 上级要带的路由数据（如 `{ database }`）是随层级变的，塞进属性等于把
-   * 「下一层叫什么参数」的知识漏进视图里。
-   *
-   * @param {Object} event 点击事件（`currentTarget.dataset.index` 为层级下标）。
-   * @return {void}
-   */
   function handleCrumbNavigation(event) {
     const index = Number(event.currentTarget?.dataset?.index);
     const parent = (state.currentApp.parents || [])[index];
@@ -125,10 +102,7 @@ const headerController = controller(({ eventTo, getRouteData, navigateTo, onRout
   }
 
   function updateUserNavigation(user) {
-    state.showWebsiteInfo = Number(user?.roleId || user?.role || 0) === 1 || Number(user?.roleAuth || 0) === 1;
-    state.showDaily = state.showWebsiteInfo;
-    state.showUserManagement = !!String(user?.name || '').trim();
-    state.showDatabaseAdmin = Number(user?.roleId || user?.role || 0) === 1;
+    applyNavFlags(state, user);
   }
 
   function handleNavigation(event) {
@@ -188,7 +162,7 @@ const headerController = controller(({ eventTo, getRouteData, navigateTo, onRout
     const stopRoute = onRouteChange(updateCurrentApplication);
     const stopAuth = AUTH.subscribe(function (authState) {
       updateUserNavigation(authState.user);
-      if (!authState.authenticated) syncNotificationBadge(false, 0);
+      if (!authState.loggedIn) syncNotificationBadge(false, 0);
     });
     return function () {
       stopReplyNotification?.();
@@ -207,4 +181,5 @@ const headerController = controller(({ eventTo, getRouteData, navigateTo, onRout
     toFrontHome
   };
 });
+
 export default headerController;

@@ -3,7 +3,7 @@
 :host {
   display: block;
   width: 100%;
-  min-height: 44px;
+  min-height: max(28px, calc(45 / var(--kniu_vw)));
   margin: 0;
   color: var(--kniu-text-color, #606266);
   font: 16px/1 var(--kniu-font-family);
@@ -32,7 +32,6 @@ button {
   cursor: pointer;
   overflow: visible;
   transition: color .15s, border-color .15s, background-color .15s;
-  box-sizing: border-box
 }
 
 button:hover,

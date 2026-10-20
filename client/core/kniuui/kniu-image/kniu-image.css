@@ -29,7 +29,6 @@
   justify-content: flex-start;
   padding: 0 12px;
   background-color: #fff;
-  box-sizing: border-box;
   overflow: hidden
 }
 
@@ -46,7 +45,6 @@
   line-height: 38px;
   text-align: center;
   white-space: nowrap;
-  box-sizing: border-box
 }
 
 .kniu_sys_image_group[data-affix="true"] .kniu_sys_image_content {

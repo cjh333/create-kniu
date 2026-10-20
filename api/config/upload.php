@@ -45,7 +45,8 @@ $config = [
     'article' => 'article/',
     'logo' => 'logo/',
     'avatar' => 'avatar/',
-    'product' => 'product/'
+    'product' => 'product/',
+    'feedback' => 'feedback/'
   ],
   // 文件 URL 前缀。
   'URL_PREFIX' => '/upload/'

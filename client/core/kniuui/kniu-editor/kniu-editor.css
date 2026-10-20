@@ -16,18 +16,13 @@
   align-self: flex-start;
   flex: none;
   padding: 0 20px;
-  border: 1px solid var(--kniu-border-color,#dcdfe6);
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
   background-color: var(--kniu-fill-color, #f5f7fa);
   color: var(--kniu-color-info, #909399);
   font-size: 14px;
   line-height: 38px;
   text-align: center;
   white-space: nowrap;
-  box-sizing: border-box;
-  -webkit-box-sizing: border-box;
-  -moz-box-sizing: border-box;
-  -ms-box-sizing: border-box;
-  -o-box-sizing: border-box;
 }
 
 .kniu_sys_editor_group[data-has-prepend="true"] .kniu_sys_editor_prepend {
@@ -38,7 +33,7 @@
   -moz-justify-content: flex-start;
   -ms-justify-content: flex-start;
   -o-justify-content: flex-start;
-  border: calc(1 / var(--kniu_vw)) solid var(--kniu-border-color,#dcdfe6);
+  border: calc(1 / var(--kniu_vw)) solid var(--kniu-border-color, #dcdfe6);
   border-bottom: none;
   border-radius: calc(4 / var(--kniu_vw)) calc(4 / var(--kniu_vw)) 0 0;
   -webkit-border-radius: calc(4 / var(--kniu_vw)) calc(4 / var(--kniu_vw)) 0 0;
@@ -65,7 +60,7 @@
   -moz-flex-direction: column;
   -ms-flex-direction: column;
   -o-flex-direction: column;
-  border: 1px solid var(--kniu-border-color,#dcdfe6);
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
   border-radius: 4px;
   -webkit-border-radius: 4px;
   -moz-border-radius: 4px;
@@ -121,7 +116,6 @@
   -moz-flex: none;
   -ms-flex: none;
   -o-flex: none;
-  border: none;
   border-radius: 4px;
   -webkit-border-radius: 4px;
   -moz-border-radius: 4px;
@@ -129,7 +123,6 @@
   -o-border-radius: 4px;
   width: 32px;
   height: 30px;
-  padding: 0;
   font-size: 14px;
   font-weight: 600;
   line-height: 1;
@@ -227,22 +220,24 @@
   overflow-y: auto;
   font: 14px/1.7 var(--kniu-font-family);
   color: #303133;
-  word-break: break-word;
-  cursor: text
+  cursor: text;
 }
 
 .kniu_sys_editor_content_wrap {
-  display: flex;
-  min-height: 200px;
-  max-height: 400px;
   overflow: hidden;
-  background-color: #fff
+  display: flex;
+  display: -webkit-flex;
+  background-color: #fff;
 }
 
 .kniu_sys_editor_content_wrap .kniu_sys_editor_content {
   flex: 1;
+  -webkit-flex: 1;
+  -moz-flex: 1;
+  -ms-flex: 1;
+  -o-flex: 1;
   min-width: 0;
-  max-height: none
+  max-height: none;
 }
 
 .kniu_sys_editor_content:empty::before {
@@ -294,7 +289,7 @@
 .kniu_sys_editor_content blockquote {
   margin: .5em 0;
   padding: .5em 1em;
-  border-left: 4px solid var(--kniu-border-color,#dcdfe6);
+  border-left: 4px solid var(--kniu-border-color, #dcdfe6);
   background-color: #f9fafc;
   color: var(--kniu-text-color, #606266)
 }
@@ -350,46 +345,48 @@
 }
 
 .kniu_sys_editor_content .kniu_sys_editor_media_selected {
-  outline: 0;
   filter: brightness(.62) sepia(.65) saturate(5) hue-rotate(175deg);
-  transition: filter .15s ease
+  -webkit-filter: brightness(.62) sepia(.65) saturate(5) hue-rotate(175deg);
+  -moz-filter: brightness(.62) sepia(.65) saturate(5) hue-rotate(175deg);
+  -ms-filter: brightness(.62) sepia(.65) saturate(5) hue-rotate(175deg);
+  -o-filter: brightness(.62) sepia(.65) saturate(5) hue-rotate(175deg);
+  transition: filter .15s ease;
+  -webkit-transition: filter .15s ease;
+  -moz-transition: filter .15s ease;
+  -ms-transition: filter .15s ease;
+  -o-transition: filter .15s ease;
 }
 
 .kniu_sys_editor_source {
+  z-index: 1;
+  position: relative;
   display: none;
-  min-height: 200px;
-  max-height: 400px;
   width: 100%;
   padding: 10px 14px;
-  border: 0;
-  outline: 0;
   resize: none;
   font: 14px/1.7 var(--kniu-font-family);
+  background-color: transparent;
   color: #303133;
-  box-sizing: border-box;
-  background-color: #fbfbfc
 }
 
 .kniu_sys_editor_source_wrap {
-  display: none;
-  position: relative;
-  min-height: 200px;
-  max-height: 400px;
   overflow: hidden;
-  background-color: #fbfbfc
+  position: relative;
+  display: none;
+  background-color: #fbfbfc;
 }
 
 .kniu_sys_editor_source_lines {
   display: none;
+  position: relative;
+  z-index: 1;
   flex: none;
   width: 48px;
   padding: 14px 8px 14px 0;
   overflow: hidden;
   color: #9ca3af;
-  font: 14px/1.7 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font: 14px/1.7 var(--kniu-font-family);
   text-align: right;
-  user-select: none;
-  box-sizing: border-box;
   background-color: #f3f4f6;
   border-right: 1px solid #e5e7eb
 }
@@ -409,8 +406,6 @@
   color: #9ca3af;
   font: 14px/1.7 var(--kniu-font-family);
   text-align: right;
-  user-select: none;
-  box-sizing: border-box;
   background-color: #f3f4f6;
   border-right: 1px solid #e5e7eb
 }
@@ -418,75 +413,79 @@
 .kniu_sys_editor_line_numbers_inner span {
   display: block;
   height: 1.7em;
-  white-space: nowrap
+  white-space: nowrap;
 }
 
 .kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_content {
-  display: none
+  display: none;
 }
 
 .kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_content {
-  display: none
+  display: none;
 }
 
 .kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_content_wrap,
 .kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_content_wrap {
-  display: none
+  display: none;
 }
 
 .kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_source_wrap {
   display: flex;
-  min-height: 260px
+  display: -webkit-flex;
 }
 
 .kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_source_lines {
-  display: block
+  display: block;
 }
 
 .kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_source {
-  display: block;
-  min-height: 260px;
-  max-height: none;
   flex: 1;
+  -webkit-flex: 1;
+  -moz-flex: 1;
+  -ms-flex: 1;
+  -o-flex: 1;
+  display: block;
   padding: 14px;
-  font: 14px/1.7 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font: 14px/1.7 var(--kniu-font-family);
   white-space: pre-wrap;
-  resize: none
+  resize: none;
 }
 
 .kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source_wrap {
-  display: flex
+  display: flex;
+  display: -webkit-flex;
 }
 
-/* 代码模式：行高/字号与富文本态（14px/1.7）保持一致，切模式时行距不跳。 */
 .kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source_lines {
   display: block;
   padding: 10px 8px 10px 0;
-  font: 14px/1.7 var(--kniu-font-family)
+  font: 14px/1.7 var(--kniu-font-family);
 }
 
 .kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source_lines_inner span {
   height: 1.7em
 }
 
-/* 源码态字号/行高统一由上方 .kniu_sys_editor_source 基类给出（14px/1.7），此处只管布局。 */
 .kniu_sys_editor_group[data-code-mode="true"] .kniu_sys_editor_source {
+  flex: 1;
+  -webkit-flex: 1;
+  -moz-flex: 1;
+  -ms-flex: 1;
+  -o-flex: 1;
   display: block;
-  flex: 1
 }
 
 .kniu_sys_editor_select {
   height: 28px;
   max-width: 120px;
   padding: 0 8px;
-  border: 1px solid var(--kniu-border-color,#dcdfe6);
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
   border-radius: 4px;
   background-color: #fff;
   color: var(--kniu-text-color, #606266);
   font-size: 12px;
   cursor: pointer;
   flex: none;
-  box-sizing: border-box
 }
 
 .kniu_sys_editor_fontname {
@@ -544,12 +543,11 @@
   width: 30px;
   height: 28px;
   padding: 0;
-  border: 1px solid var(--kniu-border-color,#dcdfe6);
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
   border-radius: 3px;
   background-color: #fff;
   cursor: pointer;
   flex: none;
-  box-sizing: border-box
 }
 
 .kniu_sys_editor_color::-webkit-color-swatch-wrapper {
@@ -597,7 +595,7 @@
 
 .kniu_sys_editor_content td,
 .kniu_sys_editor_content th {
-  border: 1px solid var(--kniu-border-color,#dcdfe6);
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
   padding: 6px 10px;
   min-width: 40px;
   height: 22px
@@ -616,7 +614,6 @@
   max-width: calc(100% - 16px);
   overflow-x: hidden;
   overflow-y: auto;
-  box-sizing: border-box
 }
 
 .kniu_sys_editor_popover[hidden] {
@@ -645,10 +642,9 @@
   width: 70px;
   height: 28px;
   padding: 0 6px;
-  border: 1px solid var(--kniu-border-color,#dcdfe6);
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
   border-radius: 4px;
   font-size: 13px;
-  box-sizing: border-box
 }
 
 .kniu_sys_editor_popover_link {
@@ -719,14 +715,13 @@
   width: 14px;
   height: 14px;
   margin: 0;
-  border: 1px solid var(--kniu-border-color,#dcdfe6);
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
   border-radius: 2px;
   outline: 0;
   background-color: #fff;
   background-position: center;
   background-repeat: no-repeat;
   background-size: 10px 8px;
-  box-sizing: border-box;
   cursor: pointer
 }
 
@@ -745,12 +740,11 @@
   flex: 1;
   height: 28px;
   padding: 0 8px;
-  border: 1px solid var(--kniu-border-color,#dcdfe6);
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
   border-radius: 4px;
   background-color: #fff;
   color: var(--kniu-text-color, #606266);
   font-size: 13px;
-  box-sizing: border-box
 }
 
 .kniu_sys_editor_popover_actions {
@@ -763,7 +757,7 @@
 .kniu_sys_editor_popover_cancel {
   height: 30px;
   padding: 0 14px;
-  border: 1px solid var(--kniu-border-color,#dcdfe6);
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
   border-radius: 4px;
   background-color: #fff;
   color: var(--kniu-text-color, #606266);
@@ -895,7 +889,6 @@
   border: 1px solid transparent;
   border-radius: 2px;
   cursor: pointer;
-  box-sizing: border-box
 }
 
 .kniu_sys_editor_swatch:hover {
@@ -917,11 +910,6 @@
 
 .kniu_sys_editor_emoji:hover {
   background-color: var(--kniu-color-primary-light, #ecf5ff)
-}
-
-:host([data-preview="true"]) .kniu_sys_editor_content {
-  background-color: #fafafa;
-  cursor: default
 }
 
 :host([data-maximized="true"]) {
@@ -947,29 +935,192 @@
   max-height: none;
   border-radius: 0;
   display: flex;
-  flex-direction: column
+  flex-direction: column;
+  -webkit-flex-direction: column;
+  -moz-flex-direction: column;
+  -ms-flex-direction: column;
+  -o-flex-direction: column;
 }
 
 :host([data-maximized="true"]) .kniu_sys_editor_content_wrap,
 :host([data-maximized="true"]) .kniu_sys_editor_source_wrap {
   flex: 1;
+  -webkit-flex: 1;
+  -moz-flex: 1;
+  -ms-flex: 1;
+  -o-flex: 1;
   min-height: 0;
-  max-height: none
+  max-height: none;
 }
 
 :host([data-maximized="true"]) .kniu_sys_editor_content,
 :host([data-maximized="true"]) .kniu_sys_editor_source {
   min-height: 0;
-  max-height: none
+  max-height: none;
 }
 
 :host([data-maximized="true"]) .kniu_sys_editor_prepend,
 :host([data-maximized="true"]) .kniu_sys_editor_append {
-  display: none
+  display: none;
 }
 
 :host([data-invalid="true"]) .kniu_sys_editor_main {
   border-color: var(--kniu-color-danger, #f56c6c)
+}
+
+.kniu_sys_editor_split {
+  overflow: hidden;
+  display: flex;
+  display: -webkit-flex;
+  flex-direction: column;
+  -webkit-flex-direction: column;
+  -moz-flex-direction: column;
+  -ms-flex-direction: column;
+  -o-flex-direction: column;
+  min-height: calc(300 / var(--kniu_vw));
+  max-height: calc(600 / var(--kniu_vw));
+  background-color: #fff;
+}
+
+.kniu_sys_editor_preview_wrap {
+  display: none;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  background-color: #fff
+}
+
+.kniu_sys_editor_preview {
+  display: none;
+  position: relative;
+  z-index: 1;
+  overflow: auto;
+  padding: 14px;
+  box-sizing: border-box;
+  font-size: 14px;
+  line-height: 1.7;
+  background-color: transparent;
+  border-left: 1px solid var(--kniu-border-color, #dcdfe6)
+}
+
+.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_split {
+  flex-direction: row;
+  -webkit-flex-direction: row;
+  -moz-flex-direction: row;
+  -ms-flex-direction: row;
+  -o-flex-direction: row;
+}
+
+.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_source_wrap {
+  flex: 1;
+  -webkit-flex: 1;
+  -moz-flex: 1;
+  -ms-flex: 1;
+  -o-flex: 1;
+}
+
+.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_preview_wrap {
+  display: block;
+}
+
+.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.kniu_sys_editor_group[data-markdown-mode="true"][data-markdown-preview="false"] .kniu_sys_editor_preview_wrap {
+  display: none;
+}
+
+.kniu_sys_editor_group[data-markdown-mode="true"][data-markdown-preview="false"] .kniu_sys_editor_source_wrap {
+  flex: 1;
+  -webkit-flex: 1;
+  -moz-flex: 1;
+  -ms-flex: 1;
+  -o-flex: 1;
+}
+
+.kniu_sys_editor_pane_badge {
+  display: none;
+  position: absolute;
+  top: 6px;
+  right: 18px;
+  z-index: 0;
+  color: #909399;
+  font-size: max(12px, calc(12 / var(--kniu_vw)));
+  line-height: 1;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  user-select: none;
+  pointer-events: none
+}
+
+.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_pane_badge {
+  display: block
+}
+
+.kniu_sys_editor_statusbar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border-top: 1px solid #ebeef5;
+  background-color: #fafbfc;
+  color: #909399;
+  font-size: 12px;
+  line-height: 30px;
+  user-select: none
+}
+
+.kniu_sys_editor_group[data-markdown-mode="true"] .kniu_sys_editor_statusbar {
+  display: flex
+}
+
+.kniu_sys_editor_status_info {
+  white-space: nowrap
+}
+
+.kniu_sys_editor_status_sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  white-space: nowrap
+}
+
+.kniu_sys_editor_status_sync input[type="checkbox"] {
+  appearance: none;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-radius: 2px;
+  outline: 0;
+  background-color: #fff;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 10px 8px;
+  cursor: pointer
+}
+
+.kniu_sys_editor_status_sync input[type="checkbox"]:checked {
+  border-color: var(--kniu-color-primary, #409eff);
+  background-color: var(--kniu-color-primary, #409eff);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 10'%3E%3Cpath d='M1 5l3 3 7-7' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+}
+
+.kniu_sys_editor_status_sync input[type="checkbox"]:focus-visible {
+  outline: 2px solid rgba(64, 158, 255, .3);
+  outline-offset: 2px
+}
+
+:host([data-maximized="true"]) .kniu_sys_editor_split {
+  flex: 1;
+  min-height: 0;
+  max-height: none
 }
 
 @media (min-width:calc(1280px - 60px)) {
@@ -981,7 +1132,7 @@
     width: auto;
     min-width: 0;
     justify-content: center;
-    border: 1px solid var(--kniu-border-color,#dcdfe6);
+    border: 1px solid var(--kniu-border-color, #dcdfe6);
     border-right: 0;
     border-radius: 4px 0 0 4px
   }

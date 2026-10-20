@@ -1,4 +1,4 @@
-!kniu_project/
+!KniuProject/
 .agents/
 .openai/
 .vscode/
@@ -10,10 +10,16 @@ public/upload/
 upload/
 logs/
 dist/
-test/
+test/*
+!test/probe_*.mjs
+!test/check_*.mjs
+!test/probe_*.php
 tmp/
+api/runtime/
 api/ssl/
 api/cert/
+api/config/ssl/
+api/config/cert/
 .env
 .env.local
 .env.development.local

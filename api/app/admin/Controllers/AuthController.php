@@ -62,7 +62,7 @@ class AuthController extends Controller
         'role_auth' => $_SESSION['admin_token']['role_auth'] ?? 0,
         'front_user_id' => $front['id'],
         'nickname' => $front['nickname']
-      ], '您已登录', 1);
+      ], '您已登录', ErrorCode::SUCCESS);
       return;
     }
 
@@ -79,13 +79,21 @@ class AuthController extends Controller
       return;
     }
 
+    // 防爆破：按「账号+IP」持久化计数，连续失败 5 次锁 10 分钟（算术验证码可被脚本破解，不作为唯一闸门）。
+    if ($this->checkLoginLock('admin', $username)) {
+      $this->json([], '失败次数过多，请 10 分钟后再试', ErrorCode::CREDENTIAL_INVALID);
+      return;
+    }
+
     $result = Db::name('tb_role')
       ->where('name', '=', htmlspecialchars($username, ENT_QUOTES))
       ->field(['id', 'name', 'password', 'role', 'role_auth', 'is_show'])
       ->select();
 
     if (empty($result)) {
-      $this->json([], '用户不存在', ErrorCode::NOT_FOUND);
+      // 账号不存在与密码错误同口径：登记失败计数 + 同文案同码，防账号枚举。
+      $this->registerLoginFailure('admin', $username);
+      $this->json([], '用户名或密码错误', ErrorCode::CREDENTIAL_INVALID);
       return;
     }
 
@@ -98,6 +106,9 @@ class AuthController extends Controller
 
     if ($this->verifyPassword($password, $userData['password'])) {
       session_regenerate_id(true);
+      // 清锁键必须与失败计数键同源（原始输入）：库内 name 是 htmlspecialchars 编码值，
+      // 账号名含特殊字符时两者 md5 键不同，会导致成功登录后失败计数永远清不掉。
+      $this->clearLoginLock('admin', $username);
       $token = bin2hex(random_bytes(32));
 
       // 加载认证配置
@@ -127,9 +138,10 @@ class AuthController extends Controller
         'role_auth' => $userData['role_auth'] ?? 0,
         'front_user_id' => $front['id'],
         'nickname' => $front['nickname']
-      ], '登录成功', 1);
+      ], '登录成功', ErrorCode::SUCCESS);
       return;
     }
+    $this->registerLoginFailure('admin', $username);
     $this->json([], '用户名或密码错误', ErrorCode::CREDENTIAL_INVALID);
   }
 
@@ -138,6 +150,13 @@ class AuthController extends Controller
   {
     if (session_status() === PHP_SESSION_NONE) {
       session_start();
+    }
+    // 与 frontProfileClear 同口径：退出同时摘除该账号的前台身份令牌绑定，
+    // 否则前端 localStorage 里的旧令牌在有效期内仍可认证（共享账号模型，
+    // 后台退出即前后台一起退出）。
+    $roleId = $this->currentLoginId();
+    if ($roleId > 0) {
+      Db::name('tb_role')->where('id', '=', $roleId)->update(['identity_token' => Db::raw('NULL'), 'token_expire_time' => Db::raw('NULL')]);
     }
     unset($_SESSION['admin_token']);
     if (session_status() === PHP_SESSION_ACTIVE) {
@@ -150,7 +169,7 @@ class AuthController extends Controller
       }
       session_destroy();
     }
-    $this->json([], '退出登录成功', 1);
+    $this->json([], '退出登录成功', ErrorCode::SUCCESS);
   }
 
   /** 后台登录成功后把前台身份令牌同步到统一账号表。 */
@@ -161,12 +180,7 @@ class AuthController extends Controller
       return ['id' => 0, 'nickname' => $nickname];
     }
     $tokenHash = hash('sha256', strtolower($token));
-    // Db::update 会过滤 PHP null；使用原始 NULL 才能真正解除旧账号绑定。
-    Db::name('tb_role')->where('identity_token', '=', $tokenHash)->where('id', '<>', $roleId)->update(['identity_token' => Db::raw('NULL')]);
-    Db::name('tb_role')->where('id', '=', $roleId)->update([
-      'identity_token' => $tokenHash,
-      'nickname' => Db::name('tb_role')->where('id', '=', $roleId)->value('nickname')
-    ]);
+    $this->bindIdentityToken($tokenHash, $roleId, true);
     $_SESSION['front_token'] = [
       'id' => $roleId,
       'name' => $nickname,

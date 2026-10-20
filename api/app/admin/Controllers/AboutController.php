@@ -4,6 +4,7 @@ namespace App\Admin\Controllers;
 
 use Core\Base;
 use Core\Db;
+use Core\ErrorCode;
 
 /**
  * 「关于我」内容控制器（按账号存储）。
@@ -34,9 +35,15 @@ class AboutController extends Base
   {
     $userId = $this->currentUserId();
     $avatar = $this->input('post.avatar/s', '');
-    if (!empty($_FILES['avatar']) && is_array($_FILES['avatar'])) {
+    if (!empty($_FILES['avatar']) && is_array($_FILES['avatar'])
+      && ($_FILES['avatar']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
       $uploaded = $this->uploadFile($_FILES['avatar'], 'avatar');
-      if ($uploaded !== '') $avatar = $uploaded;
+      if ($uploaded === '') {
+        // 与文章封面/SEO 同口径：传了文件但被校验拒绝必须报错，禁静默吞掉。
+        $this->json([], '头像上传失败（类型或大小不符合要求）', ErrorCode::UPLOAD_REJECTED);
+        return;
+      }
+      $avatar = $uploaded;
     }
     $data = $this->encodeFields([
       'avatar' => (string)$avatar,
@@ -57,13 +64,27 @@ class AboutController extends Base
           'issue_time' => $now
         ]);
     } else {
-      Db::name('tb_about')->insert([
-        'role_id' => $userId,
-        'avatar' => $data['avatar'], 'summary' => $data['summary'], 'content' => $data['content'],
-        'create_time' => $now,
-        'issue_time' => $now
-      ]);
+      try {
+        Db::name('tb_about')->insert([
+          'role_id' => $userId,
+          'avatar' => $data['avatar'], 'summary' => $data['summary'], 'content' => $data['content'],
+          'create_time' => $now,
+          'issue_time' => $now
+        ]);
+      } catch (\Throwable $e) {
+        // 并发首存撞 uk_about_role（D-L13）：对方请求已建行，降级为更新，保存语义不变。
+        if (stripos((string)$e->getMessage(), 'uk_about_role') !== false) {
+          Db::name('tb_about')
+            ->where('role_id', '=', $userId)
+            ->update([
+              'avatar' => $data['avatar'], 'summary' => $data['summary'], 'content' => $data['content'],
+              'issue_time' => $now
+            ]);
+        } else {
+          throw $e;
+        }
+      }
     }
-    $this->json([], '保存成功', 1);
+    $this->json([], '保存成功', ErrorCode::SUCCESS);
   }
 }

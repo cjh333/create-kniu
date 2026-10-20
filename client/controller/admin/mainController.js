@@ -4,8 +4,8 @@ import UTIL from '../../core/kniuui/kniuui.mjs';
 const { controller } = MVVM;
 
 const mainController = controller(({ reactive }) => {
-    const state = reactive({ ui: UTIL.state });
-    return { state };
+  const state = reactive({ ui: UTIL.state });
+  return { state };
 });
 
 export default mainController;

@@ -26,7 +26,7 @@ class NavController extends Base
     ];
     $data = $this->encodeFields($data, ['name', 'url']);
     Db::name('tb_nav')->insert($data);
-    $this->json([], '添加成功', 1);
+    $this->json([], '添加成功', ErrorCode::SUCCESS);
   }
 
   // 删除。
@@ -49,7 +49,7 @@ class NavController extends Base
       $this->json([], '导航不存在或已被删除', ErrorCode::NOT_FOUND);
       return;
     }
-    $this->json([], '删除成功', 1);
+    $this->json([], '删除成功', ErrorCode::SUCCESS);
   }
 
   // 修改。
@@ -77,13 +77,7 @@ class NavController extends Base
     }
     $data = $this->encodeFields($data, ['name', 'url']);
     if ($type === 'KNIU_TABLE_EVENT_CHECKALL') {
-      $selectallResult = Db::name('tb_selectall')
-        ->where('name', '=', 'nav')
-        ->update(['is_select' => $isSelectall]);
-      $dailyResult = Db::name('tb_nav')
-        ->whereIn('id', explode(',', $id))
-        ->update(['is_select' => $data['is_select']]);
-      $result = $selectallResult + $dailyResult;
+      $result = $this->applySelectallBatch('nav', 'tb_nav', $isSelectall, $data['is_select'] ?? null, (string)$id);
     } else {
       $dailyResult = Db::name('tb_nav')
         ->where('id', '=', $id)
@@ -99,7 +93,7 @@ class NavController extends Base
       $this->json([], '数据未发生变化', ErrorCode::RULE_REJECTED);
       return;
     }
-    $this->json([], '更新成功', 1);
+    $this->json([], '更新成功', ErrorCode::SUCCESS);
   }
 
   // 查询。
@@ -110,7 +104,7 @@ class NavController extends Base
     $sort = $this->input('post.sort') ?? 'asc';
     $pageCurrent = (int)($this->input('post.page_current') ?? 1);
     $pageRow = (int)($this->input('post.page_rows') ?? 10);
-    $selectall = Db::name('tb_selectall')->where('id', '=', 1)->value('is_select') ?? 0;
+    $selectall = Db::name('tb_selectall')->where('name', '=', 'nav')->value('is_select') ?? 0;
     $result = Db::name($table)
       ->order($field, $sort)
       ->page($pageCurrent, $pageRow);

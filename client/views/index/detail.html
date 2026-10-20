@@ -20,10 +20,10 @@
               <h4 class="detail_subtitle_1">{{subtitle}}</h4>
             </div>
             <div class="detail_article_info">
-              <a class="detail_article_link" :option="{{roleId:publisher_role_id,onClick:toAbout}}" href="javascript:;">发布人：{{publisher}}</a>
+              <a class="detail_article_link" :option="{{roleId:publisher_role_id,onClick:toAbout}}" href="javascript:;">发布者：{{publisher}}</a>
+              <span>浏览数：{{hits}}次</span>
+              <span>点赞数：{{likeOptions.count}}次</span>
               <span>发布于：{{create_time}}</span>
-              <span>浏览次数：{{hits}}次</span>
-              <span>点赞数：{{likeOptions.count}}</span>
             </div>
             <div :class="{{content_mode === 'markdown' ? 'detail_content_1 kniu_sys_markdown_body' : 'detail_content_1 kniu_sys_richtext_body'}}">{{@content}}</div>
           </div>

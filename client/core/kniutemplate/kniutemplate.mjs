@@ -32,7 +32,73 @@ var KniuTemplate = (function () {
     if (obj != null) obj[parts[parts.length - 1]] = value;
   }
 
-  // 模板表达式作用域的危险键：拦截原型链逃逸（constructor.constructor('…')() ⇒ 任意代码执行）
+  function upgradeCustomElements(root) {
+    if (!root || typeof customElements === 'undefined' || typeof customElements.upgrade !== 'function') return;
+    const getNames = customElements.getNames;
+    if (typeof getNames === 'function') {
+      const definedNames = getNames.call(customElements);
+      if (!definedNames.length) return;
+      const selector = definedNames.join(',');
+      const hit = (typeof root.matches === 'function' && root.matches(selector))
+        || (typeof root.querySelector === 'function' && root.querySelector(selector) !== null);
+      if (!hit) return;
+    }
+    if (root.ownerDocument && root.ownerDocument !== document) document.adoptNode(root);
+    customElements.upgrade(root);
+  }
+
+  const FOR_ATTRS = ['kniu:for', ':for'];
+  const IF_ATTRS = ['kniu:if', ':if'];
+  const DIRECTIVE_ATTRS = FOR_ATTRS.concat(IF_ATTRS, ['kniu:elseif', ':elseif', 'kniu:else', ':else']);
+  const EVENT_ATTR_RE = /^(?:kniu@|@)[a-z][a-z0-9-]*(?:\.[a-z0-9.]+)?$/i;
+
+  function hasEventAttributes(root) {
+    if (!root) return false;
+    const elements = selfAndDescendants(root);
+    for (let i = 0; i < elements.length; i++) {
+      const attrs = elements[i].attributes;
+      if (!attrs) continue;
+      for (let j = 0; j < attrs.length; j++) {
+        if (EVENT_ATTR_RE.test(attrs[j].name)) return true;
+      }
+    }
+    if (typeof root.querySelectorAll === 'function') {
+      const templates = root.querySelectorAll('template');
+      for (let k = 0; k < templates.length; k++) {
+        if (hasEventAttributes(templates[k].content)) return true;
+      }
+    }
+    return false;
+  }
+  function hasDirectiveAncestor(node) {
+    let p = node.parentElement;
+    while (p) {
+      for (let i = 0; i < DIRECTIVE_ATTRS.length; i++) {
+        if (p.hasAttribute(DIRECTIVE_ATTRS[i])) return true;
+      }
+      p = p.parentElement;
+    }
+    return false;
+  }
+  function queryDirectives(root, attrs) {
+    const matches = function (n) {
+      for (let i = 0; i < attrs.length; i++) {
+        if (n.hasAttribute(attrs[i])) return true;
+      }
+      return false;
+    };
+    const result = [];
+    if (root && root.nodeType === 1 && matches(root)) result.push(root);
+    return result.concat(Array.prototype.filter.call(root.querySelectorAll('*'), matches));
+  }
+
+  function hasAnyDirective(node) {
+    for (let i = 0; i < DIRECTIVE_ATTRS.length; i++) {
+      if (node.hasAttribute(DIRECTIVE_ATTRS[i])) return true;
+    }
+    return false;
+  }
+
   const DANGEROUS_SCOPE_KEYS = new Set([
     'constructor', '__proto__', 'prototype', '__defineGetter__', '__defineSetter__',
     '__lookupGetter__', '__lookupSetter__',
@@ -52,21 +118,21 @@ var KniuTemplate = (function () {
         get(_, key) {
           if (key === Symbol.unscopables) return undefined;
           if (typeof key !== 'string') return obj[key];
-          // 原型链逃逸防护：{{ constructor.constructor('...')() }} 可从模板字符串构造任意代码，
-          // 模板表达式输入源含非完全可信内容时即为 RCE/XSS——危险键一律返回 undefined。
           if (DANGEROUS_SCOPE_KEYS.has(key)) return undefined;
           if (prefix === '' && extra && key in extra) {
             accessed.push(key);
-            return extra[key];
+            const ev = extra[key];
+            if (ev !== null && typeof ev === 'object'
+              && !(ev instanceof Date) && !(ev instanceof Node) && !Array.isArray(ev)) {
+              return wrap(ev, key);
+            }
+            return ev;
           }
           const full = prefix ? prefix + '.' + key : key;
           accessed.push(full);
           const v = obj[key];
           if (v === undefined) {
-            const g = globalThis[key];
-            // globalThis 兜底同样挡住危险键（如 globalThis.constructor），并只放行自有属性
-            if (g === undefined || DANGEROUS_SCOPE_KEYS.has(key) || !Object.prototype.hasOwnProperty.call(globalThis, key)) return undefined;
-            return g;
+            return undefined;
           }
           if (v === null || typeof v !== 'object') return v;
           if (v instanceof Date || v instanceof Node || Array.isArray(v)) return v;
@@ -92,6 +158,74 @@ var KniuTemplate = (function () {
   function stripBraces(raw) {
     const m = String(raw).trim().match(/^\{\{([\s\S]*)\}\}$/);
     return m ? m[1].trim() : String(raw).trim();
+  }
+
+  function extractBracedExpr(raw) {
+    const m = String(raw).match(/\{\{([\s\S]*?)\}\}/);
+    return (m ? m[1] : String(raw)).trim();
+  }
+
+  function parseBindingSegments(text, trackRaw) {
+    const segments = [];
+    const source = String(text == null ? '' : text);
+    let last = 0;
+    let m;
+    const re = /\{\{\s*([\s\S]*?)\s*\}\}/g;
+    while ((m = re.exec(source))) {
+      if (m.index > last) segments.push({ t: 'text', v: source.slice(last, m.index) });
+      const raw = m[1].trim();
+      const unescape = raw.startsWith('@');
+      const segment = { t: 'key', k: unescape ? raw.slice(1).trim() : raw };
+      if (trackRaw) segment.raw = unescape;
+      segments.push(segment);
+      last = m.index + m[0].length;
+    }
+    if (last < source.length) segments.push({ t: 'text', v: source.slice(last) });
+    return segments;
+  }
+
+  function toCamelCase(name) {
+    return String(name).replace(/-([a-z0-9])/g, function (_, char) { return char.toUpperCase(); });
+  }
+
+  function runCleanups(list) {
+    list.forEach(function (c) { return c(); });
+    list.length = 0;
+  }
+
+  function materializeRoots(tpl) {
+    const isTemplateEl = tpl.nodeType === 1 && tpl.tagName === 'TEMPLATE';
+    const frag = isTemplateEl ? tpl.content.cloneNode(true) : tpl.cloneNode(true);
+    upgradeCustomElements(frag);
+    return frag.nodeType === 11 ? [...frag.childNodes] : [frag];
+  }
+
+  function directiveAttr(node, name) {
+    return node.getAttribute('kniu:' + name) || node.getAttribute(':' + name) || null;
+  }
+  function hasDirectiveAttr(node, name) {
+    return node.hasAttribute('kniu:' + name) || node.hasAttribute(':' + name);
+  }
+  function removeDirectiveAttrs(node, name) {
+    node.removeAttribute('kniu:' + name);
+    node.removeAttribute(':' + name);
+  }
+
+  function selfAndDescendants(root) {
+    if (!root) return [];
+    if (typeof root.querySelectorAll !== 'function') return [root];
+    return [root, ...root.querySelectorAll('*')];
+  }
+
+  function collectSinceBaseline(anchorNode, baseline) {
+    const collected = [];
+    let sib = anchorNode.previousSibling;
+    while (sib && sib !== baseline) {
+      collected.unshift(sib);
+      sib = sib.previousSibling;
+    }
+    collected.push(anchorNode);
+    return collected;
   }
 
   function isFormFieldObject(value) {
@@ -168,6 +302,10 @@ var KniuTemplate = (function () {
     'style',
   ]);
 
+  const LOADING_ATTR_NAMES = ['kniu:loading', ':loading', 'kniu:loading.body', ':loading.body'];
+  const LOADING_BODY_ATTR_NAMES = ['kniu:loading.body', ':loading.body'];
+  const LOADING_TEXT_ATTR_NAMES = ['kniu:loading-text', ':loading-text'];
+
   const BOOLEAN_ATTRS = new Set([
     'checked', 'disabled', 'hidden', 'selected', 'readonly', 'multiple',
     'required', 'autofocus', 'defer', 'ismap', 'novalidate', 'open',
@@ -229,6 +367,65 @@ var KniuTemplate = (function () {
     left: ['ArrowLeft'], right: ['ArrowRight']
   };
 
+  function applyEventModifiers(event, eventName, modifiers) {
+    if ((DEFAULT_PREVENT_EVENTS.has(eventName) || eventName === 'click')
+      && !modifiers.includes('native') && !modifiers.includes('passive') && !event.defaultPrevented) {
+      event.preventDefault();
+    }
+    const isKeyboardEvent = event.type.startsWith('key');
+    const keyModifiers = isKeyboardEvent
+      ? modifiers.filter(function (modifier) {
+        return Object.prototype.hasOwnProperty.call(KEY_MODIFIER_VALUES, modifier);
+      })
+      : [];
+    if (keyModifiers.length) {
+      const matched = keyModifiers.some(function (modifier) {
+        return KEY_MODIFIER_VALUES[modifier].includes(event.key);
+      });
+      if (!matched) return false;
+    }
+    const requiredSystemKeys = new Set(modifiers.filter(function (modifier) {
+      return ['ctrl', 'shift', 'alt', 'meta'].includes(modifier);
+    }));
+    for (const modifier of modifiers) {
+      if (EVENT_OPTION_MODIFIERS.has(modifier) || keyModifiers.includes(modifier)) continue;
+      if (modifier === 'self' && event.target !== event.currentTarget) return false;
+      if (modifier === 'ctrl' && !event.ctrlKey) return false;
+      if (modifier === 'shift' && !event.shiftKey) return false;
+      if (modifier === 'alt' && !event.altKey) return false;
+      if (modifier === 'meta' && !event.metaKey) return false;
+      if (modifier === 'exact' && (
+        event.ctrlKey !== requiredSystemKeys.has('ctrl') || event.shiftKey !== requiredSystemKeys.has('shift') ||
+        event.altKey !== requiredSystemKeys.has('alt') || event.metaKey !== requiredSystemKeys.has('meta')
+      )) return false;
+      if (!isKeyboardEvent) {
+        if (modifier === 'left' && event.button !== 0) return false;
+        if (modifier === 'middle' && event.button !== 1) return false;
+        if (modifier === 'right' && event.button !== 2) return false;
+      }
+      if (modifier === 'stop') event.stopPropagation();
+      if (modifier === 'prevent') event.preventDefault();
+    }
+    return true;
+  }
+
+  function modifierListenerOptions(modifiers) {
+    return {
+      capture: modifiers.includes('capture'),
+      once: modifiers.includes('once'),
+      passive: modifiers.includes('passive')
+    };
+  }
+
+  function findUnknownModifiers(modifiers) {
+    return modifiers.filter(function (modifier) {
+      return !EVENT_OPTION_MODIFIERS.has(modifier) && !EVENT_BEHAVIOR_MODIFIERS.has(modifier);
+    });
+  }
+  function hasConflictingModifiers(modifiers) {
+    return modifiers.includes('passive') && modifiers.includes('prevent');
+  }
+
   function isValidEventForTag(event, tag) {
     const allowed = EVENT_TAGS[event];
     if (!allowed) return true;
@@ -237,6 +434,23 @@ var KniuTemplate = (function () {
   }
 
   const URL_ATTRS = new Set(['href', 'src', 'xlink:href', 'poster', 'srcset']);
+  const URL_PROXY_PREFIX = 'data-kniu-url-';
+
+  function neutralizeTemplateUrls(root) {
+    if (!root || (root.nodeType !== 1 && root.nodeType !== 11)) return root;
+    const nodes = selfAndDescendants(root);
+    nodes.forEach(function (node) {
+      if (node.nodeType !== 1) return;
+      [...node.attributes].forEach(function (attr) {
+        if (!URL_ATTRS.has(attr.name)) return;
+        if (!attr.value || !attr.value.includes('{{')) return;
+        node.setAttribute(URL_PROXY_PREFIX + attr.name, attr.value);
+        node.removeAttribute(attr.name);
+      });
+      if (node.tagName === 'TEMPLATE' && node.content) neutralizeTemplateUrls(node.content);
+    });
+    return root;
+  }
 
   const BLOCKED_TAGS = new Set(['script', 'iframe', 'object', 'embed', 'link', 'meta', 'style', 'base', 'form']);
 
@@ -273,6 +487,11 @@ var KniuTemplate = (function () {
   const SANITIZE_CACHE = new Map();
   const SANITIZE_CACHE_LIMIT = 200;
 
+  function cacheSetLimited(cache, key, value, limit) {
+    if (cache.size >= limit) cache.delete(cache.keys().next().value);
+    cache.set(key, value);
+  }
+
   function sanitizeHtml(html) {
     const D = typeof document !== 'undefined' ? document : null;
     if (D && D.createElement) {
@@ -283,11 +502,7 @@ var KniuTemplate = (function () {
         tpl.innerHTML = html;
         sanitizeNode(tpl.content);
         const result = tpl.innerHTML;
-        if (SANITIZE_CACHE.size >= SANITIZE_CACHE_LIMIT) {
-          // FIFO 淘汰最旧一项，而非全量 clear——高频不同 HTML 时保留热缓存
-          SANITIZE_CACHE.delete(SANITIZE_CACHE.keys().next().value);
-        }
-        SANITIZE_CACHE.set(key, result);
+        cacheSetLimited(SANITIZE_CACHE, key, result, SANITIZE_CACHE_LIMIT);
         return result;
       } catch {
 
@@ -356,12 +571,6 @@ var KniuTemplate = (function () {
     });
   }
 
-  function optionAttributeName(name) {
-    const raw = String(name || '');
-    if (raw.startsWith('data-') || raw.startsWith('aria-')) return raw;
-    return 'data-' + raw.replace(/[A-Z]/g, function (letter) { return '-' + letter.toLowerCase(); });
-  }
-
   function optionEventDescriptor(name) {
     const raw = String(name || '');
     if (!/^on[A-Z][A-Za-z0-9]*$/.test(raw)) return null;
@@ -409,10 +618,7 @@ var KniuTemplate = (function () {
           fn = null;
         }
       }
-      if (expressionCache.size >= EXPRESSION_CACHE_LIMIT) {
-        expressionCache.delete(expressionCache.keys().next().value);
-      }
-      expressionCache.set(e, fn);
+      cacheSetLimited(expressionCache, e, fn, EXPRESSION_CACHE_LIMIT);
     }
     return fn;
   }
@@ -425,10 +631,9 @@ var KniuTemplate = (function () {
     let value;
     try {
       value = fn(proxy);
-    } catch (e) {
+    } catch (err) {
       value = '';
-      // 开发模式不静默：拼错的字段名/运行时 TypeError 直接在控制台给出表达式原文与错误
-      if (globalThis.__KNIU_DEV__) warn('表达式求值失败 [' + e.slice(0, 120) + ']：' + (e && e.message ? e.message : 'unknown'));
+      if (globalThis.__KNIU_DEV__) warn('表达式求值失败 [' + e.slice(0, 120) + ']：' + (err && err.message ? err.message : 'unknown'));
     }
     return { value, paths: accessed };
   }
@@ -437,15 +642,11 @@ var KniuTemplate = (function () {
     if (!root || typeof document === 'undefined') return 0;
     const expressions = new Set();
     const collectText = function (value) {
-      const pattern = /\{\{\s*([\s\S]*?)\s*\}\}/g;
-      let match;
-      while ((match = pattern.exec(String(value || '')))) {
-        const raw = match[1].trim();
-        expressions.add(raw.startsWith('@') ? raw.slice(1).trim() : raw);
-      }
+      parseBindingSegments(value).forEach(function (segment) {
+        if (segment.t === 'key') expressions.add(segment.k);
+      });
     };
-    const nodes = [root];
-    if (root.querySelectorAll) nodes.push(...root.querySelectorAll('*'));
+    const nodes = selfAndDescendants(root);
     nodes.forEach(function (node) {
       if (node.nodeType === 3) {
         collectText(node.nodeValue);
@@ -511,8 +712,11 @@ var KniuTemplate = (function () {
       set(obj, key, value) {
         const had = Object.prototype.hasOwnProperty.call(obj, key);
         const old = obj[key];
+        const isArrayIndexAdd = !had && Array.isArray(obj) && key !== 'length';
+        const isArrayIndexSet = !isArrayIndexAdd && Array.isArray(obj)
+          && key !== 'length' && /^\d+$/.test(key);
         obj[key] = value;
-        if (!Object.is(old, value)) {
+        if (!Object.is(old, value) || isArrayIndexAdd) {
           const set = subscribers.get(key);
           if (set) [...set].forEach(function (fn) { queueJob(fn); });
           const observers = changeObservers.get(proxy);
@@ -520,6 +724,10 @@ var KniuTemplate = (function () {
           if (keyed) [...keyed].forEach(function (fn) { queueJob(fn); });
           const iterators = !had && observers && observers.get(ITERATE);
           if (iterators) [...iterators].forEach(function (fn) { queueJob(fn); });
+          if (isArrayIndexAdd || isArrayIndexSet) {
+            const lengthSubs = subscribers.get('length');
+            if (lengthSubs) [...lengthSubs].forEach(function (fn) { queueJob(fn); });
+          }
         }
         return true;
       },
@@ -566,6 +774,49 @@ var KniuTemplate = (function () {
     return proxy;
   }
 
+  function isTraversalStep(expr, path, extra) {
+    if (!extra || path.includes('.')) return false;
+    if (!Object.prototype.hasOwnProperty.call(extra, path)) return false;
+    const text = String(expr);
+    return text.includes(path + '.') || text.includes(path + '[');
+  }
+
+  function subscribeIterate(target, fn, cleanups) {
+    if (!target || typeof target !== 'object') return;
+    let observers = changeObservers.get(target);
+    if (!observers) {
+      observers = new Map();
+      changeObservers.set(target, observers);
+    }
+    let iterateSet = observers.get(ITERATE);
+    if (!iterateSet) {
+      iterateSet = new Set();
+      observers.set(ITERATE, iterateSet);
+    }
+    iterateSet.add(fn);
+    cleanups.push(function () {
+      const current = changeObservers.get(target);
+      const set = current && current.get(ITERATE);
+      if (set) set.delete(fn);
+    });
+  }
+
+  function subscribeWholeObject(target, fn, cleanups) {
+    if (!target || typeof target !== 'object' || !target[SUBS]) return;
+    const subs = target[SUBS];
+    const keys = Array.isArray(target) ? ['length'] : Object.keys(target);
+    keys.forEach(function (key) {
+      if (!subs.has(key)) subs.set(key, new Set());
+      const set = subs.get(key);
+      set.add(fn);
+      cleanups.push(function () {
+        const current = subs.get(key);
+        if (current) current.delete(fn);
+      });
+    });
+    subscribeIterate(target, fn, cleanups);
+  }
+
   function observe(target, key, listener) {
     if (!target || !target[IS_REACTIVE] || typeof listener !== 'function') return function () { };
     let observers = changeObservers.get(target);
@@ -607,35 +858,9 @@ var KniuTemplate = (function () {
     currentCollector = null;
   }
 
-  let _kniuLoadingStyleInjected = false;
-  function ensureLoadingStyle() {
-    if (_kniuLoadingStyleInjected) return;
-    if (typeof document === 'undefined') return;
-    if (document.getElementById('kniu_sys_loading_directive_style')) {
-      _kniuLoadingStyleInjected = true;
-      return;
-    }
-    const style = document.createElement('style');
-    style.id = 'kniu_sys_loading_directive_style';
-    style.textContent = [
-      '.kniu_sys_loading_mask{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;',
-      'align-items:center;justify-content:center;gap:8px;background-color:#fff;',
-      'backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;visibility:hidden;pointer-events:none;',
-      'transition:opacity .4s ease,visibility .4s ease}',
-      '.kniu_sys_loading_mask[data-active="true"]{opacity:1;visibility:visible;pointer-events:auto;transition:none}',
-      '.kniu_sys_loading_mask--body{position:fixed}',
-      '.kniu_sys_loading_spinner{width:34px;height:34px;box-sizing:border-box;border:3px solid rgba(64,158,255,.25);',
-      'border-top-color:#409eff;border-radius:50%;animation:kniu_sys_loading_directive_spin .7s linear infinite}',
-      '.kniu_sys_loading_text{font-size:13px;color:#606266;max-width:80%;text-align:center}',
-      '@keyframes kniu_sys_loading_directive_spin{to{transform:rotate(360deg)}}',
-      '@media (prefers-reduced-motion:reduce){.kniu_sys_loading_spinner{animation:none}}'
-    ].join('');
-    document.head.appendChild(style);
-    _kniuLoadingStyleInjected = true;
-  }
-
   function bind(scope, source, refs) {
     precompileTemplate(scope);
+    neutralizeTemplateUrls(scope);
     let state;
     if (source && source[IS_REACTIVE]) {
       state = source;
@@ -652,8 +877,27 @@ var KniuTemplate = (function () {
     const listeners = [];
     const listDisposers = [];
 
-    const subscribePath = function (target, path, fn, cleanups = subscriptions) {
+    const subscribePath = function (target, path, fn, cleanups = subscriptions, extra = null) {
       const parts = String(path).split('.');
+      if (extra && Object.prototype.hasOwnProperty.call(extra, parts[0])) {
+        if (parts.length === 1) {
+          subscribeWholeObject(extra[parts[0]], fn, cleanups);
+          return;
+        }
+        let scoped = extra[parts[0]];
+        for (let i = 1; i < parts.length; i++) {
+          if (scoped == null) break;
+          const subs = scoped[SUBS];
+          if (subs) {
+            if (!subs.has(parts[i])) subs.set(parts[i], new Set());
+            const set = subs.get(parts[i]);
+            set.add(fn);
+            cleanups.push(function () { return set.delete(fn); });
+          }
+          if (i < parts.length - 1) scoped = scoped[parts[i]];
+        }
+        return;
+      }
       let obj = target;
       for (let i = 0; i < parts.length; i++) {
         if (obj == null) break;
@@ -668,97 +912,70 @@ var KniuTemplate = (function () {
       }
     };
 
-    var DIRECTIVE_ATTRS = ['kniu:for', ':for', 'kniu:if', ':if', 'kniu:elseif', ':elseif', 'kniu:else', ':else'];
-    var hasDirectiveAncestor = function (node) {
-      var p = node.parentElement;
-      while (p) {
-        for (var i = 0; i < DIRECTIVE_ATTRS.length; i++) {
-          if (p.hasAttribute(DIRECTIVE_ATTRS[i])) return true;
-        }
-        p = p.parentElement;
-      }
-      return false;
-    };
-    var queryDirectives = function (root, attrs) {
-      var matches = function (n) {
-        for (var i = 0; i < attrs.length; i++) {
-          if (n.hasAttribute(attrs[i])) return true;
-        }
-        return false;
-      };
-      var result = [];
-      // querySelectorAll('*') 不包含 root 本身；循环克隆后的列表项可能正是
-      // `:if` 宿主，漏掉它会让条件永远不参与渲染。
-      if (root && root.nodeType === 1 && matches(root)) result.push(root);
-      return result.concat(Array.prototype.filter.call(root.querySelectorAll('*'), matches));
-    };
-
     const applyBindings = function (root, base, extra, bucket, refs) {
-      const resolve = function (key) { return evalExpr(key, base, extra).value; };
-      const subscribe = function (key, fn) {
-        evalExpr(key, base, extra).paths.forEach(function (p) { return subscribePath(base, p, fn, bucket); });
+      const exprPathCache = new Map();
+      const resolve = function (key) {
+        const result = evalExpr(key, base, extra);
+        exprPathCache.set(key, result.paths);
+        return result.value;
       };
-      const write = function (key, value) { return setPath(base, key, value); };
-      const bindingNodeCache = new Map();
+      const subscribe = function (key, fn) {
+        let paths = exprPathCache.get(key);
+        if (!paths) {
+          paths = evalExpr(key, base, extra).paths;
+          exprPathCache.set(key, paths);
+        }
+        paths.forEach(function (p) {
+          if (isTraversalStep(key, p, extra)) return;
+          subscribePath(base, p, fn, bucket, extra);
+        });
+      };
+      const bindRender = function (expr, fn) {
+        fn();
+        subscribe(expr, fn);
+      };
+      const write = function (key, value) {
+        const parts = String(key).split('.');
+        if (parts.length > 1) {
+          const parent = evalExpr(parts.slice(0, -1).join('.'), base, extra).value;
+          if (parent != null && typeof parent === 'object') {
+            parent[parts[parts.length - 1]] = value;
+            return;
+          }
+        }
+        setPath(base, key, value);
+      };
+      let collectedBindingNodes = null;
       const collectBindingNodes = function (container) {
-        const cached = bindingNodeCache.get(container);
-        if (cached) return cached;
-        const elements = [...container.querySelectorAll('*')];
+        if (collectedBindingNodes && collectedBindingNodes.container === container) return collectedBindingNodes.nodes;
+        const elements = selfAndDescendants(container);
         const templateElements = [];
         for (let index = 0; index < elements.length; index += 1) {
           const element = elements[index];
           if (element.tagName !== 'TEMPLATE') continue;
-          if (element.hasAttribute('kniu:for') || element.hasAttribute(':for')
-            || element.hasAttribute('kniu:if') || element.hasAttribute(':if')
-            || element.hasAttribute('kniu:elseif') || element.hasAttribute(':elseif')
-            || element.hasAttribute('kniu:else') || element.hasAttribute(':else')) continue;
+          if (hasAnyDirective(element)) continue;
+          if (element.hasAttribute('#append') || element.hasAttribute('#prepend')) continue;
           const tableColumn = element.closest('kniu-table-col');
           [...element.content.querySelectorAll('*')].forEach(function (inner) {
             if (tableColumn) inner.__kniuTableColumn = tableColumn;
             templateElements.push(inner);
           });
         }
-        const collected = [container, ...elements, ...templateElements];
-        bindingNodeCache.set(container, collected);
+        const collected = [...elements, ...templateElements];
+        collectedBindingNodes = { container: container, nodes: collected };
         return collected;
       };
 
-      const TEXT_RE = /\{\{\s*([\s\S]*?)\s*\}\}/g;
       const rawNodes = new WeakMap();
-      const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      let _tn;
-      while ((_tn = walk.nextNode())) {
-        const textNode = _tn;
-        if (hasDirectiveAncestor(textNode)) continue;
+      const bindTextNode = function (textNode) {
+        if (hasDirectiveAncestor(textNode)) return;
         const text = textNode.nodeValue;
-        if (!text.includes('{{')) continue;
-        const segments = [];
-        let last = 0;
-        let m;
-        TEXT_RE.lastIndex = 0;
-        while ((m = TEXT_RE.exec(text))) {
-          if (m.index > last) segments.push({ t: 'text', v: text.slice(last, m.index) });
-          const raw = m[1].trim();
-          const unescape = raw.startsWith('@');
-          const expr = unescape ? raw.slice(1).trim() : raw;
-          segments.push({ t: 'key', k: expr, raw: unescape });
-          last = m.index + m[0].length;
-        }
-        if (last < text.length) segments.push({ t: 'text', v: text.slice(last) });
+        if (!text.includes('{{')) return;
+        const segments = parseBindingSegments(text, true);
         const hasRaw = segments.some(function (s) { return s.t === 'key' && s.raw; });
-        if (!hasRaw) {
-          const render = function () {
-            const next = segments
-              .map(function (s) { return s.t === 'text' ? s.v : String(resolve(s.k) ?? ''); })
-              .join('');
-            if (textNode.nodeValue !== next) textNode.nodeValue = next;
-            return next;
-          };
-          render();
-          segments.filter(function (s) { return s.t === 'key'; }).forEach(function (s) { return subscribe(s.k, render); });
-        } else {
-          let previousRaw = null;
-          const render = function () {
+        let previousRaw = null;
+        const render = hasRaw
+          ? function () {
             const parent = textNode.parentNode;
             if (!parent) return;
             const values = segments.map(function (segment) {
@@ -793,22 +1010,55 @@ var KniuTemplate = (function () {
             parent.insertBefore(frag, textNode);
             textNode.nodeValue = '';
             rawNodes.set(textNode, built);
+          }
+          : function () {
+            const next = segments
+              .map(function (s) { return s.t === 'text' ? s.v : String(resolve(s.k) ?? ''); })
+              .join('');
+            if (textNode.nodeValue !== next) textNode.nodeValue = next;
+            return next;
           };
-          render();
-          segments.filter(function (s) { return s.t === 'key'; }).forEach(function (s) { return subscribe(s.k, render); });
-        }
+        render();
+        segments.filter(function (s) { return s.t === 'key'; }).forEach(function (s) { return subscribe(s.k, render); });
+      };
+      const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let _tn;
+      while ((_tn = walk.nextNode())) bindTextNode(_tn);
+      if (typeof root.querySelectorAll === 'function') {
+        Array.prototype.forEach.call(root.querySelectorAll('template'), function (tpl) {
+          if (hasAnyDirective(tpl)) return;
+          if (tpl.hasAttribute('#append') || tpl.hasAttribute('#prepend')) return;
+          const innerWalker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_TEXT);
+          let innerNode;
+          while ((innerNode = innerWalker.nextNode())) bindTextNode(innerNode);
+        });
       }
 
       if (root.nodeType === 1 || root.nodeType === 11) {
-        const nodes = collectBindingNodes(root);
-        nodes.forEach(function (node) {
-          if (node.nodeType !== 1) return;
-          if (node.hasAttribute('kniu:for') || node.hasAttribute(':for')
-            || node.hasAttribute('kniu:if') || node.hasAttribute(':if')
-            || node.hasAttribute('kniu:elseif') || node.hasAttribute(':elseif')
-            || node.hasAttribute('kniu:else') || node.hasAttribute(':else')) {
-            if (!node.__kniuTableColumn) return;
-          }
+        var scheduleAffixRebind = function (template) {
+          var parent = template.parentNode;
+          if (!parent || typeof MutationObserver === 'undefined') return;
+          var slotName = template.hasAttribute('#append') ? 'append' : 'prepend';
+          var observer = new MutationObserver(function (records) {
+            var replaced = records.some(function (record) {
+              return Array.prototype.some.call(record.removedNodes, function (removed) { return removed === template; });
+            });
+            if (!replaced) return;
+            observer.disconnect();
+            clearTimeout(timer);
+            var span = parent.querySelector('[slot="' + slotName + '"]');
+            if (!span) return;
+            var walker = document.createTreeWalker(span, NodeFilter.SHOW_TEXT);
+            var textNode;
+            while ((textNode = walker.nextNode())) bindTextNode(textNode);
+            Array.prototype.forEach.call(span.querySelectorAll('*'), applyElementBindings);
+          });
+          var timer = setTimeout(function () { observer.disconnect(); }, 500);
+          observer.observe(parent, { childList: true });
+        };
+
+        var applyElementBindings = function (node) {
+          if (hasAnyDirective(node) && !node.__kniuTableColumn) return;
           if (hasDirectiveAncestor(node)) return;
 
           const refAttr = node.hasAttribute('kniu:ref') ? 'kniu:ref' : (node.hasAttribute('ref') ? 'ref' : '');
@@ -818,8 +1068,53 @@ var KniuTemplate = (function () {
             node.removeAttribute(refAttr);
           }
 
-          if (node.hasAttribute('kniu:form') || node.hasAttribute(':form')) {
-            const rawPath = stripBraces(node.getAttribute('kniu:form') || node.getAttribute(':form'));
+          if (hasDirectiveAttr(node, 'option')) {
+            const expr = stripBraces(directiveAttr(node, 'option'));
+            const tag = node.tagName.toLowerCase();
+            const nativeOptionEvents = new Map();
+            const renderOptions = function () {
+              const value = resolve(expr);
+              if (value && typeof value === 'object') {
+                const componentDefaults = globalThis.__KNIU_UI_DEFAULTS__?.[tag] || {};
+                const mergedValue = tag.includes('-') ? { ...componentDefaults, ...value } : value;
+                const usesComponentOptions = tag.includes('-') && 'options' in node;
+                if (usesComponentOptions) node.options = mergedValue;
+                else node.__kniuOptionsValue = mergedValue;
+                nativeOptionEvents.forEach(function (entry, eventName) {
+                  node.removeEventListener(eventName, entry.handler, entry.options);
+                });
+                nativeOptionEvents.clear();
+                Object.entries(mergedValue).forEach(function ([name, item]) {
+                  const eventDescriptor = typeof item === 'function' ? optionEventDescriptor(name) : null;
+                  if (eventDescriptor) {
+                    const eventName = eventDescriptor.eventName;
+                    const modifiers = eventDescriptor.modifiers;
+                    if (findUnknownModifiers(modifiers).length || hasConflictingModifiers(modifiers)) {
+                      warn(`<${tag}> 的 kniu:option 事件 "${name}" 修饰符无效，已跳过绑定。`);
+                      return;
+                    }
+                    const handler = function (event) {
+                      if (!applyEventModifiers(event, eventName, modifiers)) return;
+                      return item.call(base, event);
+                    };
+                    const listenerOptions = modifierListenerOptions(modifiers);
+                    node.addEventListener(eventName, handler, listenerOptions);
+                    nativeOptionEvents.set(eventName, { handler: handler, options: listenerOptions });
+                    listeners.push([node, eventName, handler, listenerOptions]);
+                    return;
+                  }
+                  if (typeof item === 'function' && !usesComponentOptions) {
+                    warn(`<${tag}> 的 kniu:option 函数字段必须以 on 开头（如 onClick），已跳过 "${name}"。`);
+                  }
+                });
+              }
+            };
+            bindRender(expr, renderOptions);
+            if (!node.__kniuTableColumn) removeDirectiveAttrs(node, 'option');
+          }
+
+          if (hasDirectiveAttr(node, 'form')) {
+            const rawPath = stripBraces(directiveAttr(node, 'form'));
             const isBool = node.type === 'checkbox' || node.type === 'radio';
             const fieldObject = isFormFieldObject(resolve(rawPath));
             const path = fieldObject ? `${rawPath}.value` : rawPath;
@@ -833,126 +1128,23 @@ var KniuTemplate = (function () {
                 if (node.value !== String(next)) node.value = next;
               }
             };
-            render();
-            subscribe(path, render);
+            bindRender(path, render);
             if (fieldObject) subscribe(rawPath, render);
             const onInput = function () { return write(path, isBool ? node.checked : node.value); };
             const evt = isBool ? 'change' : 'input';
             node.addEventListener(evt, onInput);
             listeners.push([node, evt, onInput]);
-            if (node.hasAttribute('kniu:form')) node.removeAttribute('kniu:form');
-            if (node.hasAttribute(':form')) node.removeAttribute(':form');
+            removeDirectiveAttrs(node, 'form');
             if (fieldObject) node.__kniuModelPath = rawPath;
           }
 
-          if (node.hasAttribute('kniu:option') || node.hasAttribute(':option')) {
-            const expr = stripBraces(node.getAttribute('kniu:option') || node.getAttribute(':option'));
-            const tag = node.tagName.toLowerCase();
-            const componentCtor = tag.includes('-') && typeof customElements !== 'undefined'
-              ? customElements.get(tag) : null;
-            const isUnupgradedComponent = !!componentCtor && !(node instanceof componentCtor);
-            const nativeOptionAttributes = new Set();
-            const nativeOptionEvents = new Map();
-            const renderOptions = function () {
-              const value = resolve(expr);
-              if (value && typeof value === 'object') {
-                const componentDefaults = globalThis.__KNIU_UI_DEFAULTS__?.[tag] || {};
-                const mergedValue = tag.includes('-') ? { ...componentDefaults, ...value } : value;
-                const usesComponentOptions = tag.includes('-') && 'options' in node;
-                if (usesComponentOptions) node.options = mergedValue;
-                else if (isUnupgradedComponent) node.__kniuOptionsValue = mergedValue;
-                const usesNativeOptionMapping = !usesComponentOptions && !isUnupgradedComponent;
-                if (usesNativeOptionMapping) {
-                  nativeOptionAttributes.forEach(function (name) { node.removeAttribute(name); });
-                  nativeOptionAttributes.clear();
-                }
-                nativeOptionEvents.forEach(function (entry, eventName) {
-                  node.removeEventListener(eventName, entry.handler, entry.options);
-                });
-                nativeOptionEvents.clear();
-                Object.entries(mergedValue).forEach(function ([name, item]) {
-                  const eventDescriptor = typeof item === 'function' ? optionEventDescriptor(name) : null;
-                  if (eventDescriptor) {
-                    const eventName = eventDescriptor.eventName;
-                    const modifiers = eventDescriptor.modifiers;
-                    const unknownModifiers = modifiers.filter(function (modifier) {
-                      return !EVENT_OPTION_MODIFIERS.has(modifier) && !EVENT_BEHAVIOR_MODIFIERS.has(modifier);
-                    });
-                    if (unknownModifiers.length || (modifiers.includes('passive') && modifiers.includes('prevent'))) {
-                      warn(`<${tag}> 的 kniu:option 事件 "${name}" 修饰符无效，已跳过绑定。`);
-                      return;
-                    }
-                    const handler = function (event) {
-                      if ((DEFAULT_PREVENT_EVENTS.has(eventName) || eventName === 'click')
-                        && !modifiers.includes('native') && !modifiers.includes('passive') && !event.defaultPrevented) {
-                        event.preventDefault();
-                      }
-                      const isKeyboardEvent = event.type.startsWith('key');
-                      const keyModifiers = isKeyboardEvent
-                        ? modifiers.filter(function (modifier) { return Object.prototype.hasOwnProperty.call(KEY_MODIFIER_VALUES, modifier); })
-                        : [];
-                      if (keyModifiers.length && !keyModifiers.some(function (modifier) { return KEY_MODIFIER_VALUES[modifier].includes(event.key); })) return;
-                      const requiredSystemKeys = new Set(modifiers.filter(function (modifier) {
-                        return ['ctrl', 'shift', 'alt', 'meta'].includes(modifier);
-                      }));
-                      for (const modifier of modifiers) {
-                        if (EVENT_OPTION_MODIFIERS.has(modifier) || keyModifiers.includes(modifier)) continue;
-                        if (modifier === 'self' && event.target !== event.currentTarget) return;
-                        if (modifier === 'ctrl' && !event.ctrlKey) return;
-                        if (modifier === 'shift' && !event.shiftKey) return;
-                        if (modifier === 'alt' && !event.altKey) return;
-                        if (modifier === 'meta' && !event.metaKey) return;
-                        if (modifier === 'exact' && (
-                          event.ctrlKey !== requiredSystemKeys.has('ctrl') || event.shiftKey !== requiredSystemKeys.has('shift') ||
-                          event.altKey !== requiredSystemKeys.has('alt') || event.metaKey !== requiredSystemKeys.has('meta')
-                        )) return;
-                        if (!isKeyboardEvent) {
-                          if (modifier === 'left' && event.button !== 0) return;
-                          if (modifier === 'middle' && event.button !== 1) return;
-                          if (modifier === 'right' && event.button !== 2) return;
-                        }
-                        if (modifier === 'stop') event.stopPropagation();
-                        if (modifier === 'prevent') event.preventDefault();
-                      }
-                      return item.call(base, event);
-                    };
-                    const listenerOptions = {
-                      capture: modifiers.includes('capture'), once: modifiers.includes('once'), passive: modifiers.includes('passive')
-                    };
-                    node.addEventListener(eventName, handler, listenerOptions);
-                    nativeOptionEvents.set(eventName, { handler: handler, options: listenerOptions });
-                    listeners.push([node, eventName, handler, listenerOptions]);
-                    return;
-                  }
-                  if (typeof item === 'function') {
-                    if (usesNativeOptionMapping) warn(`<${tag}> 的 kniu:option 事件字段必须以 on 开头（如 onClick），已跳过 "${name}"。`);
-                    return;
-                  }
-                  if (!usesNativeOptionMapping) return;
-                  const attrName = isValidForTag(name, tag) ? name : optionAttributeName(name);
-                  const bool = isBooleanAttr(attrName);
-                  setAttr(node, attrName, item, bool);
-                  if (item != null && item !== false) nativeOptionAttributes.add(attrName);
-                });
-              }
-            };
-            renderOptions();
-            subscribe(expr, renderOptions);
-            if (!node.__kniuTableColumn) {
-              if (node.hasAttribute('kniu:option')) node.removeAttribute('kniu:option');
-              if (node.hasAttribute(':option')) node.removeAttribute(':option');
-            }
-          }
-
-          if (node.hasAttribute('kniu:rules') || node.hasAttribute(':rules')) {
+          if (hasDirectiveAttr(node, 'rules')) {
             warn('kniu:rules 已作废，请改用 kniu:option，在字段上声明 value / condition / message。');
-            node.removeAttribute('kniu:rules');
-            node.removeAttribute(':rules');
+            removeDirectiveAttrs(node, 'rules');
           }
 
-          if (node.hasAttribute('kniu:style') || node.hasAttribute(':style')) {
-            const styleAttrName = node.hasAttribute('kniu:style') ? 'kniu:style' : ':style';
-            const expr = stripBraces(node.getAttribute(styleAttrName));
+          if (hasDirectiveAttr(node, 'style')) {
+            const expr = stripBraces(directiveAttr(node, 'style'));
             const managedProperties = new Set();
             const renderStyle = function () {
               const value = resolve(expr);
@@ -967,28 +1159,19 @@ var KniuTemplate = (function () {
               });
               if (!node.getAttribute('style')) node.removeAttribute('style');
             };
-            renderStyle();
-            subscribe(expr, renderStyle);
-            node.removeAttribute('kniu:style');
-            node.removeAttribute(':style');
+            bindRender(expr, renderStyle);
+            removeDirectiveAttrs(node, 'style');
           }
 
           const loadingAttr = [...node.attributes].find(function (a) {
-            return a.name === 'kniu:loading' || a.name === 'kniu:loading.body' ||
-              a.name === ':loading' || a.name === ':loading.body';
+            return LOADING_ATTR_NAMES.indexOf(a.name) !== -1;
           });
           if (loadingAttr) {
-            const body = loadingAttr.name === 'kniu:loading.body' || loadingAttr.name === ':loading.body';
+            const body = LOADING_BODY_ATTR_NAMES.indexOf(loadingAttr.name) !== -1;
             const loadingExpr = stripBraces(loadingAttr.value);
-            const hasText = node.hasAttribute('kniu:loading-text') || node.hasAttribute(':loading-text');
-            const textExpr = hasText ? stripBraces(node.getAttribute(hasText ? 'kniu:loading-text' : ':loading-text')) : '';
-            if (hasText) {
-              node.removeAttribute(hasText ? 'kniu:loading-text' : ':loading-text');
-            }
-            node.removeAttribute('kniu:loading');
-            node.removeAttribute('kniu:loading.body');
-            node.removeAttribute(':loading');
-            node.removeAttribute(':loading.body');
+            const textAttrName = LOADING_TEXT_ATTR_NAMES.find(function (n) { return node.hasAttribute(n); }) || '';
+            const textExpr = textAttrName ? stripBraces(node.getAttribute(textAttrName)) : '';
+            LOADING_ATTR_NAMES.concat(LOADING_TEXT_ATTR_NAMES).forEach(function (n) { node.removeAttribute(n); });
             const delegate = !body && node.shadowRoot
               && typeof node.tagName === 'string'
               && node.tagName.toLowerCase().indexOf('kniu-') === 0
@@ -999,20 +1182,11 @@ var KniuTemplate = (function () {
                 node.loading = Boolean(resolve(loadingExpr));
                 if (textExpr) node.loadingText = resolve(textExpr);
               };
-              render();
-              subscribe(loadingExpr, render);
+              bindRender(loadingExpr, render);
               if (textExpr) subscribe(textExpr, render);
             } else {
-              ensureLoadingStyle();
-              const mask = document.createElement('div');
-              mask.className = 'kniu_sys_loading_mask' + (body ? ' kniu_sys_loading_mask--body' : '');
-              mask.setAttribute('data-active', 'false');
-              const spinner = document.createElement('span');
-              spinner.className = 'kniu_sys_loading_spinner';
-              mask.appendChild(spinner);
-              const textEl = document.createElement('span');
-              textEl.className = 'kniu_sys_loading_text';
-              mask.appendChild(textEl);
+              const mask = document.createElement('kniu-loading');
+              if (!body) mask.setAttribute('contained', '');
 
               let mounted = false;
               const mount = function () {
@@ -1034,33 +1208,25 @@ var KniuTemplate = (function () {
 
               const render = function () {
                 const active = Boolean(resolve(loadingExpr));
-                if (active) {
-                  mount();
-                  mask.setAttribute('data-active', 'true');
-                } else {
-                  mask.setAttribute('data-active', 'false');
-                }
+                if (active) mount();
+                mask.show = active;
                 if (textExpr) {
-                  const t = resolve(textExpr);
-                  textEl.textContent = t == null ? '' : String(t);
+                  mask.text = resolve(textExpr);
                 }
               };
-              render();
-              subscribe(loadingExpr, render);
+              bindRender(loadingExpr, render);
               if (textExpr) subscribe(textExpr, render);
               listDisposers.push(unmount);
             }
           }
 
-          const DATA_ATTR_RE = /^(?:kniu:|):\[([a-z][a-z0-9-]*)\]$/i;
+          const DATA_ATTR_RE = /^(?:kniu:|:)\[([a-z][a-z0-9-]*)\]$/i;
           [...node.attributes].forEach(function (attr) {
             const match = attr.name.match(DATA_ATTR_RE);
             if (!match) return;
             const bindingName = match[1].toLowerCase();
             const dataAttrName = `data-${bindingName}`;
-            const propertyName = bindingName.replace(/-([a-z0-9])/g, function (_, char) {
-              return char.toUpperCase();
-            });
+            const propertyName = toCamelCase(bindingName);
             const bindsComponentProperty = node.tagName.includes('-') && propertyName in node;
             const expr = stripBraces(attr.value);
             const render = function () {
@@ -1074,8 +1240,7 @@ var KniuTemplate = (function () {
                 if (node.getAttribute(dataAttrName) !== next) node.setAttribute(dataAttrName, next);
               }
             };
-            render();
-            subscribe(expr, render);
+            bindRender(expr, render);
             node.removeAttribute(attr.name);
           });
 
@@ -1099,8 +1264,7 @@ var KniuTemplate = (function () {
               const v = resolve(expr);
               setAttr(node, attrName, v, isBool);
             };
-            render();
-            subscribe(expr, render);
+            bindRender(expr, render);
             node.removeAttribute(full);
           });
 
@@ -1113,15 +1277,13 @@ var KniuTemplate = (function () {
             const modifiers = evMatch[2]
               ? evMatch[2].toLowerCase().split('.').filter(Boolean)
               : [];
-            const unknownModifiers = modifiers.filter(function (modifier) {
-              return !EVENT_OPTION_MODIFIERS.has(modifier) && !EVENT_BEHAVIOR_MODIFIERS.has(modifier);
-            });
+            const unknownModifiers = findUnknownModifiers(modifiers);
             if (unknownModifiers.length) {
               warn(`kniu@${eventName} 包含不支持的修饰符：${unknownModifiers.join(', ')}`);
               node.removeAttribute(attr.name);
               return;
             }
-            if (modifiers.includes('passive') && modifiers.includes('prevent')) {
+            if (hasConflictingModifiers(modifiers)) {
               warn(`kniu@${eventName}.passive.prevent 不能同时使用，已跳过绑定`);
               node.removeAttribute(attr.name);
               return;
@@ -1162,23 +1324,18 @@ var KniuTemplate = (function () {
                 if (node.matches('kniu-switch')) {
                   const disabledRaw = node.getAttribute('disabled');
                   if (disabledRaw && disabledRaw.includes('{{')) {
-                    const { value: dv } = evalExpr(disabledRaw.replace(/^\{\{|\}\}$/g, '').trim(), base, extra);
+                    const { value: dv } = evalExpr(extractBracedExpr(disabledRaw), base, extra);
                     if (dv) node.setAttribute('disabled', ''); else node.removeAttribute('disabled');
                   }
                 }
               };
-              renderScopedHandler();
-              subscribe(handlerName, renderScopedHandler);
+              bindRender(handlerName, renderScopedHandler);
               return;
             }
             const handlers = eventState.get(node) || new Map();
             eventState.set(node, handlers);
             const bindingKey = attr.name.toLowerCase();
-            const listenerOptions = {
-              capture: modifiers.includes('capture'),
-              once: modifiers.includes('once'),
-              passive: modifiers.includes('passive')
-            };
+            const listenerOptions = modifierListenerOptions(modifiers);
             const render = function () {
               const { value } = evalExpr(expr, base, extra);
               if (typeof value !== 'function') {
@@ -1194,68 +1351,31 @@ var KniuTemplate = (function () {
                 node.removeEventListener(eventName, current.handler, current.options);
               }
               const handler = function (event) {
-                if ((DEFAULT_PREVENT_EVENTS.has(eventName) || eventName === 'click')
-                  && !modifiers.includes('native') && !modifiers.includes('passive')) {
-                  event.preventDefault();
-                }
-                const isKeyboardEvent = event.type.startsWith('key');
-                const keyModifiers = isKeyboardEvent
-                  ? modifiers.filter(function (modifier) {
-                    return Object.prototype.hasOwnProperty.call(KEY_MODIFIER_VALUES, modifier);
-                  })
-                  : [];
-                if (keyModifiers.length) {
-                  const matched = keyModifiers.some(function (modifier) {
-                    return KEY_MODIFIER_VALUES[modifier].includes(event.key);
-                  });
-                  if (!matched) return;
-                }
-                const requiredSystemKeys = new Set(modifiers.filter(function (modifier) {
-                  return ['ctrl', 'shift', 'alt', 'meta'].includes(modifier);
-                }));
-                for (const modifier of modifiers) {
-                  if (EVENT_OPTION_MODIFIERS.has(modifier) || keyModifiers.includes(modifier)) continue;
-                  if (modifier === 'self' && event.target !== event.currentTarget) return;
-                  if (modifier === 'ctrl' && !event.ctrlKey) return;
-                  if (modifier === 'shift' && !event.shiftKey) return;
-                  if (modifier === 'alt' && !event.altKey) return;
-                  if (modifier === 'meta' && !event.metaKey) return;
-                  if (modifier === 'exact' && (
-                    event.ctrlKey !== requiredSystemKeys.has('ctrl') ||
-                    event.shiftKey !== requiredSystemKeys.has('shift') ||
-                    event.altKey !== requiredSystemKeys.has('alt') ||
-                    event.metaKey !== requiredSystemKeys.has('meta')
-                  )) return;
-                  if (!isKeyboardEvent) {
-                    if (modifier === 'left' && event.button !== 0) return;
-                    if (modifier === 'middle' && event.button !== 1) return;
-                    if (modifier === 'right' && event.button !== 2) return;
-                  }
-                  if (modifier === 'stop') event.stopPropagation();
-                  if (modifier === 'prevent') event.preventDefault();
-                }
+                if (!applyEventModifiers(event, eventName, modifiers)) return;
                 return value.call(base, event);
               };
               node.addEventListener(eventName, handler, listenerOptions);
               listeners.push([node, eventName, handler, listenerOptions]);
               handlers.set(bindingKey, { handler: handler, options: listenerOptions });
             };
-            render();
-            subscribe(expr, render);
+            bindRender(expr, render);
             node.removeAttribute(attr.name);
           });
-        });
-      }
 
-      if (root.nodeType === 1 || root.nodeType === 11) {
-        const ATTR_RE = /\{\{\s*([\s\S]*?)\s*\}\}/g;
-        const nodes = collectBindingNodes(root);
+          if (node.tagName === 'TEMPLATE' && (node.hasAttribute('#append') || node.hasAttribute('#prepend'))) {
+            scheduleAffixRebind(node);
+          }
+        };
+        const nodes = (collectedBindingNodes && collectedBindingNodes.container === root)
+          ? collectedBindingNodes.nodes
+          : collectBindingNodes(root);
         nodes.forEach(function (node) {
           if (node.nodeType !== 1) return;
-          if (node.hasAttribute('kniu:for') || node.hasAttribute(':for')
-            || node.hasAttribute('kniu:if') || node.hasAttribute(':if')
-            || node.hasAttribute('kniu:elseif') || node.hasAttribute(':elseif')
-            || node.hasAttribute('kniu:else') || node.hasAttribute(':else')) return;
+          applyElementBindings(node);
+        });
+        nodes.forEach(function (node) {
+          if (node.nodeType !== 1) return;
+          if (hasAnyDirective(node)) return;
           if (hasDirectiveAncestor(node)) return;
           if (node.__kniuTableColumn) return;
           [...node.attributes].forEach(function (attr) {
@@ -1263,21 +1383,14 @@ var KniuTemplate = (function () {
             if (name.startsWith('kniu:') || name.startsWith('kniu@')) return;
             const template = attr.value;
             if (!template.includes('{{')) return;
-            const segments = [];
-            let last = 0;
-            let m;
-            ATTR_RE.lastIndex = 0;
-            while ((m = ATTR_RE.exec(template))) {
-              if (m.index > last) segments.push({ t: 'text', v: template.slice(last, m.index) });
-              segments.push({ t: 'key', k: m[1] });
-              last = m.index + m[0].length;
-            }
-            if (last < template.length) segments.push({ t: 'text', v: template.slice(last) });
-            const isBool = isBooleanAttr(name);
+            const urlProxyTarget = name.startsWith(URL_PROXY_PREFIX) && URL_ATTRS.has(name.slice(URL_PROXY_PREFIX.length))
+              ? name.slice(URL_PROXY_PREFIX.length)
+              : null;
+            const targetName = urlProxyTarget || name;
+            const segments = parseBindingSegments(template);
+            const isBool = isBooleanAttr(targetName);
             const pureExpr = segments.length === 1 && segments[0].t === 'key';
-            const propertyName = name.replace(/-([a-z0-9])/g, function (_, char) {
-              return char.toUpperCase();
-            });
+            const propertyName = toCamelCase(targetName);
             const bindsComponentProperty = node.tagName.includes('-') && propertyName in node;
             const render = function () {
               const parts = segments.map(function (s) { return s.t === 'text' ? s.v : resolve(s.k); });
@@ -1287,24 +1400,25 @@ var KniuTemplate = (function () {
                 return;
               }
               if (isBool && pureExpr) {
-                if (parts[0]) node.setAttribute(name, '');
-                else node.removeAttribute(name);
+                if (parts[0]) node.setAttribute(targetName, '');
+                else node.removeAttribute(targetName);
                 return;
               }
               if (pureExpr && (parts[0] == null || parts[0] === false)) {
-                node.removeAttribute(name);
+                node.removeAttribute(targetName);
                 return;
               }
               const resolved = parts.map(function (v) { return v == null ? '' : String(v); }).join('');
               if (resolved === '' && !segments.some(function (s) { return s.t === 'text'; })) {
-                node.removeAttribute(name);
-              } else if (URL_ATTRS.has(name) && isDangerousUrl(resolved)) {
-                warn(`属性 "${name}" 的插值 URL 含危险协议，已拒绝写入以防 XSS`);
-                node.removeAttribute(name);
+                node.removeAttribute(targetName);
+              } else if (URL_ATTRS.has(targetName) && isDangerousUrl(resolved)) {
+                warn(`属性 "${targetName}" 的插值 URL 含危险协议，已拒绝写入以防 XSS`);
+                node.removeAttribute(targetName);
               } else {
-                if (node.getAttribute(name) !== resolved) node.setAttribute(name, resolved);
+                if (node.getAttribute(targetName) !== resolved) node.setAttribute(targetName, resolved);
               }
             };
+            if (urlProxyTarget) node.removeAttribute(name);
             render();
             segments.filter(function (s) { return s.t === 'key'; }).forEach(function (s) { return subscribe(s.k, render); });
           });
@@ -1312,33 +1426,174 @@ var KniuTemplate = (function () {
       }
     }
 
+    const gatherBindingNodes = function (roots) {
+      const out = [];
+      const walk = function (node) {
+        if (node.nodeType === 3) {
+          if (node.nodeValue && node.nodeValue.includes('{{')) out.push(node);
+          return;
+        }
+        if (node.nodeType !== 1) return;
+        if (hasAnyDirective(node)) return;
+        let hasBinding = false;
+        Array.prototype.forEach.call(node.attributes, function (attr) {
+          const name = attr.name;
+          if (name.startsWith('kniu:') || name.startsWith('kniu@')) return;
+          if (attr.value.includes('{{')) hasBinding = true;
+        });
+        if (hasBinding) out.push(node);
+        Array.prototype.forEach.call(node.childNodes, walk);
+      };
+      roots.forEach(walk);
+      return out;
+    };
+
+    const SIMPLE_PATH_RE = /^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/;
+    const compileFastPath = function (expr) {
+      const e = String(expr).trim();
+      if (!SIMPLE_PATH_RE.test(e)) return null;
+      const parts = e.split('.');
+      if (DANGEROUS_SCOPE_KEYS.has(parts[0])) return null;
+      const fastPaths = [];
+      let acc = '';
+      for (let i = 0; i < parts.length; i++) {
+        acc = acc ? acc + '.' + parts[i] : parts[i];
+        fastPaths.push(acc);
+      }
+      const get = function (base, extra) {
+        let obj = (extra && Object.prototype.hasOwnProperty.call(extra, parts[0]))
+          ? extra[parts[0]] : base[parts[0]];
+        for (let i = 1; i < parts.length; i++) {
+          if (obj == null) return undefined;
+          obj = obj[parts[i]];
+        }
+        return obj;
+      };
+      return { get: get, fastPaths: fastPaths };
+    };
+    const resolveSegmentValue = function (s, base, extra) {
+      const v = s.fast ? s.fast.get(base, extra) : evalExpr(s.k, base, extra).value;
+      return v == null ? '' : String(v);
+    };
+
+    const compileLeafPlan = function (roots) {
+      let unsupported = false;
+      const plan = [];
+      gatherBindingNodes(roots).forEach(function (node) {
+        if (node.nodeType === 3) {
+          const segments = parseBindingSegments(node.nodeValue);
+          if (!segments.some(function (s) { return s.t === 'key'; })) return;
+          plan.push({ type: 'text', node: node, segments: segments });
+        } else {
+          Array.prototype.forEach.call(node.attributes, function (attr) {
+            const name = attr.name;
+            if (name.startsWith('kniu:') || name.startsWith('kniu@')) return;
+            if (name.startsWith(':')) { unsupported = true; return; }
+            const tpl = attr.value;
+            if (!tpl.includes('{{')) return;
+            const segments = parseBindingSegments(tpl);
+            if (!segments.some(function (s) { return s.t === 'key'; })) return;
+            if (isBooleanAttr(name) || URL_ATTRS.has(name)) { unsupported = true; return; }
+            if (name.startsWith(URL_PROXY_PREFIX)) { unsupported = true; return; }
+            const propertyName = toCamelCase(name);
+            if (node.tagName.includes('-') && propertyName in node) { unsupported = true; return; }
+            plan.push({ type: 'attr', node: node, name: name, segments: segments });
+          });
+        }
+      });
+      if (unsupported) return null;
+      plan.forEach(function (d) {
+        d.segments.forEach(function (s) {
+          if (s.t === 'key') s.fast = compileFastPath(s.k);
+        });
+        if (d.type === 'text') {
+          d.updater = function (node, base, extra) {
+            const resolved = d.segments.map(function (s) {
+              return s.t === 'text' ? s.v : resolveSegmentValue(s, base, extra);
+            }).join('');
+            if (node.nodeValue !== resolved) node.nodeValue = resolved;
+          };
+        } else {
+          d.updater = function (node, base, extra) {
+            const resolved = d.segments.map(function (s) {
+              return s.t === 'text' ? s.v : resolveSegmentValue(s, base, extra);
+            }).join('');
+            setAttr(node, d.name, resolved, false);
+          };
+        }
+      });
+      plan._paths = new Map();
+      return plan;
+    };
+
+    const collectLeafPlanPaths = function (roots) {
+      const paths = [];
+      const walk = function (node, path) {
+        if (node.nodeType === 3) {
+          if (node.nodeValue && node.nodeValue.includes('{{')) paths.push(path);
+          return;
+        }
+        if (node.nodeType !== 1) return;
+        if (hasAnyDirective(node)) return;
+        Array.prototype.forEach.call(node.attributes, function (attr) {
+          const name = attr.name;
+          if (name.startsWith('kniu:') || name.startsWith('kniu@')) return;
+          if (!attr.value.includes('{{')) return;
+          paths.push(path);
+        });
+        Array.prototype.forEach.call(node.childNodes, function (child, i) {
+          walk(child, path.concat(i));
+        });
+      };
+      roots.forEach(function (root, ri) { walk(root, [ri]); });
+      return paths;
+    };
+
+    const applyLeafPlan = function (plan, nodeMap, base, extra, bucket) {
+      plan.forEach(function (d) {
+        const node = nodeMap ? (nodeMap.get(d.node) || d.node) : d.node;
+        d.updater(node, base, extra);
+        d.segments.filter(function (s) { return s.t === 'key'; }).forEach(function (s) {
+          const fn = function () { return d.updater(node, base, extra); };
+          if (s.fast) {
+            s.fast.fastPaths.forEach(function (p) {
+              if (isTraversalStep(s.k, p, extra)) return;
+              subscribePath(base, p, fn, bucket, extra);
+            });
+            return;
+          }
+          let paths = plan._paths.get(s.k);
+          if (!paths) {
+            paths = evalExpr(s.k, base, extra).paths;
+            plan._paths.set(s.k, paths);
+          }
+          paths.forEach(function (p) {
+            if (isTraversalStep(s.k, p, extra)) return;
+            subscribePath(base, p, fn, bucket, extra);
+          });
+        });
+      });
+    };
+
+    const leafPlanCache = new WeakMap();
+    const bindingPathCache = new WeakMap();
+    const directiveFlagCache = new WeakMap();
+
     const setupFor = function (block, parentExtra, bucket = null) {
-      const forAttr = block.getAttribute('kniu:for') || block.getAttribute(':for');
-      const forMatch = forAttr.match(/\{\{([\s\S]*?)\}\}/);
-      const arrayExpr = (forMatch ? forMatch[1] : forAttr).trim();
-      const idxName = block.getAttribute('kniu:for-index') || block.getAttribute(':for-index') || 'index';
-      const itemName = block.getAttribute('kniu:for-item') || block.getAttribute(':for-item') || 'item';
-      const keyExpr = block.getAttribute('kniu:key') || block.getAttribute(':key');
+      const arrayExpr = extractBracedExpr(directiveAttr(block, 'for'));
+      const idxName = directiveAttr(block, 'for-index') || 'index';
+      const itemName = directiveAttr(block, 'for-item') || 'item';
+      const keyExpr = directiveAttr(block, 'key');
       const useKeyed = !!keyExpr;
       const isTpl = block.tagName === 'TEMPLATE';
       const tpl = isTpl ? block.content : block.cloneNode(true);
       if (!isTpl) {
-        tpl.removeAttribute('kniu:for');
-        tpl.removeAttribute(':for');
-        tpl.removeAttribute('kniu:for-index');
-        tpl.removeAttribute(':for-index');
-        tpl.removeAttribute('kniu:for-item');
-        tpl.removeAttribute(':for-item');
-        tpl.removeAttribute('kniu:key');
-        tpl.removeAttribute(':key');
+        ['for', 'for-index', 'for-item', 'key'].forEach(function (name) { return removeDirectiveAttrs(tpl, name); });
       }
       const anchor = document.createComment('kniu:for');
       block.replaceWith(anchor);
-      let rendered = [];
       let prevViews = [];
       let subCleanups = [];
-      // 订阅只注册到自身 subCleanups（每次 render 执行后清空，语义=「最近重渲染边界」）；
-      // 最终 disposer 才上交 bucket——否则嵌套块每次父级重渲染都会向顶层 listDisposers 累积泄漏。
       const bc = subCleanups;
 
       const keyFor = function (item) {
@@ -1348,41 +1603,132 @@ var KniuTemplate = (function () {
         })();
       };
 
+      const usesIndex = (function () {
+        try {
+          const html = block.outerHTML || '';
+          const escaped = idxName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          return new RegExp('(^|[^\\w$.])' + escaped + '([^\\w$]|$)').test(html);
+        } catch (e) {
+          return true;
+        }
+      })();
+
       const createView = function () {
         const viewCleanups = [];
         let initialized = false;
         let roots = null;
+        let lastItem;
+        let lastIndex;
+        let leafPlan = null;
+        let leafNodeMap = null;
+        const leafCleanups = [];
         const nb = useKeyed ? viewCleanups : bc;
-        const update = function (extra) {
-          viewCleanups.forEach(function (c) { return c(); });
-          viewCleanups.length = 0;
-          if (!initialized) {
-            const frag = tpl.cloneNode(true);
-            roots = isTpl ? [...frag.childNodes] : [frag];
-            roots = roots.map(function (node) {
-              if (node.nodeType === 1) {
-                queryDirectives(node, ['kniu:for', ':for']).forEach(function (n) { return setupFor(n, extra, nb); });
-                const rootIf = queryDirectives(node, ['kniu:if', ':if']).find(function (n) { return n === node; });
-                if (rootIf) return setupIf(rootIf, extra, nb) || node;
-                queryDirectives(node, ['kniu:if', ':if']).forEach(function (n) { return setupIf(n, extra, nb); });
-              }
-              applyBindings(node, state, extra, nb, refs);
-              return node;
-            });
-            initialized = true;
-          } else {
-            roots.forEach(function (node) { return applyBindings(node, state, extra, nb, refs); });
+        const scopeChanged = function (extra) {
+          if (!initialized) return true;
+          if (!Object.is(extra[itemName], lastItem)) return true;
+          return usesIndex && !Object.is(extra[idxName], lastIndex);
+        };
+        const build = function (extra) {
+          runCleanups(viewCleanups);
+          runCleanups(leafCleanups);
+          const fragRoots = materializeRoots(tpl);
+          let plan = leafPlanCache.get(tpl);
+          if (!plan) {
+            plan = compileLeafPlan(fragRoots);
+            leafPlanCache.set(tpl, plan);
+            if (plan) bindingPathCache.set(tpl, collectLeafPlanPaths(fragRoots));
           }
+          const bindPaths = plan ? bindingPathCache.get(tpl) : null;
+          const nodeMap = new Map();
+          if (plan && bindPaths) {
+            for (let i = 0; i < bindPaths.length; i++) {
+              const p = bindPaths[i];
+              let node = fragRoots[p[0]];
+              for (let k = 1; k < p.length; k++) node = node.childNodes[p[k]];
+              nodeMap.set(plan[i].node, node);
+            }
+          }
+          leafNodeMap = nodeMap;
+          let fragHasDirective = directiveFlagCache.get(tpl);
+          if (fragHasDirective === undefined) {
+            fragHasDirective = fragRoots.some(function (root) {
+              return root.nodeType === 1
+                && (queryDirectives(root, DIRECTIVE_ATTRS).length > 0 || hasEventAttributes(root));
+            });
+            directiveFlagCache.set(tpl, fragHasDirective);
+          }
+          const next = [];
+          fragRoots.forEach(function (node) {
+            if (node.nodeType === 1) {
+              const rootFor = queryDirectives(node, FOR_ATTRS).find(function (n) { return n === node; });
+              if (rootFor) {
+                const baseline = node.previousSibling;
+                const forAnchor = setupFor(rootFor, extra, nb) || node;
+                next.push.apply(next, collectSinceBaseline(forAnchor, baseline));
+                return;
+              }
+              const rootIf = queryDirectives(node, IF_ATTRS).find(function (n) { return n === node; });
+              if (rootIf) {
+                const baseline = node.previousSibling;
+                const ifAnchor = setupIf(rootIf, extra, nb) || node;
+                next.push.apply(next, collectSinceBaseline(ifAnchor, baseline));
+                return;
+              }
+              setupNestedFor(node, extra, nb);
+              setupNestedIf(node, extra, nb);
+            }
+            if (!fragHasDirective && plan) {
+              next.push(node);
+              return;
+            }
+            applyBindings(node, state, extra, nb, refs);
+            next.push(node);
+          });
+          if (!fragHasDirective && plan) applyLeafPlan(plan, nodeMap, state, extra, nb);
+          leafPlan = (!fragHasDirective && plan) ? plan : null;
+          lastItem = extra[itemName];
+          lastIndex = extra[idxName];
+          return next;
+        };
+        const update = function (extra) {
+          if (!scopeChanged(extra)) return;
+          if (roots && leafPlan) {
+            runCleanups(leafCleanups);
+            applyLeafPlan(leafPlan, leafNodeMap, state, extra, leafCleanups);
+            lastItem = extra[itemName];
+            lastIndex = extra[idxName];
+            initialized = true;
+            return;
+          }
+          const previous = roots;
+          roots = build(extra);
+          if (!initialized) {
+            initialized = true;
+            return;
+          }
+          previous.forEach(function (oldNode, i) {
+            const newNode = roots[i];
+            if (!newNode) {
+              oldNode.remove();
+              return;
+            }
+            if (oldNode.parentNode) {
+              oldNode.parentNode.insertBefore(newNode, oldNode);
+              oldNode.remove();
+            }
+          });
         };
         return { update, getNodes: function () { return roots; }, viewCleanups };
       };
 
       const render = function () {
-        if (!anchor.parentNode) return; // 所属分支已随父级 if 重渲染移除：过期渲染自 disarm，防对 null insertBefore 抛错
-        subCleanups.forEach(function (c) { return c(); });
-        subCleanups.length = 0;
+        if (!anchor.parentNode) return;
+        runCleanups(subCleanups);
         const { value: arr, paths } = evalExpr(arrayExpr, state, parentExtra);
-        paths.forEach(function (p) { return subscribePath(state, p, render, bc); });
+        paths.forEach(function (p) {
+          if (isTraversalStep(arrayExpr, p, parentExtra)) return;
+          return subscribePath(state, p, render, bc, parentExtra);
+        });
         const list = Array.isArray(arr) ? arr : [];
         if (arr && arr[SUBS]) {
           if (!arr[SUBS].has('length')) arr[SUBS].set('length', new Set());
@@ -1392,28 +1738,27 @@ var KniuTemplate = (function () {
         }
 
         if (!useKeyed) {
-          rendered.forEach(function (n) { return n.remove(); });
-          rendered = [];
+          const nextViews = [];
           list.forEach(function (item, index) {
             const extra = { ...parentExtra, [idxName]: index, [itemName]: item };
-            const view = createView();
+            let view = prevViews[index];
+            if (!view) view = createView();
             view.update(extra);
-            if (item && item[SUBS]) {
-              for (const [, set] of item[SUBS]) {
-                set.add(render);
-                bc.push(function () { return set.delete(render); });
-              }
-            }
-            view.getNodes().forEach(function (node) {
-              anchor.parentNode.insertBefore(node, anchor);
-              if (node.__kniuDeferredIfRender) {
-                const deferred = node.__kniuDeferredIfRender;
-                delete node.__kniuDeferredIfRender;
-                deferred();
-              }
-              rendered.push(node);
+            nextViews.push(view);
+          });
+          for (let i = list.length; i < prevViews.length; i++) {
+            prevViews[i].getNodes().forEach(function (n) { return n.remove(); });
+          }
+          const forHost = anchor.parentNode;
+          nextViews.forEach(function (v) {
+            v.getNodes().forEach(function (node) {
+              if (node.parentNode !== forHost) forHost.insertBefore(node, anchor);
             });
           });
+          nextViews.forEach(function (v) {
+            v.getNodes().forEach(function (node) { return activateDeferredIfs(node); });
+          });
+          prevViews = nextViews;
           return;
         }
 
@@ -1430,12 +1775,6 @@ var KniuTemplate = (function () {
             view.key = key;
           }
           view.update(extra);
-          if (item && item[SUBS]) {
-            for (const [, set] of item[SUBS]) {
-              set.add(render);
-              view.viewCleanups.push(function () { return set.delete(render); });
-            }
-          }
           usedKeys.add(key);
           nextViews.push(view);
         });
@@ -1445,38 +1784,50 @@ var KniuTemplate = (function () {
             v.getNodes().forEach(function (n) { return n.remove(); });
           }
         });
-        const frag = document.createDocumentFragment();
-        nextViews.forEach(function (v) { return v.getNodes().forEach(function (n) { return frag.appendChild(n); }); });
-        anchor.parentNode.insertBefore(frag, anchor);
-        // keyed 列表首次创建的根 :if 会先留下 comment anchor，待本批
-        // DocumentFragment 进入真实 DOM 后才可渲染。此前仅非 keyed 分支
-        // 激活了该回调，故带 :key 的广告项永远不显示。
-        nextViews.forEach(function (v) {
-          v.getNodes().forEach(function (node) {
-            if (!node.__kniuDeferredIfRender) return;
-            const deferred = node.__kniuDeferredIfRender;
-            delete node.__kniuDeferredIfRender;
-            deferred();
+        const prevKeys = prevViews.map(function (v) { return v.key; });
+        const nextKeys = nextViews.map(function (v) { return v.key; });
+        const sameOrder = prevKeys.length === nextKeys.length
+          && prevKeys.every(function (k, i) { return k === nextKeys[i]; });
+        if (sameOrder) {
+          nextViews.forEach(function (v) {
+            v.getNodes().forEach(function (node) { return activateDeferredIfs(node); });
           });
-        });
+        } else {
+          let isPrefixExtend = prevKeys.length < nextKeys.length;
+          if (isPrefixExtend) {
+            for (let i = 0; i < prevKeys.length; i++) {
+              if (prevKeys[i] !== nextKeys[i]) { isPrefixExtend = false; break; }
+            }
+          }
+          if (isPrefixExtend) {
+            for (let i = prevKeys.length; i < nextViews.length; i++) {
+              nextViews[i].getNodes().forEach(function (node) {
+                anchor.parentNode.insertBefore(node, anchor);
+                activateDeferredIfs(node);
+              });
+            }
+          } else {
+            const frag = document.createDocumentFragment();
+            nextViews.forEach(function (v) { return v.getNodes().forEach(function (n) { return frag.appendChild(n); }); });
+            anchor.parentNode.insertBefore(frag, anchor);
+            nextViews.forEach(function (v) {
+              v.getNodes().forEach(function (node) { return activateDeferredIfs(node); });
+            });
+          }
+        }
         prevViews = nextViews;
-        rendered = [];
       };
 
-      // DocumentFragment 是临时克隆容器，提前渲染会把结果插入即将被丢弃的
-      // fragment，外层只会保留 comment anchor，最终页面看不到条件节点。
-      // 必须等 anchor 插入真实 DOM 后再执行首次 render。
-      if (!anchor.parentNode || anchor.parentNode.nodeType === 11) anchor.__kniuDeferredIfRender = render;
+      if (!anchor.parentNode) anchor.__kniuDeferredIfRender = render;
       else render();
       (bucket || listDisposers).push(function () {
-        subCleanups.forEach(function (c) { return c(); });
-        subCleanups.length = 0;
-        rendered.forEach(function (n) { return n.remove(); });
+        runCleanups(subCleanups);
         prevViews.forEach(function (v) {
           v.viewCleanups.forEach(function (c) { return c(); });
           v.getNodes().forEach(function (n) { return n.remove(); });
         });
       });
+      return anchor;
     };
 
     const setupIf = function (block, parentExtra, bucket = null) {
@@ -1488,12 +1839,12 @@ var KniuTemplate = (function () {
           continue;
         }
         if (sib.nodeType === 1) {
-          if (sib.hasAttribute('kniu:elseif') || sib.hasAttribute(':elseif')) {
+          if (hasDirectiveAttr(sib, 'elseif')) {
             chain.push({ node: sib, type: 'elseif' });
             sib = sib.nextSibling;
             continue;
           }
-          if (sib.hasAttribute('kniu:else') || sib.hasAttribute(':else')) {
+          if (hasDirectiveAttr(sib, 'else')) {
             chain.push({ node: sib, type: 'else' });
             break;
           }
@@ -1504,15 +1855,11 @@ var KniuTemplate = (function () {
       const branches = chain.map(function ({ node, type }) {
         const tpl = node.cloneNode(true);
         if (type === 'if' || type === 'elseif') {
-          const names = type === 'if' ? ['kniu:if', ':if'] : ['kniu:elseif', ':elseif'];
-          const attrName = names.find(function (n) { return node.hasAttribute(n); }) || names[0];
-          const raw = node.getAttribute(attrName) ?? '';
-          const m = raw.match(/\{\{([\s\S]*?)\}\}/);
-          const expr = (m ? m[1] : raw).trim();
-          names.forEach(function (n) { tpl.removeAttribute(n); });
+          const expr = extractBracedExpr(directiveAttr(node, type) ?? '');
+          removeDirectiveAttrs(tpl, type);
           return { type, expr, tpl, value: false };
         }
-        ['kniu:else', ':else'].forEach(function (n) { tpl.removeAttribute(n); });
+        removeDirectiveAttrs(tpl, 'else');
         return { type: 'else', expr: null, tpl, value: false };
       });
 
@@ -1522,14 +1869,11 @@ var KniuTemplate = (function () {
 
       let rendered = [];
       const cleanups = [];
-      // 订阅只注册到自身 cleanups（每次 render 执行后清空）；最终 disposer 才上交 bucket，
-      // 防止嵌套块随父级分支切换向顶层 listDisposers 无限累积（内存泄漏 + 过期渲染崩溃）。
       const bc = cleanups;
 
       const render = function () {
-        if (!anchor.parentNode) return; // 本分支已随父级重渲染移除：过期渲染自 disarm
-        cleanups.forEach(function (c) { return c(); });
-        cleanups.length = 0;
+        if (!anchor.parentNode) return;
+        runCleanups(cleanups);
         rendered.forEach(function (n) { return n.remove(); });
         rendered = [];
         let chosen = null;
@@ -1540,58 +1884,81 @@ var KniuTemplate = (function () {
             continue;
           }
           const { value, paths } = evalExpr(b.expr, state, parentExtra);
-          paths.forEach(function (p) { return subscribePath(state, p, render, bc); });
+          paths.forEach(function (p) {
+            if (isTraversalStep(b.expr, p, parentExtra)) return;
+            return subscribePath(state, p, render, bc, parentExtra);
+          });
           b.value = value;
           if (b.value && !chosen) chosen = b;
         }
         if (chosen) {
-          const isTpl = chosen.tpl.tagName === 'TEMPLATE';
-          const frag = isTpl
-            ? chosen.tpl.content.cloneNode(true)
-            : chosen.tpl.cloneNode(true);
-          const nodes = isTpl ? [...frag.childNodes] : [frag];
+          const nodes = materializeRoots(chosen.tpl);
           nodes.forEach(function (node) {
             if (node.nodeType === 1) {
-              queryDirectives(node, ['kniu:for', ':for']).forEach(function (n) { return setupFor(n, parentExtra, bc); });
-              queryDirectives(node, ['kniu:if', ':if']).forEach(function (n) { return setupIf(n, parentExtra, bc); });
-            }
-            anchor.parentNode.insertBefore(node, anchor);
-            if (node.__kniuDeferredIfRender) {
-              const deferred = node.__kniuDeferredIfRender;
-              delete node.__kniuDeferredIfRender;
-              deferred();
+              setupNestedFor(node, parentExtra, bc);
+              setupNestedIf(node, parentExtra, bc);
             }
             applyBindings(node, state, parentExtra, bc, refs);
+            anchor.parentNode.insertBefore(node, anchor);
+            activateDeferredIfs(node);
             rendered.push(node);
           });
         }
       };
 
-      if (!anchor.parentNode || anchor.parentNode.nodeType === 11) anchor.__kniuDeferredIfRender = render;
+      if (!anchor.parentNode) anchor.__kniuDeferredIfRender = render;
       else render();
       (bucket || listDisposers).push(function () {
-        cleanups.forEach(function (c) { return c(); });
-        cleanups.length = 0;
+        runCleanups(cleanups);
         rendered.forEach(function (n) { return n.remove(); });
       });
       return anchor;
     };
 
+    const activateDeferredIfs = function (root) {
+      if (!root) return;
+      const nodes = [root];
+      if (typeof document !== 'undefined' && typeof document.createTreeWalker === 'function') {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
+        let n;
+        while ((n = walker.nextNode())) nodes.push(n);
+      } else {
+        const walk = function (node) {
+          const kids = node.childNodes;
+          for (let i = 0; i < kids.length; i++) {
+            const c = kids[i];
+            if (c.nodeType === 1 || c.nodeType === 8) {
+              nodes.push(c);
+              if (c.nodeType === 1) walk(c);
+            }
+          }
+        };
+        walk(root);
+      }
+      nodes.forEach(function (node) {
+        if (!node.__kniuDeferredIfRender) return;
+        const deferred = node.__kniuDeferredIfRender;
+        delete node.__kniuDeferredIfRender;
+        deferred();
+      });
+    };
+
+    const setupNestedFor = function (node, extra, bucket) {
+      queryDirectives(node, FOR_ATTRS).forEach(function (n) { return setupFor(n, extra, bucket); });
+    };
+    const setupNestedIf = function (node, extra, bucket) {
+      queryDirectives(node, IF_ATTRS).forEach(function (n) { return setupIf(n, extra, bucket); });
+    };
+
     applyBindings(scope, state, {}, subscriptions, refs);
 
-    [...queryDirectives(scope, ['kniu:for', ':for'])]
+    [...queryDirectives(scope, FOR_ATTRS)]
       .filter(function (b) { return !hasDirectiveAncestor(b); })
       .forEach(function (b) { return setupFor(b, {}); });
 
-    let guard = 0;
-    let ifBlock;
-    while (
-      (ifBlock = queryDirectives(scope, ['kniu:if', ':if'])[0]) &&
-      !hasDirectiveAncestor(ifBlock) &&
-      guard++ < 1000
-    ) {
-      setupIf(ifBlock, {});
-    }
+    [...queryDirectives(scope, IF_ATTRS)]
+      .filter(function (b) { return !hasDirectiveAncestor(b); })
+      .forEach(function (b) { return setupIf(b, {}); });
 
     const orphanDirectives = [
       'kniu:elseif', 'kniu:else', 'kniu:key', 'kniu:for-index', 'kniu:for-item',
@@ -1620,6 +1987,7 @@ var KniuTemplate = (function () {
     collectReactiveReads: collectReactiveReads,
     compileExpression: compileExpression,
     precompileTemplate: precompileTemplate,
+    neutralizeTemplateUrls: neutralizeTemplateUrls,
     nextTick: nextTick,
     beginBindingCollection: beginBindingCollection,
     endBindingCollection: endBindingCollection,

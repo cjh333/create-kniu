@@ -2,12 +2,12 @@
 
 :host {
   display: block;
-  margin: 20px 0;
   font: 14px/1.7 var(--kniu-font-family);
   color: #4b5563;
 }
 
 .kniu_sys_article_tab_tabs {
+  margin: 20px 0;
   display: flex;
   flex-direction: column;
   -webkit-flex-direction: column;
@@ -20,7 +20,6 @@
 button {
   display: block;
   border: 0;
-  padding: 0;
   width: max-content;
   max-width: 100%;
   font: inherit;

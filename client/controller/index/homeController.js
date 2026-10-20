@@ -10,6 +10,8 @@ const homeController = controller(({ eventTo, navigateTo, request, reactive, onM
     dailys: [],
     articles: [],
     allArticles: [],
+    hotArticles: [],
+    recommendArticles: [],
     keyword: initialKeyword,
     today: '',
     photo: '',
@@ -78,16 +80,22 @@ const homeController = controller(({ eventTo, navigateTo, request, reactive, onM
     const run = request([
       { url: '/getDaily', type: 'POST', mutation: false, data: {}, redirectOnUnauthorized: false },
       { url: '/getArticle', type: 'POST', mutation: false, data: { page_current: 1, page_rows: pageMoreCount() }, redirectOnUnauthorized: false },
+      { url: '/getHotArticles', type: 'POST', mutation: false, data: {}, redirectOnUnauthorized: false },
+      { url: '/getRecommendArticles', type: 'POST', mutation: false, data: {}, redirectOnUnauthorized: false },
       { url: '/getInfo', type: 'POST', mutation: false, data: { identity_token: IDENTITY.getIdentity().token }, redirectOnUnauthorized: false }
     ]).then(function (results) {
       const daily = results[0];
       const article = results[1];
-      const info = results[2];
+      const hot = results[2];
+      const recommend = results[3];
+      const info = results[4];
       state.dailys = daily?.status === 1 && Array.isArray(daily.data) ? daily.data.filter(function (item) { return Number(item?.is_show) === 1; }) : [];
       const articleRows = article?.status === 1
         ? (Array.isArray(article.data) ? article.data : (Array.isArray(article.data?.data) ? article.data.data : []))
         : [];
       state.allArticles = articleRows.filter(function (item) { return Number(item?.is_show) === 1; });
+      state.hotArticles = hot?.status === 1 && Array.isArray(hot.data) ? hot.data : [];
+      state.recommendArticles = recommend?.status === 1 && Array.isArray(recommend.data) ? recommend.data : [];
       const meta = article?.data && !Array.isArray(article.data) ? article.data : null;
       const total = Number(meta?.total ?? state.allArticles.length) || 0;
       updatePageMore({
@@ -143,12 +151,12 @@ const homeController = controller(({ eventTo, navigateTo, request, reactive, onM
   state.pageMore.onChange = loadMore;
 
   function toDetail(event) {
-    const id = Number(event?.currentTarget?.dataset?.articleId);
+    const id = Number(event?.currentTarget?.__kniuOptionsValue?.articleId);
     if (Number.isInteger(id) && id > 0) navigateTo('/detail', { id: id });
   }
 
   function toAbout(event) {
-    const roleId = Number(event?.currentTarget?.dataset?.roleId);
+    const roleId = Number(event?.currentTarget?.__kniuOptionsValue?.roleId);
     if (Number.isInteger(roleId) && roleId > 0) navigateTo('/about', { role_id: roleId });
   }
 

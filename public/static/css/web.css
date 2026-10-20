@@ -1,43 +1,49 @@
 @charset "UTF-8";
 
 @font-face {
-  font-family: KniuHei_Light;
-  src: url("../font/KniuHei-Light.woff2") format("woff2");
+  font-family: KniuSans_Light;
+  src: url("../font/KniuSans/KniuSans-Light.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: KniuHei_LightExtra;
-  src: url("../font/KniuHei-LightExtra.woff2") format("woff2");
+  font-family: KniuSans_LightExtra;
+  src: url("../font/KniuSans/KniuSans-LightExtra.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: KniuHei_Regular;
-  src: url("../font/KniuHei-Regular.woff2") format("woff2");
+  font-family: KniuSans_Regular;
+  src: url("../font/KniuSans/KniuSans-Regular.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: KniuHei_Medium;
-  src: url("../font/KniuHei-Medium.woff2") format("woff2");
+  font-family: KniuSans_Medium;
+  src: url("../font/KniuSans/KniuSans-Medium.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: KniuHei_BoldSemi;
-  src: url("../font/KniuHei-BoldSemi.woff2") format("woff2");
+  font-family: KniuSans_BoldSemi;
+  src: url("../font/KniuSans/KniuSans-BoldSemi.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: KniuHei_Bold;
-  src: url("../font/KniuHei-Bold.woff2") format("woff2");
+  font-family: KniuSans_Bold;
+  src: url("../font/KniuSans/KniuSans-Bold.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: KniuHei_Heavy;
-  src: url("../font/KniuHei-Heavy.woff2") format("woff2");
+  font-family: KniuSans_Heavy;
+  src: url("../font/KniuSans/KniuSans-Heavy.woff2") format("woff2");
+}
+
+/* 兼容历史富文本 face="KniuHei"（编辑器旧选项值） */
+@font-face {
+  font-family: KniuHei;
+  src: url("../font/KniuHei/KniuHei-Regular.woff2") format("woff2");
 }
 
 html,
 body {
-  font-family: KniuHei_Regular;
+  font-family: KniuSans_Regular;
 }
 
 @media (max-width: calc(1280px - 60px)) {

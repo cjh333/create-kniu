@@ -1,6 +1,8 @@
 export function registerTable(context) {
-  const { BOOLEAN_ATTRIBUTES, IDENTITY, KNIU_BACKTOP_CSS, KNIU_BADGE_CSS, KNIU_BASE_CONTAIN_CSS, KNIU_BASE_FONT_CSS, KNIU_BTN_CSS, KNIU_BTN_GROUP_CSS, KNIU_BTN_METRICS_CSS, KNIU_BTN_OVERRIDES_CSS, KNIU_COMMENT_CSS, KNIU_CONTAIN_EXCLUDE_TAGS, KNIU_CONTENT_TABLE_CSS, KNIU_CONTENT_TABLE_DOC_CSS, KNIU_DATE_PICKER_CSS, KNIU_DATE_PICKER_OVERRIDES_CSS, KNIU_DROPDOWN_CSS, KNIU_DROPDOWN_OPTION_CSS, KNIU_EDITOR_CSS, KNIU_EDITOR_OVERRIDE_CSS, KNIU_EDITOR_PRINT_CSS, KNIU_EMPTY_CSS, KNIU_FONT_FACE_CSS, KNIU_FONT_FAMILY, KNIU_FONT_MONO_FAMILY, KNIU_FONT_SERIF_FAMILY, KNIU_I18N, KNIU_ICON_CSS, KNIU_ICON_FONT_NAMES, KNIU_ICON_NAMES, KNIU_ICON_SVG, KNIU_IMAGE_CSS, KNIU_IMAGE_OVERRIDES_CSS, KNIU_INPUT_AFFIX_CSS, KNIU_INPUT_CSS, KNIU_INPUT_GROUP_CSS, KNIU_INPUT_METRICS_CSS, KNIU_INPUT_PASSWORD_ACTIONS_CSS, KNIU_INPUT_PASSWORD_CSS, KNIU_INPUT_STATES_CSS, KNIU_INPUT_TEXTAREA_CSS, KNIU_INPUT_TIP_CSS, KNIU_LIKE_CSS, KNIU_LOADING_CSS, KNIU_MARKDOWN_CSS, KNIU_MODAL_CONFIRM_CSS, KNIU_MODAL_CSS, KNIU_MSG_CSS, KNIU_NAVBAR_CELLS_CSS, KNIU_NAVBAR_CELL_CSS, KNIU_NAVBAR_CSS, KNIU_NAVBAR_PLACEHOLDER_CSS, KNIU_PAGE_CSS, KNIU_RADIO_GROUP_CSS, KNIU_RICHTEXT_CSS, KNIU_SELECT_CSS, KNIU_STATUS_CSS, KNIU_SUB_NAVBAR_CSS, KNIU_SUB_NAVBAR_OVERRIDES_CSS, KNIU_SWITCH_CSS, KNIU_TABLE_CLASS, KNIU_TABLE_COL_CSS, KNIU_TABLE_CSS, KNIU_TABLE_WRAP_CLASS, KNIU_TAB_CSS, KNIU_TAG_CSS, KNIU_UPLOAD_CSS, KNIU_USER_LOGIN_CSS, KNIU_USER_LOGIN_OVERRIDES_CSS, PRUNABLE_ATTRIBUTE_NAMES, REQUEST, RICH_TEXT_LITERAL_TAG_RE, SCROLL_LOCK_FLAG, SEMANTIC_EMPTY_ATTRIBUTES, SHADOW_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_RE, TEMPLATE, adoptDropdownStyle, adoptSharedStyle, adoptedSheetsFlushScheduled, appendRawStyle, applyScrollLock, attachComponentShadow, buildIconElement, buildPageList, compileTableRowTemplate, componentDefaults, componentLang, componentText, computePopoverLayout, confirm, createRowDeleteHandler, createSearchActions, createTable, debounce, flushPendingAdoptedSheets, getResponseRecords, getShadowInnerHTMLDescriptor, getSharedStyleSheet, hasRichTextLiteralTag, installMarkdownStyles, installOptionsOnlyProtocol, installRichTextStyles, isEmptyAttributeValue, lockDocumentScroll, makeSwitchOptions, mountAffixSlots, mountPopoverPortal, msg, normalizeComponentCss, normalizedCssCache, pendingAdoptedSheets, pruneEmptyAttribute, pruneEmptyAttributeTree, pruneEmptyAttributes, pruneEmptyRootAttributes, readScrollLockOriginals, reconcileDocumentScrollLock, releaseScrollLock, replaceChildrenWithFragment, resolveIconName, resolveTableRowTemplate, sanitizeRichHtml, sanitizeRichHtmlAsync, scheduleAdoptedSheetsFlush, scrollLockNodes, scrollLockOriginals, scrollLockOwners, setLoading, shadowInnerHTMLDescriptor, shadowStyleSheetCache, shadowTemplateCache, shouldContainHost, state, supportsAdoptedStyleSheets, tableTemplateCache, toastInstance, toastTimer, trackPopoverPosition, unlockDocumentScroll, unwrapTablesIn, use, useListPage, usePagination, wrapTablesIn, writeScrollLockOriginals } = context;
+  const { BOOLEAN_ATTRIBUTES, IDENTITY, KNIU_BACKTOP_CSS, KNIU_BADGE_CSS, KNIU_BASE_CONTAIN_CSS, KNIU_BASE_FONT_CSS, KNIU_BTN_CSS, KNIU_BTN_GROUP_CSS, KNIU_BTN_METRICS_CSS, KNIU_BTN_OVERRIDES_CSS, KNIU_COMMENT_CSS, KNIU_CONTAIN_EXCLUDE_TAGS, KNIU_CONTENT_TABLE_CSS, KNIU_CONTENT_TABLE_DOC_CSS, KNIU_DATE_PICKER_CSS, KNIU_DATE_PICKER_OVERRIDES_CSS, KNIU_DROPDOWN_CSS, KNIU_DROPDOWN_OPTION_CSS, KNIU_EDITOR_CSS, KNIU_EDITOR_OVERRIDE_CSS, KNIU_EDITOR_PRINT_CSS, KNIU_EMPTY_CSS, KNIU_FONT_FACE_CSS, KNIU_FONT_FAMILY, KNIU_FONT_MONO_FAMILY, KNIU_FONT_SERIF_FAMILY, KNIU_I18N, KNIU_ICON_CSS, KNIU_ICON_FONT_NAMES, KNIU_ICON_NAMES, KNIU_ICON_SVG, KNIU_IMAGE_CSS, KNIU_IMAGE_OVERRIDES_CSS, KNIU_INPUT_AFFIX_CSS, KNIU_INPUT_CSS, KNIU_INPUT_GROUP_CSS, KNIU_INPUT_METRICS_CSS, KNIU_INPUT_PASSWORD_ACTIONS_CSS, KNIU_INPUT_PASSWORD_CSS, KNIU_INPUT_STATES_CSS, KNIU_INPUT_TEXTAREA_CSS, KNIU_INPUT_TIP_CSS, KNIU_LIKE_CSS, KNIU_LOADING_CSS, KNIU_MARKDOWN_CSS, KNIU_MODAL_CONFIRM_CSS, KNIU_MODAL_CSS, KNIU_MSG_CSS, KNIU_NAVBAR_CELLS_CSS, KNIU_NAVBAR_CELL_CSS, KNIU_NAVBAR_CSS, KNIU_NAVBAR_PLACEHOLDER_CSS, KNIU_PAGE_CSS, KNIU_RADIO_GROUP_CSS, KNIU_RICHTEXT_CSS, KNIU_SELECT_CSS, KNIU_STATUS_CSS, KNIU_SUB_NAVBAR_CSS, KNIU_SUB_NAVBAR_OVERRIDES_CSS, KNIU_SWITCH_CSS, KNIU_TABLE_CLASS, KNIU_TABLE_COL_CSS, KNIU_TABLE_CSS, KNIU_TABLE_WRAP_CLASS, KNIU_TAB_CSS, KNIU_TAG_CSS, KNIU_UPLOAD_CSS, KNIU_USER_LOGIN_CSS, KNIU_USER_LOGIN_OVERRIDES_CSS, PRUNABLE_ATTRIBUTE_NAMES, REQUEST, RICH_TEXT_LITERAL_TAG_RE, SCROLL_LOCK_FLAG, SEMANTIC_EMPTY_ATTRIBUTES, SHADOW_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_CACHE_LIMIT, TABLE_TEMPLATE_RE, TEMPLATE, adoptDropdownStyle, adoptSharedStyle, adoptedSheetsFlushScheduled, appendRawStyle, applyScrollLock, attachComponentShadow, buildIconElement, buildPageList, compileTableRowTemplate, componentDefaults, componentLang, componentText, computePopoverLayout, confirm, createRowDeleteHandler, createSearchActions, createTable, debounce, flushPendingAdoptedSheets, getResponseRecords, getShadowInnerHTMLDescriptor, getSharedStyleSheet, hasRichTextLiteralTag, installMarkdownStyles, installOptionsOnlyProtocol, installRichTextStyles, isEmptyAttributeValue, lockDocumentScroll, makeSwitchOptions, mountAffixSlots, mountPopoverPortal, msg, normalizeComponentCss, normalizedCssCache, pendingAdoptedSheets, pruneEmptyAttribute, pruneEmptyAttributeTree, pruneEmptyAttributes, pruneEmptyRootAttributes, readScrollLockOriginals, reconcileDocumentScrollLock, releaseScrollLock, replaceChildrenWithFragment, resolveIconName, resolveTableRowTemplate, sanitizeRichHtml, sanitizeRichHtmlAsync, scheduleAdoptedSheetsFlush, scrollLockNodes, scrollLockOriginals, scrollLockOwners, setLoading, shadowInnerHTMLDescriptor, shadowStyleSheetCache, shadowTemplateCache, shouldContainHost, state, supportsAdoptedStyleSheets, tableTemplateCache, toastInstance, toastTimer, trackPopoverPosition, unlockDocumentScroll, unwrapTablesIn, use, usePage, usePagination, wrapTablesIn, writeScrollLockOriginals } = context;
+
   if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') return;
+
   if (!customElements.get('kniu-table-col')) {
     class KniuSysTableColumn extends HTMLElement {
       constructor() {
@@ -19,12 +21,14 @@ export function registerTable(context) {
     }
     customElements.define('kniu-table-col', KniuSysTableColumn);
   }
+
   if (customElements.get('kniu-table')) return;
 
   class KniuSysTable extends HTMLElement {
     static get observedAttributes() {
       return [];
     }
+
     constructor() {
       super();
       attachComponentShadow(this);
@@ -86,6 +90,7 @@ export function registerTable(context) {
       } else if (this.isConnected) this._queueRender();
       this._clearColumnDefinitions();
     }
+
     get options() {
       return this._config;
     }
@@ -106,13 +111,16 @@ export function registerTable(context) {
       this._loading = !!value;
       if (this._table) this._table.setLoading(this._loading, this._loadingText);
     }
+
     get loading() {
       return this._loading;
     }
+
     set loadingText(value) {
       this._loadingText = value == null ? '' : String(value);
       if (this._table) this._table.setLoading(this._loading, this._loadingText);
     }
+
     get loadingText() {
       return this._loadingText;
     }
@@ -134,28 +142,57 @@ export function registerTable(context) {
         const imageElement = template?.content.querySelector('kniu-image');
         const tagElement = template?.content.querySelector('kniu-tag');
         const statusElement = template?.content.querySelector('kniu-status');
+        // 兼容两条 option 注入路径（与下方 onChange 同口径）：模板引擎对自定义组件写 node.options，
+        // 非 options-only 路径才写 __kniuOptionsValue；函数型配置（formatter/sortMethod/selectable）
+        // 不会反射成属性，只能从 options 读取。
+        const columnOptions = element.__kniuOptionsValue && typeof element.__kniuOptionsValue === 'object'
+          ? element.__kniuOptionsValue
+          : (element.options && typeof element.options === 'object' ? element.options : null);
+        const optionOrAttr = (optionName, attributeName) => {
+          if (columnOptions && columnOptions[optionName] !== undefined && columnOptions[optionName] !== null) {
+            return columnOptions[optionName];
+          }
+          return attributeName === undefined ? element.getAttribute(optionName) : element.getAttribute(attributeName);
+        };
+        const fixedSource = columnOptions && columnOptions.fixed !== undefined && columnOptions.fixed !== null
+          ? columnOptions.fixed
+          : (element.hasAttribute('fixed') ? String(fixedAttribute) : null);
+        const fixed = fixedSource === false || fixedSource === '' || fixedSource === null
+          ? false
+          : (String(fixedSource).toLowerCase() === 'right' ? 'right' : 'left');
+        const editableSource = columnOptions && columnOptions.editable !== undefined && columnOptions.editable !== null
+          ? columnOptions.editable
+          : (element.hasAttribute('editable') ? element.getAttribute('editable') : undefined);
+        const editable = editableSource === undefined
+          ? false
+          : (editableSource === 'number'
+            ? 'number'
+            : editableSource === 'text'
+              ? 'text'
+              : editableSource !== false && editableSource !== 'false');
+        const editMinSource = columnOptions && columnOptions.editMin !== undefined && columnOptions.editMin !== null
+          ? columnOptions.editMin
+          : (element.hasAttribute('edit-min') ? element.getAttribute('edit-min') : null);
         const column = {
-          type: element.getAttribute('type') || 'default',
-          field: element.getAttribute('field') || '',
-          label: element.getAttribute('label') || '',
-          width: element.getAttribute('width') || (element.style && element.style.width) || '',
-          minWidth: element.getAttribute('min-width') || '',
-          align: ['left', 'center', 'right'].includes(element.getAttribute('align'))
-            ? element.getAttribute('align')
+          type: optionOrAttr('type') || 'default',
+          field: optionOrAttr('field') || '',
+          label: optionOrAttr('label') || '',
+          width: optionOrAttr('width') || (element.style && element.style.width) || '',
+          minWidth: optionOrAttr('minWidth', 'min-width') || '',
+          align: ['left', 'center', 'right'].includes(optionOrAttr('align'))
+            ? optionOrAttr('align')
             : ((element.style && element.style.textAlign) || 'left'),
-          headerAlign: ['left', 'center', 'right'].includes(element.getAttribute('header-align')) ? element.getAttribute('header-align') : '',
-          showOverflowTooltip: element.hasAttribute('show-overflow-tooltip'),
-          sortable: element.hasAttribute('sortable'),
-          sortMethod: element.sortMethod,
-          formatter: element.formatter,
-          selectable: element.selectable,
-          index: element.getAttribute('index') || 1,
-          editable: element.hasAttribute('editable')
-            ? (element.getAttribute('editable') === 'number' ? 'number'
-              : element.getAttribute('editable') === 'text' ? 'text'
-                : element.getAttribute('editable') !== 'false')
-            : false,
-          editMin: element.hasAttribute('edit-min') ? Number(element.getAttribute('edit-min')) : null,
+          headerAlign: ['left', 'center', 'right'].includes(optionOrAttr('headerAlign', 'header-align'))
+            ? optionOrAttr('headerAlign', 'header-align')
+            : '',
+          showOverflowTooltip: (columnOptions && columnOptions.showOverflowTooltip === true) || element.hasAttribute('show-overflow-tooltip'),
+          sortable: (columnOptions && columnOptions.sortable === true) || element.hasAttribute('sortable'),
+          sortMethod: (columnOptions && columnOptions.sortMethod) || element.sortMethod,
+          formatter: (columnOptions && columnOptions.formatter) || element.formatter,
+          selectable: (columnOptions && columnOptions.selectable) || element.selectable,
+          index: optionOrAttr('index') || 1,
+          editable: editable,
+          editMin: editMinSource === null ? null : Number(editMinSource),
           image: imageElement ? {
             attributes: Object.fromEntries([...imageElement.attributes].map(function (attribute) {
               return [attribute.name, attribute.value];
@@ -174,14 +211,15 @@ export function registerTable(context) {
             }))
           } : null,
           onChange: (...args) => {
-            const optionOnChange = element.__kniuOptionsValue?.onChange;
+            // 兼容两条 option 注入路径：模板引擎对自定义组件走 node.options（options-only 协议），
+            // 非 options-only 路径才写 __kniuOptionsValue；缺失回调时按既有口径视为保存成功。
+            const optionOnChange = element.__kniuOptionsValue?.onChange
+              ?? (element.options && typeof element.options === 'object' ? element.options.onChange : undefined);
             if (typeof optionOnChange === 'function') return optionOnChange(...args);
             if (typeof element.onChange === 'function') return element.onChange(...args);
             return true;
           },
-          fixed: element.hasAttribute('fixed')
-            ? (String(fixedAttribute).toLowerCase() === 'right' ? 'right' : 'left')
-            : false
+          fixed: fixed
         };
         const buttons = [
           ...element.querySelectorAll(':scope > kniu-btn'),
@@ -248,7 +286,8 @@ export function registerTable(context) {
               round: optionFlag('round', button.hasAttribute('round')),
               circle: optionFlag('circle', button.hasAttribute('circle')),
               disabled: optionFlag('disabled', button.hasAttribute('disabled')),
-              condition: button.hasAttribute('kniu:if') ? button.getAttribute('kniu:if') : null,
+              // 条件同时兼容 kniu:if 与 :if 两种写法，只认 kniu:if 会让视图的 :if 恒显。
+              condition: (button.getAttribute('kniu:if') || button.getAttribute(':if') || null),
               icon: button.getAttribute('icon') || '',
               onClick: ({ index, rows }) => {
                 const handler = button.__kniuTableScopedHandler;
@@ -309,14 +348,21 @@ export function registerTable(context) {
     }
 
     clearSelection() { return this._table?.clearSelection(); }
+
     refreshColumns() {
       if (this.isConnected) this._renderTable();
     }
+
     getSelectionRows() { return this._table?.getSelectionRows() || []; }
+
     toggleRowSelection(row, selected) { return this._table?.toggleRowSelection(row, selected); }
+
     setCurrentRow(row) { return this._table?.setCurrentRow(row); }
+
     sort(field, order) { return this._table?.sort(field, order); }
+
     clearSort() { return this._table?.clearSort(); }
+
     doLayout() { return this._table?.doLayout(); }
   }
 

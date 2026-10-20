@@ -22,8 +22,8 @@ const SERVER_MAP = {
   // API 代理。
   PROXY: {
     '/api': {
-      URL: 'http://localhost:9900',
-      CHANGE_ORIGIN: true
+      url: 'http://localhost:9900',
+      change_origin: true
     }
   }
 };

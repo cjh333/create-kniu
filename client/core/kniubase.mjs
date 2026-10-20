@@ -3,25 +3,13 @@ import UTIL from './kniuui/kniuui.mjs';
 import AUTH from './kniuauth.mjs';
 import MVVM from './kniumvvm.mjs';
 import SERVER from '../config/server.js';
+import { toCommonKey, toComponentTag } from './kniuviewkey.mjs';
+import { rememberLastRoute } from './kniulastroute.mjs';
 
-const { create$, createEventBus, getTimeInZone, loadHtmlTemplate } = EVENTER;
-const { loadController } = MVVM;
+const { create$, createEventBus, getTimeInZone, loadHtmlTemplate, formatTime } = EVENTER;
+const { loadController, loadControllerFile } = MVVM;
 
 var KniuBase = (function () {
-  function toComponentTag(path) {
-    const normalized = String(path || '').replaceAll('\\', '/').replace(/\.html$/, '');
-    const parts = normalized.split('/').filter(Boolean);
-    const commonIndex = parts.lastIndexOf('common');
-    const names = commonIndex > 0 ? parts.slice(commonIndex - 1) : parts.slice(-2);
-    return 'kniu-system-' + names.join('-').replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
-  }
-
-  function toCommonKey(path) {
-    const parts = String(path || '').replaceAll('\\', '/').replace(/\.html$/, '').split('/').filter(Boolean);
-    const commonIndex = parts.lastIndexOf('common');
-    return commonIndex > 0 ? parts[commonIndex - 1] + '/' + parts[parts.length - 1] : '';
-  }
-
   function toRoutePath(path) {
     const fileName = path.split('/').pop().replace('.html', '');
     return '/' + fileName;
@@ -57,7 +45,7 @@ var KniuBase = (function () {
 
   function isLoginRoute(hash) {
     const path = String(hash || '').split('?')[0];
-    return path === '/login' || path === '/register';
+    return path === '/login' || path === '/register' || path === '/forgot';
   }
 
   function createShadowComponent(templatePath, controller, buildScope) {
@@ -111,6 +99,9 @@ var KniuBase = (function () {
           }
           this._readyResolve?.();
         }).call(this).catch(function (error) {
+          if (connectionAbortController?.signal.aborted) {
+            return;
+          }
           if (this._disposed) {
             this._readyResolve?.();
             return;
@@ -137,7 +128,6 @@ var KniuBase = (function () {
     };
   }
 
-  // 创建项目。
   function createApp() {
     const eventBus = createEventBus();
     let renderNavigation = null;
@@ -196,6 +186,7 @@ var KniuBase = (function () {
       state.routeListeners.slice().forEach(function (l) {
         try { l(hash, prev); } catch (e) { console.warn('[route] listener error', e); }
       });
+      if (state.currentRoute) rememberLastRoute(state.currentRoute);
     }
     function getActivePage(container) {
       if (!container) return null;
@@ -239,12 +230,17 @@ var KniuBase = (function () {
         navigateTo: navigateTo,
         getRouteData: function () { return state.routeData; },
         onRouteChange: onRouteChange,
-        ui: UTIL.state,
-        formatTime: function (date) {
-          const pad = function (value) { return String(value).padStart(2, '0'); };
-          return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
-            `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+        openExternalUrl: function (url) {
+          const target = String(url == null ? '' : url).trim();
+          if (!/^https?:\/\//i.test(target)) {
+            console.warn('[kniu] openExternalUrl 仅接受 HTTP/HTTPS 地址：', target);
+            return false;
+          }
+          const opened = globalThis.open?.(target, '_blank', 'noopener,noreferrer');
+          return opened !== undefined;
         },
+        ui: UTIL.state,
+        formatTime: formatTime,
         getTimeInZone: getTimeInZone,
       };
     };
@@ -263,7 +259,8 @@ var KniuBase = (function () {
       lastRenderedHash: null,
       lastRenderedRouteKey: null,
       routeKey: null,
-      routeData: null
+      routeData: null,
+      currentRoute: null
     };
     return {
       use(routeConfig) {
@@ -274,7 +271,7 @@ var KniuBase = (function () {
         state.commonControllers = Object.fromEntries(
           Object.entries(controllers || {}).map(function ([viewName, controller]) {
             if (typeof controller === 'string') {
-              return [viewName, function loadViewController() { return loadController(controller); }];
+              return [viewName, function loadViewController() { return loadControllerFile(controller); }];
             }
             if (controller === null || controller === undefined || typeof controller === 'function') {
               return [viewName, controller];
@@ -283,9 +280,9 @@ var KniuBase = (function () {
               return [viewName, controller];
             }
             throw new TypeError(
-              '[kniubase] useViews 的值只能是控制器路径字符串、控制器函数或 controller() 产物，'
+              '[kniubase] useViews 的值只能是控制器真实文件路径字符串、控制器函数或 controller() 产物，'
               + `收到「${viewName}」→ ${Array.isArray(controller) ? 'array' : typeof controller}。`
-              + '键必须写成「区域/名称」，例如 { \'admin/aside\': \'admin/asideController\' }；不支持嵌套对象写法。'
+              + '键必须写成「区域/名称」，例如 { \'admin/common/aside\': \'admin/asideController.js\' }；不支持嵌套对象写法。'
             );
           })
         );
@@ -358,6 +355,7 @@ var KniuBase = (function () {
             );
           }
         }, true);
+        await AUTH.syncFrontIdentity();
         await AUTH.restoreSession();
         const currentHash = routePathFromHash(location.hash);
         const initialRouteState = globalThis.history?.state?.kniuRoute;
@@ -416,6 +414,7 @@ var KniuBase = (function () {
               state.currentViewTag = loginTag;
               state.lastRenderedHash = hash;
               state.lastRenderedRouteKey = state.routeKey;
+              state.currentRoute = { path: pathOnly, data: state.routeData };
               return;
             }
             const route = currentRoute;
@@ -431,9 +430,10 @@ var KniuBase = (function () {
               state.currentViewTag = tag;
               state.lastRenderedHash = hash;
               state.lastRenderedRouteKey = state.routeKey;
+              state.currentRoute = { path: pathOnly, data: state.routeData };
               return;
             }
-            const mainTag = state.commonTags.get('admin/main') || 'kniu-system-admin-common-main';
+            const mainTag = state.commonTags.get('admin/common/main') || 'kniu-system-admin-common-main';
             const firstChild = getActivePage(state.host);
             const hasMain = firstChild && firstChild.tagName.toLowerCase() === mainTag;
             if (!hasMain) {
@@ -454,6 +454,7 @@ var KniuBase = (function () {
             state.currentViewTag = tag;
             state.lastRenderedHash = hash;
             state.lastRenderedRouteKey = state.routeKey;
+            state.currentRoute = { path: pathOnly, data: state.routeData };
           } catch (error) {
             console.error('[route] render failed:', error);
             UTIL.msg?.({ content: '页面加载失败，请重试', type: 'error' });

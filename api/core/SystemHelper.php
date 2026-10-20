@@ -2,6 +2,39 @@
 
 namespace Core;
 
+/**
+ * kernel32.dll 的 FFI 桩接口（仅静态分析用，运行时不存在该类型）。
+ *
+ * `FFI::cdef` 生成的 C 函数是运行时动态绑定，静态分析不可见，故用 `@method`
+ * 注解补齐签名；实际对象是 \FFI 实例，此桩只让 Intelephense 不报「Undefined method」。
+ *
+ * @method \FFI\CData new(string $type)
+ * @method int GetPhysicallyInstalledSystemMemory(\FFI\CData $TotalMemoryInKilobytes)
+ * @method bool GlobalMemoryStatusEx(\FFI\CData $lpBuffer)
+ * @method int GetTickCount64()
+ */
+interface Kernel32Library
+{
+}
+
+/**
+ * MEMORYSTATUSEX 结构体的字段桩（仅静态分析用，运行时是 \FFI\CData）。
+ *
+ * CData 的结构体字段是运行时动态访问，静态分析不可见，故用 `@property` 补齐；
+ * 调用点以 `\FFI\CData|self` 联合类型注解消费。
+ *
+ * @property int $dwLength
+ * @property int $dwMemoryLoad
+ * @property int $ullTotalPhys
+ * @property int $ullAvailPhys
+ * @property int $ullTotalPageFile
+ * @property int $ullAvailVirtual
+ * @property int $ullAvailExtendedVirtual
+ */
+class Kernel32MemoryStatusEx
+{
+}
+
 class SystemHelper
 {
   /**
@@ -13,6 +46,7 @@ class SystemHelper
    * 宁可这次拿不到数（显示 Unknown），也不能让一个探针把服务拖垮。
    */
   private const SHELL_TIMEOUT_SECONDS = 4;
+  private const PUBLIC_IP_CACHE_SECONDS = 3600;
 
   private static ?string $cacheDir = null;
 
@@ -43,6 +77,119 @@ class SystemHelper
   }
 
   /**
+   * 获取服务器公网出口 IP。
+   *
+   * NAT、容器和反向代理场景下 SERVER_ADDR 只能代表内网地址，不能代表管理员
+   * 实际需要查看的公网出口地址。该探针使用 HTTPS、短超时和磁盘缓存，失败时退回
+   * 本机地址，避免后台系统信息页因外网不可用而阻塞。
+   *
+   * @param string $fallback 本机地址降级值。
+   * @return string 公网 IPv4/IPv6 或降级地址。
+   */
+  public static function getPublicIp(string $fallback = ''): string
+  {
+    static $resolved = null;
+    if ($resolved !== null) return $resolved;
+
+    $fallback = trim($fallback);
+    $cacheFile = self::getCacheDir() . '/public_ip.json';
+    $cached = is_file($cacheFile) ? json_decode((string)@file_get_contents($cacheFile), true) : null;
+    $cachedIp = is_array($cached) ? trim((string)($cached['ip'] ?? '')) : '';
+    $cachedAt = is_array($cached) ? (int)($cached['time'] ?? 0) : 0;
+    if (self::isPublicIp($cachedIp) && time() - $cachedAt < self::PUBLIC_IP_CACHE_SECONDS) {
+      return $resolved = $cachedIp;
+    }
+
+    // 不依赖 allow_url_fopen：部分生产 PHP 禁用了 URL stream，导致旧实现总是
+    // 退回 SERVER_ADDR（通常是内网/反向代理地址）。依次使用多个 HTTPS 回显服务，
+    // 每个请求均限定在短超时内，且只接受真正公网 IP。
+    foreach (['https://api.ipify.org', 'https://api64.ipify.org', 'https://ifconfig.me/ip'] as $url) {
+      $candidate = self::requestPublicIp($url);
+      if (!self::isPublicIp($candidate)) continue;
+      @file_put_contents($cacheFile, json_encode(['ip' => $candidate, 'time' => time()], JSON_UNESCAPED_SLASHES), LOCK_EX);
+      return $resolved = $candidate;
+    }
+
+    // 有些主机防火墙只禁止出站 HTTPS，但仍允许 DNS。站点域名解析出的地址是
+    // SERVER_ADDR 的安全补充：仅取当前请求服务的域名，且同样只接受公网地址。
+    foreach ([(string)($_SERVER['HTTP_HOST'] ?? ''), (string)($_SERVER['SERVER_NAME'] ?? '')] as $host) {
+      $candidate = self::resolvePublicHostIp($host);
+      if (!self::isPublicIp($candidate)) continue;
+      @file_put_contents($cacheFile, json_encode(['ip' => $candidate, 'time' => time()], JSON_UNESCAPED_SLASHES), LOCK_EX);
+      return $resolved = $candidate;
+    }
+
+    // 不要把 SERVER_ADDR 的私网/保留地址伪装成公网 IP；外部探测全不可用时仅保留
+    // 已经是公网地址的明确降级值，界面其余情况显示“—”。
+    return $resolved = self::isPublicIp($fallback) ? $fallback : '';
+  }
+
+  /**
+   * 通过 HTTPS 公网回显服务读取本机出口 IP。
+   *
+   * @param string $url 固定的 HTTPS 回显服务地址。
+   * @return string 回显的 IP；失败时为空字符串。
+   */
+  private static function requestPublicIp(string $url): string
+  {
+    if (function_exists('curl_init')) {
+      $handle = curl_init($url);
+      if ($handle === false) return '';
+      curl_setopt_array($handle, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT_MS => 800,
+        CURLOPT_TIMEOUT_MS => 1800,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+        CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_USERAGENT => 'KniuSystem/1.0 public-ip-probe'
+      ]);
+      $body = curl_exec($handle);
+      $status = (int)curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+      curl_close($handle);
+      return $status === 200 && is_string($body) ? trim($body) : '';
+    }
+
+    $context = stream_context_create([
+      'http' => ['timeout' => 2, 'ignore_errors' => true],
+      'ssl' => ['verify_peer' => true, 'verify_peer_name' => true]
+    ]);
+    return trim((string)@file_get_contents($url, false, $context));
+  }
+
+  /**
+   * 判断地址是否为可展示的公网 IP，拒绝私网、环回和保留网段。
+   *
+   * @param string $ip 待检查地址。
+   * @return bool 是否为公网 IP。
+   */
+  private static function isPublicIp(string $ip): bool
+  {
+    return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
+  }
+
+  /**
+   * 解析当前站点域名的公网 IPv4 地址。
+   *
+   * @param string $host HTTP Host 或服务器名称。
+   * @return string 解析后的公网地址；无效或失败时为空字符串。
+   */
+  private static function resolvePublicHostIp(string $host): string
+  {
+    $host = trim(strtolower($host));
+    if ($host === '') return '';
+    if ($host[0] === '[') {
+      $closing = strpos($host, ']');
+      $host = $closing === false ? '' : substr($host, 1, $closing - 1);
+    } else {
+      $host = explode(':', $host, 2)[0];
+    }
+    if ($host === '' || !preg_match('/^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/', $host)) return '';
+    $ip = gethostbyname($host);
+    return self::isPublicIp($ip) ? $ip : '';
+  }
+
+  /**
    * 格式化字节数。
    *
    * @param int $bytes 字节数。
@@ -57,41 +204,6 @@ class SystemHelper
     $pow = min($pow, count($units) - 1);
     $bytes /= pow(1024, $pow);
     return round($bytes, $precision) . ' ' . $units[$pow];
-  }
-
-  /**
-   * 获取目录统计信息。
-   *
-   * @param string $dir 目录路径。
-   * @return array 目录统计信息，包含文件数量和总大小。
-   */
-  public static function getDirectoryStats($dir): array
-  {
-    $fileCount = 0;
-    $totalSize = 0;
-
-    if (!is_dir($dir)) {
-      return ['file_count' => 0, 'total_size' => 0];
-    }
-
-    $items = scandir($dir);
-    foreach ($items as $item) {
-      if ($item === '.' || $item === '..') {
-        continue;
-      }
-
-      $path = $dir . '/' . $item;
-      if (is_dir($path)) {
-        $subStats = self::getDirectoryStats($path);
-        $fileCount += $subStats['file_count'];
-        $totalSize += $subStats['total_size'];
-      } else {
-        $fileCount++;
-        $totalSize += filesize($path);
-      }
-    }
-
-    return ['file_count' => $fileCount, 'total_size' => $totalSize];
   }
 
   /**
@@ -162,32 +274,6 @@ class SystemHelper
       'cleared_dirs' => $clearedDirs,
       'success' => true,
       'message' => '缓存清除成功'
-    ];
-  }
-
-  /**
-   * 获取缓存统计信息。
-   *
-   * @return array 缓存统计信息。
-   */
-  public static function getCacheStats(): array
-  {
-    $cacheDir = self::getCacheDir();
-
-    if (!is_dir($cacheDir)) {
-      return [
-        'total_files' => 0,
-        'total_size' => '0 B',
-        'cache_dir' => $cacheDir
-      ];
-    }
-
-    $stats = self::getDirectoryStats($cacheDir);
-
-    return [
-      'total_files' => $stats['file_count'],
-      'total_size' => self::formatBytes($stats['total_size']),
-      'cache_dir' => $cacheDir
     ];
   }
 
@@ -339,6 +425,7 @@ class SystemHelper
     if ($library !== null) {
       try {
         // 64 位标量返回值在 64 位 PHP 上被 FFI 直接转成 int；32 位下才是对象。
+        /** @var int|\FFI\CData $ticks 两口径经联合类型供静态分析识别。 */
         $ticks = $library->GetTickCount64();
         $milliseconds = is_object($ticks) ? (int)$ticks->cdata : (int)$ticks;
         return (int)intdiv($milliseconds, 1000);
@@ -487,6 +574,7 @@ class SystemHelper
       $hasInstalled = $library->GetPhysicallyInstalledSystemMemory(\FFI::addr($installedKb)) !== 0;
 
       $status = $library->new('MEMORYSTATUSEX');
+      /** @var \FFI\CData|Kernel32MemoryStatusEx $status 结构体字段经桩联合类型供静态分析识别。 */
       $status->dwLength = \FFI::sizeof($status);
       $hasStatus = $library->GlobalMemoryStatusEx(\FFI::addr($status)) !== 0;
 
@@ -507,7 +595,7 @@ class SystemHelper
    * FFI 是可选能力（`extension=ffi` + `ffi.enable=true`），不可用时所有调用方
    * 都必须有子进程兜底，不能当成硬依赖。
    *
-   * @return \FFI|null FFI 句柄。
+   * @return Kernel32Library|null kernel32 的 FFI 句柄（运行时为 \FFI 实例，桩接口仅静态分析用）。
    */
   private static function windowsFfi(): ?\FFI
   {

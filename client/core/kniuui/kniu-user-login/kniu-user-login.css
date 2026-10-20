@@ -15,7 +15,7 @@
   border-bottom: 1px solid #e5e7eb;
   padding: 0;
   width: 100%;
-  min-height: 50px;
+  min-height: max(50px, calc(50 / var(--kniu_vw)));
   font-size: var(--kniu-navbar-font-size);
   font-family: var(--kniu-font-family);
   color: #111827;
@@ -23,13 +23,7 @@
 
 a,
 button {
-  box-sizing: border-box;
-  -webkit-box-sizing: border-box;
-  -moz-box-sizing: border-box;
-  -ms-box-sizing: border-box;
-  -o-box-sizing: border-box;
-  border: none;
-  min-height: 44px;
+  min-height: max(44px, calc(44 / var(--kniu_vw)));
   text-decoration: none;
   font: inherit;
   font-size: inherit;
@@ -60,7 +54,6 @@ button {
   -ms-align-items: center;
   -o-align-items: center;
   gap: 7px;
-  padding: 0;
   cursor: pointer;
 }
 
@@ -112,7 +105,7 @@ button {
   -moz-transform: rotate(225deg);
   -ms-transform: rotate(225deg);
   -o-transform: rotate(225deg);
-  margin-bottom: 0;
+  margin-bottom: -3px;
 }
 
 .kniu_sys_user_login_menu {
@@ -150,7 +143,7 @@ button {
   -o-align-items: center;
   padding: 0 12px;
   width: 100%;
-  min-height: 32px;
+  min-height: max(32px, calc(32 / var(--kniu_vw)));
   white-space: nowrap;
   cursor: pointer;
 }

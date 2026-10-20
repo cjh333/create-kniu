@@ -4,6 +4,7 @@ CREATE TABLE `tb_article` (
     `is_select` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '后台勾选状态',
     `sid` bigint NOT NULL DEFAULT 0 COMMENT '排序',
     `is_show` tinyint unsigned NOT NULL DEFAULT 1 COMMENT '是否显示(0否,1是)',
+    `is_recommend` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '是否推荐(0否,1是)',
     `type` bigint NOT NULL DEFAULT 0 COMMENT '文章分类',
     `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '标题',
     `subtitle` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '副标题',
@@ -18,5 +19,13 @@ CREATE TABLE `tb_article` (
     `issue_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发表时间',
     PRIMARY KEY (`id`),
     KEY `idx_article_role` (`role_id`),
-    KEY `idx_article_visible` (`is_show`, `id`)
+    KEY `idx_article_sid` (`sid`),
+    KEY `idx_article_visible` (`is_show`, `id`),
+    KEY `idx_article_hot` (`is_show`, `hits`, `id`),
+    KEY `idx_article_recommend` (
+        `is_show`,
+        `is_recommend`,
+        `create_time`,
+        `id`
+    )
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '文章';

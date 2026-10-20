@@ -2,16 +2,6 @@
 
 namespace Core;
 
-/**
- * 原生 socket SMTP 发信（不引入第三方依赖）。
- *
- * 用法：
- *   $result = Mailer::send('user@example.com', '标题', '正文');
- *   // ['status' => true|false, 'msg' => '说明', 'dev' => bool]
- *
- * 未配置 SMTP 账号时：开发环境写日志并返回成功（dev=true，便于联调），
- * 生产环境直接失败，绝不把验证码明文回给前端。
- */
 class Mailer
 {
   /** 发送纯文本邮件。 */
@@ -162,7 +152,7 @@ class Mailer
       return ['status' => false, 'msg' => '邮件服务未配置，请联系管理员', 'dev' => false];
     }
     $dir = (string)($config['LOG_DIR'] ?? __DIR__ . '/../runtime/mail');
-    if (!is_dir($dir)) @mkdir($dir, 0777, true);
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
     $file = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . 'mail-' . date('Y-m-d') . '.log';
     $content = sprintf(
       "[%s] to=%s subject=%s\n%s\n----------------------------------------\n",

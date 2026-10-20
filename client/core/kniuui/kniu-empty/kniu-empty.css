@@ -6,11 +6,18 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  padding: 40px 0;
   color: var(--kniu-color-info, #909399);
   font-size: 14px;
   line-height: 1.5;
   text-align: center
+}
+
+.kniu_sys_empty_body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
 }
 
 :host([hidden]) {

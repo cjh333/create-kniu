@@ -2,14 +2,16 @@ import MVVM from '../../core/kniumvvm.mjs';
 import SERVER from '../../config/server.js';
 import AUTH from '../../core/kniuauth.mjs';
 import { createCadence } from '../../core/kniucadence.mjs';
+import { requireLogin } from './adminShared.js';
 
 const { controller } = MVVM;
 
 const SYSTEM_FIELDS = [
-  'username', 'role', 'role_id', 'role_auth', 'platform', 'arch', 'server', 'ip', 'rootDir', 'mysqlVer', 'uptime', 'totalMemory', 'currentMemory'
+  'username', 'role', 'role_id', 'role_auth', 'platform', 'arch', 'server', 'ip', 'rootDir', 'mysqlVer', 'uptime', 'totalMemory', 'currentMemory', 'uploadMaxSize'
 ];
 const CLOCK_INTERVAL_MS = 1000;
-const homeController = controller(({ formatTime, getTimeInZone, navigateTo, request, requestAnimationFrame, reactive, onMounted, onUnmounted }) => {
+const SYSTEM_CACHE_KEY = 'kniu_admin_system_info_' + SERVER.VERSION;
+const homeController = controller(({ formatTime, getTimeInZone, navigateTo, request, requestAnimationFrame, reactive, $msg, onMounted, onUnmounted }) => {
   const state = reactive({
     name: '控制台',
     icon: 'home',
@@ -30,6 +32,7 @@ const homeController = controller(({ formatTime, getTimeInZone, navigateTo, requ
     uptime: '—',
     totalMemory: '—',
     currentMemory: '—',
+    uploadMaxSize: '—',
     memoryRefreshMs: 0,
     uptimeRefreshMs: 0,
     currentTime: '',
@@ -37,6 +40,17 @@ const homeController = controller(({ formatTime, getTimeInZone, navigateTo, requ
   });
 
   const cadence = createCadence(requestAnimationFrame);
+
+  function readSystemCache() {
+    try {
+      const cached = JSON.parse(globalThis.sessionStorage?.getItem(SYSTEM_CACHE_KEY) || '');
+      return cached && typeof cached === 'object' ? cached : null;
+    } catch (_) { return null; }
+  }
+
+  function writeSystemCache(systemInfo) {
+    try { globalThis.sessionStorage?.setItem(SYSTEM_CACHE_KEY, JSON.stringify(systemInfo)); } catch (_) { }
+  }
 
   function applySystemInfo(systemInfo) {
     SYSTEM_FIELDS.forEach(function assignSystemField(field) {
@@ -61,9 +75,6 @@ const homeController = controller(({ formatTime, getTimeInZone, navigateTo, requ
         if (systemInfo.totalMemory) state.totalMemory = systemInfo.totalMemory;
         if (Number(systemInfo.memoryRefreshMs) > 0) state.memoryRefreshMs = Number(systemInfo.memoryRefreshMs);
       }
-    }).then(function ensureSuccess(result) {
-      if (!result || result.status !== 1) throw new Error('[admin] 可用内存刷新失败');
-      return result;
     });
   }
 
@@ -80,9 +91,6 @@ const homeController = controller(({ formatTime, getTimeInZone, navigateTo, requ
         if (systemInfo.uptime) state.uptime = systemInfo.uptime;
         if (Number(systemInfo.uptimeRefreshMs) > 0) state.uptimeRefreshMs = Number(systemInfo.uptimeRefreshMs);
       }
-    }).then(function ensureSuccess(result) {
-      if (!result || result.status !== 1) throw new Error('[admin] 运行时间刷新失败');
-      return result;
     });
   }
 
@@ -92,10 +100,15 @@ const homeController = controller(({ formatTime, getTimeInZone, navigateTo, requ
   }
 
   async function loadSystemInfo() {
-    if (!AUTH.isLoggedIn()) {
+    if (!requireLogin(AUTH, { $msg, navigateTo })) {
       state.loading = false;
-      navigateTo('/login');
       return;
+    }
+    const cachedInfo = readSystemCache();
+    if (cachedInfo) {
+      applySystemInfo(cachedInfo);
+      state.loading = false;
+      state.isAuthenticated = true;
     }
     await request({
       url: '/system',
@@ -103,10 +116,14 @@ const homeController = controller(({ formatTime, getTimeInZone, navigateTo, requ
       mutation: false,
       success(res) {
         if (res.status !== 1) {
-          navigateTo('/login');
+          state.loading = false;
+          state.error = res.msg || '系统信息加载失败';
           return;
         }
         const systemInfo = res.data || {};
+        const previous = cachedInfo ? JSON.stringify(cachedInfo) : '';
+        const next = JSON.stringify(systemInfo);
+        if (next !== previous) writeSystemCache(systemInfo);
         applySystemInfo(systemInfo);
         state.loading = false;
         state.isAuthenticated = true;
@@ -120,7 +137,10 @@ const homeController = controller(({ formatTime, getTimeInZone, navigateTo, requ
           });
         }
       },
-      fail() { navigateTo('/login'); }
+      fail() {
+        state.loading = false;
+        state.error = '网络异常，请稍后重试';
+      }
     });
   }
 

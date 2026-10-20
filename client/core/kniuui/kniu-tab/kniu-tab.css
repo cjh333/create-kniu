@@ -1,14 +1,20 @@
 @charset "UTF-8";
 
 :host {
-  display: inline-flex;
-  vertical-align: middle;
-  line-height: 0;
-  flex-shrink: 0;
+  display: block;
 }
 
 :host([hidden]) {
-  display: none;
+  display: none !important;
+}
+
+::slotted(kniu-tab-panel) {
+  display: block;
+}
+
+/* 作者样式会压过 UA 的 [hidden]{display:none}，必须显式补回隐藏规则。 */
+::slotted(kniu-tab-panel[hidden]) {
+  display: none !important;
 }
 
 .kniu_sys_tab {
@@ -29,10 +35,14 @@
   line-height: 22px;
   padding: 6px 18px;
   border-radius: 6px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background-color .2s, color .2s, box-shadow .2s;
   white-space: nowrap;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color .2s, color .2s, box-shadow .2s;
+  -webkit-transition: background-color .2s, color .2s, box-shadow .2s;
+  -moz-transition: background-color .2s, color .2s, box-shadow .2s;
+  -ms-transition: background-color .2s, color .2s, box-shadow .2s;
+  -o-transition: background-color .2s, color .2s, box-shadow .2s;
 }
 
 .kniu_sys_tab_item:hover {

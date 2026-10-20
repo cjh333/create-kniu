@@ -2,11 +2,6 @@
   @import url("@kniu/kniu.min.css");
   @import url("@style/web.min.css");
   @import url("@style/index/about.min.css");
-  @media (min-width: calc(1280px - 60px)) {
-    .kniu_web_body .kniu_container {
-      width: calc(100vw - 320 / var(--kniu_vw) * 2);
-    }
-  }
 </style>
 <div class="kniu_web">
   <include src="./common/header.html" />
@@ -16,7 +11,27 @@
       <div class="about_cell about_cell_1">
         <div class="kniu_container">
           <div class="about_group_1">
-            <div :if="{{content}}" class="about_content">{{@content}}</div>
+            <div class="about_userinfo">
+              <div class="about_user_head">
+                <img :if="{{avatar}}" class="about_user_avatar" src="{{avatar}}" alt="头像">
+                <div :elseif="{{!loading}}" class="about_user_avatar about_user_avatar_default">{{nicknameFirstChar}}</div>
+                <div class="about_user_name">{{nickname}}</div>
+                <kniu-btn :if="{{showFollow}}" class="about_follow_btn" :option="{{followOptions}}" @click="toggleFollow">{{followText}}</kniu-btn>
+              </div>
+              <div class="about_stats" :if="{{!loading}}">
+                <div class="about_stat"><span class="about_stat_value">{{articleCount}}</span><span class="about_stat_label">发表文章</span></div>
+                <div class="about_stat"><span class="about_stat_value">{{articleLikeCount}}</span><span class="about_stat_label">文章获赞数</span></div>
+                <div class="about_stat"><span class="about_stat_value">{{commentLikeCount}}</span><span class="about_stat_label">评论获赞数</span></div>
+                <div class="about_stat"><span class="about_stat_value">{{commentCount}}</span><span class="about_stat_label">评论数</span></div>
+                <div class="about_stat"><span class="about_stat_value">{{favoriteCount}}</span><span class="about_stat_label">收藏文章</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="kniu_md_mt_15 about_group_1">
+            <template :if="{{content}}">
+              <h2 class="about_section_title">关于我</h2>
+              <div class="about_content">{{@content}}</div>
+            </template>
             <kniu-empty :elseif="{{!loading}}" :option="{{note:'暂无数据'}}" />
           </div>
         </div>

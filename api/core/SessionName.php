@@ -21,7 +21,7 @@ final class SessionName
       return $configured;
     }
 
-    if (!is_dir($runtimeDirectory) && !mkdir($runtimeDirectory, 0777, true) && !is_dir($runtimeDirectory)) {
+    if (!is_dir($runtimeDirectory) && !mkdir($runtimeDirectory, 0755, true) && !is_dir($runtimeDirectory)) {
       throw new RuntimeException('Session 运行目录创建失败');
     }
 

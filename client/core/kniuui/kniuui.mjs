@@ -5,9 +5,16 @@ import { getResponseRecords, debounce } from '../kniuutil.mjs';
 import { sanitizeRichHtml, sanitizeRichHtmlAsync } from '../kniusanitizer.mjs';
 import { KNIU_TABLE_CLASS, KNIU_TABLE_WRAP_CLASS, unwrapTablesIn, wrapTablesIn } from '../kniucode.mjs';
 import { KNIU_ICON_NAMES, KNIU_ICON_SVG } from '../kniuiconsvg.mjs';
+import KNIU_BASE_RESET_CSS from './kniu-other/kniu-base.css?module';
+import KNIU_BASE_CONTAIN_CSS from './kniu-other/kniu-contain.css?module';
+import KNIU_CONTENT_TABLE_CSS from './kniu-other/kniu-content-table.css?module';
+import KNIU_DROPDOWN_CSS from './kniu-other/kniu-dropdown.css?module';
+import KNIU_DROPDOWN_OPTION_CSS from './kniu-other/kniu-dropdown.option.css?module';
+import KNIU_FONT_FACE_CSS from './kniu-other/kniu-font-face.css?module';
+import KNIU_MARKDOWN_CSS from './kniu-other/kniu-markdown.css?module';
+import KNIU_RICHTEXT_CSS from './kniu-other/kniu-richtext.css?module';
 import KNIU_EDITOR_CSS from './kniu-editor/kniu-editor.css?module';
 import KNIU_EDITOR_OVERRIDE_CSS from './kniu-editor/kniu-editor.overrides.css?module';
-import KNIU_DROPDOWN_OPTION_CSS from './kniu-other/kniu-dropdown.option.css?module';
 import KNIU_BTN_CSS from './kniu-btn/kniu-btn.css?module';
 import KNIU_BTN_METRICS_CSS from './kniu-btn/kniu-btn.metrics.css?module';
 import KNIU_BTN_OVERRIDES_CSS from './kniu-btn/kniu-btn.overrides.css?module';
@@ -50,17 +57,11 @@ import KNIU_LIKE_CSS from './kniu-like/kniu-like.css?module';
 import KNIU_USER_LOGIN_CSS from './kniu-user-login/kniu-user-login.css?module';
 import KNIU_USER_LOGIN_OVERRIDES_CSS from './kniu-user-login/kniu-user-login.overrides.css?module';
 import { registerArticleTab as registerArticleTabComponent } from './kniu-article-tab/kniu-article-tab.mjs';
-import KNIU_BASE_CONTAIN_CSS from './kniu-other/kniu-base.css?module';
-import KNIU_FONT_FACE_CSS from './kniu-other/kniu-font-face.css?module';
-import KNIU_DROPDOWN_CSS from './kniu-other/kniu-dropdown.css?module';
-import KNIU_CONTENT_TABLE_CSS from './kniu-other/kniu-content-table.css?module';
 import KNIU_COMMENT_CSS from './kniu-comment/kniu-comment.css?module';
 import KNIU_TABLE_CSS from './kniu-table/kniu-table.css?module';
 import KNIU_INPUT_PASSWORD_ACTIONS_CSS from './kniu-input/kniu-input.password-actions.css?module';
 import KNIU_INPUT_TIP_CSS from './kniu-input/kniu-input.tip.css?module';
 import KNIU_NAVBAR_PLACEHOLDER_CSS from './kniu-navbar/kniu-navbar.placeholder.css?module';
-import KNIU_MARKDOWN_CSS from './kniu-other/kniu-markdown.css?module';
-import KNIU_RICHTEXT_CSS from './kniu-other/kniu-richtext.css?module';
 import { registerButton } from './kniu-btn/kniu-btn.mjs';
 import { registerButtonGroup } from './kniu-btn-group/kniu-btn-group.mjs';
 import { registerSwitch } from './kniu-switch/kniu-switch.mjs';
@@ -111,36 +112,43 @@ var KniuUI = (function () {
   var pendingAdoptedSheets = new Map();
   var adoptedSheetsFlushScheduled = false;
 
-  var KNIU_FONT_FAMILY = 'KniuHei_Regular';
-  var KNIU_FONT_MONO_FAMILY = 'KniuHei_Regular';
-  var KNIU_FONT_SERIF_FAMILY = 'KniuHei_Regular';
+  var KNIU_FONT_FAMILY = 'KniuSans_Regular';
+  var KNIU_FONT_MONO_FAMILY = 'KniuSans_Regular';
+  var KNIU_FONT_SERIF_FAMILY = 'KniuSans_Regular';
 
   var KNIU_BASE_FONT_CSS = KNIU_FONT_FACE_CSS + ':host{--kniu-font-family:' + KNIU_FONT_FAMILY + ';--kniu-font-mono-family:' + KNIU_FONT_MONO_FAMILY + ';--kniu-font-serif-family:' + KNIU_FONT_SERIF_FAMILY + ';--kniu-navbar-font-size:max(12px,calc(14 / var(--kniu_vw)));font-family:var(--kniu-font-family)}';
-  var KNIU_CONTAIN_EXCLUDE_TAGS = { 'KNIU-TABLE': 1, 'KNIU-NAVBAR': 1, 'KNIU-MODAL': 1, 'KNIU-DATE-PICKER': 1, 'KNIU-SELECT': 1, 'KNIU-USER-LOGIN': 1, 'KNIU-INPUT': 1, 'KNIU-COMMENT': 1 };
+  var KNIU_THEME_HOST_CSS = '';
+  var KNIU_CONTAIN_EXCLUDE_TAGS = { 'KNIU-TABLE': 1, 'KNIU-NAVBAR': 1, 'KNIU-MODAL': 1, 'KNIU-DATE-PICKER': 1, 'KNIU-SELECT': 1, 'KNIU-USER-LOGIN': 1, 'KNIU-INPUT': 1, 'KNIU-COMMENT': 1, 'KNIU-EDITOR': 1 };
   var RICH_TEXT_LITERAL_TAG_RE = /<(\/?)(script|iframe|object|embed|link|meta|style|base|form)(?=\s|\/?>)/gi;
+
   function hasRichTextLiteralTag(value) {
     RICH_TEXT_LITERAL_TAG_RE.lastIndex = 0;
     return RICH_TEXT_LITERAL_TAG_RE.test(String(value || ''));
   }
+
   function shouldContainHost(tag) { return !KNIU_CONTAIN_EXCLUDE_TAGS[String(tag || '').toUpperCase()]; }
 
   function use(config = {}) {
-    const components = config.components && typeof config.components === 'object' ? config.components : {};
+    // 配置口径（client/config/ 命名规范）：第一层字段 KEY 大写、内部字段小写。
+    const components = config.COMPONENTS && typeof config.COMPONENTS === 'object' ? config.COMPONENTS : {};
     Object.keys(components).forEach(function (name) {
       const tag = String(name).toLowerCase().startsWith('kniu-') ? String(name).toLowerCase() : 'kniu-' + String(name).toLowerCase();
       componentDefaults[tag] = { ...(componentDefaults[tag] || {}), ...(components[name] || {}) };
     });
     globalThis.__KNIU_UI_DEFAULTS__ = componentDefaults;
-    const theme = config.theme && typeof config.theme === 'object' ? config.theme : {};
-
-    // 注入全局主题变量 CSS (基于 theme 对象动态生成)
-    const globalThemeCSS = ':root {\n' +
-      Object.entries(theme)
-        .filter(([name]) => name.startsWith('--kniu-'))
-        .map(([name, value]) => `  ${name}: ${String(value)}`)
-        .join(';\n') + '\n}';
-    const globalRoot = globalThis.document;
-    if (Object.keys(theme).some(name => name.startsWith('--kniu-'))) {
+    const theme = config.THEME && typeof config.THEME === 'object' ? config.THEME : {};
+    const themeEntries = Object.entries(theme).filter(function (entry) {
+      return String(entry[0]).startsWith('--kniu-');
+    });
+    KNIU_THEME_HOST_CSS = themeEntries.length
+      ? ':host{' + themeEntries.map(function (entry) { return entry[0] + ':' + String(entry[1]); }).join(';') + '}'
+      : '';
+    if (themeEntries.length) {
+      const globalThemeCSS = ':root {\n' +
+        themeEntries
+          .map(function (entry) { return '  ' + entry[0] + ': ' + String(entry[1]); })
+          .join(';\n') + '\n}';
+      const globalRoot = globalThis.document;
       if (supportsAdoptedStyleSheets(globalRoot)) {
         adoptSharedStyle(globalRoot, globalThemeCSS, true);
       } else {
@@ -149,7 +157,6 @@ var KniuUI = (function () {
         globalRoot.appendChild(styleEl);
       }
     }
-
     return Object.freeze({ components: { ...componentDefaults }, theme: { ...theme } });
   }
 
@@ -287,8 +294,11 @@ var KniuUI = (function () {
       'upload.deleteAria': '删除 {1}',
       'upload.tooLarge': '{1} 超过单张 {2}M 的限制',
       'upload.selectedCount': '已选择 {1} 张图片',
+      'upload.selectedFileCount': '已选择 {1} 个文件',
       'upload.selectPreview': '选择图片可以预览（最多 {1} 张）',
       'upload.selectPreviewSingle': '选择图片可以预览',
+      'upload.selectFile': '请选择文件（最多 {1} 个）',
+      'upload.selectFileSingle': '请选择文件',
       'upload.maxCount': '最多只能选择 {1} 张图片',
 
       'navbar.menu': '菜单',
@@ -314,7 +324,8 @@ var KniuUI = (function () {
       'userLogin.register': '注册',
       'userLogin.admin': '后台管理',
       'userLogin.logout': '退出',
-      'userLogin.logoutFail': '退出失败'
+      'userLogin.logoutFail': '退出失败',
+      'userLogin.feedback': '反馈问题'
     },
     en: {
       'common.ok': 'OK',
@@ -449,8 +460,11 @@ var KniuUI = (function () {
       'upload.deleteAria': 'Delete {1}',
       'upload.tooLarge': '{1} exceeds the {2}M limit',
       'upload.selectedCount': '{1} image(s) selected',
+      'upload.selectedFileCount': '{1} file(s) selected',
       'upload.selectPreview': 'Select images to preview (up to {1})',
       'upload.selectPreviewSingle': 'Select an image to preview',
+      'upload.selectFile': 'Select files (up to {1})',
+      'upload.selectFileSingle': 'Select a file',
       'upload.maxCount': 'You can select at most {1} image(s)',
 
       'navbar.menu': 'Menu',
@@ -476,17 +490,16 @@ var KniuUI = (function () {
       'userLogin.register': 'Sign up',
       'userLogin.admin': 'Admin',
       'userLogin.logout': 'Logout',
-      'userLogin.logoutFail': 'Logout failed'
+      'userLogin.logoutFail': 'Logout failed',
+      'userLogin.feedback': 'Feedback'
     }
   };
 
-  // 读取组件 options 的 lang：默认 cn，不区分大小写，'en'/'english' 视为英文。
   function componentLang(options) {
     var v = options && options.lang != null ? options.lang : 'cn';
     return String(v).toLowerCase() === 'en' ? 'en' : 'cn';
   }
 
-  // 翻译工具：key 缺失时回退中文，再缺失返回 key 本身；支持 {1}/{2} 占位替换。
   function componentText(lang, key, params) {
     var dict = KNIU_I18N[lang] || KNIU_I18N.cn;
     var text = dict[key];
@@ -536,7 +549,6 @@ var KniuUI = (function () {
     return cached;
   }
 
-  // 把本同步段内累积的共享样式表一次性写入各 shadow root，避免每次注入都重建数组。
   function flushPendingAdoptedSheets() {
     adoptedSheetsFlushScheduled = false;
     const map = pendingAdoptedSheets;
@@ -579,7 +591,6 @@ var KniuUI = (function () {
     return element;
   }
 
-  // appendRawStyle 是 adoptSharedStyle 的原样写入别名，保留接口不变。
   function appendRawStyle(root, cssText) {
     return adoptSharedStyle(root, cssText, true);
   }
@@ -608,6 +619,8 @@ var KniuUI = (function () {
     const root = host.attachShadow({ mode: 'open' });
     if (typeof ShadowRoot === 'undefined') return root;
     adoptSharedStyle(root, KNIU_BASE_FONT_CSS);
+    if (KNIU_THEME_HOST_CSS) adoptSharedStyle(root, KNIU_THEME_HOST_CSS, true);
+    adoptSharedStyle(root, KNIU_BASE_RESET_CSS);
     if (shouldContainHost(host.tagName)) adoptSharedStyle(root, KNIU_BASE_CONTAIN_CSS);
     const descriptor = getShadowInnerHTMLDescriptor();
     if (!descriptor || typeof descriptor.get !== 'function') return root;
@@ -616,6 +629,13 @@ var KniuUI = (function () {
       get: function () { return descriptor.get.call(root); },
       set: function (markup) {
         const html = String(markup == null ? '' : markup);
+        // 无 adoptedStyleSheets 支持时，回退路径注入的 <style> 不在 template.content 内，
+        // replaceChildren 清不掉——先移除上一次注入的样式节点，避免每次赋值累积。
+        const staleStyles = root.__kniuFallbackStyles;
+        if (staleStyles) {
+          staleStyles.forEach(function (element) { element.remove(); });
+          root.__kniuFallbackStyles = null;
+        }
         let styleText = '';
         const structure = html.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, function (_, css) {
           styleText += css + '\n';
@@ -633,15 +653,24 @@ var KniuUI = (function () {
           if (supportsAdoptedStyleSheets(root)) {
             adoptSharedStyle(root, styleText);
           } else {
+            const injectedStyles = [];
+            const resetBase = (root.ownerDocument || (root.host && root.host.ownerDocument) || document).createElement('style');
+            resetBase.textContent = KNIU_BASE_RESET_CSS;
+            root.appendChild(resetBase);
+            injectedStyles.push(resetBase);
             if (shouldContainHost(host.tagName)) {
-              const base = (root.ownerDocument || (root.host && root.host.ownerDocument) || document).createElement('style');
-              base.textContent = KNIU_BASE_CONTAIN_CSS;
-              root.appendChild(base);
+              const containBase = (root.ownerDocument || (root.host && root.host.ownerDocument) || document).createElement('style');
+              containBase.textContent = KNIU_BASE_CONTAIN_CSS;
+              root.appendChild(containBase);
+              injectedStyles.push(containBase);
             }
             const fontBase = (root.ownerDocument || (root.host && root.host.ownerDocument) || document).createElement('style');
-            fontBase.textContent = KNIU_BASE_FONT_CSS;
+            fontBase.textContent = KNIU_BASE_FONT_CSS + KNIU_THEME_HOST_CSS;
             root.appendChild(fontBase);
-            adoptSharedStyle(root, styleText);
+            injectedStyles.push(fontBase);
+            const componentStyle = adoptSharedStyle(root, styleText);
+            if (componentStyle) injectedStyles.push(componentStyle);
+            root.__kniuFallbackStyles = injectedStyles;
           }
         }
       }
@@ -675,26 +704,87 @@ var KniuUI = (function () {
     return { placement: placement, left: left, top: top, width: width, height: panelHeight };
   }
 
-  function trackPopoverPosition(anchor, apply, onDone) {
-    if (typeof globalThis.requestAnimationFrame !== 'function') return onDone ? onDone() : null;
-    let frame = 0;
+  /**
+   * 锚点沿 composed 树所在各树段的 root 集合（含 slot 跨界）。
+   * scroll 事件 composed:false 不穿越 shadow 边界，仅挂 window capture 收不到
+   * shadow 内滚动容器（模态框内容区/表格 viewport/卡片内滚）的滚动。
+   * 注意 slot 内容的 root 是宿主视图树，滚动容器可能在其被 slot 进的组件
+   * shadowRoot（如弹窗 body）——该 root 不在 getRootNode 单链上，必须逐段
+   * 经 root.host / host.assignedSlot 跨界收集；锚点在滚动容器内 ⇒ 容器所在
+   * 树段必被覆盖。
+   */
+  function anchorScrollRoots(el) {
+    const roots = [];
+    const parentOf = function (n) {
+      if (n.assignedSlot) return n.assignedSlot;
+      const p = n.parentNode;
+      if (p) return p.nodeType === 11 ? p.host : p;
+      return n.host || null;
+    };
+    let node = el;
+    while (node) {
+      const root = node.getRootNode ? node.getRootNode() : null;
+      if (!root) break;
+      if (roots.indexOf(root) === -1) roots.push(root);
+      if (root === document) break;
+      node = parentOf(node);
+    }
+    return roots;
+  }
+
+  /**
+   * 弹层锚点跟随：事件驱动替代每帧 rAF 轮询（每帧 getBoundingClientRect 属强制同步布局）。
+   * scroll 走 capture+passive；anchorEl 传入锚点元素时逐 root 链挂监听（shadow 内滚动
+   * 容器不逃逸边界，仅 window 收不到，见 anchorScrollRoots）；resize 覆盖视口变化；
+   * 同帧内多次事件由 rAF 合并为一次测量；测量结果与上次相同则不 apply。
+   * 协议保持不变：apply._alive 可被外部置 falsy 停止测量，dispose 幂等。
+   */
+  function trackPopoverPosition(anchor, apply, onDone, anchorEl) {
+    let scheduled = false;
+    let alive = true;
     let lastKey = '';
-    const step = function () {
-      frame = 0;
-      if (!apply._alive) return;
+    const state = { alive: true };
+    apply._alive = state;
+    const measure = function () {
+      if (!alive || !apply._alive) return;
       const rect = anchor();
-      if (!rect) { frame = globalThis.requestAnimationFrame(step); return; }
+      if (!rect) return;
       const key = rect.left + ',' + rect.top + ',' + rect.right + ',' + rect.bottom + ',' + globalThis.innerWidth + ',' + globalThis.innerHeight;
       if (key !== lastKey) {
         lastKey = key;
         apply(rect);
       }
-      frame = globalThis.requestAnimationFrame(step);
     };
-    const state = { alive: true };
-    apply._alive = state;
-    const dispose = function () { state.alive = false; apply._alive = null; if (frame) globalThis.cancelAnimationFrame(frame); frame = 0; };
-    frame = globalThis.requestAnimationFrame(step);
+    const schedule = function () {
+      if (scheduled || !alive) return;
+      scheduled = true;
+      if (typeof globalThis.requestAnimationFrame === 'function') globalThis.requestAnimationFrame(function () { scheduled = false; measure(); });
+      else { scheduled = false; measure(); }
+    };
+    const rootTargets = anchorScrollRoots(anchorEl);
+    const detachRoots = function () {
+      rootTargets.forEach(function (root) {
+        root.removeEventListener('scroll', schedule, true);
+      });
+    };
+    const dispose = function () {
+      if (!alive) return;
+      alive = false;
+      state.alive = false;
+      apply._alive = null;
+      scheduled = false;
+      detachRoots();
+      globalThis.removeEventListener('scroll', schedule, true);
+      globalThis.removeEventListener('resize', schedule);
+    };
+    if (typeof globalThis.addEventListener === 'function') {
+      globalThis.addEventListener('scroll', schedule, { capture: true, passive: true });
+      globalThis.addEventListener('resize', schedule, { passive: true });
+      rootTargets.forEach(function (root) {
+        root.addEventListener('scroll', schedule, { capture: true, passive: true });
+      });
+    }
+    measure();
     if (onDone) onDone(dispose);
     return dispose;
   }
@@ -915,15 +1005,27 @@ var KniuUI = (function () {
     return removed;
   }
 
+  var loadingMaskInstance = null;
+
+  function ensureLoadingMask() {
+    if (loadingMaskInstance && loadingMaskInstance.isConnected) return loadingMaskInstance;
+    if (typeof customElements === 'undefined' || typeof document === 'undefined' || !document.body) return null;
+    if (!customElements.get('kniu-loading')) return null;
+    loadingMaskInstance = document.createElement('kniu-loading');
+    document.body.appendChild(loadingMaskInstance);
+    return loadingMaskInstance;
+  }
+
   function setLoading(value) {
     const next = !!value;
     if (state.loading === next) return;
     state.loading = next;
+    const mask = ensureLoadingMask();
+    if (mask) mask.show = next;
     if (next) lockDocumentScroll('loading');
     else unlockDocumentScroll('loading');
   }
 
-  // 提示框。
   function msg(options) {
     const config = options && typeof options === 'object'
       ? options
@@ -2047,9 +2149,15 @@ var KniuUI = (function () {
   }
 
   function usePagination(options) {
-    const { state, self, url, field = 'id', sort = 'asc', params = null, transform = null, tableKey = null, pageKey = null, stateStore = null, storeRecordKey = '' } = options;
+    const { state, self, url, field = 'id', sort = 'asc', params = null, transform = null, tableKey = null, pageKey = null, table = null, page = null, stateStore = null, storeRecordKey = '', onLoaded = null } = options;
     if (!state || !self || !url) {
       throw new Error('usePagination 需要 state、self、url 三个参数');
+    }
+    if (tableKey && (!state[tableKey] || typeof state[tableKey] !== 'object')) {
+      state[tableKey] = Object.assign({ data: [], rowKey: 'id', loading: true }, table && typeof table === 'object' ? table : {});
+    }
+    if (pageKey && (!state[pageKey] || typeof state[pageKey] !== 'object')) {
+      state[pageKey] = Object.assign({ currentPage: 1, pageSize: 20, total: 0 }, page && typeof page === 'object' ? page : {});
     }
     const pageOptions = pageKey && state[pageKey] && typeof state[pageKey] === 'object' ? state[pageKey] : {};
     const configuredPageSize = Number(pageOptions.pageSize);
@@ -2085,7 +2193,7 @@ var KniuUI = (function () {
       }).join(',') + '}';
     }
 
-    async function loadList(page) {
+    async function loadList(page, options) {
       const targetPage = Math.min(Math.max(Number(page) || 1, 1), state.pageTotal || 1);
       const requestData = {
         page_current: targetPage,
@@ -2096,10 +2204,15 @@ var KniuUI = (function () {
       };
       const loadKey = `${url}:${serializeLoadParams(requestData)}`;
       if (activeLoadPromise && activeLoadKey === loadKey) return activeLoadPromise;
+      // silent：局部保存后的静默重拉（如改 sid 后按排序刷新）——不置 loading，
+      // 避免表格遮罩(spinner+文字)整表闪烁；数据仍照常同步，行 DOM 走复用无重建。
+      const silent = !!(options && options.silent);
 
       const run = (async function () {
-        state.loading = true;
-        syncOptions();
+        if (!silent) {
+          state.loading = true;
+          syncOptions();
+        }
         await REQUEST({
           url,
           type: 'POST',
@@ -2108,7 +2221,7 @@ var KniuUI = (function () {
           async success(res) {
             if (res.status !== 1) {
               state.error = res.msg || '加载失败';
-              state.loading = false;
+              if (!silent) state.loading = false;
               syncOptions();
               self.$msg({ content: state.error, type: 'error' });
               return;
@@ -2119,8 +2232,9 @@ var KniuUI = (function () {
             state.currentPage = payload.page_current || 1;
             state.pageTotal = payload.page_total || 1;
             state.total = payload.total || 0;
-            state.loading = false;
+            if (!silent) state.loading = false;
             syncOptions();
+            if (onLoaded) onLoaded();
             if (stateStore && storeRecordKey && typeof stateStore.track === 'function') {
               await stateStore.track(storeRecordKey, {
                 records: state.list,
@@ -2131,7 +2245,7 @@ var KniuUI = (function () {
             }
           },
           fail(res) {
-            state.loading = false;
+            if (!silent) state.loading = false;
             syncOptions();
             state.error = res.msg || '加载失败';
             self.$msg({ content: state.error, type: 'error' });
@@ -2157,11 +2271,20 @@ var KniuUI = (function () {
     }
 
     function changePageSize(event) {
-      const size = (event?.detail?.size ?? Number(event && event.target ? event.target.value : state.pageRows)) || 10;
+      const raw = event?.detail?.size ?? Number(event && event.target ? event.target.value : state.pageRows);
+      const size = Math.max(1, Math.min(200, Math.floor(raw) || 10));
       if (size === state.pageRows) return;
       state.pageRows = size;
       state.currentPage = 1;
       loadList(1);
+    }
+
+    if (pageKey && state[pageKey] && typeof state[pageKey] === 'object') {
+      state[pageKey] = {
+        ...state[pageKey],
+        onCurrentChange: function (detail) { changePage({ detail: detail }); },
+        onSizeChange: function (detail) { changePageSize({ detail: detail }); }
+      };
     }
 
     return { loadList, changePage, changePageSize, syncOptions };
@@ -2184,16 +2307,18 @@ var KniuUI = (function () {
   }
 
   function createRowDeleteHandler(config) {
-    const { self, state, loadList, url, confirmMessage, gate = null, getSuccessMessage = null, onSuccess = null, reloadOnSuccess = true } = config || {};
+    const { self, state, loadList, url, confirmMessage, gate = null, getSuccessMessage = null, onSuccess = null,
+      reloadOnSuccess = true, idOf = null, buildData = null, reload = null,
+      confirmTitle = '提示', confirmButtonText = '确定' } = config || {};
     return async function deleteRow(index, list) {
       const row = list[index];
       if (!row) return false;
       if (typeof gate === 'function' && !gate()) return false;
       const confirmed = await self.$confirm(
         typeof confirmMessage === 'function' ? confirmMessage(row) : confirmMessage,
-        '提示',
+        confirmTitle,
         {
-          confirmButtonText: '确定',
+          confirmButtonText: confirmButtonText,
           cancelButtonText: '取消',
           type: 'warning'
         }
@@ -2202,7 +2327,9 @@ var KniuUI = (function () {
       await REQUEST({
         url: url,
         type: 'POST',
-        data: { id: row.id },
+        // 复杂主键（db 系按 database/table/profile 定位）经 buildData 自定义载荷；
+        // 常规主键经 idOf 提取，默认 row.id（A-M4）。
+        data: buildData ? buildData(row) : { id: idOf ? idOf(row) : row.id },
         success(res) {
           if (res.status !== 1) {
             self.$msg({ content: res.msg, type: 'error' });
@@ -2210,7 +2337,10 @@ var KniuUI = (function () {
           }
           self.$msg({ content: typeof getSuccessMessage === 'function' ? getSuccessMessage(res) : '删除成功!', type: 'success' });
           if (typeof onSuccess === 'function') onSuccess(row, res);
-          if (reloadOnSuccess) loadList(state.currentPage);
+          if (reloadOnSuccess) {
+            if (typeof reload === 'function') reload();
+            else loadList(state.currentPage);
+          }
         },
         fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
       });
@@ -2218,7 +2348,7 @@ var KniuUI = (function () {
     };
   }
 
-  function useListPage(config) {
+  function usePage(config) {
     const options = config || {};
     const pager = usePagination(options);
     const search = createSearchActions(pager.loadList, options.searchWait);
@@ -2237,35 +2367,68 @@ var KniuUI = (function () {
     return Object.assign({}, pager, search, { deleteRow: deleteRow });
   }
 
+  function deferAffixTemplateMount(template, mount, done) {
+    const finish = function () {
+      mount();
+      if (typeof done === 'function') done();
+    };
+    if (!template.hasAttribute(':option') && !template.hasAttribute('kniu:option')) { finish(); return; }
+    if (template.__kniuAffixPending) return;
+    template.__kniuAffixPending = true;
+    template.__kniuAffixDeadline = Date.now() + 50;
+    const retry = function () {
+      template.__kniuAffixPending = false;
+      if (!template.isConnected) return;
+      const optionsReady = !!template.__kniuOptionsValue;
+      const attrConsumed = !template.hasAttribute(':option') && !template.hasAttribute('kniu:option');
+      if (!optionsReady && !attrConsumed && Date.now() <= template.__kniuAffixDeadline) {
+        template.__kniuAffixPending = true;
+        queueMicrotask(retry);
+        return;
+      }
+      finish();
+    };
+    queueMicrotask(retry);
+  }
+
   function mountAffixSlots(comp, groupSelector, affixPrefix) {
+    const syncAffixStyles = function () {
+      const group = comp.shadowRoot.querySelector(groupSelector);
+      if (!group) return;
+      let hasAny = false;
+      ['prepend', 'append'].forEach((name) => {
+        const content = comp.querySelector('[slot="' + name + '"]');
+        const affix = comp.shadowRoot.querySelector('.' + affixPrefix + '_' + name);
+        const labelWidth = content ? (content.dataset.labelWidth || '') : '';
+        group.dataset['has' + name[0].toUpperCase() + name.slice(1)] = String(Boolean(content));
+        if (content) hasAny = true;
+        if (labelWidth && CSS.supports('width', labelWidth)) {
+          const sized = 'calc(' + labelWidth + ' + 1px)';
+          affix.style.width = sized;
+          affix.style.flexBasis = sized;
+        } else {
+          affix.style.removeProperty('width');
+          affix.style.removeProperty('flex-basis');
+        }
+      });
+      group.dataset.affix = String(hasAny);
+    };
     ['prepend', 'append'].forEach((name) => {
       const template = Array.from(comp.children).find((child) => child.tagName === 'TEMPLATE' && child.hasAttribute('#' + name));
       if (!template) return;
-      const content = document.createElement('span');
-      content.slot = name;
-      const labelWidth = template.getAttribute('label-width');
-      if (labelWidth) content.dataset.labelWidth = labelWidth;
-      content.append(template.content.cloneNode(true));
-      template.replaceWith(content);
+      deferAffixTemplateMount(template, function () {
+        const content = document.createElement('span');
+        content.slot = name;
+        const labelWidth = template.getAttribute('label-width')
+          || (template.__kniuOptionsValue && template.__kniuOptionsValue.labelWidth)
+          || '';
+        if (labelWidth) content.dataset.labelWidth = labelWidth;
+        if (template.__kniuOptionsValue) content.__kniuOptionsValue = template.__kniuOptionsValue;
+        content.append(template.content.cloneNode(true));
+        template.replaceWith(content);
+      }, syncAffixStyles);
     });
-    const group = comp.shadowRoot.querySelector(groupSelector);
-    if (!group) return;
-    let hasAny = false;
-    ['prepend', 'append'].forEach((name) => {
-      const content = comp.querySelector('[slot="' + name + '"]');
-      const affix = comp.shadowRoot.querySelector('.' + affixPrefix + '_' + name);
-      const labelWidth = content ? (content.dataset.labelWidth || '') : '';
-      group.dataset['has' + name[0].toUpperCase() + name.slice(1)] = String(Boolean(content));
-      if (content) hasAny = true;
-      if (labelWidth && CSS.supports('width', labelWidth)) {
-        affix.style.width = labelWidth;
-        affix.style.flexBasis = labelWidth;
-      } else {
-        affix.style.removeProperty('width');
-        affix.style.removeProperty('flex-basis');
-      }
-    });
-    group.dataset.affix = String(hasAny);
+    syncAffixStyles();
   }
 
   const KNIU_ICON_FONT_NAMES = new Set(KNIU_ICON_NAMES);
@@ -2279,6 +2442,25 @@ var KniuUI = (function () {
     return '<kniu-icon icon="' + resolveIconName(name) + '" aria-hidden="true"></kniu-icon>';
   }
 
+  function mountOptionsValue(comp) {
+    const consume = function () {
+      if (comp.__kniuOptionsValueConsumed) return true;
+      const value = comp.__kniuOptionsValue;
+      if (!value || typeof value !== 'object') return false;
+      comp.__kniuOptionsValueConsumed = true;
+      comp.options = value;
+      return true;
+    };
+    if (consume()) return;
+    const deadline = Date.now() + 50;
+    const retry = function () {
+      if (consume()) return;
+      if (!comp.isConnected || Date.now() > deadline) return;
+      queueMicrotask(retry);
+    };
+    queueMicrotask(retry);
+  }
+
   function installOptionsOnlyProtocol(tagName) {
     const Component = customElements.get(tagName);
     if (!Component || Component.prototype.__kniuOptionsOnly) return;
@@ -2286,10 +2468,11 @@ var KniuUI = (function () {
     const ownDescriptor = Object.getOwnPropertyDescriptor(prototype, 'options');
     const originalConnected = prototype.connectedCallback;
     const originalAttributeChanged = prototype.attributeChangedCallback;
-    const allowedAttribute = function (name) {
-      return ['id', 'class', 'style', 'slot', 'ref', 'role', 'tabindex'].includes(name)
-        || name.startsWith('aria-') || name.startsWith('data-') || name.startsWith('kniu:')
-        || name.startsWith('kniu@') || name.startsWith('#');
+    const allowedAttribute = function (name, element) {
+      if (['id', 'class', 'style', 'slot', 'ref', 'role', 'tabindex', 'block', 'append-border', 'append-borderless'].includes(name)) return true;
+      if (name.startsWith('aria-') || name.startsWith('data-') || name.startsWith('kniu:') || name.startsWith('kniu@') || name.startsWith('#')) return true;
+      const observed = element && element.constructor && element.constructor.observedAttributes;
+      return !!(observed && observed.includes(name));
     };
     const clearCallbacks = function (element) {
       (element.__kniuOptionListeners || []).forEach(function ([name, handler]) { element.removeEventListener(name, handler); });
@@ -2340,22 +2523,26 @@ var KniuUI = (function () {
         const options = { ...defaults, ...(value && typeof value === 'object' ? value : {}) };
         this.__kniuOptions = options;
         bindCallbacks(this, options);
-        if (ownDescriptor?.set) ownDescriptor.set.call(this, options);
-        else reflectOptions(this, options);
+        if (ownDescriptor?.set) {
+          if (typeof options.style === 'string' && options.style) this.style.cssText = options.style;
+          ownDescriptor.set.call(this, options);
+        } else {
+          reflectOptions(this, options);
+        }
         this._sync?.();
         this._render?.();
       }
     });
     prototype.connectedCallback = function () {
       [...this.attributes].forEach((attribute) => {
-        if (!allowedAttribute(attribute.name) && !(this.__kniuOptionAttributes || []).includes(attribute.name)) this.removeAttribute(attribute.name);
+        if (!allowedAttribute(attribute.name, this) && !(this.__kniuOptionAttributes || []).includes(attribute.name)) this.removeAttribute(attribute.name);
       });
       if (typeof originalConnected === 'function') originalConnected.call(this);
     };
     if (typeof originalAttributeChanged === 'function') {
       prototype.attributeChangedCallback = function (name, oldValue, newValue) {
         const internal = (this.__kniuOptionAttributes || []).includes(name);
-        if (!allowedAttribute(name) && !internal) {
+        if (!allowedAttribute(name, this) && !internal) {
           if (this.isConnected && this.hasAttribute(name)) queueMicrotask(() => this.removeAttribute(name));
           return;
         }
@@ -2368,10 +2555,12 @@ var KniuUI = (function () {
   const KNIU_COMPONENT_CONTEXT = {
     BOOLEAN_ATTRIBUTES,
     IDENTITY,
+    anchorScrollRoots,
     KNIU_BACKTOP_CSS,
     KNIU_BADGE_CSS,
     KNIU_BASE_CONTAIN_CSS,
     KNIU_BASE_FONT_CSS,
+    KNIU_BASE_RESET_CSS,
     KNIU_BTN_CSS,
     KNIU_BTN_GROUP_CSS,
     KNIU_BTN_METRICS_CSS,
@@ -2462,6 +2651,7 @@ var KniuUI = (function () {
     createSearchActions,
     createTable,
     debounce,
+    deferAffixTemplateMount,
     flushPendingAdoptedSheets,
     getResponseRecords,
     getShadowInnerHTMLDescriptor,
@@ -2474,6 +2664,7 @@ var KniuUI = (function () {
     lockDocumentScroll,
     makeSwitchOptions,
     mountAffixSlots,
+    mountOptionsValue,
     mountPopoverPortal,
     msg,
     normalizeComponentCss,
@@ -2509,7 +2700,7 @@ var KniuUI = (function () {
     unlockDocumentScroll,
     unwrapTablesIn,
     use,
-    useListPage,
+    usePage,
     usePagination,
     wrapTablesIn,
     writeScrollLockOriginals
@@ -2554,7 +2745,8 @@ var KniuUI = (function () {
       style.id = 'kniu-markdown-styles';
       target.appendChild(style);
     }
-    style.textContent = KNIU_MARKDOWN_CSS + KNIU_CONTENT_TABLE_DOC_CSS;
+    var css = KNIU_MARKDOWN_CSS + KNIU_CONTENT_TABLE_DOC_CSS;
+    if (style.textContent !== css) style.textContent = css;
     if (target !== documentTarget && documentTarget) {
       var documentStyle = documentTarget.querySelector('#kniu-markdown-styles');
       if (!documentStyle) {
@@ -2562,7 +2754,7 @@ var KniuUI = (function () {
         documentStyle.id = 'kniu-markdown-styles';
         documentTarget.appendChild(documentStyle);
       }
-      documentStyle.textContent = style.textContent;
+      if (documentStyle.textContent !== css) documentStyle.textContent = css;
     }
   }
   function installRichTextStyles(root) {
@@ -2575,7 +2767,8 @@ var KniuUI = (function () {
       style.id = 'kniu-rich-text-styles';
       target.appendChild(style);
     }
-    style.textContent = KNIU_RICHTEXT_CSS + KNIU_CONTENT_TABLE_DOC_CSS;
+    var css = KNIU_RICHTEXT_CSS + KNIU_CONTENT_TABLE_DOC_CSS;
+    if (style.textContent !== css) style.textContent = css;
     if (target !== documentTarget && documentTarget) {
       var documentStyle = documentTarget.querySelector('#kniu-rich-text-styles');
       if (!documentStyle) {
@@ -2583,7 +2776,7 @@ var KniuUI = (function () {
         documentStyle.id = 'kniu-rich-text-styles';
         documentTarget.appendChild(documentStyle);
       }
-      documentStyle.textContent = style.textContent;
+      if (documentStyle.textContent !== css) documentStyle.textContent = css;
     }
   }
   [
@@ -2591,6 +2784,9 @@ var KniuUI = (function () {
     'kniu-option', 'kniu-select', 'kniu-radio', 'kniu-radio-group', 'kniu-page', 'kniu-image', 'kniu-input',
     'kniu-input-group', 'kniu-form-cell', 'kniu-date-picker', 'kniu-form', 'kniu-upload', 'kniu-icon',
     'kniu-badge', 'kniu-tag', 'kniu-status', 'kniu-tab', 'kniu-empty', 'kniu-editor', 'kniu-navbar-cells', 'kniu-navbar-cell',
+    // 注：kniu-tab-head/body/panel 暂不登记——它们无 observedAttributes 覆盖 label/name，
+    // 登记后 connectedCallback 的 allowedAttribute 会把这些属性静默移除（标签标题丢失）。
+    // 登记前须先在各子组件补 observedAttributes 或纳入 allowedAttribute 白名单。
     'kniu-sub-navbar', 'kniu-navbar', 'kniu-backtop', 'kniu-comment', 'kniu-like', 'kniu-user-login', 'kniu-article-tab'
   ].forEach(installOptionsOnlyProtocol);
 
@@ -2732,7 +2928,7 @@ var KniuUI = (function () {
     makeSwitchOptions: makeSwitchOptions,
     createSearchActions: createSearchActions,
     createRowDeleteHandler: createRowDeleteHandler,
-    useListPage: useListPage,
+    usePage: usePage,
     confirm: confirm,
     defineComponent: defineComponent,
     useComponent: useComponent,
@@ -2742,3 +2938,6 @@ var KniuUI = (function () {
 }());
 
 export default KniuUI;
+
+// 控制器具名导入通道：KniuUI 主体在 IIFE 闭包内，named export 须经对象转发（顶层 export {} 引不到闭包内函数）
+export const createRowDeleteHandler = KniuUI.createRowDeleteHandler;

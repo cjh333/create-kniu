@@ -29,8 +29,7 @@ class CommentController extends Base
   private function notificationReplyJoins(): string
   {
     return
-      'INNER JOIN `tb_comment` AS `target` ON `target`.`id` = `reply`.`parent_id` ' .
-      '';
+      'INNER JOIN `tb_comment` AS `target` ON `target`.`id` = `reply`.`parent_id` ';
   }
 
   /** 判定某回复确实指向指定接收者（recipient）的 WHERE 片段。 */
@@ -72,7 +71,7 @@ class CommentController extends Base
   {
     $frontUserId = $this->currentFrontUserId();
     if ($frontUserId <= 0) {
-      $this->json([], '已读', 1);
+      $this->json([], '已读', ErrorCode::SUCCESS);
       return;
     }
 
@@ -86,7 +85,7 @@ class CommentController extends Base
           'AND `target`.`is_show` = 1 AND `reply`.`is_show` = 1 ' .
           'ON DUPLICATE KEY UPDATE `is_read` = 1, `issue_time` = VALUES(`issue_time`)'
       );
-      $this->json([], '已读', 1);
+      $this->json([], '已读', ErrorCode::SUCCESS);
     } catch (\Exception $e) {
       $this->json([], '更新回复通知失败', ErrorCode::SERVER_ERROR);
     }
@@ -121,7 +120,7 @@ class CommentController extends Base
           $replyId . ',' . $recipientId . ',' . $isRead . ',"' . $now . '") ' .
           'ON DUPLICATE KEY UPDATE `is_read` = VALUES(`is_read`), `issue_time` = VALUES(`issue_time`)'
       );
-      $this->json(['is_read' => $isRead], $isRead === 1 ? '已标记为已读' : '已标记为未读', 1);
+      $this->json(['is_read' => $isRead], $isRead === 1 ? '已标记为已读' : '已标记为未读', ErrorCode::SUCCESS);
     } catch (\Exception $e) {
       $this->json([], '更新读取状态失败', ErrorCode::SERVER_ERROR);
     }
@@ -235,14 +234,7 @@ class CommentController extends Base
   public function commentUpdate(): void
   {
     if (!$this->requireManagePermission()) return;
-    $id = (int)$this->input('post.id/d', 0);
-    $sid = max(0, (int)$this->input('post.sid/d', 0));
-    if ($id <= 0) {
-      $this->json([], '参数错误', ErrorCode::PARAM_INVALID);
-      return;
-    }
-    Db::name('tb_comment')->where('id', '=', $id)->update(['sid' => $sid]);
-    $this->json(['id' => $id, 'sid' => $sid], '排序已保存', 1);
+    $this->updateSortField('tb_comment');
   }
 
   // 审核评论：audit 传 1 审核通过（前台可见），传 0 设为隐藏/撤回。
@@ -259,7 +251,7 @@ class CommentController extends Base
     Db::name('tb_comment')
       ->where('id', '=', $id)
       ->update(['is_show' => (int)$audit]);
-    $this->json([], $audit === '1' ? '审核通过' : '已隐藏', 1);
+    $this->json([], $audit === '1' ? '审核通过' : '已隐藏', ErrorCode::SUCCESS);
   }
 
   // 删除评论或回复。
@@ -292,16 +284,27 @@ class CommentController extends Base
         ->delete();
     }
     // 无论目标记录是否已被其它页面删除，都广播一次，让前台重新以数据库结果为准。
-    $this->json([], '删除成功', 1);
+    $this->json([], '删除成功', ErrorCode::SUCCESS);
   }
 
   // 查询某一条。
   public function commentDetail(): void
   {
+    if ($this->currentUserId() <= 0) {
+      http_response_code(403);
+      $this->json([], '请先登录', ErrorCode::UNAUTHORIZED);
+      return;
+    }
     $id = $this->input('post.id') ?? '';
     $result = Db::name('tb_comment')
       ->where('id', '=', $id)
       ->find();
+    // 与 commentDelete 同口径：管理员可看全部，普通用户只能看自己发表的。
+    if ($result && !$this->isAdmin() && (int)$result['role_id'] !== $this->currentUserId()) {
+      http_response_code(403);
+      $this->json([], '只能查看自己发表的评论', ErrorCode::FORBIDDEN);
+      return;
+    }
     $result = $this->decodeFields($result, ['message']);
     $this->json($result);
   }

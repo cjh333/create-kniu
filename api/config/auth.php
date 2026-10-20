@@ -2,6 +2,7 @@
 $config = [
   'ENABLE' => true,  // 开发环境开启认证。
   'LOGIN_EXPIRE_DAYS' => 1,  // 登录状态有效天数。
+  'IDENTITY_TOKEN_EXPIRE_DAYS' => 30,  // 前台身份令牌有效期（天），每次注册/登录/绑定刷新。
   'TOKEN_KEY' => 'KNIU_USER_TOKEN',  // token 存储键名。
   'SESSION_KEY' => 'KNIU_USER_SESSION',  // session 存储键名。
   'USERNAME_KEY' => 'KNIU_USERNAME',  // 用户名存储键名。
@@ -12,6 +13,8 @@ $config = [
     // 前台公开内容：游客可见的首页、详情与评论列表。
     'getDaily',
     'getArticle',
+    'getHotArticles',
+    'getRecommendArticles',
     'getInfo',
     'getDetail',
     'getComments',
