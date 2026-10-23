@@ -297,16 +297,37 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
     }
     if (typeof routerHooks.afterRender === 'function') await routerHooks.afterRender(context);
   }
+  let loadingOverlay = null;
+  let loadingToken = 0;
+  const showRouteLoading = async () => {
+    if (!loadingOverlay) {
+      const element = document.createElement('kniu-loading');
+      element.className = 'kniu-route-loading';
+      document.body.appendChild(element);
+      try {
+        await loadComponents(document.body);
+      } catch (error) {
+        console.warn('[kniu-router] 加载提示组件注册失败：', error);
+      }
+      loadingOverlay = element;
+    }
+    loadingOverlay.text = loadingOptions.text || '加载中…';
+    loadingOverlay.show = true;
+  };
+  const hideRouteLoading = () => {
+    if (loadingOverlay) loadingOverlay.show = false;
+  };
   async function renderWithBoundary({ refresh = false } = {}) {
     root.setAttribute('aria-busy', 'true');
     const loadingEnabled = !refresh && loadingOptions.enabled !== false;
+    const duration = Number.isFinite(loadingOptions.duration) ? Math.max(0, loadingOptions.duration) : 300;
+    const token = ++loadingToken;
+    let shownAt = 0;
     if (loadingEnabled) {
       root.dataset.kniuLoading = 'true';
-      const indicator = document.createElement('div');
-      indicator.className = 'kniu-route-loading';
-      indicator.setAttribute('role', 'status');
-      indicator.textContent = loadingOptions.text || '加载中…';
-      root.prepend(indicator);
+      await showRouteLoading();
+      shownAt = performance.now();
+      await new Promise((resolve) => requestAnimationFrame(() => resolve()));
     }
     try {
       await render();
@@ -317,9 +338,15 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
       root.innerHTML = `<section class="kniu-route-error" role="alert"><h1>页面加载失败</h1><p>${escapeHtml(error?.message || '请稍后重试。')}</p><button type="button" data-kniu-retry>重试</button></section>`;
       root.querySelector('[data-kniu-retry]')?.addEventListener('click', () => { renderWithBoundary(); }, { once: true });
     } finally {
-      root.removeAttribute('aria-busy');
-      delete root.dataset.kniuLoading;
-      root.querySelector(':scope > .kniu-route-loading')?.remove();
+      if (loadingEnabled) {
+        const remain = duration - (performance.now() - shownAt);
+        if (remain > 0) await new Promise((resolve) => setTimeout(resolve, remain));
+      }
+      if (token === loadingToken) {
+        root.removeAttribute('aria-busy');
+        delete root.dataset.kniuLoading;
+        hideRouteLoading();
+      }
     }
   }
   const api = {

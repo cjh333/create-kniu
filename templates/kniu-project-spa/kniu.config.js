@@ -2,7 +2,11 @@ export default {
   // 根目录。
   root: './client/views',
   publicDir: './public',
-  loading: true,
+  // loading 效果。
+  loading: {
+    enabled: true,
+    duration: 2000
+  },
   // 路径别名配置。
   resolve: {
     alias: {
