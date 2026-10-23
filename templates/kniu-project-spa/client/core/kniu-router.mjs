@@ -37,6 +37,7 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
   let textBindings = new Map();
   let lastModel = {};
   let suppressRender = false;
+  let hasRendered = false;
   const guards = { beforeEach: [], afterEach: [] };
   const loadingOptions = typeof loading === 'object' ? loading : { enabled: loading !== false };
   const clientPath = (value, label) => {
@@ -190,6 +191,7 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
   async function render() {
     const from = currentPath;
     const to = routePath();
+    const isNavigation = !hasRendered || to !== from;
     const navigationId = ++pendingNavigation;
     const matched = Object.entries(routeTable).find(([path]) => new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:([A-Za-z_$][\w$]*)/g, '([^/]+)')}$`).test(to));
     const resolvedPath = matched?.[0] || defaultPath;
@@ -199,9 +201,11 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
     const params = Object.fromEntries(keys.map((key, index) => [key, decodeURIComponent(values[index] || '')]));
     const context = { to, from, route, params, matched: route.matched, query: new URLSearchParams(location.hash.split('?')[1] || '') };
     const rerenderScroll = to === from ? window.scrollY : null;
-    for (const guard of [...guards.beforeEach, route.beforeEnter].filter(Boolean)) if (await guard(context) === false) return;
-    if (navigationId !== pendingNavigation) return;
-    if (typeof routerHooks.beforeEach === 'function' && await routerHooks.beforeEach(context) === false) return;
+    if (isNavigation) {
+      for (const guard of [...guards.beforeEach, route.beforeEnter].filter(Boolean)) if (await guard(context) === false) return;
+      if (navigationId !== pendingNavigation) return;
+      if (typeof routerHooks.beforeEach === 'function' && await routerHooks.beforeEach(context) === false) return;
+    }
     const nextControllerKey = route.controller ? controllerUrl(route.controller) : null;
     if (activeController && activeController !== nextControllerKey) {
       await controllerInstances.get(activeController)?.__kniuLifecycle?.beforeUnmount?.({ root, context });
@@ -272,6 +276,7 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
       }
     }
     currentPath = resolvedPath;
+    hasRendered = true;
     activeController = nextControllerKey;
     if (controllerInstance && !mountedControllers.has(nextControllerKey)) {
       mountedControllers.add(nextControllerKey);
@@ -282,17 +287,19 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
           if (suppressRender) { patchTextBindings(); return; }
           if (renderQueued) return;
           renderQueued = true;
-          queueMicrotask(() => { renderQueued = false; renderWithBoundary(); });
+          queueMicrotask(() => { renderQueued = false; renderWithBoundary({ refresh: true }); });
         }) || null);
       }
     }
-    if (typeof routerHooks.afterEach === 'function') await routerHooks.afterEach(context);
+    if (isNavigation) {
+      if (typeof routerHooks.afterEach === 'function') await routerHooks.afterEach(context);
+      for (const hook of guards.afterEach) await hook(context);
+    }
     if (typeof routerHooks.afterRender === 'function') await routerHooks.afterRender(context);
-    for (const hook of guards.afterEach) await hook(context);
   }
-  async function renderWithBoundary() {
+  async function renderWithBoundary({ refresh = false } = {}) {
     root.setAttribute('aria-busy', 'true');
-    const loadingEnabled = loadingOptions.enabled !== false;
+    const loadingEnabled = !refresh && loadingOptions.enabled !== false;
     if (loadingEnabled) {
       root.dataset.kniuLoading = 'true';
       const indicator = document.createElement('div');
@@ -308,7 +315,7 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
       console.error('[kniu-router] 页面渲染失败：', error);
       root.dataset.kniuError = 'true';
       root.innerHTML = `<section class="kniu-route-error" role="alert"><h1>页面加载失败</h1><p>${escapeHtml(error?.message || '请稍后重试。')}</p><button type="button" data-kniu-retry>重试</button></section>`;
-      root.querySelector('[data-kniu-retry]')?.addEventListener('click', renderWithBoundary, { once: true });
+      root.querySelector('[data-kniu-retry]')?.addEventListener('click', () => { renderWithBoundary(); }, { once: true });
     } finally {
       root.removeAttribute('aria-busy');
       delete root.dataset.kniuLoading;
@@ -324,7 +331,7 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
         throw new Error(`模板清单加载失败：${manifestUrl}`, { cause: error });
       }
       templates = globalThis.__VIEW_TEMPLATES__ || {};
-      addEventListener('hashchange', renderWithBoundary);
+      addEventListener('hashchange', () => { renderWithBoundary(); });
       if (typeof routerHooks.mounted === 'function') await routerHooks.mounted({ root, router: api });
       await renderWithBoundary();
     },
