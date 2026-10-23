@@ -1,3 +1,0 @@
-User-agent: *
-Allow: /
-Sitemap: http://localhost:6173/public/assets/sitemap.xml
