@@ -39,7 +39,9 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
   let suppressRender = false;
   let hasRendered = false;
   const guards = { beforeEach: [], afterEach: [] };
-  const loadingOptions = typeof loading === 'object' ? loading : { enabled: loading !== false };
+  const loadingOptions = typeof loading === 'object' && loading !== null
+    ? { enabled: true, duration: 2000, text: '', ...loading }
+    : { enabled: loading !== false, duration: 2000, text: '' };
   const clientPath = (value, label) => {
     const normalized = String(value || '').replaceAll('\\', '/').replace(/^\/+/, '');
     if (!normalized || normalized.split('/').includes('..')) throw new Error(`无效${label}路径：${value}`);
@@ -311,7 +313,7 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
       }
       loadingOverlay = element;
     }
-    loadingOverlay.text = loadingOptions.text || '加载中…';
+    loadingOverlay.text = loadingOptions.text || '';
     loadingOverlay.show = true;
   };
   const hideRouteLoading = () => {
@@ -320,7 +322,7 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
   async function renderWithBoundary({ refresh = false } = {}) {
     root.setAttribute('aria-busy', 'true');
     const loadingEnabled = !refresh && loadingOptions.enabled !== false;
-    const duration = Number.isFinite(loadingOptions.duration) ? Math.max(0, loadingOptions.duration) : 300;
+    const duration = Number.isFinite(loadingOptions.duration) ? Math.max(0, loadingOptions.duration) : 2000;
     const token = ++loadingToken;
     let shownAt = 0;
     if (loadingEnabled) {
