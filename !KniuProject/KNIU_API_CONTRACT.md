@@ -119,14 +119,14 @@ Role 表的 `role` / `role_auth` 建表默认值（均为 `1`）**仅供建表�
 | `/getArticle` | 可选 `page_current`、`page_rows` | 已显示文章分页数据 `{data,page_current,page_rows,page_total,total}`；每项含文章字段、`publisher`（昵称）和点赞数 |
 | `/getHotArticles` | 无 | 已显示文章中按 `hits desc,id desc` 返回最多 9 篇 `{id,title,hits}` |
 | `/getRecommendArticles` | 无 | 已显示且 `is_recommend=1` 的文章中按 `create_time desc,id desc` 返回最多 9 篇 |
-| `/getInfo` | 可选 `identity_token` | 首页资料。返回键**固定为** `today,title,logo,copyright,icp,photo,note`：`today` 是当天在一年中的序号（1~366）；`title`/`logo`/`copyright`/`icp` 取自公开 SEO；`photo` 是当前账号 `tb_about.avatar`（无资料时为内置默认头像）、`note` 是 `tb_about.summary`（为空时为“这家伙很懒，什么都没留下！”）。**键名是 `photo`/`note`，不是 `avatar`/`summary`**；已识别到账号时不得回退到其他账号的资料。**游客分支现状**：无法识别账号时按历史口径回退到首个账号的资料（如需改为游客通用兜底属产品决策） |
+| `/getInfo` | 可选 `identity_token` | 首页资料。返回键**固定为** `today,title,logo,copyright,icp,keywords,description,photo,note`：`today` 是当天在一年中的序号（1~366）；`title`/`logo`/`copyright`/`icp`/`keywords`/`description` 取自公开 SEO（`keywords`/`description` 为 M 修复新增出参，供前端对齐 meta；与 `Core\Seo` 同按 `sid asc,id asc` 取首行）；`photo` 是当前账号 `tb_about.avatar`（无资料时为内置默认头像，**值为静态 URL `/static/img/default-avatar.png`**，不再内联 base64）、`note` 是 `tb_about.summary`（为空时为“这家伙很懒，什么都没留下！”）。**键名是 `photo`/`note`，不是 `avatar`/`summary`**；已识别到账号时不得回退到其他账号的资料。**游客分支现状**：无法识别账号时按历史口径回退到首个账号的资料（如需改为游客通用兜底属产品决策） |
 | `/getAbout` | `identity_token` | **需登录**（不在免登录清单内，未登录一律拒绝且不回退任何内容）。返回当前账号的 `tb_about.content`；不读取 SEO 内容 |
 | `/getDetail` | **`id` 必填**、可选 `identity_token` | 文章详情、`publisher,publisher_role_id,isOwn,favorited,previous,next,hits,likes`；成功读取时原子增加文章 `hits` 并返回最新值；记录登录账号浏览历史 |
 | `/getComments` | `article_id`，可选 `identity_token` | 只返回 `is_show=1` 的评论和回复，按 `id` 升序（防御上限 500 条）；**先校验所属文章可见性**（与 `/getDetail` 同口径：未发布文章仅作者本人可读，不可见回 3001，防草稿评论被 article_id 枚举）；行字段：`id,userId,isOwn,parentId,replyTo,replyContent,username,avatar,time,content,likes,liked`。`userId` 为兼容字段，值必须是作者的 `tb_role.id`；`username` 为实时昵称，不能用于归属判断 |
 | `/submitComment` | `article_id,parent_id=0,identity_token,message` | 登录且未禁言才可提交；回复必须属于同一文章；免审立即可见并返回成功，待审仅返回成功 ID；昵称从 `tb_role.nickname` 读取，客户端不得提交账号归属字段 |
 | `/deleteComment` | `comment_id,identity_token` | 仅本人可删；删除顶层评论时连同其回复删除 |
 | `/likeComment` | `comment_id,liked,identity_token` | 不可点赞本人。按账号、评论和服务器日期保存状态（**存服务器会话**：当日有效、次日自然失效、不跨设备）；`liked=true` 点赞，`false` 取消，同一天允许再次点赞；返回 `likes,liked,locked` |
-| `/likeArticle` | `article_id,liked,identity_token` | 登录必需；作者不可点赞自己文章；按账号、文章和服务器日期保存状态（**存服务器会话**：当日有效、次日自然失效、不跨设备）；返回 `likes,liked` |
+| `/likeArticle` | `article_id,liked,identity_token` | 登录必需；作者不可点赞自己文章；按账号、文章和服务器日期保存状态（**存 `tb_article_like` 表**：`(role_id,article_id,like_date)` 唯一键按日幂等、跨设备一致，并发重复点赞由唯一键兜底不双计数）；返回 `likes,liked` |
 | `/favoriteArticle` | `article_id,favorited,identity_token` | 登录必需；收藏可反选；返回 `favorited` |
 | `/frontProfile` | `identity_token`（或后台会话） | `id,name,nickname,avatar,is_show,comment_ban,canEditNickname,articleCount,articleLikeCount,commentLikeCount,commentCount,favorites,history` |
 | `/frontProfileSave` | `identity_token,nickname` | **需登录**。只修改本人昵称：昵称唯一（**查重必须落在 `nickname` 列**，排除自己），与当前值相同时直接返回「昵称未变更」，距上次 `issue_time` 未满一年拒绝修改。**本接口不承担建号**，账号创建统一走 `/frontRegister`，因此不接受 `gvcode` |

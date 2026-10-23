@@ -1,0 +1,345 @@
+@charset "UTF-8";
+
+:host {
+  z-index: 2000;
+  position: fixed;
+  inset: 0;
+  display: none;
+  --kniu-modal-width: auto;
+  --kniu-modal-height: auto;
+  --kniu-modal-mask-alpha: .6;
+  --kniu-modal-mask-blur: 3px;
+}
+
+:host([show="true"]),
+:host([closing]) {
+  display: block !important;
+}
+
+.kniu_sys_modal_mask {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  background-color: rgba(0, 0, 0, var(--kniu-modal-mask-alpha, .6));
+  backdrop-filter: blur(var(--kniu-modal-mask-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--kniu-modal-mask-blur, 0px));
+  -moz-backdrop-filter: blur(var(--kniu-modal-mask-blur, 0px));
+  -ms-backdrop-filter: blur(var(--kniu-modal-mask-blur, 0px));
+  -o-backdrop-filter: blur(var(--kniu-modal-mask-blur, 0px));
+  animation: kniu_sys_modal_mask_in .25s ease both;
+  -webkit-animation: kniu_sys_modal_mask_in .25s ease both;
+}
+
+.kniu_sys_modal_mask[data-mask-off] {
+  pointer-events: none;
+}
+
+.kniu_sys_modal_wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  pointer-events: none;
+}
+
+.kniu_sys_modal_dialog {
+  overflow: visible;
+  position: relative;
+  display: flex;
+  display: -webkit-flex;
+  flex-direction: column;
+  -webkit-flex-direction: column;
+  -moz-flex-direction: column;
+  -ms-flex-direction: column;
+  -o-flex-direction: column;
+  border-radius: 6px;
+  -webkit-border-radius: 6px;
+  -moz-border-radius: 6px;
+  -ms-border-radius: 6px;
+  -o-border-radius: 6px;
+  min-width: max(320px, calc(320 / var(--kniu_vw)));
+  width: var(--kniu-modal-width, auto);
+  max-width: 100%;
+  height: var(--kniu-modal-height, auto);
+  max-height: 90vh;
+  pointer-events: auto;
+  background-color: #fff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
+  -webkit-box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
+  -moz-box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
+  -ms-box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
+  -o-box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
+  animation: kniu_sys_modal_box_in .25s cubic-bezier(.25, .8, .25, 1);
+  -webkit-animation: kniu_sys_modal_box_in .25s cubic-bezier(.25, .8, .25, 1);
+}
+
+.kniu_sys_modal_dialog * {
+  pointer-events: auto;
+}
+
+.kniu_sys_modal_header {
+  display: flex;
+  display: -webkit-flex;
+  justify-content: space-between;
+  -webkit-justify-content: space-between;
+  -moz-justify-content: space-between;
+  -ms-justify-content: space-between;
+  -o-justify-content: space-between;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex: none;
+  -webkit-flex: none;
+  -moz-flex: none;
+  -ms-flex: none;
+  -o-flex: none;
+  border-bottom: 1px solid #ebeef5;
+  padding: 16px 20px;
+  font-weight: 600;
+  font-size: 16px;
+  color: #303133;
+}
+
+.kniu_sys_modal_header slot::slotted(kniu-btn) {
+  --kniu-button-icon-size: 24px;
+}
+
+.kniu_sys_modal_window_controls {
+  display: none;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex: none;
+  -webkit-flex: none;
+  -moz-flex: none;
+  -ms-flex: none;
+  -o-flex: none;
+  gap: 4px;
+  margin-left: 12px;
+}
+
+:host([minmax]) .kniu_sys_modal_window_controls,
+:host([close-btn]) .kniu_sys_modal_window_controls {
+  display: flex;
+  display: -webkit-flex;
+}
+
+.kniu_sys_modal_window_controls button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  -webkit-border-radius: 4px;
+  -moz-border-radius: 4px;
+  -ms-border-radius: 4px;
+  -o-border-radius: 4px;
+  background-color: transparent;
+  color: #909399;
+  cursor: pointer;
+}
+
+.kniu_sys_modal_window_controls button:hover,
+.kniu_sys_modal_window_controls button:focus-visible {
+  background-color: #f5f7fa;
+  color: #303133
+}
+
+.kniu_sys_modal_window_controls button svg {
+  width: 16px;
+  height: 16px
+}
+
+:host([data-minimized]) .kniu_sys_modal_wrap {
+  justify-content: flex-start;
+  -webkit-justify-content: flex-start;
+  -moz-justify-content: flex-start;
+  -ms-justify-content: flex-start;
+  -o-justify-content: flex-start;
+  align-items: flex-end;
+  -webkit-align-items: flex-end;
+  -moz-align-items: flex-end;
+  -ms-align-items: flex-end;
+  -o-align-items: flex-end;
+  padding: 0;
+}
+
+:host([data-minimized]) .kniu_sys_modal_dialog {
+  min-width: calc(260 / var(--kniu_vw));
+  max-width: calc(260 / var(--kniu_vw));
+  max-height: none;
+}
+
+:host([data-minimized]) .kniu_sys_modal_header {
+  border-bottom: none;
+}
+
+:host([data-minimized]) .kniu_sys_modal_header>slot {
+  flex: 1 1 auto;
+  -webkit-flex: 1 1 auto;
+  -moz-flex: 1 1 auto;
+  -ms-flex: 1 1 auto;
+  -o-flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+:host([data-minimized]) .kniu_sys_modal_header>slot::slotted(*) {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+:host([data-minimized]) .kniu_sys_modal_body,
+:host([data-minimized]) .kniu_sys_modal_footer {
+  display: none;
+}
+
+:host([data-maximized]) .kniu_sys_modal_wrap {
+  padding: 0;
+}
+
+:host([data-maximized]) .kniu_sys_modal_dialog {
+  border-radius: 0;
+  -webkit-border-radius: 0;
+  -moz-border-radius: 0;
+  -ms-border-radius: 0;
+  -o-border-radius: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+}
+
+.kniu_sys_modal_body {
+  overflow: auto;
+  flex: 1 1 auto;
+  -webkit-flex: 1 1 auto;
+  -moz-flex: 1 1 auto;
+  -ms-flex: 1 1 auto;
+  -o-flex: 1 1 auto;
+  padding: 20px 24px;
+}
+
+.kniu_sys_modal_footer {
+  display: flex;
+  display: -webkit-flex;
+  justify-content: flex-end;
+  -webkit-justify-content: flex-end;
+  -moz-justify-content: flex-end;
+  -ms-justify-content: flex-end;
+  -o-justify-content: flex-end;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex-wrap: wrap;
+  -webkit-flex-wrap: wrap;
+  -moz-flex-wrap: wrap;
+  -ms-flex-wrap: wrap;
+  -o-flex-wrap: wrap;
+  flex: none;
+  -webkit-flex: none;
+  -moz-flex: none;
+  -ms-flex: none;
+  -o-flex: none;
+  border-top: 1px solid #ebeef5;
+  gap: 12px;
+  padding: 12px 20px;
+}
+
+@keyframes kniu_sys_modal_mask_in {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes kniu_sys_modal_box_in {
+  0% {
+    transform: translateY(-20px);
+    -webkit-transform: translateY(-20px);
+    -moz-transform: translateY(-20px);
+    -ms-transform: translateY(-20px);
+    -o-transform: translateY(-20px);
+    opacity: 0;
+  }
+
+  100% {
+    transform: translateY(0);
+    -webkit-transform: translateY(0);
+    -moz-transform: translateY(0);
+    -ms-transform: translateY(0);
+    -o-transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes kniu_sys_modal_mask_out {
+  0% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes kniu_sys_modal_box_out {
+  0% {
+    transform: translateY(0);
+    -webkit-transform: translateY(0);
+    -moz-transform: translateY(0);
+    -ms-transform: translateY(0);
+    -o-transform: translateY(0);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(-20px);
+    -webkit-transform: translateY(-20px);
+    -moz-transform: translateY(-20px);
+    -ms-transform: translateY(-20px);
+    -o-transform: translateY(-20px);
+    opacity: 0;
+  }
+}
+
+:host([closing]) .kniu_sys_modal_wrap {
+  animation: kniu_sys_modal_mask_out .22s ease both;
+  -webkit-animation: kniu_sys_modal_mask_out .22s ease both;
+}
+
+:host([closing]) .kniu_sys_modal_dialog {
+  animation: kniu_sys_modal_box_out .22s cubic-bezier(.25, .8, .25, 1) both;
+  -webkit-animation: kniu_sys_modal_box_out .22s cubic-bezier(.25, .8, .25, 1) both;
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .kniu_sys_modal_mask,
+  .kniu_sys_modal_dialog {
+    animation: none;
+    -webkit-animation: none;
+  }
+}

@@ -1,15 +1,39 @@
 {
-  "name": "KniuSystem",
-  "version": "1.0.0",
+  "name": "create-kniu",
+  "version": "1.1.0",
+  "description": "Create a Kniu browser SPA project",
   "license": "MIT",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "build": "node client/core/kniubuilder.mjs --env=production",
-    "dev": "node client/core/kniuserver.mjs --env=development",
-    "kill": "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 6173,6174,9900 -State Listen -ErrorAction SilentlyContinue | Select-Object -Unique OwningProcess | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\"",
-    "preview": "node client/core/kniupreview.mjs --env=development"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cjh333/create-kniu.git"
   },
-  "devDependencies": {},
-  "dependencies": {}
+  "homepage": "https://github.com/cjh333/create-kniu",
+  "bugs": {
+    "url": "https://github.com/cjh333/create-kniu/issues"
+  },
+  "keywords": [
+    "create",
+    "spa",
+    "scaffolding"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "type": "module",
+  "bin": {
+    "kniu-create": "./bin/kniu-create.mjs",
+    "create-kniu": "./bin/kniu-create.mjs"
+  },
+  "files": [
+    "bin",
+    "templates",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "create": "node bin/kniu-create.mjs",
+    "check": "node --check bin/kniu-create.mjs && node --check templates/kniu-project-spa/client/core/kniu-build.mjs && node --check templates/kniu-project-spa/client/core/kniu-code.mjs && node --check templates/kniu-project-spa/client/core/kniu-server.mjs && node --check templates/kniu-project-spa/client/core/kniu-auth-service.mjs && node --check templates/kniu-project-spa/client/core/kniu-identity.mjs && node --check templates/kniu-project-spa/client/core/kniu-auth.mjs && node --check templates/kniu-project-spa/client/core/kniu-auth-session-plugin.mjs && node --check templates/kniu-project-spa/client/core/kniu-request.mjs && node --check templates/kniu-project-spa/client/core/kniu-store.mjs && node --check templates/kniu-project-spa/client/core/kniu-components.mjs && node --check templates/kniu-project-spa/client/core/kniu-router.mjs && node --check templates/kniu-project-spa/client/core/kniu-template.mjs && node --check templates/kniu-project-spa/client/core/kniu-sanitizer.mjs && node --check templates/kniu-project-spa/client/core/kniu-ui-config.mjs && node --check templates/kniu-project-spa/client/core/kniu-theme.mjs && node --check templates/kniu-project-spa/client/core/kniu-observability.mjs && node --check templates/kniu-project-spa/client/core/kniu-service-worker.mjs && node --check templates/kniu-project-spa/client/core/kniu-service-worker.js && node --check templates/kniu-project-spa/client/core/kniu-a11y.mjs && node --check templates/kniu-project-spa/client/core/kniu-mvvm.mjs",
+    "build:template": "npm run build --prefix templates/kniu-project-spa"
+  },
+  "devDependencies": {}
 }

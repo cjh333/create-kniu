@@ -1,0 +1,75 @@
+@charset "UTF-8";
+
+:host {
+  position: relative;
+  display: inline-flex;
+  display: -webkit-inline-flex;
+  vertical-align: middle;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+::slotted(*) {
+  line-height: normal;
+}
+
+:host([hidden]) {
+  display: none;
+}
+
+:host([unstyled]) {
+  background-color: transparent;
+}
+
+.kniu_sys_badge_indicator {
+  position: absolute;
+  bottom: 100%;
+  left: 100%;
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  pointer-events: none;
+}
+
+.kniu_sys_badge_indicator[data-shape="dot"] {
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  -webkit-border-radius: 50%;
+  -moz-border-radius: 50%;
+  -ms-border-radius: 50%;
+  -o-border-radius: 50%;
+  width: 8px;
+  height: 8px;
+  background-color: var(--kniu-color-danger, #f56c6c);
+}
+
+.kniu_sys_badge_indicator[data-shape="sup"] {
+  border: 1.5px solid #fff;
+  border-radius: 9px;
+  -webkit-border-radius: 9px;
+  -moz-border-radius: 9px;
+  -ms-border-radius: 9px;
+  -o-border-radius: 9px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  white-space: nowrap;
+  font-weight: 600;
+  line-height: 18px;
+  font-size: 12px;
+  background-color: var(--kniu-color-danger, #f56c6c);
+  color: #fff;
+}
+
+:host([unstyled]) .kniu_sys_badge_indicator {
+  border-color: transparent;
+}

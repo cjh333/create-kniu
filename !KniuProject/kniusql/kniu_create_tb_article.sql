@@ -21,6 +21,7 @@ CREATE TABLE `tb_article` (
     KEY `idx_article_role` (`role_id`),
     KEY `idx_article_sid` (`sid`),
     KEY `idx_article_visible` (`is_show`, `id`),
+    KEY `idx_article_sitemap` (`is_show`, `create_time`, `id`),
     KEY `idx_article_hot` (`is_show`, `hits`, `id`),
     KEY `idx_article_recommend` (
         `is_show`,

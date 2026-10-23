@@ -1,0 +1,11 @@
+{
+  "name": "kniu-project-spa",
+  "private": true,
+  "type": "module",
+  "types": "./client/core/kniu.d.ts",
+  "scripts": {
+    "dev": "node client/core/kniu-server.mjs",
+    "build": "node client/core/kniu-build.mjs",
+    "preview": "node client/core/kniu-preview-server.mjs"
+  }
+}

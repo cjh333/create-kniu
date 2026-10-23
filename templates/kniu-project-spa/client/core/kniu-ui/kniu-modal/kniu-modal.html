@@ -1,0 +1,19 @@
+<div class="kniu_sys_modal_wrap">
+  <div class="kniu_sys_modal_mask" part="mask"></div>
+  <div class="kniu_sys_modal_dialog" part="dialog">
+    <div class="kniu_sys_modal_header">
+      <slot name="header"></slot>
+      <div class="kniu_sys_modal_window_controls">
+        <button class="kniu_sys_modal_minimize" aria-label="minimize" type="button"></button>
+        <button class="kniu_sys_modal_maximize" aria-label="maximize" type="button"></button>
+        <button class="kniu_sys_modal_window_close" aria-label="close" type="button"></button>
+      </div>
+    </div>
+    <div class="kniu_sys_modal_body">
+      <slot name="default"></slot>
+    </div>
+    <div class="kniu_sys_modal_footer">
+      <slot name="footer"></slot>
+    </div>
+  </div>
+</div>

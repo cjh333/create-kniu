@@ -1,0 +1,11 @@
+@charset "UTF-8";
+
+.kniu_richtext_table_wrap {
+  overflow: hidden;
+  overflow-x: auto;
+  width: 100%
+}
+
+.kniu_richtext_table {
+  min-width: 768px;
+}
