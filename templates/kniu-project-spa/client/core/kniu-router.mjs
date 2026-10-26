@@ -81,24 +81,30 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
       const start = /^kniu-t:(.+)$/.exec(data);
       if (!start) { if (data === '/kniu-t') node.remove(); return; }
       const [encoded, rawFlag] = start[1].split('|raw');
+      // split('|raw') 在带 |raw 时返回 ['code','']（第二元素为空串），不带时返回 ['code']。
+      // raw 判定用「split 产生了第二段」而非与 '1' 比较（|raw 后无内容，永不为 '1'）。
+      const isRaw = rawFlag !== undefined;
       let next = node.nextSibling;
       if (next && next.nodeType === Node.COMMENT_NODE && next.data === '/kniu-t') {
         next = next.parentNode.insertBefore(document.createTextNode(''), next);
       }
       if (next && next.nodeType === Node.TEXT_NODE) {
         const expr = decodeURIComponent(encoded);
-        const entry = textBindings.get(expr) || { raw: rawFlag === '1', nodes: [] };
+        // Map 键必须同时含表达式与 raw 标志：{{c}} 与 {{@c}} 同表达式但 raw 不同，
+        // 否则共用同一 entry 会导致补丁时 raw 标记被覆盖（规则 284 同类缺陷）。
+        const key = `${expr}|${isRaw ? '1' : '0'}`;
+        const entry = textBindings.get(key) || { expr, raw: isRaw, nodes: [] };
         entry.nodes.push(next);
-        textBindings.set(expr, entry);
+        textBindings.set(key, entry);
       }
       node.remove();
     });
   }
   function patchTextBindings() {
-    textBindings.forEach(function (entry, expr) {
+    textBindings.forEach(function (entry) {
       const value = entry.raw
-        ? String(evaluateTemplateExpression(expr, lastModel) ?? '')
-        : escapeHtml(evaluateTemplateExpression(expr, lastModel));
+        ? String(evaluateTemplateExpression(entry.expr, lastModel) ?? '')
+        : escapeHtml(evaluateTemplateExpression(entry.expr, lastModel));
       entry.nodes.forEach(function (node) { if (node.textContent !== value) node.textContent = value; });
     });
   }
@@ -200,7 +206,8 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
     const route = routeTable[resolvedPath];
     const values = matched ? new RegExp(`^${resolvedPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:([A-Za-z_$][\w$]*)/g, '([^/]+)')}$`).exec(to)?.slice(1) || [] : [];
     const keys = [...resolvedPath.matchAll(/:([A-Za-z_$][\w$]*)/g)].map((match) => match[1]);
-    const params = Object.fromEntries(keys.map((key, index) => [key, decodeURIComponent(values[index] || '')]));
+    const safeDecode = (raw) => { try { return decodeURIComponent(raw); } catch { return raw; } };
+    const params = Object.fromEntries(keys.map((key, index) => [key, safeDecode(values[index] || '')]));
     const context = { to, from, route, params, matched: route.matched, query: new URLSearchParams(location.hash.split('?')[1] || '') };
     const rerenderScroll = to === from ? window.scrollY : null;
     if (isNavigation) {
@@ -210,8 +217,16 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
     }
     const nextControllerKey = route.controller ? controllerUrl(route.controller) : null;
     if (activeController && activeController !== nextControllerKey) {
-      await controllerInstances.get(activeController)?.__kniuLifecycle?.beforeUnmount?.({ root, context });
-      await controllerInstances.get(activeController)?.__kniuLifecycle?.unmounted?.({ root, context });
+      const previousInstance = controllerInstances.get(activeController);
+      await previousInstance?.__kniuLifecycle?.beforeUnmount?.({ root, context });
+      await previousInstance?.__kniuLifecycle?.unmounted?.({ root, context });
+      // 退订旧控制器的响应式订阅：不退订则 effect 依赖链随路由切换累积（内存泄漏），
+      // 且旧 state 变更仍会唤醒已失效的订阅回调。
+      const previousSubscription = controllerSubscriptions.get(activeController);
+      if (typeof previousSubscription === 'function') {
+        previousSubscription();
+        controllerSubscriptions.delete(activeController);
+      }
       mountedControllers.delete(activeController);
     }
     if (typeof routerHooks.beforeLoad === 'function') await routerHooks.beforeLoad(context);

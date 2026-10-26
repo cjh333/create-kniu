@@ -15,7 +15,9 @@ const port = Number(readArg('--port', '4173'));
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.xml': 'application/xml; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 const readable = async (file) => { try { return (await stat(file)).isFile(); } catch { return false; } };
 const safePath = (pathname) => {
-  const decoded = decodeURIComponent(pathname.split('?')[0]);
+  const raw = String(pathname || '').split('?')[0];
+  let decoded;
+  try { decoded = decodeURIComponent(raw); } catch { decoded = raw; }
   const candidate = resolve(root, `.${decoded.startsWith('/') ? decoded : `/${decoded}`}`);
   return candidate === root || candidate.startsWith(root + sep) ? candidate : null;
 };

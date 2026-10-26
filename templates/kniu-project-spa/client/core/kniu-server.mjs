@@ -63,7 +63,9 @@ async function allTemplateManifest() {
   return templates;
 }
 function safePath(urlPath) {
-  const decoded = decodeURIComponent(urlPath.split('?')[0]);
+  const raw = String(urlPath || '').split('?')[0];
+  let decoded;
+  try { decoded = decodeURIComponent(raw); } catch { decoded = raw; }
   const candidate = resolve(root, '.' + (decoded.startsWith('/') ? decoded : '/' + decoded));
   return candidate === root || candidate.startsWith(root + sep) ? candidate : null;
 }
@@ -71,8 +73,6 @@ async function readable(path) {
   try { await access(path); return (await stat(path)).isFile(); } catch { return false; }
 }
 const server = createServer(async (request, response) => {
-  // Development parity with production baseline. Inline is retained only for
-  // the dev HMR/bootstrap scripts; runtime templates no longer require eval.
   response.setHeader('X-Content-Type-Options', 'nosniff');
   response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.setHeader('X-Frame-Options', 'SAMEORIGIN');
@@ -104,7 +104,6 @@ const server = createServer(async (request, response) => {
   if (!file || !(await readable(file))) { response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); response.end('Not Found'); return; }
   const contentType = types[extname(file).toLowerCase()] || 'application/octet-stream';
   if (contentType.startsWith('text/html')) {
-    // 页面只保留唯一入口脚本，模板清单由 client.mjs 挂载的模板引擎在运行时动态加载。
     const html = await readFile(file, 'utf8');
     response.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-cache' });
     response.end(html.includes('/__kniu_hmr') ? html : html.replace('</body>', `${hmrScript}</body>`));

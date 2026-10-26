@@ -117,7 +117,9 @@ export function registerForm(context) {
           values: values || {}
         };
         Object.keys(payload.values).forEach(function (key) {
-          if (!(key in payload)) payload[key] = payload.values[key];
+          // hasOwnProperty 而非 `in`：in 走原型链，字段名为 constructor/toString/__proto__ 时会被误判为已存在而跳过，
+          // 导致 condition 函数拿不到该字段的值。
+          if (!Object.prototype.hasOwnProperty.call(payload, key)) payload[key] = payload.values[key];
         });
         return !!condition(payload);
       }

@@ -107,13 +107,65 @@ export function registerUpload(context) {
         count: Number.isFinite(count) && count > 0 ? count : (this.hasAttribute('multiple') ? Infinity : 1)
       };
     }
-    _select(selected) {
-      const limits = this._limits();
-      const valid = selected.filter((file) => {
-        if (file.size <= limits.bytes) return true;
-        this._notice(componentText(componentLang(this.__kniuOptions), 'upload.tooLarge', { '1': file.name, '2': this.getAttribute('max-size') }), 'error');
-        return false;
+    _matchMagicBytes(file) {
+      return new Promise((resolve) => {
+        try {
+          const reader = new FileReader();
+          reader.onerror = () => resolve(true);
+          reader.onload = () => {
+            const buffer = reader.result;
+            if (!(buffer instanceof ArrayBuffer)) { resolve(true); return; }
+            const bytes = new Uint8Array(buffer);
+            const head = [bytes[0] || 0, bytes[1] || 0, bytes[2] || 0, bytes[3] || 0,
+              bytes[4] || 0, bytes[5] || 0, bytes[6] || 0, bytes[7] || 0,
+              bytes[8] || 0, bytes[9] || 0, bytes[10] || 0, bytes[11] || 0];
+            const declared = String(file.type || '').toLowerCase();
+            const match = (sig) => sig === head.slice(0, sig.length).join(',');
+            const checks = {
+              'image/png':  [137, 80, 78, 71, 13, 10, 26, 10],
+              'image/jpeg': [255, 216, 255],
+              'image/gif':  [71, 73, 70, 56],
+              'image/bmp':  [66, 77],
+              'image/webp': [82, 73, 70, 70]
+            };
+            if (declared === 'image/webp') {
+              const ok = match(checks['image/webp']) && bytes[8] === 87 && bytes[9] === 69 && bytes[10] === 66 && bytes[11] === 80;
+              resolve(ok);
+              return;
+            }
+            const sig = checks[declared];
+            resolve(sig ? match(sig) : true);
+          };
+          reader.readAsArrayBuffer(file.slice(0, 12));
+        } catch { resolve(true); }
       });
+    }
+    async _validateFile(file, limits) {
+      if (file.size <= limits.bytes) return null;
+      return componentText(componentLang(this.__kniuOptions), 'upload.tooLarge', { '1': file.name, '2': this.getAttribute('max-size') });
+    }
+    async _select(selected) {
+      const limits = this._limits();
+      const accept = String(this.getAttribute('accept') || '').toLowerCase();
+      const allowedTypes = accept ? accept.split(',').map((part) => part.trim()).filter(Boolean) : [];
+      const hasImageAccept = allowedTypes.length > 0 && allowedTypes.every((type) => type.indexOf('image') === 0);
+      const valid = [];
+      for (const file of selected) {
+        if (file.size > limits.bytes) {
+          this._notice(componentText(componentLang(this.__kniuOptions), 'upload.tooLarge', { '1': file.name, '2': this.getAttribute('max-size') }), 'error');
+          continue;
+        }
+        const declaredType = String(file.type || '').toLowerCase();
+        const isImageOnly = allowedTypes.length > 0 && allowedTypes.every((type) => type.indexOf('image') === 0);
+        if (declaredType && isImageOnly) {
+          const ok = await this._matchMagicBytes(file);
+          if (!ok) {
+            this._notice(componentText(componentLang(this.__kniuOptions), 'upload.mimeMismatch', { '1': file.name, '2': declaredType }), 'error');
+            continue;
+          }
+        }
+        valid.push(file);
+      }
       if (!this.hasAttribute('multiple')) {
         if (valid.length) {
           this._revokeUrls();
@@ -240,7 +292,6 @@ export function registerUpload(context) {
         const current = this._files[0];
         const nextValue = current instanceof File ? current.name : (typeof current === 'string' ? current : '');
         if (this._hintInput.value !== nextValue) this._hintInput.value = nextValue;
-        // 图片类型提示可选预览，非图片类型（如 .sql）提示请选择文件。
         this._hintInput.placeholder = String(this.__kniuOptions?.note ?? t(this._imageEnabled() ? 'upload.selectPreviewSingle' : 'upload.selectFileSingle'));
         const inputDisabled = this.hasAttribute('disabled');
         this._hintInput.disabled = inputDisabled;

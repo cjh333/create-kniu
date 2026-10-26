@@ -137,15 +137,20 @@ export function setup(setupFunction) {
         return entries;
       }, []))
     });
-    Object.defineProperty(model, '__kniuSubscribe', { enumerable: false, value: (callback) => {
-      if (!stateResult) return () => {};
-      const runner = effect(() => {
-        Object.keys(stateResult).forEach((key) => stateResult[key]);
-        callback();
-      });
-      return () => runner.stop();
-    } });
+    Object.defineProperty(model, '__kniuSubscribe', {
+      enumerable: false, value: (callback) => {
+        if (!stateResult) return () => { };
+        // 首次 run 只收集依赖不触发回调：控制器挂载时 render() 已完成，
+        // 若订阅注册立即触发 callback 会造成一次无意义的 refresh 重渲染。
+        let initialized = false;
+        const runner = effect(() => {
+          Object.keys(stateResult).forEach((key) => stateResult[key]);
+          if (initialized) callback();
+          initialized = true;
+        });
+        return () => runner.stop();
+      }
+    });
     return model;
   };
 }
-

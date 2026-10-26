@@ -3,7 +3,13 @@ export function createServiceWorkerPlugin(options = {}) {
     name: 'service-worker',
     async install() {
       if (options.enabled !== true || !('serviceWorker' in navigator)) return;
-      await navigator.serviceWorker.register(options.url || '/kniu-sw.js', { scope: options.scope || '/' });
+      const url = options.url || '/public/assets/kniu-sw.js';
+      const scope = options.scope || '/public/assets/';
+      const normalizedScope = scope.endsWith('/') ? scope : scope + '/';
+      const safeScope = url.startsWith(normalizedScope) || normalizedScope.startsWith(url.replace(/[^/]+$/, ''))
+        ? normalizedScope
+        : url.replace(/[^/]+$/, '');
+      await navigator.serviceWorker.register(url, { scope: safeScope });
     }
   };
 }

@@ -74,7 +74,9 @@ export function registerComment(context) {
         htmlParts.push('</div>');
         htmlParts.push('<div class="kniu_sys_comment_emoji_panel kniu_sys_dropdown_panel' + (this._showEmoji ? '' : ' kniu_sys_comment_hidden') + '">');
         emojis.forEach(function (emoji) {
-          htmlParts.push('<button type="button" class="kniu_sys_comment_emoji_item">' + emoji + '</button>');
+          // 表情也走 commentEscape：与 username/content 等用户数据同一转义口径，
+          // 防止 options.emojis 来源（后台可配置表情包）携带 HTML 注入。
+          htmlParts.push('<button type="button" class="kniu_sys_comment_emoji_item">' + commentEscape(emoji) + '</button>');
         });
         htmlParts.push('</div>');
         htmlParts.push('</div>');

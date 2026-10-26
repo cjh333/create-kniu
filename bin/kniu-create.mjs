@@ -62,7 +62,10 @@ if (!name || args.includes('--help') || args.includes('-h')) {
   await cp(resolve(coreSource, 'kniu-server.mjs'), resolve(destination, 'client', 'core', 'kniu-server.mjs'));
   if (port && template === 'kniu-project-spa') {
     const configPath = resolve(destination, 'kniu.config.js');
-    await writeFile(configPath, (await readFile(configPath, 'utf8')).replace(/port: 5173/, `port: ${Number(port)}`));
+    const currentConfig = await readFile(configPath, 'utf8');
+    const portMatch = currentConfig.match(/port:\s*(\d+)/);
+    const defaultPort = portMatch ? Number(portMatch[1]) : 6173;
+    await writeFile(configPath, currentConfig.replace(new RegExp(`port:\\s*${defaultPort}`), `port: ${Number(port)}`));
   }
   const packagePath = resolve(destination, 'package.json');
   try {

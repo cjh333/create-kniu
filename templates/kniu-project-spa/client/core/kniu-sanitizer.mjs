@@ -16,7 +16,7 @@ function escapeBannedTags(html) {
 }
 
 const URL_ATTRIBUTES = ['href', 'src', 'poster', 'xlink:href'];
-const SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|gif|webp|bmp)([;,]|$)/i;
+const SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|gif|webp|bmp|avif)([;,]|$)/i;
 const ALLOWED_TAGS = new Set([
   'a', 'abbr', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'figcaption',
   'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p',

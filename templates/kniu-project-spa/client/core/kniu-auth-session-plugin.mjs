@@ -15,7 +15,9 @@ export function createAuthSessionPlugin(options = {}) {
           .catch(() => { auth.markLoggedOut(); })
         : Promise.resolve();
       request.useResponseInterceptor(async (result) => {
-        if (result.status === 401 || result.status === 403) {
+        const bodyCode = result?.data && typeof result.data === 'object' ? result.data.code : result?.data?.status;
+        const authExpired = bodyCode === 'AUTH_EXPIRED' || bodyCode === 'AUTH_INVALID' || bodyCode === 1001 || bodyCode === 4001;
+        if (result.status === 401 || (result.status === 403 && authExpired)) {
           auth.markLoggedOut();
           identity.clearIdentity();
         }

@@ -241,8 +241,6 @@ export function registerEditor(context) {
       });
 
       this._editor.addEventListener('input', function () {
-        // 输入热路径只做轻活（B3-m2）：危险标签转码与表格规范化移到插入路径
-        //（_afterContentInsert）/blur/setValue；行号 rAF 合批，同帧多次输入只测一次。
         self._lineContentVersion = (self._lineContentVersion || 0) + 1;
         self.removeAttribute('data-invalid');
         self._scheduleLineNumbers();
@@ -262,8 +260,6 @@ export function registerEditor(context) {
           self._insertSafeRichText(text);
           return;
         }
-        // text/html 富文本粘贴走浏览器原生插入（内容在事件后进入 DOM），
-        // 异步补一次危险标签黑名单扫描——防线从每键 input 收敛到插入路径（B3-m2）。
         if (clipboard && clipboard.types && Array.prototype.indexOf.call(clipboard.types, 'text/html') >= 0) {
           setTimeout(function () {
             self._afterContentInsert();
@@ -323,7 +319,6 @@ export function registerEditor(context) {
       this._scheduleSourceLineNumbers();
       if (!this._lineNumberResizeObserver && typeof ResizeObserver !== 'undefined') {
         this._lineNumberResizeObserver = new ResizeObserver(function () {
-          // 尺寸变化不会改变内容版本；必须绕过内容缓存，重新按可视高度补足空行号。
           this._scheduleLineNumbers(true);
         }.bind(this));
         this._lineNumberResizeObserver.observe(this._editor);
@@ -714,8 +709,6 @@ export function registerEditor(context) {
       this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
     }
 
-    // 状态栏字数/行列合拍（B3-S1）：input/keyup 打字态 150ms 防抖收敛，
-    // 避免每键 3 次全文扫描；click/select（光标移动）保持同步反馈。
     _scheduleStatusUpdate() {
       var self = this;
       if (this._statusDebounce) clearTimeout(this._statusDebounce);
@@ -725,8 +718,6 @@ export function registerEditor(context) {
       }, 150);
     }
 
-    // 行号 rAF 合批（B-M2）：同帧多次输入/resize 只测量一次；
-    // 缓存 key 为内容版本号（_lineNumbersKey），滚动/焦点路径 key 未变时零测量。
     _scheduleLineNumbers(force) {
       this._lineNumberForce = this._lineNumberForce || Boolean(force);
       if (typeof globalThis.requestAnimationFrame !== 'function') {
@@ -745,8 +736,6 @@ export function registerEditor(context) {
       });
     }
 
-    // 内容插入后的纵深收口（B3-m2）：危险标签黑名单转码 + 新表规范化，
-    // 只在插入路径（paste/插入命令/setValue/blur）执行，不挂每键 input。
     _afterContentInsert() {
       this._escapeParsedRichTextNodes();
       this._syncEditorTables();
@@ -794,7 +783,6 @@ export function registerEditor(context) {
       ta.scrollTop = scrollRange > 0 ? Math.round(ratio * scrollRange) : 0;
     }
 
-    // markdown 预览合批：150ms 防抖收敛连击，rAF 边界渲染同帧只画一次（B2-M1）。
     _scheduleMarkdownPreview() {
       if (typeof globalThis.requestAnimationFrame !== 'function') {
         this._renderMarkdownPreview();
@@ -913,32 +901,41 @@ export function registerEditor(context) {
     }
     _insertSafeRichText(text) {
       var html = sanitizeRichHtml(text);
-      var inserted = false;
       this._editor.focus();
-      if (typeof document.execCommand === 'function') {
-        inserted = document.execCommand('insertHTML', false, html);
-      }
-      if (!inserted) {
-        var selection = document.getSelection();
-        if (!selection || !selection.rangeCount) return;
-        var range = selection.getRangeAt(0);
-        var template = document.createElement('template');
-        template.innerHTML = html;
-        var lastNode = template.content.lastChild;
-        range.deleteContents();
-        range.insertNode(template.content);
-        if (lastNode) {
-          range.setStartAfter(lastNode);
-          range.collapse(true);
-          selection.removeAllRanges();
-          selection.addRange(range);
-        }
-      }
-      // 插入路径收口（B3-m2）：危险标签转码 + 表格规范化只在此执行，不挂每键 input。
+      this._execInsertHtml(html);
       this._afterContentInsert();
       this._lineContentVersion = (this._lineContentVersion || 0) + 1;
       this._scheduleLineNumbers();
       this._editor.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    _execInsertHtml(html) {
+      if (typeof document.execCommand === 'function' && document.execCommand('insertHTML', false, html)) return true;
+      var selection = documentRef.getSelection();
+      if (!selection || !selection.rangeCount) return false;
+      var range = selection.getRangeAt(0);
+      var template = documentRef.createElement('template');
+      template.innerHTML = html;
+      var lastNode = template.content.lastChild;
+      range.deleteContents();
+      range.insertNode(template.content);
+      if (lastNode) { range.setStartAfter(lastNode); range.collapse(true); }
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
+    }
+    _execInsertText(text) {
+      if (typeof document.execCommand === 'function' && document.execCommand('insertText', false, text)) return true;
+      var selection = documentRef.getSelection();
+      if (!selection || !selection.rangeCount) return false;
+      var range = selection.getRangeAt(0);
+      range.deleteContents();
+      var node = documentRef.createTextNode(text);
+      range.insertNode(node);
+      range.setStartAfter(node);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
     }
     _escapeParsedRichTextNodes() {
       var nodes = this._editor.querySelectorAll('script,iframe,object,embed,link,meta,style,base,form');
@@ -952,9 +949,6 @@ export function registerEditor(context) {
     }
     _lineNumbersKey() {
       var sourceMode = this._codeMode || this._markdownMode;
-      // 缓存 key 用内容版本号（B-M2）：不含 scrollHeight/clientHeight 强制布局读，
-      // 折行/块结构变化由输入路径递增版本号驱动，滚动/焦点路径 key 未变即零测量；
-      // 编辑器尺寸变化由 ResizeObserver 合批重测兜底。
       return (sourceMode ? 'src:' : 'rich:') + (this._lineContentVersion || 0);
     }
     _updateLineNumbers(force) {
@@ -1033,9 +1027,6 @@ export function registerEditor(context) {
       var rows = this._measureEditorRows(input, metrics.lineHeight, metrics.paddingTop);
       if (!rows.length) rows.push(0);
       var contentHeight = Math.max(0, input.scrollHeight - metrics.paddingTop - metrics.paddingBottom);
-      // 空编辑器 contentHeight≈0 时 total 必须兜底到可视区高度：否则 while 扩展被
-      // 单行高卡住，行号只剩「1」、行号栏不铺满编辑区（源码模式有 visibleRows 兜底
-      // 故无此问题，仅富文本空内容分支触发）。
       var viewportHeight = Math.max(0, input.clientHeight - metrics.paddingTop - metrics.paddingBottom);
       var total = Math.max(rows[rows.length - 1] + metrics.lineHeight, contentHeight, viewportHeight);
       var visibleRows = Math.max(1, Math.ceil(Math.max(0,
@@ -1246,7 +1237,6 @@ export function registerEditor(context) {
         this.removeAttribute('data-maximized');
       }
       this._syncMaximizeIcon();
-      // 最大化让位全屏（清 inline maxHeight），还原时恢复动态上限。
       this._applyMaxHeight();
       if (!this._codeMode) this._editor.focus(); else this._source.focus();
     }
@@ -2346,11 +2336,15 @@ export function registerEditor(context) {
       this._editor.focus();
       if (this._linkRange && this._linkRange.toString()) {
         documentRef.execCommand('createLink', false, url);
+        this._editor.querySelectorAll('a[href]:not([rel])').forEach(function (anchor) {
+          anchor.setAttribute('rel', 'noopener noreferrer');
+        });
       } else {
         var a = documentRef.createElement('a');
         a.href = url;
+        a.rel = 'noopener noreferrer';
         a.textContent = textInput && textInput.value.trim() ? textInput.value.trim() : '链接';
-        documentRef.execCommand('insertHTML', false, a.outerHTML);
+        this._execInsertHtml(a.outerHTML);
       }
       this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
       this._syncToolbarState();
@@ -2368,19 +2362,17 @@ export function registerEditor(context) {
       }
       html += '</tbody></table></div><p><br></p>';
       this._editor.focus();
-      documentRef.execCommand('insertHTML', false, html);
+      this._execInsertHtml(html);
       this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
       this._syncToolbarState();
     }
 
     _insertEmoji(ch) {
       this._editor.focus();
-      documentRef.execCommand('insertText', false, ch);
+      this._execInsertText(ch);
       this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
     }
 
-    // 工具栏按钮引用惰性缓存（B2-S1）：断连（工具栏重建）后自动重查，
-    // 常态下 _syncToolbarState 的十余次 querySelector 降为 Map 读取。
     _toolbarBtn(selector) {
       if (!this.__btnCache) this.__btnCache = new Map();
       var btn = this.__btnCache.get(selector);

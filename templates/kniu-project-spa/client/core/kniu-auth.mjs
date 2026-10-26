@@ -11,7 +11,15 @@ function createAuth({ identity, storageKey = 'KNIU_AUTH' } = {}) {
     getUser: () => user,
     setUser(nextUser) { user = nextUser && typeof nextUser === 'object' ? { ...nextUser } : null; persist(); notify(); return user; },
     markLoggedOut() { user = null; clear(); notify(); },
-    restore() { try { user = JSON.parse(sessionStorage.getItem(storageKey) || 'null'); } catch { user = null; } notify(); return user; },
+    restore() {
+      // 与 setUser 的校验口径一致：仅接受对象，防止存储被污染为非对象时产生伪登录态。
+      try {
+        const stored = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
+        user = stored && typeof stored === 'object' ? stored : null;
+      } catch { user = null; }
+      notify();
+      return user;
+    },
     logout() { this.markLoggedOut(); identity.clearIdentity(); },
     can(permission) { const permissions = user?.permissions || user?.permissionCodes || []; return Array.isArray(permissions) && permissions.includes(permission); },
     hasRole(role) { const roles = user?.roles || [user?.role].filter(Boolean); return Array.isArray(roles) && roles.includes(role); },

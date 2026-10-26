@@ -26,10 +26,18 @@ function loadProductionManifest() {
   if (componentManifestPromise) return componentManifestPromise;
   const url = document.querySelector('meta[name="kniu-component-manifest"]')?.content;
   if (!url) return Promise.reject(new Error('[kniu] 组件 manifest 地址未配置。'));
-  componentManifestPromise = fetch(url, { credentials: 'same-origin' }).then((response) => {
-    if (!response.ok) throw new Error('[kniu] 无法读取组件 manifest。');
-    return response.json();
-  });
+  componentManifestPromise = fetch(url, { credentials: 'same-origin' })
+    .then((response) => {
+      if (!response.ok) {
+        console.warn(`[kniu] 组件 manifest 读取失败（HTTP ${response.status}）：${url}；请确认 dist 已部署且 /public/assets 路径可达。`);
+        throw new Error(`[kniu] 无法读取组件 manifest（HTTP ${response.status}）：${url}`);
+      }
+      return response.json();
+    })
+    .catch((error) => {
+      console.warn(`[kniu] 组件 manifest 加载失败：${url}`, error);
+      throw error;
+    });
   return componentManifestPromise;
 }
 

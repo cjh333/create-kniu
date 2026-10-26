@@ -251,8 +251,9 @@ export async function load(root = document) {
   registry.forEach(([tag]) => {
     if (tags.has(tag)) register(tag);
   });
+  const isWellFormedTag = (t) => /^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(t);
   const customTags = [...tags].filter((tag) => (
-    tag.includes('-') && !tag.startsWith('kniu-') && !customElements.get(tag)
+    tag.includes('-') && !tag.startsWith('kniu-') && !customElements.get(tag) && isWellFormedTag(tag)
   ));
   await Promise.all(customTags.map((tag) => import(`../custom/${tag}/${tag}.mjs`)));
   customTags.forEach((tag) => {

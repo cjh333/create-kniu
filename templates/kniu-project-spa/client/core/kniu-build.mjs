@@ -948,7 +948,10 @@ if (isMain) {
   const siteUrl = String(PROJECT_CONFIG.seo?.siteUrl || '').replace(/\/$/, '');
   const seoRoutes = Array.isArray(PROJECT_CONFIG.seo?.routes) ? PROJECT_CONFIG.seo.routes : ['/'];
   if (siteUrl) {
-    const sitemap = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${seoRoutes.map((route) => `<url><loc>${siteUrl}${route === '/' ? '/' : `#${route}`}</loc></url>`).join('')}</urlset>`;
+    // siteUrl 与 route 进入 XML 文本节点，必须转义 & < > " '，否则非法字符破坏 sitemap 结构。
+    const escapeXmlText = (value) => String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[char]));
+    const escapeUrl = (value) => escapeXmlText(value).replace(/\s+/g, '%20');
+    const sitemap = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${seoRoutes.map((route) => `<url><loc>${escapeUrl(siteUrl)}${route === '/' ? '/' : `#${escapeXmlText(route)}`}</loc></url>`).join('')}</urlset>`;
     await writeFile(join(generatedAssetsDirectory, 'sitemap.xml'), sitemap);
   }
   await writeFile(join(generatedAssetsDirectory, 'robots.txt'), `User-agent: *\nAllow: /\n${siteUrl ? `Sitemap: ${siteUrl}/public/assets/sitemap.xml\n` : ''}`);
@@ -1014,8 +1017,10 @@ if (isMain) {
     `<script src="${outputTemplateUrl}/${clientFileName}"></script>`;
   await writeFile(
     outputIndex,
+    // 生产入口替换：匹配 src 以 /client/client. 开头的任意 script 标签，不强求 type="module"，
+    // 避免用户改了入口文件名后替换失效。
     minifyHtml(indexHtml
-      .replace(/<script\b(?=[^>]*\btype=["']module["'])(?=[^>]*\bsrc=["']\/?client\/client\.(?:js|mjs)["'])[^>]*>\s*<\/script>/i, productionScripts)),
+      .replace(/<script\b(?=[^>]*\bsrc=["']\/?client\/client\.(?:js|mjs)["'])[^>]*>\s*<\/script>/i, productionScripts)),
   );
   const securityHeaders = [
     '# 将此内容合并到 Nginx 的 server/location 配置中。',

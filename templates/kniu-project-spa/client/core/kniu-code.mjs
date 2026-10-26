@@ -41,17 +41,46 @@ function escapeHtml(value) {
   })[character]);
 }
 
-function inlineMarkdown(value) {
-  return escapeHtml(value)
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)]\(([^)]+)\)/g, (_, label, href) => (
-      `<a href="${isDangerousUrl(href) ? '#' : escapeHtml(href)}" rel="noopener noreferrer">${label}</a>`
-    ));
+function replaceMarkdownLinks(escaped) {
+  let out = '';
+  let cursor = 0;
+  while (cursor < escaped.length) {
+    const labelStart = escaped.indexOf('[', cursor);
+    if (labelStart === -1) { out += escaped.slice(cursor); break; }
+    out += escaped.slice(cursor, labelStart);
+    const labelEnd = escaped.indexOf(']', labelStart + 1);
+    if (labelEnd === -1) { out += escaped.slice(labelStart); break; }
+    let afterLabel = labelEnd + 1;
+    while (afterLabel < escaped.length && escaped[afterLabel] === ' ') afterLabel += 1;
+    if (escaped[afterLabel] !== '(') {
+      out += escaped.slice(labelStart, afterLabel);
+      cursor = afterLabel;
+      continue;
+    }
+    let depth = 1;
+    let hrefEnd = -1;
+    for (let i = afterLabel + 1; i < escaped.length; i += 1) {
+      const ch = escaped[i];
+      if (ch === '\\' && i + 1 < escaped.length) { i += 1; continue; }
+      if (ch === '(') depth += 1;
+      else if (ch === ')') { depth -= 1; if (depth === 0) { hrefEnd = i; break; } }
+    }
+    if (hrefEnd === -1) { out += escaped.slice(labelStart); break; }
+    const label = escaped.slice(labelStart + 1, labelEnd);
+    const href = escaped.slice(afterLabel + 1, hrefEnd).trim();
+    out += `<a href="${isDangerousUrl(href) ? '#' : escapeHtml(href)}" rel="noopener noreferrer">${label}</a>`;
+    cursor = hrefEnd + 1;
+  }
+  return out;
 }
 
-/** Render the subset of Markdown required by the built-in editor without external dependencies. */
+function inlineMarkdown(value) {
+  return replaceMarkdownLinks(escapeHtml(value)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>'));
+}
+
 export function renderMarkdownArticle(value, documentRef = globalThis.document) {
   const source = String(value ?? '').replace(/\r\n?/g, '\n');
   const html = source.split(/\n{2,}/).map((block) => {
