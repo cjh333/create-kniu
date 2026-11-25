@@ -1,9 +1,7 @@
-const EMPTY_IDENTITY = Object.freeze({ token: '', name: '', nickname: '', avatar: '', account: false });
+const EMPTY_IDENTITY = Object.freeze({ token: '', name: '', nickname: '', avatar: '', email: '', id: 0, account: false });
 
 function createIdentity(options = {}) {
-  const storageKey = String(options.storageKey || 'KNIU_IDENTITY');
-  // Session storage is the secure default. Persistent storage must be an
-  // explicit product decision because an XSS can read either browser store.
+  const storageKey = String(options.storageKey || 'KNIU_CLI_IDENTITY');
   const storage = options.persist === true ? globalThis.localStorage : globalThis.sessionStorage;
   let value = { ...EMPTY_IDENTITY };
   const listeners = new Set();
@@ -16,16 +14,18 @@ function createIdentity(options = {}) {
     return { ...value };
   };
   const write = () => {
-    try { storage?.setItem(storageKey, JSON.stringify(value)); } catch { /* Storage can be unavailable. */ }
+    try { storage?.setItem(storageKey, JSON.stringify(value)); } catch { }
     globalThis.dispatchEvent?.(new CustomEvent('kniu-identity-change', { detail: { ...value } }));
     notify();
   };
   read();
+  const isLoggedIn = () => Boolean(value.account || Number(value.id || 0) > 0 || (value.token && String(value.token).trim() !== ''));
   return Object.freeze({
     getIdentity: () => ({ ...value }),
     setIdentity(next = {}) { value = { ...EMPTY_IDENTITY, ...next }; write(); return { ...value }; },
-    clearIdentity() { value = { ...EMPTY_IDENTITY }; try { storage?.removeItem(storageKey); } catch {} write(); },
-    hasAccount: () => Boolean(value.account || value.nickname || value.token),
+    clearIdentity() { value = { ...EMPTY_IDENTITY }; try { storage?.removeItem(storageKey); } catch { } write(); },
+    isLoggedIn,
+    hasAccount: isLoggedIn,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }
   });
 }

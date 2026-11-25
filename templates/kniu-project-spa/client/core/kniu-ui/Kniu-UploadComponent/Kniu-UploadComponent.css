@@ -1,0 +1,388 @@
+:host {
+  display: block;
+  width: 100%;
+  font: 14px/1.5 var(--kniu-font-family);
+  color: var(--kniu-text-color, #606266);
+}
+
+:host([disabled]) {
+  background-color: transparent !important;
+}
+
+.kniu_sys_upload_bar {
+  display: flex;
+  display: -webkit-flex;
+  align-items: stretch;
+  -webkit-align-items: stretch;
+  -moz-align-items: stretch;
+  -ms-align-items: stretch;
+  -o-align-items: stretch;
+  width: 100%;
+  min-height: max(28px, calc(40 / var(--kniu_vw)));
+}
+
+.kniu_sys_upload_hint {
+  display: flex;
+  display: -webkit-flex;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex: 1;
+  -webkit-flex: 1;
+  -moz-flex: 1;
+  -ms-flex: 1;
+  -o-flex: 1;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-right: 0;
+  outline: 0;
+  padding: 0 12px;
+  min-width: 0;
+  font: inherit;
+  background-color: var(--kniu-fill-color, #f5f7fa);
+  color: #c0c4cc;
+}
+
+:host(:not([multiple])) .kniu_sys_upload_hint {
+  display: none;
+}
+
+:host(:not([multiple])) .kniu_sys_upload_hint_wrap {
+  display: flex;
+  display: -webkit-flex;
+}
+
+:host([multiple]) .kniu_sys_upload_hint {
+  display: flex;
+  display: -webkit-flex;
+}
+
+:host([multiple]) .kniu_sys_upload_hint_wrap {
+  display: none;
+}
+
+.kniu_sys_upload_hint_wrap {
+  position: relative;
+  display: flex;
+  display: -webkit-flex;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex: 1;
+  -webkit-flex: 1;
+  -moz-flex: 1;
+  -ms-flex: 1;
+  -o-flex: 1;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-right: 0;
+  outline: 0;
+  min-width: 0;
+  background-color: #fff;
+  font: inherit;
+}
+
+.kniu_sys_upload_hint_wrap:focus-within {
+  border-color: var(--kniu-color-primary, #409eff);
+}
+
+.kniu_sys_upload_hint_input {
+  flex: 1;
+  -webkit-flex: 1;
+  -moz-flex: 1;
+  -ms-flex: 1;
+  -o-flex: 1;
+  border: 0;
+  outline: 0;
+  padding: 0 32px 0 12px;
+  min-width: 0;
+  height: 100%;
+  font: inherit;
+  text-overflow: ellipsis;
+  background-color: transparent;
+  color: #303133;
+}
+
+.kniu_sys_upload_hint_input:disabled {
+  background-color: var(--kniu-fill-color, #f5f7fa);
+  color: #c0c4cc;
+  cursor: not-allowed;
+}
+
+.kniu_sys_upload_hint_clear {
+  z-index: 2;
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  visibility: hidden;
+  border: 0;
+  outline: 0;
+  width: 32px;
+  height: 100%;
+  font-size: 16px;
+  text-align: center;
+  background-color: transparent;
+  color: #c0c4cc;
+  opacity: 0;
+  cursor: pointer;
+  pointer-events: none;
+}
+
+.kniu_sys_upload_hint_wrap[data-clear-visible="true"] .kniu_sys_upload_hint_clear {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.kniu_sys_upload_hint_clear:hover,
+.kniu_sys_upload_hint_clear:focus {
+  color: var(--kniu-color-primary, #409eff);
+}
+
+.kniu_sys_upload_hint_clear[aria-disabled="true"] {
+  color: var(--kniu-border-color, #dcdfe6);
+  cursor: not-allowed;
+}
+
+.kniu_sys_upload_btn {
+  flex: none;
+  -webkit-flex: none;
+  -moz-flex: none;
+  -ms-flex: none;
+  -o-flex: none;
+  border: 1px solid var(--kniu-color-primary, #409eff);
+  border-radius: 0 4px 4px 0;
+  -webkit-border-radius: 0 4px 4px 0;
+  -moz-border-radius: 0 4px 4px 0;
+  -ms-border-radius: 0 4px 4px 0;
+  -o-border-radius: 0 4px 4px 0;
+  padding: 0 20px;
+  font: inherit;
+  background-color: var(--kniu-color-primary, #409eff);
+  color: #fff;
+  cursor: pointer;
+}
+
+.kniu_sys_upload_btn:hover {
+  border-color: #66b1ff;
+  background-color: #66b1ff;
+}
+
+.kniu_sys_upload_btn:focus-visible {
+  outline: 2px solid rgba(64, 158, 255, .35);
+  outline-offset: 2px;
+}
+
+.kniu_sys_upload_btn:disabled {
+  border-color: #a0cfff;
+  background-color: #a0cfff;
+  cursor: not-allowed;
+}
+
+.kniu_sys_upload_input {
+  overflow: hidden;
+  position: absolute;
+  clip: rect(0 0 0 0);
+  width: 1px;
+  height: 1px;
+  white-space: nowrap;
+}
+
+.kniu_sys_upload_wall {
+  display: flex;
+  display: -webkit-flex;
+  flex-wrap: wrap;
+  -webkit-flex-wrap: wrap;
+  -moz-flex-wrap: wrap;
+  -ms-flex-wrap: wrap;
+  -o-flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.kniu_sys_upload_wall[hidden] {
+  display: none;
+}
+
+.kniu_sys_upload_files {
+  display: flex;
+  display: -webkit-flex;
+  flex-direction: column;
+  -webkit-flex-direction: column;
+  -moz-flex-direction: column;
+  -ms-flex-direction: column;
+  -o-flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.kniu_sys_upload_files[hidden] {
+  display: none;
+}
+
+.kniu_sys_upload_file_row {
+  display: flex;
+  display: -webkit-flex;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-radius: 4px;
+  -webkit-border-radius: 4px;
+  -moz-border-radius: 4px;
+  -ms-border-radius: 4px;
+  -o-border-radius: 4px;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  font-size: 13px;
+  background-color: var(--kniu-fill-color, #f5f7fa);
+}
+
+.kniu_sys_upload_file_name {
+  overflow: hidden;
+  flex: 1;
+  -webkit-flex: 1;
+  -moz-flex: 1;
+  -ms-flex: 1;
+  -o-flex: 1;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--kniu-text-color, #606266);
+}
+
+.kniu_sys_upload_file_remove {
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex: none;
+  -webkit-flex: none;
+  -moz-flex: none;
+  -ms-flex: none;
+  -o-flex: none;
+  border: 0;
+  border-radius: 50%;
+  -webkit-border-radius: 50%;
+  -moz-border-radius: 50%;
+  -ms-border-radius: 50%;
+  -o-border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  font: 18px/1 var(--kniu-font-family);
+  background-color: transparent;
+  color: #c0c4cc;
+  cursor: pointer;
+}
+
+.kniu_sys_upload_file_remove:hover:not(:disabled) {
+  background-color: var(--kniu-color-danger, #f56c6c);
+  color: #fff;
+}
+
+.kniu_sys_upload_file_remove:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.kniu_sys_upload_item {
+  overflow: hidden;
+  position: relative;
+  width: 160px;
+  height: 160px;
+  background-color: var(--kniu-fill-color, #f5f7fa);
+}
+
+.kniu_sys_upload_image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.kniu_sys_upload_remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  border: 0;
+  border-radius: 50%;
+  -webkit-border-radius: 50%;
+  -moz-border-radius: 50%;
+  -ms-border-radius: 50%;
+  -o-border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  font: 18px / 1 var(--kniu-font-family);
+  background-color: #aab4c4;
+  color: #fff;
+  cursor: pointer;
+}
+
+.kniu_sys_upload_remove:hover {
+  background-color: var(--kniu-color-danger, #f56c6c);
+}
+
+.kniu_sys_upload_empty {
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex-direction: column;
+  -webkit-flex-direction: column;
+  -moz-flex-direction: column;
+  -ms-flex-direction: column;
+  -o-flex-direction: column;
+  gap: 12px;
+  font-size: 18px;
+  background-image: linear-gradient(135deg, #f7f9fc, #f1f4fa);
+  color: #c0c4cc;
+}
+
+.kniu_sys_upload_empty Kniu-Icon {
+  width: 38px;
+  height: 38px;
+}

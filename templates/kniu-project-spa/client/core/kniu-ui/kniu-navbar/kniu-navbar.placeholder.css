@@ -1,9 +1,0 @@
-@charset "UTF-8";
-
-.kniu_sys_head_placeholder {
-  z-index: -999;
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%
-}

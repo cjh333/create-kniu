@@ -50,10 +50,11 @@ function createObservability(options = {}) {
     send,
     install() {
       if (!enabled) return;
-      // 幂等守卫：install 多次调用只注册一次，避免同一错误重复上报。
       if (installed) return;
       installed = true;
-      addEventListener('error', (event) => send('error', normalizeError(event.error || event.message)));
+      addEventListener('error', (event) => {
+        if (event instanceof ErrorEvent) send('error', normalizeError(event.error || event.message));
+      });
       addEventListener('unhandledrejection', (event) => send('unhandledrejection', normalizeError(event.reason)));
       if (typeof PerformanceObserver !== 'function') return;
       const rateVital = (entry) => {

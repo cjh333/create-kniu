@@ -1,0 +1,44 @@
+.kniu_sys_input_tip {
+  z-index: 10030;
+  position: fixed;
+  display: none;
+  border: 1px solid var(--kniu-border-color-light, #e4e7ed);
+  border-radius: 4px;
+  -webkit-border-radius: 4px;
+  -moz-border-radius: 4px;
+  -ms-border-radius: 4px;
+  -o-border-radius: 4px;
+  padding: 8px 0;
+  min-width: 200px;
+  max-width: calc(100vw - 16px);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: left;
+  white-space: normal;
+  background-color: #fff;
+  color: var(--kniu-text-color, #606266);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .1);
+  -webkit-box-shadow: 0 2px 12px rgba(0, 0, 0, .1);
+  -moz-box-shadow: 0 2px 12px rgba(0, 0, 0, .1);
+  -ms-box-shadow: 0 2px 12px rgba(0, 0, 0, .1);
+  -o-box-shadow: 0 2px 12px rgba(0, 0, 0, .1);
+}
+
+.kniu_sys_input_tip[data-open="true"] {
+  display: block;
+}
+
+.kniu_sys_input_tip ul {
+  padding: 0;
+  list-style: none;
+}
+
+.kniu_sys_input_tip li {
+  padding: 4px 14px;
+}
+
+.kniu_sys_input_tip--single {
+  padding: 8px 14px;
+  white-space: pre-line;
+  color: var(--kniu-color-info, #909399);
+}

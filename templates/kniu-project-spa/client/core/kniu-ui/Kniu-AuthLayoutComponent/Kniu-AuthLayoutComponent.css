@@ -1,0 +1,155 @@
+:host {
+  display: block;
+  width: 100%;
+  min-height: 100vh;
+}
+
+.kniu_sys_auth_layout {
+  overflow: auto;
+  position: fixed;
+  inset: 0;
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: flex-start;
+  -webkit-align-items: flex-start;
+  -moz-align-items: flex-start;
+  -ms-align-items: flex-start;
+  -o-align-items: flex-start;
+  padding: 24px 0;
+  background-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.kniu_sys_auth_layout::before,
+.kniu_sys_auth_layout::after {
+  content: "";
+  position: fixed;
+  border-radius: 50%;
+  -webkit-border-radius: 50%;
+  -moz-border-radius: 50%;
+  -ms-border-radius: 50%;
+  -o-border-radius: 50%;
+  pointer-events: none;
+}
+
+.kniu_sys_auth_layout::before {
+  top: -18%;
+  right: -8%;
+  width: 520px;
+  height: 520px;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, .18), transparent 70%);
+}
+
+.kniu_sys_auth_layout::after {
+  bottom: -16%;
+  left: -10%;
+  width: 460px;
+  height: 460px;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, .12), transparent 70%);
+}
+
+.kniu_sys_auth_card {
+  z-index: 1;
+  overflow: hidden;
+  border-radius: 12px;
+  -webkit-border-radius: 12px;
+  -moz-border-radius: 12px;
+  -ms-border-radius: 12px;
+  -o-border-radius: 12px;
+  margin: auto;
+  width: 400px;
+  max-width: 92vw;
+  background-color: #fff;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+  -webkit-box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+  -moz-box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+  -ms-box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+  -o-box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+}
+
+.kniu_sys_auth_header {
+  padding: 32px 24px 0;
+  text-align: center;
+}
+
+.kniu_sys_auth_brand {
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.kniu_sys_auth_mark {
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  border-radius: 8px;
+  -webkit-border-radius: 8px;
+  -moz-border-radius: 8px;
+  -ms-border-radius: 8px;
+  -o-border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  font-size: 20px;
+  font-weight: 700;
+  background-color: #23262e;
+  color: #fff;
+}
+
+.kniu_sys_auth_name {
+  font-size: 22px;
+  font-weight: 700;
+  color: #23262e;
+}
+
+.kniu_sys_auth_name strong {
+  color: #667eea;
+}
+
+.kniu_sys_auth_subtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #999;
+}
+
+.kniu_sys_auth_body {
+  padding: 20px 24px 28px;
+}
+
+.kniu_sys_auth_footer {
+  padding: 0 40px 26px;
+  font-size: 12px;
+  text-align: center;
+  color: #bbb;
+}
+
+@media (min-width: 481px) {
+  .kniu_sys_auth_header,
+  .kniu_sys_auth_body {
+    padding-right: 40px;
+    padding-left: 40px;
+  }
+}

@@ -1,4 +1,4 @@
-import { setup } from '../../core/kniu-mvvm.mjs';
+import { setup } from '../../core/Kniu-MVVM.mjs';
 
 export default setup(({ reactive, computed, watch, onMounted, context }) => {
   const state = reactive({

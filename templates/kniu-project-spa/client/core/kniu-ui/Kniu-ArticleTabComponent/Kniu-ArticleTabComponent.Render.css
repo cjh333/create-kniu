@@ -1,0 +1,39 @@
+:host {
+  display: block;
+  font: 14px / 1.7 var(--kniu-font-family);
+  color: #4b5563;
+}
+
+.kniu_sys_article_tab_tabs {
+  display: flex;
+  display: -webkit-flex;
+  flex-direction: column;
+  -webkit-flex-direction: column;
+  -moz-flex-direction: column;
+  -ms-flex-direction: column;
+  -o-flex-direction: column;
+  gap: 6px;
+  margin: 20px 0;
+}
+
+.kniu_sys_article_tab_item {
+  display: block;
+  border: none;
+  width: max-content;
+  max-width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background-color: transparent;
+  color: inherit;
+}
+
+.kniu_sys_article_tab_item:hover,
+.kniu_sys_article_tab_item:focus-visible {
+  color: var(--kniu-color-primary, #409eff);
+  outline: 0;
+}
+
+.kniu_sys_article_tab_title {
+  overflow-wrap: anywhere;
+}

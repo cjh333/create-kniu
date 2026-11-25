@@ -1,0 +1,155 @@
+:host {
+  display: block;
+}
+
+.kniu_sys_input_group {
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: var(--kniu-label-width, 80px) minmax(0, 1fr);
+  align-items: stretch;
+  -webkit-align-items: stretch;
+  -moz-align-items: stretch;
+  -ms-align-items: stretch;
+  -o-align-items: stretch;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-radius: var(--kniu-radius, 4px);
+  -webkit-border-radius: var(--kniu-radius, 4px);
+  -moz-border-radius: var(--kniu-radius, 4px);
+  -ms-border-radius: var(--kniu-radius, 4px);
+  -o-border-radius: var(--kniu-radius, 4px);
+  background-color: #fff;
+}
+
+.kniu_sys_input_label {
+  display: flex;
+  display: -webkit-flex;
+  justify-content: flex-end;
+  -webkit-justify-content: flex-end;
+  -moz-justify-content: flex-end;
+  -ms-justify-content: flex-end;
+  -o-justify-content: flex-end;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  border-right: 1px solid var(--kniu-border-color, #dcdfe6);
+  padding: 0 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: right;
+  min-height: var(--kniu-control-height, max(30px, calc(40 / var(--kniu_vw))));
+  background-color: var(--kniu-fill-color, #f5f7fa);
+  color: var(--kniu-text-color, #606266);
+}
+
+.kniu_sys_input_label[data-required="true"]::before {
+  content: "*";
+  margin-right: 4px;
+  color: var(--kniu-color-danger, #f56c6c);
+}
+
+.kniu_sys_input_content {
+  display: flex;
+  display: -webkit-flex;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  padding: 0 12px;
+  min-width: 0;
+  min-height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+  background-color: #fff;
+}
+
+.kniu_sys_input_group[data-position="left"] .kniu_sys_input_label {
+  justify-content: flex-start;
+  -webkit-justify-content: flex-start;
+  -moz-justify-content: flex-start;
+  -ms-justify-content: flex-start;
+  -o-justify-content: flex-start;
+}
+
+.kniu_sys_input_group[data-position="right"] .kniu_sys_input_label {
+  justify-content: flex-end;
+  -webkit-justify-content: flex-end;
+  -moz-justify-content: flex-end;
+  -ms-justify-content: flex-end;
+  -o-justify-content: flex-end;
+}
+
+:host([data-template-affix="true"]) .kniu_sys_input_label {
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  text-align: center;
+}
+
+.kniu_sys_input_group[data-position="top"] {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  -webkit-align-items: stretch;
+  -moz-align-items: stretch;
+  -ms-align-items: stretch;
+  -o-align-items: stretch;
+}
+
+.kniu_sys_input_group[data-position="top"] .kniu_sys_input_label {
+  display: block;
+  border-right: 0;
+  padding: 0 0 8px;
+  min-height: auto;
+  text-align: left;
+  background-color: transparent;
+}
+
+.kniu_sys_input_group[data-position="top"] .kniu_sys_input_content {
+  padding: 0;
+}
+
+.kniu_sys_input_group[data-contains-input="true"] {
+  overflow: visible;
+  border: none;
+  border-radius: 0;
+  -webkit-border-radius: 0;
+  -moz-border-radius: 0;
+  -ms-border-radius: 0;
+  -o-border-radius: 0;
+  background-color: transparent;
+}
+
+.kniu_sys_input_group[data-has-label="false"] {
+  overflow: visible;
+  grid-template-columns: minmax(0, 1fr);
+  border: none;
+  border-radius: 0;
+  -webkit-border-radius: 0;
+  -moz-border-radius: 0;
+  -ms-border-radius: 0;
+  -o-border-radius: 0;
+  background-color: transparent;
+}
+
+.kniu_sys_input_group[data-has-label="false"] .kniu_sys_input_label {
+  border-right: 0;
+  background-color: transparent;
+}
+
+.kniu_sys_input_group[data-contains-input="true"] .kniu_sys_input_content,
+.kniu_sys_input_group[data-has-label="false"] .kniu_sys_input_content {
+  padding: 0;
+  background-color: transparent;
+}
+
+.kniu_sys_input_group[data-contains-input="true"][data-has-label="true"] .kniu_sys_input_label {
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-right: 0;
+  border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -webkit-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -moz-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -ms-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -o-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+}

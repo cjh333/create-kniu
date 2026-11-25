@@ -1,0 +1,169 @@
+:host {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.kniu_sys_radio_group {
+  display: flex;
+  display: -webkit-flex;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex-wrap: wrap;
+  -webkit-flex-wrap: wrap;
+  -moz-flex-wrap: wrap;
+  -ms-flex-wrap: wrap;
+  -o-flex-wrap: wrap;
+  gap: 18px;
+  min-height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+}
+
+.kniu_sys_radio {
+  display: inline-flex;
+  display: -webkit-inline-flex;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  transform: translateY(-0.15em);
+  -webkit-transform: translateY(-0.15em);
+  -moz-transform: translateY(-0.15em);
+  -ms-transform: translateY(-0.15em);
+  -o-transform: translateY(-0.15em);
+  gap: 7px;
+  font: 14px / 1.5 var(--kniu-font-family);
+  color: var(--kniu-text-color, #606266);
+  cursor: pointer;
+}
+
+.kniu_sys_radio_control {
+  position: relative;
+  display: inline-flex;
+  display: -webkit-inline-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex: none;
+  -webkit-flex: none;
+  -moz-flex: none;
+  -ms-flex: none;
+  -o-flex: none;
+}
+
+.kniu_sys_radio_input {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  -ms-appearance: none;
+  -o-appearance: none;
+  position: relative;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-radius: 50%;
+  -webkit-border-radius: 50%;
+  -moz-border-radius: 50%;
+  -ms-border-radius: 50%;
+  -o-border-radius: 50%;
+  outline: none;
+  width: max(12px, calc(14 / var(--kniu_vw)));
+  height: max(12px, calc(14 / var(--kniu_vw)));
+  background-color: #fff;
+  cursor: pointer;
+  transition: border-color .2s, background-color .2s;
+  -webkit-transition: border-color .2s, background-color .2s;
+  -moz-transition: border-color .2s, background-color .2s;
+  -ms-transition: border-color .2s, background-color .2s;
+  -o-transition: border-color .2s, background-color .2s;
+}
+
+.kniu_sys_radio_dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  -webkit-transform: translate(-50%, -50%);
+  -moz-transform: translate(-50%, -50%);
+  -ms-transform: translate(-50%, -50%);
+  -o-transform: translate(-50%, -50%);
+  display: none;
+  border-radius: 50%;
+  -webkit-border-radius: 50%;
+  -moz-border-radius: 50%;
+  -ms-border-radius: 50%;
+  -o-border-radius: 50%;
+  width: max(5px, calc(5 / var(--kniu_vw)));
+  height: max(5px, calc(5 / var(--kniu_vw)));
+  background-color: #fff;
+  pointer-events: none;
+}
+
+.kniu_sys_radio_input:checked {
+  border-color: var(--kniu-color-primary, #409eff);
+  background-color: var(--kniu-color-primary, #409eff);
+}
+
+.kniu_sys_radio_input:checked~.kniu_sys_radio_dot {
+  display: block;
+}
+
+.kniu_sys_radio_input:focus-visible {
+  outline: 2px solid rgba(64, 158, 255, .3);
+  outline-offset: 2px;
+}
+
+.kniu_sys_radio:hover {
+  color: var(--kniu-color-primary, #409eff);
+}
+
+.kniu_sys_radio:hover .kniu_sys_radio_input {
+  border-color: var(--kniu-color-primary, #409eff);
+}
+
+.kniu_sys_radio[data-size="large"] .kniu_sys_radio_input {
+  width: max(12px, calc(16 / var(--kniu_vw)));
+  height: max(12px, calc(16 / var(--kniu_vw)));
+}
+
+.kniu_sys_radio[data-size="large"] .kniu_sys_radio_dot {
+  width: max(5px, calc(6 / var(--kniu_vw)));
+  height: max(5px, calc(6 / var(--kniu_vw)));
+}
+
+.kniu_sys_radio[data-size="small"] {
+  font-size: 12px;
+}
+
+.kniu_sys_radio[data-size="small"] .kniu_sys_radio_input {
+  width: max(12px, calc(12 / var(--kniu_vw)));
+  height: max(12px, calc(12 / var(--kniu_vw)));
+}
+
+.kniu_sys_radio[data-size="small"] .kniu_sys_radio_dot {
+  width: max(5px, calc(5 / var(--kniu_vw)));
+  height: max(5px, calc(5 / var(--kniu_vw)));
+}
+
+.kniu_sys_radio[data-disabled="true"] {
+  color: #c0c4cc;
+  cursor: not-allowed;
+}
+
+.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input {
+  border-color: var(--kniu-border-color, #dcdfe6);
+  background-color: var(--kniu-fill-color, #f5f7fa);
+  cursor: not-allowed;
+}
+
+.kniu_sys_radio[data-disabled="true"] .kniu_sys_radio_input:checked {
+  border-color: #a0cfff;
+  background-color: #a0cfff;
+}

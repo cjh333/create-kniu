@@ -32,7 +32,7 @@
   ],
   "scripts": {
     "create": "node bin/kniu-create.mjs",
-    "check": "node --check bin/kniu-create.mjs && node --check templates/kniu-project-spa/client/core/kniu-build.mjs && node --check templates/kniu-project-spa/client/core/kniu-code.mjs && node --check templates/kniu-project-spa/client/core/kniu-server.mjs && node --check templates/kniu-project-spa/client/core/kniu-auth-service.mjs && node --check templates/kniu-project-spa/client/core/kniu-identity.mjs && node --check templates/kniu-project-spa/client/core/kniu-auth.mjs && node --check templates/kniu-project-spa/client/core/kniu-auth-session-plugin.mjs && node --check templates/kniu-project-spa/client/core/kniu-request.mjs && node --check templates/kniu-project-spa/client/core/kniu-store.mjs && node --check templates/kniu-project-spa/client/core/kniu-components.mjs && node --check templates/kniu-project-spa/client/core/kniu-router.mjs && node --check templates/kniu-project-spa/client/core/kniu-template.mjs && node --check templates/kniu-project-spa/client/core/kniu-sanitizer.mjs && node --check templates/kniu-project-spa/client/core/kniu-ui-config.mjs && node --check templates/kniu-project-spa/client/core/kniu-theme.mjs && node --check templates/kniu-project-spa/client/core/kniu-observability.mjs && node --check templates/kniu-project-spa/client/core/kniu-service-worker.mjs && node --check templates/kniu-project-spa/client/core/kniu-service-worker.js && node --check templates/kniu-project-spa/client/core/kniu-a11y.mjs && node --check templates/kniu-project-spa/client/core/kniu-mvvm.mjs",
+    "check": "node test/check_syntax.mjs",
     "build:template": "npm run build --prefix templates/kniu-project-spa"
   },
   "devDependencies": {}

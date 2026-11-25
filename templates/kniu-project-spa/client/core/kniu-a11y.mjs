@@ -1,5 +1,6 @@
-export function auditAccessibility(root = document) {
+export function auditAccessibility(root = globalThis.document) {
   const issues = [];
+  if (!root) return issues;
   root.querySelectorAll('img:not([alt])').forEach((node) => issues.push({ rule: 'img-alt', node }));
   root.querySelectorAll('button:not([type])').forEach((node) => issues.push({ rule: 'button-type', node }));
   root.querySelectorAll('input,select,textarea').forEach((node) => {

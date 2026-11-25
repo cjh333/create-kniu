@@ -1,0 +1,13 @@
+.kniu_sys_input_append::slotted(Kniu-Btn),
+.kniu_sys_input_prepend::slotted(Kniu-Btn) {
+  align-self: stretch;
+  -webkit-align-self: stretch;
+  -moz-align-self: stretch;
+  -ms-align-self: stretch;
+  -o-align-self: stretch;
+  vertical-align: top;
+  margin-top: -1px;
+  margin-bottom: -1px;
+  min-height: 30px;
+  height: calc(100% + 2px);
+}

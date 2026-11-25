@@ -1,0 +1,38 @@
+<style>
+  .kniu_sys_user_login_feedback_form {
+    display: grid;
+    gap: 12px;
+    padding: 4px 2px;
+  }
+
+  .kniu_sys_user_login_feedback_footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+</style>
+<span slot="header"></span>
+<div class="kniu_sys_user_login_feedback_form" slot="default">
+  <kniu-form-cell>
+    <kniu-input name="title" maxlength="200" placeholder="请输入问题标题">
+      <span slot="prepend" label-width="80px">问题标题</span>
+    </kniu-input>
+  </kniu-form-cell>
+  <kniu-form-cell>
+    <kniu-input name="content" rows="5" maxlength="2000" placeholder="请输入问题简述" type="textarea">
+      <span slot="prepend" label-width="80px">问题简述</span>
+    </kniu-input>
+  </kniu-form-cell>
+  <kniu-form-cell>
+    <kniu-input name="images">
+      <span slot="prepend" label-width="80px">问题图片</span>
+      <span slot="append" label-width="80px">
+        <kniu-upload class="kniu_sys_fb_upload" multiple max-count="2" max-size="5" accept="image/*">选择图片</kniu-upload>
+      </span>
+    </kniu-input>
+  </kniu-form-cell>
+</div>
+<div class="kniu_sys_user_login_feedback_footer" slot="footer">
+  <kniu-btn class="kniu_sys_fb_cancel">取 消</kniu-btn>
+  <kniu-btn class="kniu_sys_fb_submit">提 交</kniu-btn>
+</div>

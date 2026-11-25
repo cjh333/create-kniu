@@ -1,0 +1,173 @@
+:host {
+  box-sizing: border-box;
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box;
+  -ms-box-sizing: border-box;
+  -o-box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 0;
+  width: 100%;
+  min-height: max(50px, calc(50 / var(--kniu_vw)));
+  font-size: var(--kniu-navbar-font-size);
+  font-family: var(--kniu-font-family);
+  color: #111827;
+}
+
+.kniu_sys_user_login_user {
+  position: relative;
+  display: inline-flex;
+  display: -webkit-inline-flex;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  padding: 0 16px 0 calc(16px + var(--kniu-navbar-level, 0) * 16px);
+  width: 100%;
+  white-space: nowrap;
+}
+
+.kniu_sys_user_login_trigger {
+  border: 0;
+  text-decoration: none;
+  font: inherit;
+  font-size: inherit;
+  background-color: transparent;
+  color: inherit;
+  display: inline-flex;
+  display: -webkit-inline-flex;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.kniu_sys_user_login_trigger:focus-visible {
+  outline: 2px solid rgba(64, 158, 255, .35);
+  outline-offset: 2px;
+}
+
+.kniu_sys_user_login_avatar {
+  overflow: hidden;
+  flex-shrink: 0;
+  display: block;
+  border-radius: 50%;
+  -webkit-border-radius: 50%;
+  -moz-border-radius: 50%;
+  -ms-border-radius: 50%;
+  -o-border-radius: 50%;
+  width: 30px;
+  height: 30px;
+}
+
+.kniu_sys_user_login_avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kniu_sys_user_login_arrow {
+  transform: rotate(45deg);
+  -webkit-transform: rotate(45deg);
+  -moz-transform: rotate(45deg);
+  -ms-transform: rotate(45deg);
+  -o-transform: rotate(45deg);
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  margin: 0 3px 3px 1px;
+  width: 5px;
+  height: 5px;
+  transition: transform .2s;
+  -webkit-transition: transform .2s;
+  -moz-transition: transform .2s;
+  -ms-transition: transform .2s;
+  -o-transition: transform .2s;
+}
+
+.kniu_sys_user_login_user[data-open="true"] .kniu_sys_user_login_arrow {
+  transform: rotate(225deg);
+  -webkit-transform: rotate(225deg);
+  -moz-transform: rotate(225deg);
+  -ms-transform: rotate(225deg);
+  -o-transform: rotate(225deg);
+  margin-bottom: -3px;
+}
+
+.kniu_sys_user_login_menu {
+  z-index: 10030;
+  position: fixed;
+  display: none;
+  border: 1px solid var(--kniu-border-color-light, #e4e7ed);
+  border-radius: 4px;
+  -webkit-border-radius: 4px;
+  -moz-border-radius: 4px;
+  -ms-border-radius: 4px;
+  -o-border-radius: 4px;
+  padding: 5px 0;
+  min-width: 112px;
+  background-color: #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+  -webkit-box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+  -moz-box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+  -ms-box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+  -o-box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+}
+
+.kniu_sys_user_login_menu[data-open="true"] {
+  display: block;
+}
+
+.kniu_sys_user_login_menu a,
+.kniu_sys_user_login_menu button {
+  display: flex;
+  display: -webkit-flex;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  padding: 0 12px;
+  width: 100%;
+  min-height: max(32px, calc(32 / var(--kniu_vw)));
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.kniu_sys_user_login_menu a:hover,
+.kniu_sys_user_login_menu a:focus-visible,
+.kniu_sys_user_login_menu button:hover,
+.kniu_sys_user_login_menu button:focus-visible {
+  outline: 0;
+  background-color: var(--kniu-color-primary-light, #ecf5ff);
+  color: var(--kniu-color-primary, #409eff);
+}
+
+.kniu_sys_user_login_logout:disabled {
+  color: #c0c4cc;
+  cursor: not-allowed;
+}
+
+@media (min-width: calc(1280px - 60px)) {
+  :host {
+    display: inline-flex;
+    border-bottom: 0;
+    padding: 0;
+    width: auto;
+    min-height: 0;
+  }
+
+  .kniu_sys_user_login_user {
+    padding: 0;
+    width: auto;
+  }
+}

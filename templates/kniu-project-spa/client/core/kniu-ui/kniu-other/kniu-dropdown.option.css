@@ -1,5 +1,3 @@
-@charset "UTF-8";
-
 .kniu_sys_dropdown_option {
-  min-height: max(28px, calc(32 / var(--kniu_vw)))
+  min-height: max(28px, calc(32 / var(--kniu_vw)));
 }

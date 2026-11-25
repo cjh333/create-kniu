@@ -1,0 +1,89 @@
+:host {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  font-size: var(--kniu-navbar-font-size);
+  font-family: var(--kniu-font-family);
+}
+
+[part="link"] {
+  display: flex;
+  display: -webkit-flex;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 0;
+  -webkit-border-radius: 0;
+  -moz-border-radius: 0;
+  -ms-border-radius: 0;
+  -o-border-radius: 0;
+  padding: 0 16px 0 calc(16px + var(--kniu-navbar-level, 0) * 16px);
+  min-height: max(50px, calc(50 / var(--kniu_vw)));
+  width: 100%;
+  font: inherit;
+  font-size: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  color: #4b5563;
+  transition: background-color .2s, color .2s;
+  -webkit-transition: background-color .2s, color .2s;
+  -moz-transition: background-color .2s, color .2s;
+  -ms-transition: background-color .2s, color .2s;
+  -o-transition: background-color .2s, color .2s;
+}
+
+[part="link"]:hover,
+:host([active]) [part="link"] {
+  background-color: #f1f5f9;
+  color: #111827;
+}
+
+:host([disabled]) {
+  opacity: .45;
+  pointer-events: none;
+}
+
+:host([side]) {
+  width: 100%;
+}
+
+:host([side]) [part="link"] {
+  border-bottom: none;
+  border-radius: 10px;
+  -webkit-border-radius: 10px;
+  -moz-border-radius: 10px;
+  -ms-border-radius: 10px;
+  -o-border-radius: 10px;
+  gap: 8px;
+  padding: 0 12px;
+  width: 100%;
+  min-height: max(36px, calc(45 / var(--kniu_vw)));
+  color: #9ca5bf;
+}
+
+:host([side]) [part="link"]:hover,
+:host([side][active]) [part="link"] {
+  background-color: #252b42;
+  color: #fff
+}
+
+@media(min-width:calc(1280px - 60px)) {
+  :host(:not([side])) {
+    width: auto;
+  }
+
+  :host(:not([side])) [part="link"] {
+    border-bottom: 0;
+    border-radius: 8px;
+    -webkit-border-radius: 8px;
+    -moz-border-radius: 8px;
+    -ms-border-radius: 8px;
+    -o-border-radius: 8px;
+    padding: 0 18px;
+    width: auto;
+    min-height: max(44px, calc(44 / var(--kniu_vw)));
+  }
+}

@@ -1,5 +1,8 @@
 \!KniuProject/
 .agents/
+.chrome-smoke/
+.screenshots/
+.trae-html-share-packages/
 .github/
 .openai/
 .vscode/
@@ -23,6 +26,9 @@ api/ssl/
 api/cert/
 api/config/ssl/
 api/config/cert/
+api/database/*.db-shm
+api/database/*.db-wal
+client/runtime/
 .env
 .env.local
 .env.development.local

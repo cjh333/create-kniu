@@ -10,10 +10,10 @@ Kniu CLI 用于创建零运行时依赖、原生 ESM 的前端 SPA。模板包�
 npx --yes github:cjh333/create-kniu my-app
 ```
 
-- 进入项目目录
+- 进入项目目录（脚手架固定生成在当前目录的 `kniu-project/` 下）
 
 ```powershell
-cd my-app
+cd kniu-project/my-app
 ```
 
 - 运行项目
@@ -38,16 +38,16 @@ npm run preview
 
 ## 目录职责
 
-- `client/config/`：路由和模板映射；
+- `client/config/`：路由与静态视图映射；`client/client.config.js` 是开发服务器、构建器与预览服务器读取的框架配置，`client/project.config.js` 负责合并项目设置；
 - `client/controller/`：控制器；
-- `client/core/`：框架核心源码；
-- `client/docs/`：API 文档；
+- `client/core/`：框架核心源码（PascalCase 命名的 `Kniu-*.mjs` 模块）；
+- `client/doc/`：核心库说明；
 - `client/views/`：页面模板；
-- `client.mjs`：唯一入口。
+- `client/client.js`：唯一入口。
 
-## `kniu.config.js` 字段参考
+## 配置字段参考
 
-下面的路径均相对于项目根目录；未填写的字段使用模板默认值。
+主配置为 `client/client.config.js`，下面的路径均相对于项目根目录；未填写的字段使用模板默认值。根目录的 `kniu.config.js` 为兼容镜像，`--port` 会同步写入两处，实际运行以 `client/client.config.js` 为准。
 
 | 字段 | 类型 | 默认值 | 说明与注意事项 |
 | --- | --- | --- | --- |
@@ -57,7 +57,7 @@ npm run preview
 | `resolve.alias` | `Record<string,string>` | `{}` | 模块和模板路径别名，默认提供 `@`、`@style`、`@img`、`@upload`、`@plugin`、`@kniu`；目标应在项目目录内。模板中的别名只在模板引擎内渲染：路由模板渲染与 `template.head` 注入时统一解析为正式路径，输出不含别名。 |
 | `template.head.favicon` | `string` | `'@img/favicon.ico'` | 页面图标，支持别名书写；由模板引擎挂载后解析为正式路径并注入 `<link rel="icon">`。 |
 | `template.head.style` | `array` | `['@kniu/kniu.min.css','@style/app.css']` | 全局样式表，支持别名书写；按数组顺序注入 `<link rel="stylesheet">`。 |
-| `template.head.js` | `array` | `['@kniu/kniu.min.js']` | 插件脚本，支持别名书写；由模板引擎在唯一入口挂载链路内按数组顺序注入（`async = false`），不会先于 `client.mjs` 加载。 |
+| `template.head.js` | `array` | `['@kniu/kniu.min.js']` | 插件脚本，支持别名书写；由模板引擎在唯一入口挂载链路内按数组顺序注入（`async = false`），不会先于 `client/client.js` 加载。 |
 | `server.host` | `string` | `'127.0.0.1'` | 开发服务器监听地址；局域网调试才使用 `0.0.0.0`。 |
 | `server.port` | `number` | `6173` | 开发服务器端口。 |
 | `server.strictPort` | `boolean` | `true` | 端口占用时是否失败；CI 推荐保持 `true`。 |
@@ -81,7 +81,7 @@ npm run preview
 | `store.sync` | `boolean` | `false` | 是否通过 BroadcastChannel 同步同源标签页；高频状态请节流。 |
 | `store.key` | `string` | `'KNIU_STORE'` | Store 持久化和跨标签同步键。 |
 | `serviceWorker.enabled` | `boolean` | `false` | 是否注册离线插件；需审查缓存的动态响应。 |
-| `serviceWorker.url` | `string` | `'/public/assets/kniu-sw.js'` | Service Worker URL，必须同源并满足 scope 规则。其源代码位于 `client/core/kniu-service-worker.js`，构建时输出到 `public/assets`；它是可选离线能力，不进入首屏核心运行时。 |
+| `serviceWorker.url` | `string` | `'/public/assets/kniu-sw.js'` | Service Worker URL，必须同源并满足 scope 规则。其源代码位于 `client/core/Kniu-ServiceWorker.mjs`，构建时输出到 `public/assets`；它是可选离线能力，不进入首屏核心运行时。 |
 | `serviceWorker.scope` | `string` | `'/'` | Service Worker 控制范围。范围越大，升级和缓存风险越高。 |
 | `security.cspNonce` | `string` | `''` | 服务端每次响应生成的随机 CSP nonce；不能使用固定常量，优先采用 `adoptedStyleSheets`。 |
 | `seo.siteUrl` | `string` | `'http://localhost:6173'` | canonical、Open Graph、sitemap 使用的绝对 URL；生产改为 HTTPS 域名。 |
@@ -129,7 +129,7 @@ const issues = app.auditAccessibility();
 
 ## 类型与检查
 
-类型入口为 `templates/kniu-project-spa/client/core/kniu.d.ts`。在 CLI 目录运行：
+类型入口为 `templates/kniu-project-spa/client/core/Kniu.d.ts`。在 CLI 目录运行：
 
 ```powershell
 npm run check

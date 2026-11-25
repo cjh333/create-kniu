@@ -1,0 +1,27 @@
+:host {
+  display: inline-flex;
+  display: -webkit-inline-flex;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  gap: 10px;
+}
+
+:host([block]) {
+  display: flex;
+  display: -webkit-flex;
+  gap: 10px;
+  margin-top: 20px !important;
+  width: 100%;
+}
+
+:host([block]) ::slotted(*) {
+  flex: 1 1 0;
+  -webkit-flex: 1 1 0;
+  -moz-flex: 1 1 0;
+  -ms-flex: 1 1 0;
+  -o-flex: 1 1 0;
+  min-width: 0;
+}

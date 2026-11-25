@@ -1,0 +1,41 @@
+:host {
+  display: block;
+  width: 100%;
+}
+
+.kniu_sys_gvcode {
+  display: flex;
+  display: -webkit-flex;
+  align-items: stretch;
+  -webkit-align-items: stretch;
+  -moz-align-items: stretch;
+  -ms-align-items: stretch;
+  -o-align-items: stretch;
+  gap: 4px;
+  width: 100%;
+}
+
+.kniu_sys_gvcode_input {
+  flex: 1 1 auto;
+  -webkit-flex: 1 1 auto;
+  -moz-flex: 1 1 auto;
+  -ms-flex: 1 1 auto;
+  -o-flex: 1 1 auto;
+  min-width: 0;
+}
+
+.kniu_sys_gvcode_image {
+  flex: 0 0 min(40%, 120px);
+  -webkit-flex: 0 0 min(40%, 120px);
+  -moz-flex: 0 0 min(40%, 120px);
+  -ms-flex: 0 0 min(40%, 120px);
+  -o-flex: 0 0 min(40%, 120px);
+  border-radius: 3px;
+  -webkit-border-radius: 3px;
+  -moz-border-radius: 3px;
+  -ms-border-radius: 3px;
+  -o-border-radius: 3px;
+  min-width: 95px;
+  height: var(--kniu-control-height, max(28px, calc(40 / var(--kniu_vw))));
+  cursor: pointer;
+}

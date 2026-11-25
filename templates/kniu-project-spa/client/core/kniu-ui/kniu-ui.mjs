@@ -1,103 +1,156 @@
-import TEMPLATE from '../kniu-template.mjs';
-import REQUEST from '../kniu-request.mjs';
-import IDENTITY from '../kniu-identity-service.mjs';
-import { getResponseRecords, debounce } from '../kniu-util.mjs';
-import { sanitizeRichHtml, sanitizeRichHtmlAsync } from '../kniu-sanitizer.mjs';
-import { KNIU_TABLE_CLASS, KNIU_TABLE_WRAP_CLASS, unwrapTablesIn, wrapTablesIn } from '../kniu-code.mjs';
-import { KNIU_ICON_NAMES, KNIU_ICONS } from '../kniu-icons.mjs';
-import KNIU_BASE_RESET_CSS from './kniu-other/kniu-base.css?module';
-import KNIU_BASE_CONTAIN_CSS from './kniu-other/kniu-contain.css?module';
-import KNIU_CONTENT_TABLE_CSS from './kniu-other/kniu-content-table.css?module';
-import KNIU_DROPDOWN_CSS from './kniu-other/kniu-dropdown.css?module';
-import KNIU_DROPDOWN_OPTION_CSS from './kniu-other/kniu-dropdown.option.css?module';
-import KNIU_FONT_FACE_CSS from './kniu-other/kniu-font-face.css?module';
-import KNIU_MARKDOWN_CSS from './kniu-other/kniu-markdown.css?module';
-import KNIU_RICHTEXT_CSS from './kniu-other/kniu-richtext.css?module';
-import KNIU_EDITOR_CSS from './kniu-editor/kniu-editor.css?module';
-import KNIU_EDITOR_OVERRIDE_CSS from './kniu-editor/kniu-editor.overrides.css?module';
-import KNIU_BTN_CSS from './kniu-btn/kniu-btn.css?module';
-import KNIU_BTN_METRICS_CSS from './kniu-btn/kniu-btn.metrics.css?module';
-import KNIU_BTN_OVERRIDES_CSS from './kniu-btn/kniu-btn.overrides.css?module';
-import KNIU_BTN_GROUP_CSS from './kniu-btn-group/kniu-btn-group.css?module';
-import KNIU_SWITCH_CSS from './kniu-switch/kniu-switch.css?module';
-import KNIU_MODAL_CSS from './kniu-modal/kniu-modal.css?module';
-import KNIU_MODAL_CONFIRM_CSS from './kniu-modal/kniu-modal.confirm.css?module';
-import KNIU_TABLE_COL_CSS from './kniu-table/kniu-table-col.css?module';
-import KNIU_LOADING_CSS from './kniu-loading/kniu-loading.css?module';
-import KNIU_MSG_CSS from './kniu-msg/kniu-msg.css?module';
-import KNIU_SELECT_CSS from './kniu-select/kniu-select.css?module';
-import KNIU_RADIO_GROUP_CSS from './kniu-radio-group/kniu-radio-group.css?module';
-import KNIU_PAGE_CSS from './kniu-page/kniu-page.css?module';
-import KNIU_IMAGE_CSS from './kniu-image/kniu-image.css?module';
-import KNIU_IMAGE_OVERRIDES_CSS from './kniu-image/kniu-image.overrides.css?module';
-import KNIU_INPUT_CSS from './kniu-input/kniu-input.css?module';
-import KNIU_INPUT_STATES_CSS from './kniu-input/kniu-input.states.css?module';
-import KNIU_INPUT_AFFIX_CSS from './kniu-input/kniu-input.affix.css?module';
-import KNIU_INPUT_PASSWORD_CSS from './kniu-input/kniu-input.password.css?module';
-import KNIU_INPUT_TEXTAREA_CSS from './kniu-input/kniu-input.textarea.css?module';
-import KNIU_INPUT_METRICS_CSS from './kniu-input/kniu-input.metrics.css?module';
-import KNIU_INPUT_GROUP_CSS from './kniu-input/kniu-input-group.css?module';
-import KNIU_DATE_PICKER_CSS from './kniu-date-picker/kniu-date-picker.css?module';
-import KNIU_DATE_PICKER_OVERRIDES_CSS from './kniu-date-picker/kniu-date-picker.overrides.css?module';
-import KNIU_UPLOAD_CSS from './kniu-upload/kniu-upload.css?module';
-import KNIU_ICON_CSS from './kniu-icon/kniu-icon.css?module';
-import KNIU_BADGE_CSS from './kniu-badge/kniu-badge.css?module';
-import KNIU_TAG_CSS from './kniu-tag/kniu-tag.css?module';
-import KNIU_STATUS_CSS from './kniu-status/kniu-status.css?module';
-import KNIU_TAB_CSS from './kniu-tab/kniu-tab.css?module';
-import KNIU_EMPTY_CSS from './kniu-empty/kniu-empty.css?module';
-import KNIU_EDITOR_PRINT_CSS from './kniu-editor/kniu-editor.print.css?module';
-import KNIU_NAVBAR_CELLS_CSS from './kniu-navbar/kniu-navbar-cells.css?module';
-import KNIU_NAVBAR_CELL_CSS from './kniu-navbar/kniu-navbar-cell.css?module';
-import KNIU_SUB_NAVBAR_CSS from './kniu-navbar/kniu-sub-navbar.css?module';
-import KNIU_SUB_NAVBAR_OVERRIDES_CSS from './kniu-navbar/kniu-sub-navbar.overrides.css?module';
-import KNIU_NAVBAR_CSS from './kniu-navbar/kniu-navbar.css?module';
-import KNIU_BACKTOP_CSS from './kniu-backtop/kniu-backtop.css?module';
-import KNIU_LIKE_CSS from './kniu-like/kniu-like.css?module';
-import KNIU_USER_LOGIN_CSS from './kniu-user-login/kniu-user-login.css?module';
-import KNIU_USER_LOGIN_OVERRIDES_CSS from './kniu-user-login/kniu-user-login.overrides.css?module';
-import { registerArticleTab as registerArticleTabComponent } from './kniu-article-tab/kniu-article-tab.mjs';
-import KNIU_COMMENT_CSS from './kniu-comment/kniu-comment.css?module';
-import KNIU_TABLE_CSS from './kniu-table/kniu-table.css?module';
-import KNIU_INPUT_PASSWORD_ACTIONS_CSS from './kniu-input/kniu-input.password-actions.css?module';
-import KNIU_INPUT_TIP_CSS from './kniu-input/kniu-input.tip.css?module';
-import KNIU_NAVBAR_PLACEHOLDER_CSS from './kniu-navbar/kniu-navbar.placeholder.css?module';
-import { registerButton } from './kniu-btn/kniu-btn.mjs';
-import { registerButtonGroup } from './kniu-btn-group/kniu-btn-group.mjs';
-import { registerSwitch } from './kniu-switch/kniu-switch.mjs';
-import { registerModal } from './kniu-modal/kniu-modal.mjs';
-import { registerTable } from './kniu-table/kniu-table.mjs';
-import { registerLoading } from './kniu-loading/kniu-loading.mjs';
-import { registerMsg } from './kniu-msg/kniu-msg.mjs';
-import { registerSelect } from './kniu-select/kniu-select.mjs';
-import { registerRadioGroup } from './kniu-radio-group/kniu-radio-group.mjs';
-import { registerPage } from './kniu-page/kniu-page.mjs';
-import { registerPageMore } from './kniu-page-more/kniu-page-more.mjs';
-import { registerImage } from './kniu-image/kniu-image.mjs';
-import { registerInput } from './kniu-input/kniu-input.mjs';
-import { registerDatePicker } from './kniu-date-picker/kniu-date-picker.mjs';
-import { registerForm } from './kniu-form/kniu-form.mjs';
-import { registerUpload } from './kniu-upload/kniu-upload.mjs';
-import { registerIcon } from './kniu-icon/kniu-icon.mjs';
-import { registerBadge } from './kniu-badge/kniu-badge.mjs';
-import { registerTag } from './kniu-tag/kniu-tag.mjs';
-import { registerStatus } from './kniu-status/kniu-status.mjs';
-import { registerTab } from './kniu-tab/kniu-tab.mjs';
-import { registerEmpty } from './kniu-empty/kniu-empty.mjs';
-import { registerEditor } from './kniu-editor/kniu-editor.mjs';
-import { registerNavbar } from './kniu-navbar/kniu-navbar.mjs';
-import { registerBacktop } from './kniu-backtop/kniu-backtop.mjs';
-import { registerComment } from './kniu-comment/kniu-comment.mjs';
-import { registerLike } from './kniu-like/kniu-like.mjs';
-import { registerUserLogin } from './kniu-user-login/kniu-user-login.mjs';
+import { evaluateTemplateExpression } from '../Kniu-TemplateEngine.mjs';
+import { reactive } from '../Kniu-MVVM.mjs';
+import { createRequest } from '../Kniu-Request.mjs';
+import IDENTITY from '../Kniu-IdentityService.mjs';
+import { getResponseRecords, debounce, createSearchActions, installScrollLockStyles } from '../Kniu-Util.mjs';
+import { createRowDeleteHandler, usePagination, usePage } from '../Kniu-ControllerKit.mjs';
+import { sanitizeRichHtml, sanitizeRichHtmlAsync } from '../Kniu-Sanitizer.mjs';
+import { KNIU_TABLE_CLASS, KNIU_TABLE_WRAP_CLASS, unwrapTablesIn, wrapTablesIn } from '../Kniu-Code.mjs';
+import { KNIU_ICON_NAMES } from '../Kniu-IconNames.mjs';
+import KNIU_BASE_RESET_CSS from './Kniu-Other/Kniu-Base.css?module';
+import KNIU_BASE_CONTAIN_CSS from './Kniu-Other/Kniu-Contain.css?module';
+import KNIU_CONTENT_TABLE_CSS from './Kniu-Other/Kniu-ContentTable.css?module';
+import KNIU_DROPDOWN_CSS from './Kniu-Other/Kniu-Dropdown.css?module';
+import KNIU_DROPDOWN_OPTION_CSS from './Kniu-Other/Kniu-Dropdown.Option.css?module';
+import KNIU_FONT_FACE_CSS from './Kniu-Other/Kniu-Fontface.css?module';
+import KNIU_MARKDOWN_CSS from './Kniu-Other/Kniu-Markdown.css?module';
+import KNIU_RICHTEXT_CSS from './Kniu-Other/Kniu-Richtext.css?module';
+import KNIU_EDITOR_CSS from './Kniu-EditorComponent/Kniu-EditorComponent.css?module';
+import KNIU_EDITOR_OVERRIDE_CSS from './Kniu-EditorComponent/Kniu-EditorComponent.Overrides.css?module';
+import KNIU_BTN_CSS from './Kniu-BtnComponent/Kniu-BtnComponent.css?module';
+import KNIU_BTN_METRICS_CSS from './Kniu-BtnComponent/Kniu-BtnComponent.Metrics.css?module';
+import KNIU_BTN_OVERRIDES_CSS from './Kniu-BtnComponent/Kniu-BtnComponent.Overrides.css?module';
+import KNIU_BTN_GROUP_CSS from './Kniu-BtnGroupComponent/Kniu-BtnGroupComponent.css?module';
+import KNIU_SWITCH_CSS from './Kniu-SwitchComponent/Kniu-SwitchComponent.css?module';
+import KNIU_MODAL_CSS from './Kniu-ModalComponent/Kniu-ModalComponent.css?module';
+import KNIU_MODAL_CONFIRM_CSS from './Kniu-ModalComponent/Kniu-ModalComponent.Confirm.css?module';
+import KNIU_TABLE_COL_CSS from './Kniu-TableColComponent/Kniu-TableColComponent.css?module';
+import KNIU_MSG_CSS from './Kniu-MsgComponent/Kniu-MsgComponent.css?module';
+import KNIU_SELECT_CSS from './Kniu-SelectComponent/Kniu-SelectComponent.css?module';
+import KNIU_RADIO_GROUP_CSS from './Kniu-RadioGroupComponent/Kniu-RadioGroupComponent.css?module';
+import KNIU_PAGE_CSS from './Kniu-PageComponent/Kniu-PageComponent.css?module';
+import KNIU_IMAGE_CSS from './Kniu-ImageComponent/Kniu-ImageComponent.css?module';
+import KNIU_IMAGE_OVERRIDES_CSS from './Kniu-ImageComponent/Kniu-ImageComponent.Overrides.css?module';
+import KNIU_INPUT_CSS from './Kniu-InputComponent/Kniu-InputComponent.css?module';
+import KNIU_INPUT_STATES_CSS from './Kniu-InputComponent/Kniu-InputComponent.States.css?module';
+import KNIU_INPUT_AFFIX_CSS from './Kniu-InputComponent/Kniu-InputComponent.Affix.css?module';
+import KNIU_INPUT_PASSWORD_CSS from './Kniu-InputComponent/Kniu-InputComponent.Password.css?module';
+import KNIU_INPUT_TEXTAREA_CSS from './Kniu-InputComponent/Kniu-InputComponent.Textarea.css?module';
+import KNIU_INPUT_METRICS_CSS from './Kniu-InputComponent/Kniu-InputComponent.Metrics.css?module';
+import KNIU_INPUT_GROUP_CSS from './Kniu-InputComponent/Kniu-InputComponent.Group.css?module';
+import KNIU_DATE_PICKER_CSS from './Kniu-DatePickerComponent/Kniu-DatePickerComponent.css?module';
+import KNIU_DATE_PICKER_OVERRIDES_CSS from './Kniu-DatePickerComponent/Kniu-DatePickerComponent.Overrides.css?module';
+import KNIU_UPLOAD_CSS from './Kniu-UploadComponent/Kniu-UploadComponent.css?module';
+import KNIU_ICON_CSS from './Kniu-IconComponent/Kniu-IconComponent.css?module';
+import KNIU_BADGE_CSS from './Kniu-BadgeComponent/Kniu-BadgeComponent.css?module';
+import KNIU_TAG_CSS from './Kniu-TagComponent/Kniu-TagComponent.css?module';
+import KNIU_STATUS_CSS from './Kniu-StatusComponent/Kniu-StatusComponent.css?module';
+import KNIU_TAB_CSS from './Kniu-TabComponent/Kniu-TabComponent.css?module';
+import KNIU_EMPTY_CSS from './Kniu-EmptyComponent/Kniu-EmptyComponent.css?module';
+import KNIU_EDITOR_PRINT_CSS from './Kniu-EditorComponent/Kniu-EditorComponent.Print.css?module';
+import KNIU_NAVBAR_CELLS_CSS from './Kniu-NavbarCellsComponent/Kniu-NavbarCellsComponent.css?module';
+import KNIU_NAVBAR_CELL_CSS from './Kniu-NavbarCellComponent/Kniu-NavbarCellComponent.css?module';
+import KNIU_SUB_NAVBAR_CSS from './Kniu-SubNavbarComponent/Kniu-SubNavbarComponent.css?module';
+import KNIU_SUB_NAVBAR_OVERRIDES_CSS from './Kniu-SubNavbarComponent/Kniu-SubNavbarComponent.Overrides.css?module';
+import KNIU_NAVBAR_CSS from './Kniu-NavbarComponent/Kniu-NavbarComponent.css?module';
+import KNIU_BACKTOP_CSS from './Kniu-BacktopComponent/Kniu-BacktopComponent.css?module';
+import KNIU_LIKE_CSS from './Kniu-LikeComponent/Kniu-LikeComponent.css?module';
+import KNIU_USER_LOGIN_CSS from './Kniu-UserLoginComponent/Kniu-UserLoginComponent.css?module';
+import KNIU_USER_LOGIN_OVERRIDES_CSS from './Kniu-UserLoginComponent/Kniu-UserLoginComponent.Overrides.css?module';
+import { registerArticleTab as registerArticleTabComponent } from './Kniu-ArticleTabComponent/Kniu-ArticleTabComponent.mjs';
+import KNIU_COMMENT_CSS from './Kniu-CommentComponent/Kniu-CommentComponent.css?module';
+import KNIU_TABLE_CSS from './Kniu-TableComponent/Kniu-TableComponent.css?module';
+import KNIU_INPUT_PASSWORD_ACTIONS_CSS from './Kniu-InputComponent/Kniu-InputComponent.Password.Actions.css?module';
+import KNIU_INPUT_TIP_CSS from './Kniu-InputComponent/Kniu-InputComponent.Tip.css?module';
+import KNIU_NAVBAR_PLACEHOLDER_CSS from './Kniu-NavbarComponent/Kniu-NavbarComponent.Placeholder.css?module';
+import { registerButton } from './Kniu-BtnComponent/Kniu-BtnComponent.mjs';
+import { registerButtonGroup } from './Kniu-BtnGroupComponent/Kniu-BtnGroupComponent.mjs';
+import { registerSwitch } from './Kniu-SwitchComponent/Kniu-SwitchComponent.mjs';
+import { registerModal } from './Kniu-ModalComponent/Kniu-ModalComponent.mjs';
+import { registerTable } from './Kniu-TableComponent/Kniu-TableComponent.mjs';
+import { registerMsg } from './Kniu-MsgComponent/Kniu-MsgComponent.mjs';
+import { registerSelect } from './Kniu-SelectComponent/Kniu-SelectComponent.mjs';
+import { registerRadioGroup } from './Kniu-RadioGroupComponent/Kniu-RadioGroupComponent.mjs';
+import { registerPage } from './Kniu-PageComponent/Kniu-PageComponent.mjs';
+import { registerPageMore } from './Kniu-PageMoreComponent/Kniu-PageMoreComponent.mjs';
+import { registerImage } from './Kniu-ImageComponent/Kniu-ImageComponent.mjs';
+import { registerInput } from './Kniu-InputComponent/Kniu-InputComponent.mjs';
+import { registerDatePicker } from './Kniu-DatePickerComponent/Kniu-DatePickerComponent.mjs';
+import { registerForm } from './Kniu-FormComponent/Kniu-FormComponent.mjs';
+import { registerUpload } from './Kniu-UploadComponent/Kniu-UploadComponent.mjs';
+import { registerIcon } from './Kniu-IconComponent/Kniu-IconComponent.mjs';
+import { registerBadge } from './Kniu-BadgeComponent/Kniu-BadgeComponent.mjs';
+import { registerTag } from './Kniu-TagComponent/Kniu-TagComponent.mjs';
+import { registerStatus } from './Kniu-StatusComponent/Kniu-StatusComponent.mjs';
+import { registerTab } from './Kniu-TabComponent/Kniu-TabComponent.mjs';
+import { registerEmpty } from './Kniu-EmptyComponent/Kniu-EmptyComponent.mjs';
+import { registerEditor } from './Kniu-EditorComponent/Kniu-EditorComponent.mjs';
+import { registerNavbar } from './Kniu-NavbarComponent/Kniu-NavbarComponent.mjs';
+import { registerBacktop } from './Kniu-BacktopComponent/Kniu-BacktopComponent.mjs';
+import { registerComment } from './Kniu-CommentComponent/Kniu-CommentComponent.mjs';
+import { registerLike } from './Kniu-LikeComponent/Kniu-LikeComponent.mjs';
+import { registerUserLogin } from './Kniu-UserLoginComponent/Kniu-UserLoginComponent.mjs';
+import { DEFAULT_FONT_FAMILY, getContracts } from '../Kniu-Contracts.mjs';
+import { localizeMarkup, setComponentTextLocalizer } from '../Kniu-UiText.mjs';
+import { hasBusinessComponentProviders, getBusinessComponentProvider, getEnabledBusinessTags } from '../Kniu-ComponentManifest.mjs';
+import { createUiEssential, getComponentDefaults, getThemeHostCss } from './Kniu-UiEssential.mjs';
+import { KNIU_I18N as I18N_DATA } from '../Kniu-I18nData.mjs';
 
-const { reactive, compileExpression } = TEMPLATE;
+let iconSvgData = null;
+let iconSvgPending = null;
+
+function loadIconSvg() {
+  if (iconSvgData) return Promise.resolve(iconSvgData);
+  if (!iconSvgPending) {
+    iconSvgPending = import('../Kniu-Icons.mjs')
+      .then((mod) => {
+        iconSvgData = mod.KNIU_ICONS;
+        return iconSvgData;
+      })
+      .catch((error) => {
+        iconSvgPending = null;
+        console.error('[kniu] 图标数据加载失败', error);
+        return {};
+      });
+  }
+  return iconSvgPending;
+}
+
+const KNIU_ICON_SVG = new Proxy({}, {
+  get(_target, name) {
+    if (typeof name !== 'string') return undefined;
+    return iconSvgData ? iconSvgData[name] : '';
+  },
+  has(_target, name) {
+    return !!(iconSvgData && iconSvgData[name]);
+  }
+});
+const compileExpression = (source) => (scope) => evaluateTemplateExpression(source, scope || {});
+const request = createRequest();
+const REQUEST = async ({ url, type = 'GET', data, success, fail }) => {
+  try {
+    const method = String(type).toUpperCase();
+    const response = await request(url, {
+      method,
+      headers: method === 'GET' ? undefined : { 'Content-Type': 'application/json' },
+      body: method === 'GET' || data == null ? undefined : JSON.stringify(data)
+    });
+    return success?.(response);
+  } catch (error) {
+    return fail?.(error) ?? Promise.reject(error);
+  }
+};
+const TEMPLATE = {
+  reactive,
+  nextTick(callback) { return Promise.resolve().then(callback); },
+  bind(_root, state) { return { state, dispose() { } }; }
+};
 
 var KniuUI = (function () {
   var state = reactive({
     loading: false
   });
-  var componentDefaults = {};
+  var componentDefaults = getComponentDefaults();
   var toastTimer = null;
   var toastInstance = null;
   var SCROLL_LOCK_FLAG = 'kniuScrollLock';
@@ -112,12 +165,11 @@ var KniuUI = (function () {
   var pendingAdoptedSheets = new Map();
   var adoptedSheetsFlushScheduled = false;
 
-  var KNIU_FONT_FAMILY = 'KniuSans_Regular';
-  var KNIU_FONT_MONO_FAMILY = 'KniuSans_Regular';
-  var KNIU_FONT_SERIF_FAMILY = 'KniuSans_Regular';
+  var KNIU_FONT_FAMILY = DEFAULT_FONT_FAMILY;
+  var KNIU_FONT_MONO_FAMILY = DEFAULT_FONT_FAMILY;
+  var KNIU_FONT_SERIF_FAMILY = DEFAULT_FONT_FAMILY;
 
   var KNIU_BASE_FONT_CSS = KNIU_FONT_FACE_CSS + ':host{--kniu-font-family:' + KNIU_FONT_FAMILY + ';--kniu-font-mono-family:' + KNIU_FONT_MONO_FAMILY + ';--kniu-font-serif-family:' + KNIU_FONT_SERIF_FAMILY + ';--kniu-navbar-font-size:max(12px,calc(14 / var(--kniu_vw)));font-family:var(--kniu-font-family)}';
-  var KNIU_THEME_HOST_CSS = '';
   var KNIU_CONTAIN_EXCLUDE_TAGS = { 'KNIU-TABLE': 1, 'KNIU-NAVBAR': 1, 'KNIU-MODAL': 1, 'KNIU-DATE-PICKER': 1, 'KNIU-SELECT': 1, 'KNIU-USER-LOGIN': 1, 'KNIU-INPUT': 1, 'KNIU-COMMENT': 1, 'KNIU-EDITOR': 1 };
   var RICH_TEXT_LITERAL_TAG_RE = /<(\/?)(script|iframe|object|embed|link|meta|style|base|form)(?=\s|\/?>)/gi;
 
@@ -128,372 +180,54 @@ var KniuUI = (function () {
 
   function shouldContainHost(tag) { return !KNIU_CONTAIN_EXCLUDE_TAGS[String(tag || '').toUpperCase()]; }
 
-  function use(config = {}) {
-    // 配置口径（client/config/ 命名规范）：第一层字段 KEY 大写、内部字段小写。
-    const components = config.COMPONENTS && typeof config.COMPONENTS === 'object' ? config.COMPONENTS : {};
-    Object.keys(components).forEach(function (name) {
-      const tag = String(name).toLowerCase().startsWith('kniu-') ? String(name).toLowerCase() : 'kniu-' + String(name).toLowerCase();
-      componentDefaults[tag] = { ...(componentDefaults[tag] || {}), ...(components[name] || {}) };
-    });
-    globalThis.__KNIU_UI_DEFAULTS__ = componentDefaults;
-    const theme = config.THEME && typeof config.THEME === 'object' ? config.THEME : {};
-    const themeEntries = Object.entries(theme).filter(function (entry) {
-      return String(entry[0]).startsWith('--kniu-');
-    });
-    KNIU_THEME_HOST_CSS = themeEntries.length
-      ? ':host{' + themeEntries.map(function (entry) { return entry[0] + ':' + String(entry[1]); }).join(';') + '}'
-      : '';
-    if (themeEntries.length) {
-      const globalThemeCSS = ':root {\n' +
-        themeEntries
-          .map(function (entry) { return '  ' + entry[0] + ': ' + String(entry[1]); })
-          .join(';\n') + '\n}';
-      const globalRoot = globalThis.document;
-      if (supportsAdoptedStyleSheets(globalRoot)) {
-        adoptSharedStyle(globalRoot, globalThemeCSS, true);
-      } else {
-        const styleEl = document.createElement('style');
-        styleEl.textContent = globalThemeCSS;
-        globalRoot.appendChild(styleEl);
-      }
-    }
-    return Object.freeze({ components: { ...componentDefaults }, theme: { ...theme } });
+  var uiEssentialInstance = null;
+  function uiEssential() {
+    if (!uiEssentialInstance) uiEssentialInstance = createUiEssential(KNIU_COMPONENT_CONTEXT);
+    return uiEssentialInstance;
   }
 
-  var KNIU_I18N = {
-    cn: {
-      'common.ok': '确定',
-      'common.cancel': '取消',
-      'common.delete': '删除',
-      'common.back': '返回',
-      'common.submit': '提交',
-      'common.search': '搜索',
-      'common.confirm': '确认',
-      'common.save': '保存',
-      'common.loading': '加载中...',
-      'common.empty': '暂无数据',
-      'common.noMore': '没有更多了',
-      'common.auto': '自动',
-      'common.rows': '行',
-      'common.cols': '列',
-      'common.width': '宽度',
-      'common.height': '高度',
-      'common.sourceType': '来源类型',
-      'common.cloud': '云媒体',
-      'common.localUpload': '本地上传',
-      'common.mediaName': '媒体名称',
-      'common.mediaUrl': '媒体地址',
-      'common.localFile': '本地文件',
-      'common.lockRatio': '锁定宽高比',
-      'common.scale': '缩放',
-      'common.chooseLocalFile': '请选择需要上传的本地文件',
-      'editor.undo': '撤销',
-      'editor.redo': '重做',
-      'editor.preview': '预览',
-      'editor.print': '打印',
-      'editor.codeMode': '代码模式',
-      'editor.maximize': '最大化/还原',
-      'editor.bold': '加粗',
-      'editor.italic': '斜体',
-      'editor.underline': '下划线',
-      'editor.strikeThrough': '删除线',
-      'editor.subscript': '下标',
-      'editor.superscript': '上标',
-      'editor.justifyLeft': '左对齐',
-      'editor.justifyCenter': '居中',
-      'editor.justifyRight': '右对齐',
-      'editor.justifyFull': '两端对齐',
-      'editor.indent': '增加缩进',
-      'editor.outdent': '减少缩进',
-      'editor.insertOrderedList': '有序列表',
-      'editor.insertUnorderedList': '无序列表',
-      'editor.lineheight': '行距',
-      'editor.h1': '标题1',
-      'editor.h2': '标题2',
-      'editor.h3': '标题3',
-      'editor.p': '段落',
-      'editor.blockquote': '引用',
-      'editor.pre': '代码块',
-      'editor.inlineCode': '行内代码',
-      'editor.hr': '分割线',
-      'editor.table': '表格',
-      'editor.fontname': '字体',
-      'editor.fontsize': '字号',
-      'editor.forecolor': '文字颜色',
-      'editor.hilitecolor': '文字背景',
-      'editor.link': '链接',
-      'editor.unlink': '取消链接',
-      'editor.image': '插入图片',
-      'editor.media': '插入音视频',
-      'editor.emoticons': '表情',
-      'editor.removeFormat': '清除格式',
-      'editor.clearhtml': '清理HTML',
-      'editor.selectAll': '全选',
-      'editor.chooseFont': '选择字体',
-      'editor.chooseSize': '选择字号',
-      'editor.heading': '标题',
-      'editor.chooseHeading': '选择标题',
-      'editor.chooseLineHeight': '选择行距',
-      'editor.spacing': '字距',
-      'editor.chooseLetterSpacing': '选择字距',
-      'editor.insertTable': '插入表格',
-      'editor.tableRows': '行数',
-      'editor.tableCols': '列数',
-      'editor.insertLink': '插入链接',
-      'editor.linkUrl': '链接地址',
-      'editor.linkText': '链接文字',
-      'editor.enterLinkText': '请输入链接文字',
-      'editor.enterLinkUrl': '请输入链接地址',
-      'editor.enterLinkUrlSafe': '请输入安全有效的链接地址',
-      'editor.widthHeightRange': '宽度和高度必须在 1 至 5000px 之间',
-      'editor.insertImage': '插入图片',
-      'editor.imageUrl': '图片地址',
-      'editor.localImage': '本地图片',
-      'editor.insertMedia': '插入音视频',
-      'editor.mediaType': '媒体类型',
-      'editor.video': '视频',
-      'editor.audio': '音频',
-      'editor.editImage': '编辑图片',
-      'editor.editVideo': '编辑视频',
-      'editor.editAudio': '编辑音频',
-      'editor.deleteImage': '删除图片',
-      'editor.deleteVideo': '删除视频',
-      'editor.deleteAudio': '删除音频',
-      'editor.deleteConfirm': '确定要从文章正文中删除当前{1}吗？',
-      'editor.deleteMediaBtn': '确定删除',
-      'editor.enterMediaUrl': '请输入媒体地址',
-      'editor.enterMediaName': '请输入媒体名称',
-      'editor.enterImageUrl': '请输入安全有效的图片地址',
-      'editor.enterMediaUrlSafe': '请输入安全有效的媒体地址',
-      'editor.mediaUploadFail': '媒体文件上传失败',
-      'editor.mediaUploadRetry': '媒体文件上传失败，请稍后重试',
+  function use(config = {}) {
+    return uiEssential().use(config);
+  }
 
-      'modal.title': '提示',
-      'modal.close': '关闭',
-      'modal.cancel': '取消',
-      'modal.ok': '确定',
-
-      'table.actions': '操作',
-      'table.empty': '暂无数据',
-
-      'loading.aria': '加载中',
-
-      'pagination.error': '加载失败',
-
-      'image.loading': '加载中…',
-      'image.error': '加载失败',
-      'image.empty': '暂无图片',
-
-      'input.clear': '清空输入内容',
-      'input.hidePassword': '隐藏密码',
-      'input.showPassword': '显示密码',
-
-      'upload.select': '选择图片',
-      'upload.empty': '暂无图片',
-      'upload.uploaded': '已上传图片',
-      'upload.deleteAria': '删除 {1}',
-      'upload.tooLarge': '{1} 超过单张 {2}M 的限制',
-      'upload.selectedCount': '已选择 {1} 张图片',
-      'upload.selectedFileCount': '已选择 {1} 个文件',
-      'upload.selectPreview': '选择图片可以预览（最多 {1} 张）',
-      'upload.selectPreviewSingle': '选择图片可以预览',
-      'upload.selectFile': '请选择文件（最多 {1} 个）',
-      'upload.selectFileSingle': '请选择文件',
-      'upload.maxCount': '最多只能选择 {1} 张图片',
-
-      'navbar.menu': '菜单',
-      'navbar.primary': '主导航',
-      'navbar.expand': '展开导航',
-      'navbar.collapse': '收起导航',
-      'navbar.home': '首页',
-
-      'backtop.aria': '返回顶部',
-
-      'comment.title': '评论',
-      'comment.empty': '暂无评论，快来抢沙发吧！',
-      'comment.replyTo': '回复 ',
-      'comment.cancelReply': '取消回复',
-      'comment.emoji': '表情',
-      'comment.anonymous': '匿名',
-      'comment.reply': '回复',
-      'comment.delete': '删除评论',
-      'userLogin.profile': '个人中心',
-      'userLogin.hello': '你好，',
-      'userLogin.guest': '你好，访客！',
-      'userLogin.login': '登录',
-      'userLogin.register': '注册',
-      'userLogin.admin': '后台管理',
-      'userLogin.logout': '退出',
-      'userLogin.logoutFail': '退出失败',
-      'userLogin.feedback': '反馈问题'
-    },
-    en: {
-      'common.ok': 'OK',
-      'common.cancel': 'Cancel',
-      'common.delete': 'Delete',
-      'common.back': 'Back',
-      'common.submit': 'Submit',
-      'common.search': 'Search',
-      'common.confirm': 'Confirm',
-      'common.save': 'Save',
-      'common.loading': 'Loading...',
-      'common.empty': 'No data',
-      'common.noMore': 'No more',
-      'common.auto': 'Auto',
-      'common.rows': 'Rows',
-      'common.cols': 'Columns',
-      'common.width': 'Width',
-      'common.height': 'Height',
-      'common.sourceType': 'Source',
-      'common.cloud': 'Cloud',
-      'common.localUpload': 'Local upload',
-      'common.mediaName': 'Media name',
-      'common.mediaUrl': 'Media URL',
-      'common.localFile': 'Local file',
-      'common.lockRatio': 'Lock aspect ratio',
-      'common.scale': 'Scale',
-      'common.chooseLocalFile': 'Please choose a local file to upload',
-      'editor.undo': 'Undo',
-      'editor.redo': 'Redo',
-      'editor.preview': 'Preview',
-      'editor.print': 'Print',
-      'editor.codeMode': 'Code mode',
-      'editor.maximize': 'Maximize / Restore',
-      'editor.bold': 'Bold',
-      'editor.italic': 'Italic',
-      'editor.underline': 'Underline',
-      'editor.strikeThrough': 'Strikethrough',
-      'editor.subscript': 'Subscript',
-      'editor.superscript': 'Superscript',
-      'editor.justifyLeft': 'Align left',
-      'editor.justifyCenter': 'Align center',
-      'editor.justifyRight': 'Align right',
-      'editor.justifyFull': 'Justify',
-      'editor.indent': 'Increase indent',
-      'editor.outdent': 'Decrease indent',
-      'editor.insertOrderedList': 'Ordered list',
-      'editor.insertUnorderedList': 'Unordered list',
-      'editor.lineheight': 'Line height',
-      'editor.h1': 'Heading 1',
-      'editor.h2': 'Heading 2',
-      'editor.h3': 'Heading 3',
-      'editor.p': 'Paragraph',
-      'editor.blockquote': 'Quote',
-      'editor.pre': 'Code block',
-      'editor.inlineCode': 'Inline code',
-      'editor.hr': 'Divider',
-      'editor.table': 'Table',
-      'editor.fontname': 'Font',
-      'editor.fontsize': 'Font size',
-      'editor.forecolor': 'Text color',
-      'editor.hilitecolor': 'Text highlight',
-      'editor.link': 'Link',
-      'editor.unlink': 'Unlink',
-      'editor.image': 'Insert image',
-      'editor.media': 'Insert media',
-      'editor.emoticons': 'Emoticons',
-      'editor.removeFormat': 'Clear format',
-      'editor.clearhtml': 'Clean HTML',
-      'editor.selectAll': 'Select all',
-      'editor.chooseFont': 'Choose font',
-      'editor.chooseSize': 'Choose font size',
-      'editor.heading': 'Heading',
-      'editor.chooseHeading': 'Choose heading',
-      'editor.chooseLineHeight': 'Choose line height',
-      'editor.spacing': 'Letter spacing',
-      'editor.chooseLetterSpacing': 'Choose letter spacing',
-      'editor.insertTable': 'Insert table',
-      'editor.tableRows': 'Rows',
-      'editor.tableCols': 'Columns',
-      'editor.insertLink': 'Insert link',
-      'editor.linkUrl': 'Link URL',
-      'editor.linkText': 'Link text',
-      'editor.enterLinkText': 'Enter link text',
-      'editor.enterLinkUrl': 'Enter a link URL',
-      'editor.enterLinkUrlSafe': 'Enter a safe valid link URL',
-      'editor.widthHeightRange': 'Width and height must be between 1 and 5000px',
-      'editor.insertImage': 'Insert image',
-      'editor.imageUrl': 'Image URL',
-      'editor.localImage': 'Local image',
-      'editor.insertMedia': 'Insert media',
-      'editor.mediaType': 'Media type',
-      'editor.video': 'Video',
-      'editor.audio': 'Audio',
-      'editor.editImage': 'Edit image',
-      'editor.editVideo': 'Edit video',
-      'editor.editAudio': 'Edit audio',
-      'editor.deleteImage': 'Delete image',
-      'editor.deleteVideo': 'Delete video',
-      'editor.deleteAudio': 'Delete audio',
-      'editor.deleteConfirm': 'Remove this {1} from the article body?',
-      'editor.deleteMediaBtn': 'Delete',
-      'editor.enterMediaUrl': 'Enter media URL',
-      'editor.enterMediaName': 'Enter media name',
-      'editor.enterImageUrl': 'Enter a safe valid image URL',
-      'editor.enterMediaUrlSafe': 'Enter a safe valid media URL',
-      'editor.mediaUploadFail': 'Media upload failed',
-      'editor.mediaUploadRetry': 'Media upload failed, please try again later',
-
-      'modal.title': 'Notice',
-      'modal.close': 'Close',
-      'modal.cancel': 'Cancel',
-      'modal.ok': 'OK',
-
-      'table.actions': 'Actions',
-      'table.empty': 'No data',
-
-      'loading.aria': 'Loading',
-
-      'pagination.error': 'Failed to load',
-
-      'image.loading': 'Loading...',
-      'image.error': 'Failed to load',
-      'image.empty': 'No image',
-
-      'input.clear': 'Clear input',
-      'input.hidePassword': 'Hide password',
-      'input.showPassword': 'Show password',
-
-      'upload.select': 'Select image',
-      'upload.empty': 'No image',
-      'upload.uploaded': 'Uploaded image',
-      'upload.deleteAria': 'Delete {1}',
-      'upload.tooLarge': '{1} exceeds the {2}M limit',
-      'upload.selectedCount': '{1} image(s) selected',
-      'upload.selectedFileCount': '{1} file(s) selected',
-      'upload.selectPreview': 'Select images to preview (up to {1})',
-      'upload.selectPreviewSingle': 'Select an image to preview',
-      'upload.selectFile': 'Select files (up to {1})',
-      'upload.selectFileSingle': 'Select a file',
-      'upload.maxCount': 'You can select at most {1} image(s)',
-
-      'navbar.menu': 'Menu',
-      'navbar.primary': 'Primary nav',
-      'navbar.expand': 'Expand nav',
-      'navbar.collapse': 'Collapse nav',
-      'navbar.home': 'Home',
-
-      'backtop.aria': 'Back to top',
-
-      'comment.title': 'Comments',
-      'comment.empty': 'No comments yet, be the first to comment!',
-      'comment.replyTo': 'Reply to ',
-      'comment.cancelReply': 'Cancel reply',
-      'comment.emoji': 'Emoticons',
-      'comment.anonymous': 'Anonymous',
-      'comment.reply': 'Reply',
-      'comment.delete': 'Delete comment',
-      'userLogin.profile': 'Profile',
-      'userLogin.hello': 'Hello, ',
-      'userLogin.guest': 'Hello, guest!',
-      'userLogin.login': 'Sign in',
-      'userLogin.register': 'Sign up',
-      'userLogin.admin': 'Admin',
-      'userLogin.logout': 'Logout',
-      'userLogin.logoutFail': 'Logout failed',
-      'userLogin.feedback': 'Feedback'
+  function localizeComponentMarkup(markup, language) {
+    var overrides = KNIU_I18N[language] || {};
+    var hasContractOverride = (() => {
+      var uiText = (getContracts() || {}).uiText || {};
+      return !!(uiText.cn && Object.keys(uiText.cn).length);
+    })();
+    if (language === 'cn' && !Object.keys(overrides).length && !hasContractOverride) return markup;
+    var lang = language;
+    var cacheKey = lang + '|' + markup;
+    if (LOCALIZED_MARKUP_CACHE.has(cacheKey)) return LOCALIZED_MARKUP_CACHE.get(cacheKey);
+    var entries = i18nReverseEntries();
+    var result = String(markup);
+    for (var i = 0; i < entries.length; i++) {
+      if (!entries[i][1]) continue;
+      result = result.split(entries[i][1]).join(componentText(lang, entries[i][1]));
     }
-  };
+    LOCALIZED_MARKUP_CACHE.set(cacheKey, result);
+    return result;
+  }
+
+  function i18nReverseEntries() {
+    const entries = [];
+    const dict = KNIU_I18N.cn;
+    if (dict) {
+      for (const key in dict) {
+        if (Object.prototype.hasOwnProperty.call(dict, key)) {
+          entries.push([key, dict[key]]);
+        }
+      }
+    }
+    return entries;
+  }
+
+  const LOCALIZED_MARKUP_CACHE = new Map();
+
+  setComponentTextLocalizer(localizeComponentMarkup);
+
+  var KNIU_I18N = I18N_DATA;
 
   function componentLang(options) {
     var v = options && options.lang != null ? options.lang : 'cn';
@@ -501,13 +235,20 @@ var KniuUI = (function () {
   }
 
   function componentText(lang, key, params) {
-    var dict = KNIU_I18N[lang] || KNIU_I18N.cn;
-    var text = dict[key];
+    var overrideText = contractUiText(lang, key);
+    var text = overrideText != null ? overrideText : (KNIU_I18N[lang] || KNIU_I18N.cn)[key];
     if (text == null) text = KNIU_I18N.cn[key] != null ? KNIU_I18N.cn[key] : key;
     if (params && Object.keys(params).length) {
       for (var k in params) text = String(text).replace(new RegExp('\\{' + k + '\\}', 'g'), String(params[k]));
     }
     return text;
+  }
+
+  function contractUiText(lang, key) {
+    var uiText = (getContracts() || {}).uiText || {};
+    var value = uiText[lang] && uiText[lang][key];
+    if (value == null && lang !== 'cn') value = uiText.cn && uiText.cn[key];
+    return value == null ? null : String(value);
   }
 
   function supportsAdoptedStyleSheets(root) {
@@ -621,7 +362,8 @@ var KniuUI = (function () {
     const root = host.attachShadow({ mode: 'open' });
     if (typeof ShadowRoot === 'undefined') return root;
     adoptSharedStyle(root, KNIU_BASE_FONT_CSS);
-    if (KNIU_THEME_HOST_CSS) adoptSharedStyle(root, KNIU_THEME_HOST_CSS, true);
+    const themeHostCss = getThemeHostCss();
+    if (themeHostCss) adoptSharedStyle(root, themeHostCss, true);
     adoptSharedStyle(root, KNIU_BASE_RESET_CSS);
     if (shouldContainHost(host.tagName)) adoptSharedStyle(root, KNIU_BASE_CONTAIN_CSS);
     const descriptor = getShadowInnerHTMLDescriptor();
@@ -631,8 +373,6 @@ var KniuUI = (function () {
       get: function () { return descriptor.get.call(root); },
       set: function (markup) {
         const html = String(markup == null ? '' : markup);
-        // 无 adoptedStyleSheets 支持时，回退路径注入的 <style> 不在 template.content 内，
-        // replaceChildren 清不掉——先移除上一次注入的样式节点，避免每次赋值累积。
         const staleStyles = root.__kniuFallbackStyles;
         if (staleStyles) {
           staleStyles.forEach(function (element) { element.remove(); });
@@ -667,7 +407,7 @@ var KniuUI = (function () {
               injectedStyles.push(containBase);
             }
             const fontBase = (root.ownerDocument || (root.host && root.host.ownerDocument) || document).createElement('style');
-            fontBase.textContent = KNIU_BASE_FONT_CSS + KNIU_THEME_HOST_CSS;
+            fontBase.textContent = KNIU_BASE_FONT_CSS + getThemeHostCss();
             root.appendChild(fontBase);
             injectedStyles.push(fontBase);
             const componentStyle = adoptSharedStyle(root, styleText);
@@ -841,7 +581,7 @@ var KniuUI = (function () {
     }
     if (!compiled) return template;
 
-    const scope = { scope: { row: row, $index: rowIndex } };
+    const scope = { scope: { row: row, $index: rowIndex }, row: row, $index: rowIndex };
     const evaluate = function (evaluator) {
       if (!evaluator) return '';
       try { return evaluator(scope); } catch { return ''; }
@@ -872,12 +612,7 @@ var KniuUI = (function () {
 
   function applyScrollLock(nodes) {
     nodes.root.dataset[SCROLL_LOCK_FLAG] = '1';
-    nodes.root.style.setProperty('overflow', 'hidden');
-    nodes.root.style.setProperty('overflow-x', 'hidden');
-    nodes.root.style.setProperty('overflow-y', 'hidden');
-    nodes.body.style.setProperty('overflow', 'hidden');
-    nodes.body.style.setProperty('overflow-x', 'hidden');
-    nodes.body.style.setProperty('overflow-y', 'hidden');
+    installScrollLockStyles(nodes.root);
   }
 
   function writeScrollLockOriginals(nodes, originals) {
@@ -991,27 +726,6 @@ var KniuUI = (function () {
     return removed;
   }
 
-  var loadingMaskInstance = null;
-
-  function ensureLoadingMask() {
-    if (loadingMaskInstance && loadingMaskInstance.isConnected) return loadingMaskInstance;
-    if (typeof customElements === 'undefined' || typeof document === 'undefined' || !document.body) return null;
-    if (!customElements.get('kniu-loading')) return null;
-    loadingMaskInstance = document.createElement('kniu-loading');
-    document.body.appendChild(loadingMaskInstance);
-    return loadingMaskInstance;
-  }
-
-  function setLoading(value) {
-    const next = !!value;
-    if (state.loading === next) return;
-    state.loading = next;
-    const mask = ensureLoadingMask();
-    if (mask) mask.show = next;
-    if (next) lockDocumentScroll('loading');
-    else unlockDocumentScroll('loading');
-  }
-
   function msg(options) {
     const config = options && typeof options === 'object'
       ? options
@@ -1026,12 +740,19 @@ var KniuUI = (function () {
     const toast = document.createElement('kniu-msg');
     toast.message = content == null ? '' : String(content);
     toast.type = type;
+    toast.position = config.position;
     toast.visible = false;
     document.body.append(toast);
     toastInstance = toast;
-    requestAnimationFrame(function () { toast.visible = true; });
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        if (toastInstance === toast && toast.isConnected) toast.visible = true;
+      });
+    });
     const close = function () {
       if (toastInstance !== toast) return;
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = null;
       toast.visible = false;
       toastInstance = null;
       setTimeout(function () { toast.remove(); }, 250);
@@ -1155,8 +876,11 @@ var KniuUI = (function () {
     const loadingTextEl = documentRef.createElement('span');
     loadingTextEl.className = 'kniu_sys_table_loading_text';
     loadingMask.appendChild(loadingTextEl);
+    const emptyState = documentRef.createElement('kniu-empty');
+    emptyState.setAttribute('data-kniu-table-empty', '');
+    emptyState.options = { note: '暂无数据' };
     viewport.append(table);
-    group.append(viewport, leftFixedShadow, rightFixedShadow, loadingMask);
+    group.append(viewport, emptyState, leftFixedShadow, rightFixedShadow, loadingMask);
     group.dataset.stripe = String(!!options.stripe);
     group.dataset.border = String(!!options.border);
     group.dataset.size = ['large', 'small'].includes(options.size) ? options.size : 'default';
@@ -1245,9 +969,9 @@ var KniuUI = (function () {
         }
       }
       let left = rect.left + rect.width / 2 - tw / 2;
-      if (left < hMargin) left = rect.left;                                       // 左避让
-      if (left + tw > window.innerWidth - hMargin) left = rect.right - tw;        // 右避让
-      left = Math.max(hMargin, Math.min(left, window.innerWidth - tw - hMargin)); // 视口兜底
+      if (left < hMargin) left = rect.left;
+      if (left + tw > window.innerWidth - hMargin) left = rect.right - tw;
+      left = Math.max(hMargin, Math.min(left, window.innerWidth - tw - hMargin));
       tooltip.style.top = `${top}px`;
       tooltip.style.left = `${left}px`;
       tooltip.dataset.placement = placement;
@@ -1255,7 +979,21 @@ var KniuUI = (function () {
       const arrowX = Math.max(10, Math.min(cellCenterX, tw - 10));
       tooltip.style.setProperty('--kniu_tip_arrow_x', `${arrowX}px`);
     }
+
     function hideTooltip() { tooltip.hidden = true; }
+
+    function applyRowWidgetAttributes(host, column, row, rowIndex) {
+      const config = column.tag || column.status;
+      if (!config) return;
+      const attrs = Object.entries(config.options || config.attributes || {});
+      if (!attrs.length) return;
+      attrs.forEach(function (entry) {
+        const name = entry[0];
+        const value = resolveTableRowTemplate(entry[1], row, rowIndex);
+        if (value === undefined || value === null || value === false) host.removeAttribute(name);
+        else host.setAttribute(name, value === true ? '' : String(value));
+      });
+    }
 
     function appendCellContent(cell, column, row, rowIndex) {
       if (column.type === 'index') {
@@ -1283,6 +1021,7 @@ var KniuUI = (function () {
         return;
       }
       if (column.image) {
+        if (column.image.condition && !resolveTableRowTemplate(column.image.condition, row, rowIndex)) return;
         const image = documentRef.createElement('kniu-image');
         image.options = { ...(column.image.options || column.image.attributes || {}), src: column.field == null ? '' : row?.[column.field] };
         image.style.width = column.image.width;
@@ -1305,7 +1044,6 @@ var KniuUI = (function () {
           if (currentRowData === undefined) return;
           const previousValue = column.field == null ? undefined : currentRowData[column.field];
           const requestedValue = event.detail;
-          if (column.field != null) currentRowData[column.field] = requestedValue;
           if (typeof column.switch.onChange !== 'function') return;
           const changeVersion = ++switchElement._changeVersion;
           const saveTask = switchElement._saveQueue.then(function () {
@@ -1314,7 +1052,6 @@ var KniuUI = (function () {
           switchElement._saveQueue = saveTask.catch(function () { return false; });
           const saved = await saveTask.catch(function () { return false; }) !== false;
           if (!saved && column.field != null && switchElement._changeVersion === changeVersion) {
-            currentRowData[column.field] = previousValue;
             switchElement.value = previousValue;
           }
         });
@@ -1326,6 +1063,7 @@ var KniuUI = (function () {
         tag.options = Object.fromEntries(Object.entries(column.tag.options || column.tag.attributes || {}).map(function ([name, value]) {
           return [name, resolveTableRowTemplate(value, row, rowIndex)];
         }));
+        applyRowWidgetAttributes(tag, column, row, rowIndex);
         const rawValue = column.field == null ? '' : row?.[column.field];
         tag.textContent = rawValue == null ? '' : String(rawValue);
         cell.append(tag);
@@ -1336,6 +1074,7 @@ var KniuUI = (function () {
         status.options = Object.fromEntries(Object.entries(column.status.options || column.status.attributes || {}).map(function ([name, value]) {
           return [name, resolveTableRowTemplate(value, row, rowIndex)];
         }));
+        applyRowWidgetAttributes(status, column, row, rowIndex);
         const rawValue = column.field == null ? '' : row?.[column.field];
         status.textContent = rawValue == null ? '' : String(rawValue);
         cell.append(status);
@@ -1429,6 +1168,10 @@ var KniuUI = (function () {
         return true;
       }
       if (column.image) {
+        if (column.image.condition && !resolveTableRowTemplate(column.image.condition, row, rowIndex)) {
+          if (child) cell.replaceChildren();
+          return true;
+        }
         if (!child || child.tagName !== 'KNIU-IMAGE') return false;
         child.options = { ...(column.image.options || column.image.attributes || {}), src: column.field == null ? '' : row?.[column.field] };
         return true;
@@ -1453,9 +1196,7 @@ var KniuUI = (function () {
         const tagName = column.tag ? 'KNIU-TAG' : 'KNIU-STATUS';
         if (!child || child.tagName !== tagName) return false;
         const config = column.tag || column.status;
-        child.options = Object.fromEntries(Object.entries(config.options || config.attributes || {}).map(function ([name, value]) {
-          return [name, resolveTableRowTemplate(value, row, rowIndex)];
-        }));
+        applyRowWidgetAttributes(child, column, row, rowIndex);
         const rawValue = column.field == null ? '' : row?.[column.field];
         child.textContent = rawValue == null ? '' : String(rawValue);
         return true;
@@ -1540,7 +1281,6 @@ var KniuUI = (function () {
     function buildBodyRow(row, rowIndex, offsets) {
       const pooled = rowPool[rowIndex];
       const reused = !!pooled
-        && !pooled.classList.contains('kniu_sys_table_empty')
         && pooled.cells.length === columns.length;
       const tableRow = reused ? pooled : createBodyRow(offsets);
       if (options.rowKey && row?.[options.rowKey] != null) tableRow.dataset.rowKey = String(row[options.rowKey]);
@@ -1569,24 +1309,6 @@ var KniuUI = (function () {
       return signature;
     }
 
-    function buildEmptyRow() {
-      const emptyRow = documentRef.createElement('tr');
-      emptyRow.className = 'kniu_sys_table_empty';
-      const emptyCell = documentRef.createElement('td');
-      emptyCell.colSpan = columns.length;
-      if (options.emptySlot) {
-        const slot = documentRef.createElement('slot');
-        slot.name = 'empty';
-        emptyCell.append(slot);
-      } else if (options.emptyText === '') {
-        emptyCell.textContent = '';
-        emptyRow.style.display = 'none';
-      } else {
-        emptyCell.textContent = options.emptyText || componentText(componentLang(options), 'table.empty');
-      }
-      emptyRow.append(emptyCell);
-      return emptyRow;
-    }
 
     function findEventElement(event, selector) {
       const pathMatch = event.composedPath?.().find(function (node) {
@@ -1613,7 +1335,7 @@ var KniuUI = (function () {
       const hit = resolveRowFromEvent(event, null);
       if (!hit) return;
       const { cell, tableRow, row, rowIndex, column } = hit;
-      const isControl = findEventElement(event, '.kniu_sys_table_action,.kniu_sys_table_editable,.kniu_sys_table_selection,kniu-switch');
+      const isControl = findEventElement(event, '.kniu_sys_table_action,.kniu_sys_table_editable,.kniu_sys_table_selection,Kniu-Switch');
       if (isControl) {
         if (column?.editable && cell.classList.contains('kniu_sys_table_editable')) {
           beginCellEdit(cell, column, row, rowIndex);
@@ -1651,7 +1373,7 @@ var KniuUI = (function () {
     function measureColumnWidths() {
       if (measuredColumnWidths) return measuredColumnWidths;
       const head = table.querySelector('thead');
-      const row = head?.rows?.[0] || table.querySelector('tbody tr:not(.kniu_sys_table_empty)');
+      const row = head?.rows?.[0] || table.querySelector('tbody tr');
       const measured = [];
       let anyMeasured = false;
       for (let index = 0; index < columns.length; index += 1) {
@@ -1748,20 +1470,25 @@ var KniuUI = (function () {
     }
 
     function updateFixedShadowVisibility() {
+      if (!rows.length) {
+        group.dataset.mobileOverflowLeft = 'false';
+        group.dataset.mobileOverflowRight = 'false';
+        leftFixedShadow.dataset.visible = 'false';
+        rightFixedShadow.dataset.visible = 'false';
+        return;
+      }
       const metrics = getLayoutMetrics();
       const scrollLeft = viewport.scrollLeft;
       const { maxScrollLeft, hasHorizontalOverflow, isMobile, verticalScrollbarWidth } = metrics;
       group.dataset.mobileOverflowLeft = String(isMobile && hasHorizontalOverflow && scrollLeft > 1);
       group.dataset.mobileOverflowRight = String(isMobile && hasHorizontalOverflow && scrollLeft < maxScrollLeft - 1);
       const shadowEnabled = !isMobile;
-      leftFixedShadow.style.display =
-        shadowEnabled && fixedLeftWidth > 0 && hasHorizontalOverflow && scrollLeft > 1
-          ? 'block'
-          : 'none';
-      rightFixedShadow.style.display =
-        shadowEnabled && fixedRightWidth > 0 && hasHorizontalOverflow && scrollLeft < maxScrollLeft - 1
-          ? 'block'
-          : 'none';
+      leftFixedShadow.dataset.visible = String(
+        Boolean(shadowEnabled && fixedLeftWidth > 0 && hasHorizontalOverflow && scrollLeft > 1)
+      );
+      rightFixedShadow.dataset.visible = String(
+        Boolean(shadowEnabled && fixedRightWidth > 0 && hasHorizontalOverflow && scrollLeft < maxScrollLeft - 1)
+      );
       rightFixedShadow.style.right = `${verticalScrollbarWidth}px`;
     }
 
@@ -1857,7 +1584,15 @@ var KniuUI = (function () {
       const syncSortHeader = renderOptions.syncSortHeader !== false;
       const syncSelectionHeader = renderOptions.syncSelectionHeader !== false;
       const isEmpty = rows.length === 0;
+      if (group.dataset.empty !== String(isEmpty)) {
+        invalidateColumnWidthCache();
+        invalidateLayoutMetrics();
+        if (isEmpty) viewport.scrollLeft = 0;
+      }
       group.dataset.empty = String(isEmpty);
+      emptyState.hidden = !isEmpty;
+      if (isEmpty) table.style.minWidth = '0';
+      else applyTableMinWidth();
       const offsets = fixedOffsets();
 
       if (!headElement && options.showHeader !== false) {
@@ -1938,9 +1673,7 @@ var KniuUI = (function () {
       }
 
       const rowNodes = [];
-      if (!rows.length) {
-        rowNodes.push(buildEmptyRow());
-      } else {
+      if (rows.length) {
         for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
           rowNodes.push(buildBodyRow(rows[rowIndex], rowIndex, offsets));
         }
@@ -1958,7 +1691,7 @@ var KniuUI = (function () {
       replaceChildrenWithFragment(bodyElement, rowNodes);
 
       lastFixedOffsets = offsets;
-      resyncFixedGeometry();
+      if (!isEmpty) resyncFixedGeometry();
 
       scheduleShadowVisibilityUpdate();
       rendering = false;
@@ -2063,7 +1796,6 @@ var KniuUI = (function () {
     function setMaxHeight(value) {
       const next = Number.parseInt(value, 10) || 0;
       viewport.style.maxHeight = next > 0 ? `${Math.max(40, next)}px` : '';
-      viewport.style.overflowY = next > 0 ? 'auto' : '';
       updateFixedShadowVisibility();
     }
     if (options.loadingText != null) loadingTextEl.textContent = String(options.loadingText);
@@ -2096,27 +1828,7 @@ var KniuUI = (function () {
   }
 
   function confirm(message, title = '提示', options = {}) {
-    if (typeof document === 'undefined') return Promise.resolve(false);
-    registerModal(KNIU_COMPONENT_CONTEXT);
-    const modal = document.createElement('kniu-modal');
-    modal.confirm = true;
-    modal.title = title;
-    modal.message = message;
-    document.body.append(modal);
-    // 先完成自定义元素连接，再注入完整 options，确保确认/取消按钮监听已建立。
-    modal.options = { ...(options || {}) };
-    modal.show = true;
-    return new Promise((resolve, reject) => {
-      const onConfirm = () => { cleanup(); resolve('confirm'); };
-      const onCancel = () => { cleanup(); reject('cancel'); };
-      function cleanup() {
-        modal.removeEventListener('confirm', onConfirm);
-        modal.removeEventListener('cancel', onCancel);
-        setTimeout(() => { if (modal.parentNode) modal.remove(); }, 320);
-      }
-      modal.addEventListener('confirm', onConfirm);
-      modal.addEventListener('cancel', onCancel);
-    });
+    return uiEssential().confirm(message, title, options);
   }
 
   function buildPageList(current, total) {
@@ -2131,147 +1843,6 @@ var KniuUI = (function () {
     return arr;
   }
 
-  function usePagination(options) {
-    const { state, self, url, field = 'id', sort = 'asc', params = null, transform = null, tableKey = null, pageKey = null, table = null, page = null, stateStore = null, storeRecordKey = '', onLoaded = null } = options;
-    if (!state || !self || !url) {
-      throw new Error('usePagination 需要 state、self、url 三个参数');
-    }
-    if (tableKey && (!state[tableKey] || typeof state[tableKey] !== 'object')) {
-      state[tableKey] = Object.assign({ data: [], rowKey: 'id', loading: true }, table && typeof table === 'object' ? table : {});
-    }
-    if (pageKey && (!state[pageKey] || typeof state[pageKey] !== 'object')) {
-      state[pageKey] = Object.assign({ currentPage: 1, pageSize: 20, total: 0 }, page && typeof page === 'object' ? page : {});
-    }
-    const pageOptions = pageKey && state[pageKey] && typeof state[pageKey] === 'object' ? state[pageKey] : {};
-    const configuredPageSize = Number(pageOptions.pageSize);
-    state.pageRows = Math.max(1, Number.isFinite(configuredPageSize) ? configuredPageSize : 10);
-    state.currentPage = Math.max(1, Number(pageOptions.currentPage) || 1);
-    state.pageTotal = Math.max(1, Number(state.pageTotal) || 1);
-    state.total = Math.max(0, Number(pageOptions.total ?? state.total) || 0);
-
-    function resolveExtraParams() {
-      const extra = typeof params === 'function' ? params() : params;
-      return extra && typeof extra === 'object' ? extra : {};
-    }
-
-    function syncOptions() {
-      if (tableKey && state[tableKey] && typeof state[tableKey] === 'object') {
-        const prev = state[tableKey];
-        state[tableKey] = { ...prev, data: state.list, loading: state.loading };
-      }
-      if (pageKey && state[pageKey] && typeof state[pageKey] === 'object') {
-        const prev = state[pageKey];
-        state[pageKey] = { ...prev, total: state.total, currentPage: state.currentPage, pageSize: state.pageRows };
-      }
-    }
-
-    let activeLoadKey = '';
-    let activeLoadPromise = null;
-
-    function serializeLoadParams(value) {
-      if (value === null || typeof value !== 'object') return JSON.stringify(value);
-      if (Array.isArray(value)) return '[' + value.map(serializeLoadParams).join(',') + ']';
-      return '{' + Object.keys(value).sort().map(function (key) {
-        return JSON.stringify(key) + ':' + serializeLoadParams(value[key]);
-      }).join(',') + '}';
-    }
-
-    async function loadList(page, options) {
-      const targetPage = Math.min(Math.max(Number(page) || 1, 1), state.pageTotal || 1);
-      const requestData = {
-        page_current: targetPage,
-        page_rows: state.pageRows,
-        field,
-        sort,
-        ...resolveExtraParams()
-      };
-      const loadKey = `${url}:${serializeLoadParams(requestData)}`;
-      if (activeLoadPromise && activeLoadKey === loadKey) return activeLoadPromise;
-      // silent：局部保存后的静默重拉（如改 sid 后按排序刷新）——不置 loading，
-      // 避免表格遮罩(spinner+文字)整表闪烁；数据仍照常同步，行 DOM 走复用无重建。
-      const silent = !!(options && options.silent);
-
-      const run = (async function () {
-        if (!silent) {
-          state.loading = true;
-          syncOptions();
-        }
-        await REQUEST({
-          url,
-          type: 'POST',
-          mutation: false,
-          data: requestData,
-          async success(res) {
-            if (res.status !== 1) {
-              state.error = res.msg || '加载失败';
-              if (!silent) state.loading = false;
-              syncOptions();
-              self.$msg({ content: state.error, type: 'error' });
-              return;
-            }
-            const payload = res.data || {};
-            const records = getResponseRecords(payload);
-            state.list = typeof transform === 'function' ? transform(records) : records;
-            state.currentPage = payload.page_current || 1;
-            state.pageTotal = payload.page_total || 1;
-            state.total = payload.total || 0;
-            if (!silent) state.loading = false;
-            syncOptions();
-            if (onLoaded) onLoaded();
-            if (stateStore && storeRecordKey && typeof stateStore.track === 'function') {
-              await stateStore.track(storeRecordKey, {
-                records: state.list,
-                total: state.total,
-                currentPage: state.currentPage,
-                pageRows: state.pageRows
-              }, 'records-changed');
-            }
-          },
-          fail(res) {
-            if (!silent) state.loading = false;
-            syncOptions();
-            state.error = res.msg || '加载失败';
-            self.$msg({ content: state.error, type: 'error' });
-          }
-        });
-      }());
-      activeLoadKey = loadKey;
-      activeLoadPromise = run;
-      try {
-        return await run;
-      } finally {
-        if (activeLoadPromise === run) {
-          activeLoadPromise = null;
-          activeLoadKey = '';
-        }
-      }
-    }
-
-    function changePage(event) {
-      const page = event?.detail?.page ?? (event && event.currentTarget ? Number(event.currentTarget.dataset.page) : 0);
-      if (!Number.isFinite(page) || page < 1 || page > state.pageTotal) return;
-      loadList(page);
-    }
-
-    function changePageSize(event) {
-      const raw = event?.detail?.size ?? Number(event && event.target ? event.target.value : state.pageRows);
-      const size = Math.max(1, Math.min(200, Math.floor(raw) || 10));
-      if (size === state.pageRows) return;
-      state.pageRows = size;
-      state.currentPage = 1;
-      loadList(1);
-    }
-
-    if (pageKey && state[pageKey] && typeof state[pageKey] === 'object') {
-      state[pageKey] = {
-        ...state[pageKey],
-        onCurrentChange: function (detail) { changePage({ detail: detail }); },
-        onSizeChange: function (detail) { changePageSize({ detail: detail }); }
-      };
-    }
-
-    return { loadList, changePage, changePageSize, syncOptions };
-  }
 
   function makeSwitchOptions(enabled = true) {
     return {
@@ -2284,78 +1855,15 @@ var KniuUI = (function () {
     };
   }
 
-  function createSearchActions(loadList, wait = 250) {
-    const searchList = function () { loadList(1); };
-    return { searchList: searchList, debouncedSearch: debounce(searchList, wait) };
-  }
-
-  function createRowDeleteHandler(config) {
-    const { self, state, loadList, url, confirmMessage, gate = null, getSuccessMessage = null, onSuccess = null,
-      reloadOnSuccess = true, idOf = null, buildData = null, reload = null,
-      confirmTitle = '提示', confirmText = '确定' } = config || {};
-    return async function deleteRow(index, list) {
-      const row = list[index];
-      if (!row) return false;
-      if (typeof gate === 'function' && !gate()) return false;
-      const confirmed = await self.$confirm(
-        typeof confirmMessage === 'function' ? confirmMessage(row) : confirmMessage,
-        confirmTitle,
-        {
-          confirmText: confirmText,
-          cancelText: '取消',
-          type: 'warning'
-        }
-      ).then(function () { return true; }).catch(function () { return false; });
-      if (!confirmed) return false;
-      await REQUEST({
-        url: url,
-        type: 'POST',
-        // 复杂主键（db 系按 database/table/profile 定位）经 buildData 自定义载荷；
-        // 常规主键经 idOf 提取，默认 row.id（A-M4）。
-        data: buildData ? buildData(row) : { id: idOf ? idOf(row) : row.id },
-        success(res) {
-          if (res.status !== 1) {
-            self.$msg({ content: res.msg, type: 'error' });
-            return;
-          }
-          self.$msg({ content: typeof getSuccessMessage === 'function' ? getSuccessMessage(res) : '删除成功!', type: 'success' });
-          if (typeof onSuccess === 'function') onSuccess(row, res);
-          if (reloadOnSuccess) {
-            if (typeof reload === 'function') reload();
-            else loadList(state.currentPage);
-          }
-        },
-        fail(res) { self.$msg({ content: res.msg, type: 'error' }); }
-      });
-      return false;
-    };
-  }
-
-  function usePage(config) {
-    const options = config || {};
-    const pager = usePagination(options);
-    const search = createSearchActions(pager.loadList, options.searchWait);
-    const deleteRow = options.deleteUrl
-      ? createRowDeleteHandler({
-        self: options.self,
-        state: options.state,
-        loadList: pager.loadList,
-        url: options.deleteUrl,
-        confirmMessage: options.deleteMessage || '此操作将永久删除该条数据, 是否继续?',
-        gate: options.deleteGate || null,
-        onSuccess: options.onDeleteSuccess || null,
-        reloadOnSuccess: options.reloadOnDeleteSuccess !== false
-      })
-      : null;
-    return Object.assign({}, pager, search, { deleteRow: deleteRow });
-  }
-
   function deferAffixTemplateMount(template, mount, done) {
     const finish = function () {
       mount();
       if (typeof done === 'function') done();
     };
-    if (!template.hasAttribute(':option') && !template.hasAttribute('kniu:option')) { finish(); return; }
+    const hasPendingOptionAttr = function () {
+      return template.hasAttribute(':option') || template.hasAttribute('kniu:option') || template.hasAttribute('data-kniu-option-keys');
+    };
+    if (!hasPendingOptionAttr()) { finish(); return; }
     if (template.__kniuAffixPending) return;
     template.__kniuAffixPending = true;
     template.__kniuAffixDeadline = Date.now() + 50;
@@ -2363,7 +1871,7 @@ var KniuUI = (function () {
       template.__kniuAffixPending = false;
       if (!template.isConnected) return;
       const optionsReady = !!template.__kniuOptionsValue;
-      const attrConsumed = !template.hasAttribute(':option') && !template.hasAttribute('kniu:option');
+      const attrConsumed = !hasPendingOptionAttr();
       if (!optionsReady && !attrConsumed && Date.now() <= template.__kniuAffixDeadline) {
         template.__kniuAffixPending = true;
         queueMicrotask(retry);
@@ -2382,13 +1890,14 @@ var KniuUI = (function () {
       ['prepend', 'append'].forEach((name) => {
         const content = comp.querySelector('[slot="' + name + '"]');
         const affix = comp.shadowRoot.querySelector('.' + affixPrefix + '_' + name);
-        const labelWidth = content ? (content.dataset.labelWidth || '') : '';
+        const labelWidth = (comp.getAttribute('label-width') || '')
+          || (content ? (content.dataset.labelWidth || content.getAttribute('label-width') || '') : '');
         group.dataset['has' + name[0].toUpperCase() + name.slice(1)] = String(Boolean(content));
         if (content) hasAny = true;
         if (labelWidth && CSS.supports('width', labelWidth)) {
           const sized = 'calc(' + labelWidth + ' + 1px)';
-          affix.style.width = sized;
-          affix.style.flexBasis = sized;
+          affix.style.setProperty('width', sized, 'important');
+          affix.style.setProperty('flex-basis', sized, 'important');
         } else {
           affix.style.removeProperty('width');
           affix.style.removeProperty('flex-basis');
@@ -2454,6 +1963,10 @@ var KniuUI = (function () {
     const allowedAttribute = function (name, element) {
       if (['id', 'class', 'style', 'slot', 'ref', 'role', 'tabindex', 'block', 'append-border', 'append-borderless'].includes(name)) return true;
       if (name.startsWith('aria-') || name.startsWith('data-') || name.startsWith('kniu:') || name.startsWith('kniu@') || name.startsWith('#')) return true;
+      const optionKeys = String(element && element.getAttribute('data-kniu-option-keys') || '')
+        .split(',')
+        .map((key) => key.replace(/[A-Z]/g, (character) => '-' + character.toLowerCase()).toLowerCase());
+      if (optionKeys.includes(String(name).toLowerCase())) return true;
       const observed = element && element.constructor && element.constructor.observedAttributes;
       return !!(observed && observed.includes(name));
     };
@@ -2569,6 +2082,7 @@ var KniuUI = (function () {
     KNIU_ICON_FONT_NAMES,
     KNIU_ICON_NAMES,
     KNIU_ICON_SVG,
+    loadIconSvg,
     KNIU_IMAGE_CSS,
     KNIU_IMAGE_OVERRIDES_CSS,
     KNIU_INPUT_AFFIX_CSS,
@@ -2581,7 +2095,6 @@ var KniuUI = (function () {
     KNIU_INPUT_TEXTAREA_CSS,
     KNIU_INPUT_TIP_CSS,
     KNIU_LIKE_CSS,
-    KNIU_LOADING_CSS,
     KNIU_MARKDOWN_CSS,
     KNIU_MODAL_CONFIRM_CSS,
     KNIU_MODAL_CSS,
@@ -2669,7 +2182,6 @@ var KniuUI = (function () {
     scrollLockNodes,
     scrollLockOriginals,
     scrollLockOwners,
-    setLoading,
     shadowInnerHTMLDescriptor,
     shadowStyleSheetCache,
     shadowTemplateCache,
@@ -2693,7 +2205,6 @@ var KniuUI = (function () {
   registerSwitch(KNIU_COMPONENT_CONTEXT);
   registerModal(KNIU_COMPONENT_CONTEXT);
   registerTable(KNIU_COMPONENT_CONTEXT);
-  registerLoading(KNIU_COMPONENT_CONTEXT);
   registerMsg(KNIU_COMPONENT_CONTEXT);
   registerSelect(KNIU_COMPONENT_CONTEXT);
   registerRadioGroup(KNIU_COMPONENT_CONTEXT);
@@ -2763,141 +2274,24 @@ var KniuUI = (function () {
     }
   }
   [
-    'kniu-btn', 'kniu-btn-group', 'kniu-switch', 'kniu-modal', 'kniu-table', 'kniu-table-col', 'kniu-loading', 'kniu-msg',
+    'kniu-btn', 'kniu-btn-group', 'kniu-switch', 'kniu-modal', 'kniu-table', 'kniu-table-col', 'kniu-msg',
     'kniu-option', 'kniu-select', 'kniu-radio', 'kniu-radio-group', 'kniu-page', 'kniu-image', 'kniu-input',
     'kniu-input-group', 'kniu-form-cell', 'kniu-date-picker', 'kniu-form', 'kniu-upload', 'kniu-icon',
     'kniu-badge', 'kniu-tag', 'kniu-status', 'kniu-tab', 'kniu-empty', 'kniu-editor', 'kniu-navbar-cells', 'kniu-navbar-cell',
-    // 注：kniu-tab-head/body/panel 暂不登记——它们无 observedAttributes 覆盖 label/name，
-    // 登记后 connectedCallback 的 allowedAttribute 会把这些属性静默移除（标签标题丢失）。
-    // 登记前须先在各子组件补 observedAttributes 或纳入 allowedAttribute 白名单。
-    'kniu-sub-navbar', 'kniu-navbar', 'kniu-backtop', 'kniu-comment', 'kniu-like', 'kniu-user-login', 'kniu-article-tab'
+    'kniu-sub-navbar', 'kniu-navbar', 'kniu-backtop', 'kniu-comment', 'kniu-like', 'kniu-user-login', 'kniu-user-login-cell', 'kniu-article-tab'
   ].forEach(installOptionsOnlyProtocol);
 
-  function assertCustomTag(tagName, apiName) {
-    if (typeof customElements === 'undefined' || typeof HTMLElement === 'undefined') {
-      console.warn('[KNIU] ' + apiName + '("' + tagName + '") ignored: custom element registry unavailable');
-      return false;
-    }
-    if (typeof tagName !== 'string' || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(tagName)) {
-      console.warn('[KNIU] ' + apiName + '("' + tagName + '") rejected: tag must be lowercase and contain a hyphen, e.g. "app-rating"');
-      return false;
-    }
-    if (tagName.indexOf('kniu-') === 0) {
-      console.warn('[KNIU] ' + apiName + '("' + tagName + '") rejected: "kniu-" prefix is reserved for built-in components');
-      return false;
-    }
-    if (customElements.get(tagName)) {
-      console.warn('[KNIU] ' + apiName + '("' + tagName + '") skipped: already defined');
-      return false;
-    }
-    return true;
-  }
-
   function defineComponent(tagName, registerFn) {
-    if (!assertCustomTag(tagName, 'defineComponent')) return;
-    if (typeof registerFn !== 'function') {
-      console.warn('[KNIU] defineComponent("' + tagName + '") rejected: second argument must be a register function (context) => void');
-      return;
-    }
-    registerFn(KNIU_COMPONENT_CONTEXT);
+    return uiEssential().defineComponent(tagName, registerFn);
   }
 
   function useComponent(spec) {
-    const tag = spec && spec.tag;
-    if (!assertCustomTag(tag, 'useComponent')) return;
-    if (typeof spec.setup !== 'function') {
-      console.warn('[KNIU] useComponent("' + tag + '") rejected: spec.setup(ctx) must return { state, ...actions }');
-      return;
-    }
-    const style = typeof spec.style === 'string' ? spec.style : '';
-    const template = typeof spec.template === 'string' ? spec.template : '';
-    class KniuCustomComponent extends HTMLElement {
-      constructor() {
-        super();
-        attachComponentShadow(this);
-        if (style) {
-          const styleNode = document.createElement('style');
-          styleNode.textContent = style;
-          this.shadowRoot.appendChild(styleNode);
-        }
-        if (template) {
-          const root = document.createElement('div');
-          root.innerHTML = template;
-          this.shadowRoot.appendChild(root);
-          this._root = root;
-        } else {
-          this._root = this.shadowRoot;
-        }
-        this._binding = null;
-        this._pending = null;
-        this._hooks = { beforeMount: [], mounted: [], unmounted: [] };
-        this._built = false;
-      }
-      connectedCallback() {
-        if (this._built) return;
-        this._built = true;
-        const self = this;
-        function registerHook(bucket, fn) {
-          if (typeof fn !== 'function') throw new TypeError('[KNIU] useComponent("' + tag + '") lifecycle hook must be a function');
-          self._hooks[bucket].push(fn);
-        }
-        function runHooks(bucket) {
-          self._hooks[bucket].forEach(function (fn) { fn.call(self, self); });
-        }
-        const ctx = {
-          host: this,
-          reactive: TEMPLATE.reactive,
-          nextTick: TEMPLATE.nextTick,
-          emit: this.emit.bind(this),
-          onBeforeMount: function (fn) { registerHook('beforeMount', fn); },
-          onMounted: function (fn) { registerHook('mounted', fn); },
-          onUnmounted: function (fn) { registerHook('unmounted', fn); }
-        };
-        const bindings = spec.setup.call(ctx, ctx) || {};
-        let state = bindings.state;
-        if (!state || typeof state !== 'object') {
-          console.warn('[KNIU] useComponent("' + tag + '") setup must return { state, ...actions }');
-          return;
-        }
-        if (this._pending && typeof this._pending === 'object') Object.assign(state, this._pending);
-        this._syncReadonly(state);
-        runHooks('beforeMount');
-        this._binding = TEMPLATE.bind(this._root, state);
-        runHooks('mounted');
-      }
-      disconnectedCallback() {
-        if (!this._built) return;
-        this._hooks.unmounted.forEach(function (fn) { fn.call(this, this); }, this);
-        if (this._binding && typeof this._binding.dispose === 'function') this._binding.dispose();
-        this._binding = null;
-        this._built = false;
-      }
-      emit(name, detail) {
-        this.dispatchEvent(new CustomEvent(name, { detail: detail, bubbles: true, composed: true }));
-      }
-      get options() {
-        return this._binding ? Object.assign({}, this._binding.state) : Object.assign({}, this._pending);
-      }
-      set options(value) {
-        const o = value && typeof value === 'object' ? value : {};
-        if (this._binding) {
-          Object.assign(this._binding.state, o);
-        } else {
-          this._pending = Object.assign({}, this._pending, o);
-        }
-        this._syncReadonly(o);
-      }
-      _syncReadonly(state) {
-        this.toggleAttribute('readonly', state.readonly === true);
-      }
-    }
-    customElements.define(tag, KniuCustomComponent);
+    return uiEssential().useComponent(spec);
   }
 
   return {
     state: state,
     use,
-    setLoading: setLoading,
     lockDocumentScroll: lockDocumentScroll,
     unlockDocumentScroll: unlockDocumentScroll,
     reconcileDocumentScrollLock: reconcileDocumentScrollLock,
@@ -2921,5 +2315,3 @@ var KniuUI = (function () {
 }());
 
 export default KniuUI;
-
-export const createRowDeleteHandler = KniuUI.createRowDeleteHandler;

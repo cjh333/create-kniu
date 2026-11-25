@@ -1,0 +1,10 @@
+.kniu_richtext_table_wrap {
+  overflow: hidden;
+  overflow-x: auto;
+  margin: 10px 0 20px;
+  width: 100%
+}
+
+.kniu_richtext_table {
+  min-width: 768px;
+}

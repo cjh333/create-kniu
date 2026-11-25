@@ -1,3 +1,5 @@
+import { maskExternalImages } from './Kniu-Proxy.mjs';
+
 const SLICE_SIZE = 800;
 const BANNED_TAGS = 'script,iframe,object,embed,link,meta,style,base,form';
 const BANNED_TAG_RE = /<(\/?)(script|iframe|object|embed|link|meta|style|base|form)(?=\s|\/?>)([^>]*?)>/gi;
@@ -98,9 +100,10 @@ function sanitizeDom(template, documentRef) {
   return template.innerHTML;
 }
 
-export function sanitizeRichHtml(html, documentRef = document) {
+export function sanitizeRichHtml(html, documentRef = globalThis.document) {
+  if (!documentRef) throw new Error('sanitizeRichHtml 需要 DOM 文档对象');
   const template = documentRef.createElement('template');
-  template.innerHTML = escapeBannedTags(html);
+  template.innerHTML = maskExternalImages(escapeBannedTags(html));
   return sanitizeDom(template, documentRef);
 }
 
@@ -114,7 +117,8 @@ function yieldToMainThread() {
   });
 }
 
-export async function sanitizeRichHtmlAsync(html, documentRef = document) {
+export async function sanitizeRichHtmlAsync(html, documentRef = globalThis.document) {
+  if (!documentRef) throw new Error('sanitizeRichHtmlAsync 需要 DOM 文档对象');
   const template = documentRef.createElement('template');
   template.innerHTML = escapeBannedTags(html);
   removeDangerousSmilNodes(template.content);

@@ -1,0 +1,19 @@
+:host {
+  display: block;
+}
+
+[role="menuitem"] {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  background-color: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+[role="menuitem"]:hover {
+  background-color: var(--kniu-fill-color, #f5f7fa);
+}

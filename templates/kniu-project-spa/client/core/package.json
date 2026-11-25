@@ -1,0 +1,37 @@
+{
+  "name": "@kniu/core",
+  "version": "1.0.0",
+  "description": "Kniu 前端框架核心：零依赖契约层、MVVM、路由、请求、模板引擎、控制器套件与标准 ESM 资源层。",
+  "type": "module",
+  "types": "./Kniu.d.ts",
+  "engines": {
+    "node": ">=18"
+  },
+  "exports": {
+    ".": "./Kniu-CoreExport.mjs",
+    "./ui": "./Kniu-UiLoader.mjs",
+    "./assets": "./Kniu-Generated/Kniu-GenIndex.mjs",
+    "./styles": "./Kniu-Generated/Kniu-GenStyles.mjs",
+    "./templates": "./Kniu-Generated/Kniu-GenTemplate.mjs",
+    "./worker": "./Kniu-RequestWorker.mjs",
+    "./node": {
+      "node": "./Kniu-NodeLoader.mjs"
+    },
+    "./server": {
+      "node": "./Kniu-Server.mjs"
+    },
+    "./build": {
+      "node": "./Kniu-BuildClient.mjs"
+    },
+    "./preview": {
+      "node": "./Kniu-PreviewServer.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "*.mjs",
+    "*.d.ts",
+    "Kniu-Ui/**",
+    "Kniu-Generated/**"
+  ]
+}

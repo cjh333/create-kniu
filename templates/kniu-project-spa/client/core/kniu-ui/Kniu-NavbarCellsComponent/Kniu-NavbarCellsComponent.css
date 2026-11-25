@@ -1,0 +1,41 @@
+:host {
+  display: flex;
+  display: -webkit-flex;
+  align-items: stretch;
+  -webkit-align-items: stretch;
+  -moz-align-items: stretch;
+  -ms-align-items: stretch;
+  -o-align-items: stretch;
+  flex-direction: column;
+  -webkit-flex-direction: column;
+  -moz-flex-direction: column;
+  -ms-flex-direction: column;
+  -o-flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  font-size: var(--kniu-navbar-font-size);
+  font-family: var(--kniu-font-family);
+}
+
+::slotted(Kniu-NavbarCell),
+::slotted(Kniu-SubNavbar),
+::slotted(Kniu-UserLogin) {
+  font-size: inherit;
+}
+
+@media (min-width: calc(1280px - 60px)) {
+  :host {
+    flex-direction: row;
+    -webkit-flex-direction: row;
+    -moz-flex-direction: row;
+    -ms-flex-direction: row;
+    -o-flex-direction: row;
+    align-items: center;
+    -webkit-align-items: center;
+    -moz-align-items: center;
+    -ms-align-items: center;
+    -o-align-items: center;
+    gap: 10px;
+    width: auto;
+  }
+}

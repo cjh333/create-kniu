@@ -1,0 +1,175 @@
+:host {
+  display: block;
+  width: 100%;
+}
+
+.kniu_sys_input_group {
+  display: flex;
+  display: -webkit-flex;
+  width: 100%;
+  height: var(--kniu-control-height, max(30px, calc(40 / var(--kniu_vw))));
+}
+
+.kniu_sys_input_wrap {
+  position: relative;
+  flex: 1;
+  -webkit-flex: 1;
+  -moz-flex: 1;
+  -ms-flex: 1;
+  -o-flex: 1;
+  display: block;
+  min-width: 0;
+}
+
+.kniu_sys_input {
+  display: block;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-radius: var(--kniu-radius, 4px);
+  -webkit-border-radius: var(--kniu-radius, 4px);
+  -moz-border-radius: var(--kniu-radius, 4px);
+  -ms-border-radius: var(--kniu-radius, 4px);
+  -o-border-radius: var(--kniu-radius, 4px);
+  padding: 0 12px;
+  width: 100%;
+  height: var(--kniu-control-height, max(30px, calc(40 / var(--kniu_vw))));
+  font: 14px/40px var(--kniu-font-family);
+  background-color: #fff;
+  color: var(--kniu-text-color, #606266);
+  transition: border-color .2s;
+  -webkit-transition: border-color .2s;
+  -moz-transition: border-color .2s;
+  -ms-transition: border-color .2s;
+  -o-transition: border-color .2s;
+}
+
+.kniu_sys_input::placeholder {
+  color: #c0c4cc;
+}
+
+.kniu_sys_input:hover {
+  border-color: #c0c4cc;
+}
+
+.kniu_sys_input:focus {
+  z-index: 1;
+  position: relative;
+  border-color: var(--kniu-color-primary, #409eff);
+}
+
+.kniu_sys_input:disabled {
+  background-color: var(--kniu-fill-color, #f5f7fa);
+  color: #c0c4cc;
+  cursor: not-allowed;
+}
+
+.kniu_sys_input_affix {
+  overflow: hidden;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex: none;
+  -webkit-flex: none;
+  -moz-flex: none;
+  -ms-flex: none;
+  -o-flex: none;
+  display: none;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  padding: 0 20px;
+  font-size: 14px;
+  line-height: 38px;
+  text-align: center;
+  white-space: nowrap;
+  background-color: var(--kniu-fill-color, #f5f7fa);
+  color: var(--kniu-color-info, #909399);
+}
+
+.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input_prepend {
+  display: flex;
+  display: -webkit-flex;
+  border-right: 0;
+  border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -webkit-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -moz-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -ms-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -o-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+}
+
+.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input_append {
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  border-left: 0;
+  border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  -webkit-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  -moz-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  -ms-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  -o-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  padding: 0;
+}
+
+.kniu_sys_input_group[data-has-prepend="true"] .kniu_sys_input {
+  border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  -webkit-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  -moz-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  -ms-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  -o-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+}
+
+.kniu_sys_input_group[data-has-append="true"] .kniu_sys_input {
+  border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -webkit-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -moz-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -ms-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -o-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+}
+
+.kniu_sys_input_group[data-has-prepend="true"][data-has-append="true"] .kniu_sys_input {
+  border-radius: 0;
+  -webkit-border-radius: 0;
+  -moz-border-radius: 0;
+  -ms-border-radius: 0;
+  -o-border-radius: 0;
+}
+
+.kniu_sys_input_group[data-has-append-btn="true"] .kniu_sys_input_append,
+.kniu_sys_input_group[data-has-prepend-btn="true"] .kniu_sys_input_prepend {
+  align-items: stretch;
+  -webkit-align-items: stretch;
+  -moz-align-items: stretch;
+  -ms-align-items: stretch;
+  -o-align-items: stretch;
+}
+
+.kniu_sys_input_append::slotted(Kniu-Btn),
+.kniu_sys_input_prepend::slotted(Kniu-Btn) {
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex: 1;
+  -webkit-flex: 1;
+  -moz-flex: 1;
+  -ms-flex: 1;
+  -o-flex: 1;
+  width: 100%;
+  height: 100%;
+}

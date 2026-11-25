@@ -1,0 +1,95 @@
+textarea.kniu_sys_input {
+  overflow: auto;
+  padding: 8px 12px;
+  min-height: 120px;
+  height: auto;
+  font: 14px / 1.5 var(--kniu-font-family);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  resize: vertical;
+}
+
+.kniu_sys_input_group[data-is-textarea="true"] {
+  align-items: stretch;
+  -webkit-align-items: stretch;
+  -moz-align-items: stretch;
+  -ms-align-items: stretch;
+  -o-align-items: stretch;
+  height: auto;
+}
+
+.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] {
+  display: flex;
+  display: -webkit-flex;
+}
+
+.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend {
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-self: flex-start;
+  -webkit-align-self: flex-start;
+  -moz-align-self: flex-start;
+  -ms-align-self: flex-start;
+  -o-align-self: flex-start;
+  border: 1px solid var(--kniu-border-color, #dcdfe6);
+  border-right: none;
+  border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -webkit-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -moz-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -ms-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  -o-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+  padding-top: 0;
+  padding-bottom: 0;
+  width: auto;
+  min-width: 0;
+}
+
+.kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input {
+  border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  -webkit-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  -moz-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  -ms-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  -o-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+}
+
+@media (min-width: calc(1280px - 60px)) {
+  .kniu_sys_input_group[data-is-textarea="true"] {
+    min-height: 40px;
+  }
+
+  .kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] {
+    display: flex;
+    display: -webkit-flex;
+  }
+
+  .kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input_prepend {
+    justify-content: center;
+    -webkit-justify-content: center;
+    -moz-justify-content: center;
+    -ms-justify-content: center;
+    -o-justify-content: center;
+    border: 1px solid var(--kniu-border-color, #dcdfe6);
+    border-right: 0;
+    border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+    -webkit-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+    -moz-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+    -ms-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+    -o-border-radius: var(--kniu-radius, 4px) 0 0 var(--kniu-radius, 4px);
+    min-width: 0;
+    width: auto;
+    height: 40px;
+  }
+
+  .kniu_sys_input_group[data-is-textarea="true"][data-has-prepend="true"] .kniu_sys_input {
+    border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+    -webkit-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+    -moz-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+    -ms-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+    -o-border-radius: 0 var(--kniu-radius, 4px) var(--kniu-radius, 4px) 0;
+  }
+}

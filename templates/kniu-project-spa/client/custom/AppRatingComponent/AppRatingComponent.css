@@ -1,0 +1,20 @@
+:host {
+  display: inline-flex;
+  display: -webkit-inline-flex;
+  gap: max(4px, calc(6/var(--kniu_vw)));
+  font-size: max(28px, calc(40/var(--kniu_vw)));
+}
+
+.app_rating_star {
+  border: 0;
+  padding: 0;
+  font-size: inherit;
+  line-height: 1;
+  background-color: transparent;
+  color: var(--kniu-warning, #f7ba2a);
+  cursor: pointer;
+}
+
+:host([readonly]) .app_rating_star {
+  cursor: default;
+}

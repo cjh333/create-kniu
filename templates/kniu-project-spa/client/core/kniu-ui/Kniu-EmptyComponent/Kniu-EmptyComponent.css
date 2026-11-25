@@ -1,0 +1,71 @@
+:host {
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex-direction: column;
+  -webkit-flex-direction: column;
+  -moz-flex-direction: column;
+  -ms-flex-direction: column;
+  -o-flex-direction: column;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--kniu-color-info, #909399);
+}
+
+.kniu_sys_empty_body {
+  display: flex;
+  display: -webkit-flex;
+  justify-content: center;
+  -webkit-justify-content: center;
+  -moz-justify-content: center;
+  -ms-justify-content: center;
+  -o-justify-content: center;
+  align-items: center;
+  -webkit-align-items: center;
+  -moz-align-items: center;
+  -ms-align-items: center;
+  -o-align-items: center;
+  flex-direction: column;
+  -webkit-flex-direction: column;
+  -moz-flex-direction: column;
+  -ms-flex-direction: column;
+  -o-flex-direction: column;
+  padding: 40px 0;
+}
+
+:host([hidden]) {
+  display: none;
+}
+
+.kniu_sys_empty_img {
+  margin-bottom: 16px;
+  width: 200px;
+  height: 128px;
+  color: #c0c4cc;
+}
+
+.kniu_sys_empty_img svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+.kniu_sys_empty_text {
+  color: var(--kniu-color-info, #909399);
+}
+
+::slotted(*) {
+  margin-top: 8px;
+  color: var(--kniu-color-info, #909399);
+}

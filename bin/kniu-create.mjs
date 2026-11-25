@@ -57,15 +57,18 @@ if (!name || args.includes('--help') || args.includes('-h')) {
   }
   await mkdir(destination, { recursive: true });
   await cp(source, destination, { recursive: true });
-  const coreSource = resolve(source, 'client', 'core');
-  await mkdir(resolve(destination, 'client', 'core'), { recursive: true });
-  await cp(resolve(coreSource, 'kniu-server.mjs'), resolve(destination, 'client', 'core', 'kniu-server.mjs'));
   if (port && template === 'kniu-project-spa') {
-    const configPath = resolve(destination, 'kniu.config.js');
-    const currentConfig = await readFile(configPath, 'utf8');
-    const portMatch = currentConfig.match(/port:\s*(\d+)/);
-    const defaultPort = portMatch ? Number(portMatch[1]) : 6173;
-    await writeFile(configPath, currentConfig.replace(new RegExp(`port:\\s*${defaultPort}`), `port: ${Number(port)}`));
+    const configPaths = [
+      resolve(destination, 'client', 'client.config.js'),
+      resolve(destination, 'kniu.config.js')
+    ];
+    for (const configPath of configPaths) {
+      const currentConfig = await readFile(configPath, 'utf8');
+      const portMatch = currentConfig.match(/port:\s*(\d+)/);
+      if (!portMatch) throw new Error(`配置文件缺少 server.port：${configPath}`);
+      const defaultPort = Number(portMatch[1]);
+      await writeFile(configPath, currentConfig.replace(new RegExp(`port:\\s*${defaultPort}`), `port: ${Number(port)}`));
+    }
   }
   const packagePath = resolve(destination, 'package.json');
   try {

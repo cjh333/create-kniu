@@ -20,14 +20,15 @@
   <meta property="og:type" content="website">
   <meta name="robots" content="index,follow">
   <meta http-equiv="X-UA-Compatible" content="IE=Edge,Chrome=130">
+  <link href="@img/favicon.ico" rel="icon">
   <title>Kniu SPA｜原生多应用工作台</title>
 </head>
 
-<body>
-  <div id="client">
+<body id="client">
+  <script src="/client/client.js" type="module"></script>
+  <kniu-router-view>
     <noscript>请启用 JavaScript 以使用 Kniu SPA。</noscript>
-    <script src="/client/client.mjs" type="module"></script>
-  </div>
+  </kniu-router-view>
 </body>
 
 </html>

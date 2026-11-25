@@ -1,0 +1,69 @@
+:host {
+  z-index: 2147483000;
+  position: fixed;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+
+.kniu_sys_toast {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, calc(-50% + 12px));
+  border: 1px solid #ebeef5;
+  max-width: calc(100vw - 56px);
+  border-radius: 4px;
+  -webkit-border-radius: 4px;
+  -moz-border-radius: 4px;
+  -ms-border-radius: 4px;
+  -o-border-radius: 4px;
+  padding: 14px 18px;
+  pointer-events: none;
+  background-color: #edf2fc;
+  color: var(--kniu-color-info, #909399);
+  opacity: 0;
+  box-shadow: 0 12px 40px rgba(23, 33, 59, .18);
+  -webkit-box-shadow: 0 12px 40px rgba(23, 33, 59, .18);
+  -moz-box-shadow: 0 12px 40px rgba(23, 33, 59, .18);
+  -ms-box-shadow: 0 12px 40px rgba(23, 33, 59, .18);
+  -o-box-shadow: 0 12px 40px rgba(23, 33, 59, .18);
+  transition: .25s;
+  -webkit-transition: .25s;
+  -moz-transition: .25s;
+  -ms-transition: .25s;
+  -o-transition: .25s;
+}
+
+:host([data-position="top"]) .kniu_sys_toast { top: 28px; left: 50%; transform: translate(-50%, 12px); }
+:host([data-position="bottom"]) .kniu_sys_toast { top: auto; bottom: 28px; left: 50%; transform: translate(-50%, 12px); }
+:host([data-position="left"]) .kniu_sys_toast { top: 50%; left: 28px; transform: translate(0, calc(-50% + 12px)); }
+:host([data-position="right"]) .kniu_sys_toast { top: 50%; right: 28px; left: auto; transform: translate(0, calc(-50% + 12px)); }
+
+.kniu_sys_toast[data-type="success"] {
+  border-color: #e1f3d8;
+  background-color: #f0f9eb;
+  color: var(--kniu-color-success, #67c23a);
+}
+
+.kniu_sys_toast[data-type="warning"] {
+  border-color: #faecd8;
+  background-color: #fdf6ec;
+  color: var(--kniu-color-warning, #e6a23c);
+}
+
+.kniu_sys_toast[data-type="error"] {
+  border-color: #fde2e2;
+  background-color: #fef0f0;
+  color: var(--kniu-color-danger, #f56c6c);
+}
+
+.kniu_sys_toast[data-visible="true"] {
+  transform: translate(-50%, -50%);
+  opacity: 1;
+}
+
+:host([data-position="top"]) .kniu_sys_toast[data-visible="true"],
+:host([data-position="bottom"]) .kniu_sys_toast[data-visible="true"] { transform: translate(-50%, 0); }
+:host([data-position="left"]) .kniu_sys_toast[data-visible="true"],
+:host([data-position="right"]) .kniu_sys_toast[data-visible="true"] { transform: translate(0, -50%); }

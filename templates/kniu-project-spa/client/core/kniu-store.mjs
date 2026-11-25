@@ -1,4 +1,4 @@
-import { reactive } from './kniu-mvvm.mjs';
+import { reactive } from './Kniu-MVVM.mjs';
 
 export function createStore(initialState = {}, options = {}) {
   const key = String(options.key || 'KNIU_STORE');
