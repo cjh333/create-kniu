@@ -16,6 +16,9 @@ logs/
 dist/
 kniu-project/
 test/
+!test/probe_*.mjs
+!test/check_*.mjs
+!test/probe_*.php
 tmp/
 templates/kniu-project-spa/dist/
 api/runtime/
