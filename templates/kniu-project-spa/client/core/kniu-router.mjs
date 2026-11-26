@@ -8,6 +8,7 @@ import { updateHead } from './Kniu-Head.mjs';
 import { ensureShadowRoot, syncGlobalStyles } from './Kniu-Shadow.mjs';
 import { createBinder, retargetEvent } from './Kniu-Binding.mjs';
 import { collectRefs, createMountHidden, mountViewTree, pruneEmptyAttributes, removeClass, recordIncludeSnapshots, expandStyleImports } from './Kniu-ViewMount.mjs';
+import { patchRenderedScope } from './Kniu-Diff.mjs';
 import { kniuDebug, kniuWarn, kniuError, KNDEBUG } from './Kniu-Debug.mjs';
 import { reactive } from './Kniu-MVVM.mjs';
 import { maskExternalImages, hydrateExternalImages } from './Kniu-Proxy.mjs';
@@ -88,53 +89,15 @@ function syncIncludeContent(targetRoot, source) {
   return syncOrdinalChildren(targetRoot, source);
 }
 
-function collectKeyedKeys(root) {
-  const keys = [];
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
-  let depth = 0;
-  while (walker.nextNode()) {
-    const data = String(walker.currentNode.data || '');
-    if (depth === 0 && /^kniu-k:/.test(data)) {
-      try { keys.push(decodeURIComponent(data.slice(8))); } catch { return null; }
-      depth = 1;
-    } else if (/^kniu-k:/.test(data)) depth += 1;
-    else if (data === '/kniu-k') depth -= 1;
-  }
-  return depth === 0 ? keys : null;
-}
-
+/**
+ * 增量 reconcile：优先走 Kniu-Diff 的局部补丁（只改文本/属性/增删的节点），
+ * 仅当补丁不可收敛（结构剧烈变化、include 宿主内容变化等）时返回 false，
+ * 由调用方回退 innerHTML 全量重写。
+ */
 function reconcileRefreshView(scope, html) {
   try {
     if (!scope || !scope.childNodes) return false;
-    const parsed = new DOMParser().parseFromString(`<template>${html}</template>`, 'text/html');
-    const fragment = parsed.head.firstElementChild?.content;
-    if (!fragment) return false;
-    const wrapper = document.createElement('div');
-    wrapper.appendChild(fragment.cloneNode(true));
-    const structuralSignature = (source) => String(source ?? '')
-      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<[^>]+>/g, (tag) => {
-        const name = /^<(\/?)([\w-]+)/.exec(tag);
-        if (!name) return tag;
-        const className = /\bclass\s*=\s*"([^"]*)"/i.exec(tag);
-        return `<${name[1]}${name[2]}${className ? ` class="${className[1]}"` : ''}>`;
-      })
-      .replace(/>[^<]+</g, '><');
-    const syncAndVerify = () => {
-      syncOrdinalChildren(scope, wrapper);
-      return structuralSignature(scope.innerHTML) === structuralSignature(wrapper.innerHTML);
-    };
-    const newKeys = collectKeyedKeys(wrapper);
-    if (stableIncludeHtml(scope.innerHTML) === stableIncludeHtml(wrapper.innerHTML)) {
-      return syncAndVerify();
-    }
-    if (!newKeys || !newKeys.length) return false;
-    const oldKeys = collectKeyedKeys(scope);
-    if (!oldKeys || oldKeys.length !== newKeys.length) return false;
-    for (let index = 0; index < oldKeys.length; index += 1) {
-      if (oldKeys[index] !== newKeys[index]) return false;
-    }
-    return syncAndVerify();
+    return patchRenderedScope(scope, html).ok;
   } catch {
     return false;
   }
@@ -305,7 +268,7 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
       .replace(new RegExp(`^${templateBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), '')
       .replace(/\.html$/i, '')
       .replace(/\//g, '-');
-    return `Kniu-Client-${rel}`;
+    return ('Kniu-Client-' + rel).toLowerCase();
   };
   const guards = { beforeEach: [], afterEach: [] };
   const loadingEnabled = () => loading !== false;
@@ -619,7 +582,7 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
   }
 
   function renderPageNotFound(to) {
-    const viewTag = 'Kniu-Client-RouteMissing';
+    const viewTag = 'kniu-client-routemissing';
     if (root.firstElementChild && root.firstElementChild.localName === viewTag && hasRendered) return;
     const host = document.createElement(viewTag);
     host.setAttribute('data-kniu-route-view', '');
@@ -736,7 +699,8 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
           if (!source) { scheduleRefreshRender(); return; }
           renderViewHtml(source, lastModel, { collect: false, scopeKey: lastScopeKey }).then((html) => {
             if (activeController !== nextControllerKey || routePath() !== currentPath) return;
-            if (binder.renderedHtmlMatches(html, routePath())) {
+            if (binder.renderedHtmlMatches(html, routePath())
+              || (typeof binder.structuralHtmlMatches === 'function' && binder.structuralHtmlMatches(html, routePath()))) {
               patchTextBindings();
               if (currentViewRoot?.isConnected) binder.patchAttrBindings(currentViewRoot, lastModel);
               return;
@@ -805,7 +769,7 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
         kniuError(KNDEBUG.ROUTER, '控制器 mounted 钩子失败：', error);
       }
       kniuDebug(KNDEBUG.RUNTIME, 'controller mounted done', { key: nextControllerKey });
-      await request.requestTrackingSettled(limitValue('requestTrackingTimeout', 4_000));
+      await request.requestTrackingSettled(limitValue('requestTrackingTimeout', 16_000));
       if (navigationId !== pendingNavigation) {
         mountedControllers.delete(nextControllerKey);
         mountStates.delete(nextControllerKey);
@@ -873,8 +837,11 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
       });
       await settleFirstScreen(async () => {
         await mountHidden.run(existingTarget, async () => {
-          wipePreservingOverlays(existingTarget, await renderTracked(expandedSource, model, { collect: true, scopeKey: resolvedTemplate }));
-          collectTextBindings(existingTarget);
+          const settledHtml = await renderTracked(expandedSource, model, { collect: true, scopeKey: resolvedTemplate });
+          if (!reconcileRefreshView(existingTarget, settledHtml)) {
+            wipePreservingOverlays(existingTarget, settledHtml);
+            collectTextBindings(existingTarget);
+          }
           await mountTree(existingTarget, model);
           collectRefs(viewRoot, model.refs);
         });
@@ -891,9 +858,9 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
           if (!(refreshMode && reconcileRefreshView(viewRoot, refreshedHtml))) {
             viewRoot.innerHTML = refreshedHtml;
             recordIncludeSnapshots(viewRoot);
-            await syncGlobalStyles(existingHost);
-            collectTextBindings(viewRoot);
           }
+          await syncGlobalStyles(existingHost);
+          collectTextBindings(viewRoot);
           await mountTree(viewRoot, model);
           collectRefs(viewRoot, model.refs);
           await settleFirstScreen(async () => {
@@ -901,9 +868,9 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
             if (!reconcileRefreshView(viewRoot, settledHtml)) {
               viewRoot.innerHTML = settledHtml;
               recordIncludeSnapshots(viewRoot);
-              await syncGlobalStyles(existingHost);
-              collectTextBindings(viewRoot);
             }
+            await syncGlobalStyles(existingHost);
+            collectTextBindings(viewRoot);
             await mountTree(viewRoot, model);
             collectRefs(viewRoot, model.refs);
           });
@@ -939,8 +906,10 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
           collectRefs(viewRoot, model.refs);
           await settleFirstScreen(async () => {
             const settledHtml = await renderTracked(composedSource, model, { collect: true, scopeKey: resolvedTemplate });
-            if (!reconcileRefreshView(viewRoot, settledHtml)) viewRoot.innerHTML = settledHtml;
-            recordIncludeSnapshots(viewRoot);
+            if (!reconcileRefreshView(viewRoot, settledHtml)) {
+              viewRoot.innerHTML = settledHtml;
+              recordIncludeSnapshots(viewRoot);
+            }
             await syncGlobalStyles(host);
             collectTextBindings(viewRoot);
             await mountTree(viewRoot, model);
@@ -959,14 +928,17 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
       }
     }
     if (!refreshMode) {
-      await request.requestTrackingSettled(limitValue('requestTrackingTimeout', 4_000));
+      await request.requestTrackingSettled(limitValue('requestTrackingTimeout', 16_000));
       if (navigationId !== pendingNavigation) return;
       const mountStatePending = mountStates.get(nextControllerKey);
       if (mountStatePending) { mountStatePending.mounting = false; mountStatePending.changed = false; }
     }
     await settleFirstScreen(async () => {
-      viewRoot.innerHTML = await renderTracked(composedSource, model, { collect: true, scopeKey: resolvedTemplate });
-      recordIncludeSnapshots(viewRoot);
+      const settledHtml = await renderTracked(composedSource, model, { collect: true, scopeKey: resolvedTemplate });
+      if (!reconcileRefreshView(viewRoot, settledHtml)) {
+        viewRoot.innerHTML = settledHtml;
+        recordIncludeSnapshots(viewRoot);
+      }
       await syncGlobalStyles(host);
       collectTextBindings(viewRoot);
       await mountTree(viewRoot, model);
@@ -1060,10 +1032,7 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
   const scheduleComponentPreload = () => {
     if (componentPreloadScheduled) return;
     componentPreloadScheduled = true;
-    const idle = (callback) => (
-      typeof requestIdleCallback === 'function' ? requestIdleCallback(callback, { timeout: 2000 }) : setTimeout(callback, 300)
-    );
-    idle(() => { preloadComponents(); });
+    queueMicrotask(() => { preloadComponents(); });
   };
 
   const hmrFileUrl = (file) => '/' + String(file || '')
@@ -1183,8 +1152,8 @@ export function createRouter({ root, routes, data = () => ({}), actions = {}, ho
       if (routeMode() === 'history') addEventListener('popstate', onLocationChange);
       canonicalizeHomeHash();
       if (typeof routerHooks.mounted === 'function') await routerHooks.mounted({ root, router: api });
-      await renderWithBoundary();
       scheduleComponentPreload();
+      await renderWithBoundary();
       installHmrDispatcher();
     },
     render: renderWithBoundary,

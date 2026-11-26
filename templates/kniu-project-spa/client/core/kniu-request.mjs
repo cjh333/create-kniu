@@ -194,20 +194,21 @@ export function createRequest(options = {}) {
     clearAllCache() { cache.clear(); cacheOrder.clear(); },
     useResponseInterceptor(interceptor) { interceptors.add(interceptor); return () => interceptors.delete(interceptor); },
     beginRequestTracking() {
+      const inFlight = [...trackingWindow];
       trackingActive = true;
-      trackingWindow = new Set();
+      trackingWindow = new Set(inFlight);
       trackingGeneration += 1;
     },
     requestTrackingSettled(timeout = 4000) {
       const generation = trackingGeneration;
       const isCurrent = () => generation === trackingGeneration;
       if (!trackingActive || !trackingWindow.size) {
-        if (isCurrent()) trackingActive = false;
+        if (isCurrent()) { trackingActive = false; trackingWindow = new Set(); }
         return Promise.resolve();
       }
       return new Promise((resolve) => {
         const finish = () => {
-          if (isCurrent()) trackingActive = false;
+          if (isCurrent()) { trackingActive = false; trackingWindow = new Set(); }
           resolve();
         };
         const deadline = Date.now() + timeout;

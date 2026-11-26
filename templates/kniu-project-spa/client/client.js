@@ -1,7 +1,9 @@
+import './rating-adapter.mjs';
 import { hideBootLoading } from './core/Kniu-BootLoading.mjs';
 import { createClient, createRouterPlugin, createTemplatePlugin, UI, createControllerKit } from './core/Kniu-Kit.mjs';
 import { raceTimeout } from './core/Kniu-Util.mjs';
 import PROJECT_CONFIG from './project.config.js';
+import './custom/AppRatingComponent/AppRatingComponent.mjs';
 
 const SPECIAL_IMPORT_TIMEOUT = 10_000;
 const FALLBACK_CONTRACTS = { auth: {}, roles: {}, uiText: {} };
@@ -14,6 +16,20 @@ try {
 }
 const SPECIAL_CONTRACTS = specialModule?.default || FALLBACK_CONTRACTS;
 const createAdminRoleGuardPlugin = specialModule?.createAdminRoleGuardPlugin || null;
+
+const CUSTOM_TAGS = ['app-rating'];
+async function waitForCustomComponents(tags, timeout = 10_000) {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const pending = tags.filter((tag) => !customElements.get(tag));
+    if (!pending.length) return;
+    if (Date.now() >= deadline) {
+      throw new Error(`[kniu] 自定义组件注册超时：${pending.join(', ')}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+await waitForCustomComponents(CUSTOM_TAGS);
 const routes = PROJECT_CONFIG.routes || {};
 const views = PROJECT_CONFIG.views || {};
 const client = createClient({

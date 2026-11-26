@@ -1305,7 +1305,6 @@ if (isMain) {
     `<meta name="kniu-template-manifest" content="${manifestBase}/${templatesFileName}">`;
   const preloads = [
     `<link rel="preload" as="script" href="${outputTemplateUrl}/${clientFileName}">`,
-    `<link rel="preload" as="script" href="${outputTemplateUrl}/${componentsFileName}">`,
     `<link rel="preload" as="script" href="${outputTemplateUrl}/${templatesFileName}" crossorigin>`,
     `<link rel="preload" as="script" href="${publicAssets.get('/public/assets/Kniu-Special.js') || '/public/assets/Kniu-Special.js'}" crossorigin>`
   ].join('');

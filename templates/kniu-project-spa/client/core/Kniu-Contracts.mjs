@@ -172,7 +172,7 @@ function createDefaultContracts() {
       breakpointLarge: 1920,
       containedMinVisible: 360,
       containedSettle: 200,
-      requestTrackingTimeout: 4_000,
+      requestTrackingTimeout: 16_000,
       editorDebounceWait: 150,
       reconnectMaxDelay: 30_000,
       loopGuardLimit: 4_000,

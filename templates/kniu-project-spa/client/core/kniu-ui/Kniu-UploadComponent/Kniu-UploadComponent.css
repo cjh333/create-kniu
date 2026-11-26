@@ -18,7 +18,7 @@
   -ms-align-items: stretch;
   -o-align-items: stretch;
   width: 100%;
-  min-height: max(28px, calc(40 / var(--kniu_vw)));
+  min-height: max(30px, calc(40 / var(--kniu_vw)));
 }
 
 .kniu_sys_upload_hint {

@@ -184,6 +184,24 @@ export function createBinder(options = {}) {
     return renderedHtmlRoute === String(routePath || '') && renderedHtmlSnapshot === String(html || '');
   }
 
+  function structuralSignatureOf(html) {
+    return String(html ?? '')
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<!--\/?kniu-t[^>]*?-->/g, '')
+      .replace(/<[^>]+>/g, (tag) => {
+        const name = /^<(\/?)([\w-]+)/.exec(tag);
+        if (!name) return tag;
+        const className = /\bclass\s*=\s*"([^"]*)"/i.exec(tag);
+        return `<${name[1]}${name[2]}${className ? ` class="${className[1]}"` : ''}>`;
+      })
+      .replace(/>[^<]+</g, '><');
+  }
+
+  function structuralHtmlMatches(html, routePath) {
+    if (renderedHtmlRoute !== String(routePath || '')) return false;
+    return structuralSignatureOf(html) === structuralSignatureOf(renderedHtmlSnapshot);
+  }
+
   function lastRenderedSource() {
     return renderedHtmlRoute ? renderedHtmlSource : '';
   }
@@ -459,6 +477,7 @@ export function createBinder(options = {}) {
     patchAttrBindings,
     recordRenderedHtml,
     renderedHtmlMatches,
+    structuralHtmlMatches,
     lastRenderedSource,
     bind,
     retargetEvent,

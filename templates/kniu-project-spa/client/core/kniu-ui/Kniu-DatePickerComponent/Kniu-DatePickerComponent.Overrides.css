@@ -666,22 +666,63 @@
 
 .kniu_sys_date_picker_panel[data-type="datetime"][data-time-columns="2"] {
   width: min(306px, calc(100vw - 16px));
-  grid-template-columns: minmax(0, 218px) minmax(0, 88px)
+  grid-template-columns: minmax(0, 218px) minmax(0, 88px);
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"][data-time-columns="3"] {
   width: min(350px, calc(100vw - 16px));
-  grid-template-columns: minmax(0, 218px) minmax(0, 132px)
+  grid-template-columns: minmax(0, 218px) minmax(0, 132px);
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-time-columns="1"] {
-  grid-template-columns: minmax(0, 1fr)
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-time-columns="2"] {
-  grid-template-columns: repeat(2, minmax(0, 1fr))
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .kniu_sys_date_picker_panel[data-type="datetime"]>.kniu_sys_date_picker_time[data-time-columns="3"] {
-  grid-template-columns: repeat(3, minmax(0, 1fr))
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.kniu_sys_date_picker_date_preview {
+  flex: 1 1 auto;
+  -webkit-flex: 1 1 auto;
+  -moz-flex: 1 1 auto;
+  -ms-flex: 1 1 auto;
+  -o-flex: 1 1 auto;
+  min-width: 0;
+}
+
+.kniu_sys_date_picker_footer div {
+  flex: none;
+  -webkit-flex: none;
+  -moz-flex: none;
+  -ms-flex: none;
+  -o-flex: none;
+}
+
+.kniu_sys_date_picker_action {
+  width: calc(clamp(38px, 10vw, 42px) - 0 * var(--kniu_vw));
+  height: calc(clamp(30px, 8vw, 32px) - 0 * var(--kniu_vw));
+}
+
+.kniu_sys_date_picker_panel[data-type="datetime"],
+.kniu_sys_date_picker_panel[data-type="datetime"][data-range="true"],
+.kniu_sys_date_picker_panel[data-type="datetime"][data-time-columns="3"] {
+  width: calc(min(calc(100vw - 16px), clamp(304px, 92vw, 420px)) - 0 * var(--kniu_vw));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 38%);
+}
+
+.kniu_sys_date_picker_panel[data-type="datetime"][data-show-seconds="false"],
+.kniu_sys_date_picker_panel[data-type="datetime"][data-show-seconds="false"][data-range="true"],
+.kniu_sys_date_picker_panel[data-type="datetime"][data-time-columns="2"] {
+  width: calc(min(calc(100vw - 16px), clamp(304px, 92vw, 420px)) - 0 * var(--kniu_vw));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 29%);
+}
+
+.kniu_sys_date_picker_panel[data-type="datetime"][data-time-columns="1"] {
+  width: calc(min(calc(100vw - 16px), clamp(304px, 92vw, 420px)) - 0 * var(--kniu_vw));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 17%);
 }
